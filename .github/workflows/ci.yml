@@ -1,0 +1,151 @@
+# Runs lint + tests on every push to every branch.
+# On failure: a push to main is rolled back with a revert commit; a push to any other branch opens
+# (or updates) a "ci-failure" issue. When a branch goes green again, its open issue is closed.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  # Branches: a newer push supersedes an older run. main: every push is checked on its own,
+  # because each one may need to be reverted.
+  group: ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  lint:
+    if: ${{ !github.event.deleted }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: frontend/package.json
+
+      - name: Lint backend and frontend
+        run: |
+          status=0
+          check() {
+            echo "::group::$*"
+            if ! "$@" 2>&1 | tee -a "$GITHUB_WORKSPACE/lint.log"; then status=1; fi
+            echo "::endgroup::"
+          }
+          set -o pipefail
+          cd backend
+          uv sync --frozen
+          check uv run ruff check .
+          check uv run ruff format --check .
+          cd ../frontend
+          bun install --frozen-lockfile
+          check bun run lint
+          check bunx next typegen
+          check bunx tsc --noEmit
+          exit $status
+
+      - name: Keep the log for the failure report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-log
+          path: lint.log
+          if-no-files-found: ignore
+
+  test:
+    if: ${{ !github.event.deleted }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # No .env in CI: every setting falls back to its default (see .env.example).
+      - name: Build backend image
+        run: docker compose build backend
+
+      - name: Run tests (docker Postgres + Redis)
+        run: |
+          set -o pipefail
+          docker compose run --rm backend pytest -p no:cacheprovider 2>&1 | tee test.log
+
+      - name: Stop services
+        if: always()
+        run: docker compose down -v
+
+      - name: Keep the log for the failure report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-log
+          path: test.log
+          if-no-files-found: ignore
+
+  on-failure:
+    needs: [lint, test]
+    if: ${{ failure() && !github.event.deleted }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the revert commit to main
+      issues: write # open / update the failure issue
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BRANCH: ${{ github.ref_name }}
+      BEFORE: ${{ github.event.before }}
+      AFTER: ${{ github.sha }}
+      ACTOR: ${{ github.actor }}
+      COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+      COMPARE_URL: ${{ github.event.compare }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      LINT_RESULT: ${{ needs.lint.result }}
+      TEST_RESULT: ${{ needs.test.result }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Collect failure logs
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: "*-log"
+          merge-multiple: true
+          path: ci-logs
+
+      - name: Revert the push on main
+        id: revert
+        if: github.ref == 'refs/heads/main'
+        continue-on-error: true
+        run: .github/scripts/revert-push.sh
+
+      # Branches always get an issue; main only if the automatic revert was not possible.
+      - name: Open or update the failure issue
+        if: github.ref != 'refs/heads/main' || steps.revert.outcome != 'success'
+        env:
+          REVERT_OUTCOME: ${{ steps.revert.outcome }}
+          LOG_DIR: ci-logs
+        run: .github/scripts/report-failure.sh
+
+  on-success:
+    needs: [lint, test]
+    if: ${{ success() && github.ref != 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BRANCH: ${{ github.ref_name }}
+      AFTER: ${{ github.sha }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+
+      - name: Close the branch's failure issue
+        run: .github/scripts/resolve-failure.sh
