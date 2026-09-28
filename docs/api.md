@@ -9,8 +9,18 @@ Base path: `/api` (Django, port 8000). Next.js rewrites `/api/:path*` to Django,
 - **System**: `GET /api/health` returns database, Redis, and Celery worker status (`200` ok, `503` degraded).
 
 - JSON with `snake_case` fields.
-- **Auth**: simplejwt tokens in httpOnly cookies (`lc_access`, `lc_refresh`, `SameSite=Lax`). A custom `CookieJWTAuthentication` reads them. Cookies are used because `EventSource` can't send headers.
-- **CSRF**: unsafe methods send `X-CSRFToken`, taken from the `csrftoken` cookie.
+- **Auth**: simplejwt tokens in httpOnly, `SameSite=Lax` cookies set by the API. JavaScript never sees a token. Cookies are used because `EventSource` can't send headers.
+
+  | Cookie | Contents | Path | Lifetime |
+  |---|---|---|---|
+  | `lc_access` | access JWT | `/` | `JWT_ACCESS_MINUTES` (30) |
+  | `lc_refresh` | refresh JWT, rotated on every refresh, with the old one blacklisted | `/api/auth` | `JWT_REFRESH_DAYS` (7) |
+  | `lc_session` | `1`: the "signed in" marker for the Next.js route guard | `/` | refresh lifetime |
+  | `lc_onboarded` | `1` once the profile is complete (route-guard marker) | `/` | refresh lifetime |
+
+  `CookieJWTAuthentication` accepts `Authorization: Bearer <access>` first, which is useful for scripts and needs no CSRF, and falls back to the `lc_access` cookie. The markers carry no authority. `Secure` is set when `AUTH_COOKIE_SECURE=true`.
+- **Rate limit**: register, login, and refresh share the `auth` throttle (`AUTH_THROTTLE_RATE`, default `20/min` per client).
+- **CSRF**: unsafe methods send `X-CSRFToken`, taken from the `csrftoken` cookie (`GET /auth/csrf` sets it). This is enforced for every cookie-authenticated request and for the auth endpoints; Swagger UI adds the header automatically.
 - **Ownership**: every lesson-scoped route returns `404` unless `lesson.owner == request.user`.
 - **Errors**: `{"detail": "...", "code": "...", "fields": {...}}`.
 - **Pagination**: cursor-based, `?cursor=&page_size=20` → `{results, next, previous}`.
@@ -21,12 +31,13 @@ Base path: `/api` (Django, port 8000). Next.js rewrites `/api/:path*` to Django,
 |---|---|---|---|
 | GET | `/auth/csrf` | none | `204`, sets `csrftoken` |
 | POST | `/auth/register` | `{email, password, name}` | `201 {user}`, sets cookies |
-| POST | `/auth/login` | `{email, password}` | `200 {user}`, sets cookies |
-| POST | `/auth/refresh` | none | `200`, rotates cookies |
+| POST | `/auth/login` | `{email, password}` (email is case-insensitive) | `200 {user}`, sets cookies; `401 invalid_credentials` |
+| POST | `/auth/refresh` | none (uses `lc_refresh`) | `200 {user}`, rotates cookies; `401 session_expired` clears them |
 | POST | `/auth/logout` | none | `204`, clears and blacklists |
-| GET | `/auth/me` | none | `{id, email, name, profile_complete}` |
+| GET | `/auth/me` | none | `{id, email, name, profile_complete}`, or `401` |
 | GET | `/profile` | none | `Profile` |
-| PUT | `/profile` | `Profile` fields | `200 Profile` |
+| PUT | `/profile` | `Profile` fields; `education_level`, `learning_preference`, `goal` required | `200 Profile`, sets or clears `lc_onboarded` |
+| PATCH | `/profile` | any subset (including `name`) | `200 Profile` |
 
 ## Lessons
 

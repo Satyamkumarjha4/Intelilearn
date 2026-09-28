@@ -20,12 +20,13 @@ Each phase ends with something runnable and checkable.
 
 ## Phase 1: Foundation
 
-- [ ] Set `SUPABASE_DATABASE_URL`, verify the sync and `/api/health`
-- [ ] `accounts`: `User` (email login) and `Profile`; cookie JWT auth; CSRF; profile API; admin
-- [ ] `scripts/enable_rls.sql`
-- [ ] shadcn/ui setup; `lib/api.ts`; `/auth`, `/onboarding`, `/profile`; `proxy.ts` route guard
+- [ ] ~~Set `SUPABASE_DATABASE_URL`, verify the sync and `/api/health`~~ *(skipped for now: running on the local Postgres)*
+- [x] `accounts`: `User` (email login, UUID key) and `Profile` (auto-created); cookie JWT auth with refresh rotation and blacklist; CSRF; auth rate limit; register/login/refresh/logout/me; profile GET/PUT/PATCH; admin
+- [ ] ~~`scripts/enable_rls.sql`~~ *(skipped with Supabase)*
+- [x] shadcn/ui (base-nova); `lib/api.ts` (CSRF, silent refresh, typed errors); `/auth`, `/onboarding`, `/profile`; header account menu; `proxy.ts` route guard
+- [x] Tests in `tests/accounts/`; OpenAPI schema validated in `make lint` and CI
 
-**Done when:** you can register, log in, complete onboarding, and see your user and profile in the admin. The tables exist in Supabase.
+**Done when:** you can register, log in, complete onboarding, and see your user and profile in the admin. ✅ Verified in a real browser (register → onboarding → profile edit → sign out → guard → wrong password → sign in back to `?next`). The Supabase part is deferred.
 
 ## Phase 2: Model registry
 

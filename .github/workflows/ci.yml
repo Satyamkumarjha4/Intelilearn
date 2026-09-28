@@ -42,6 +42,7 @@ jobs:
           uv sync --frozen
           check uv run ruff check .
           check uv run ruff format --check .
+          check uv run python manage.py spectacular --validate --fail-on-warn --file /dev/null
           cd ../frontend
           bun install --frozen-lockfile
           check bun run lint
