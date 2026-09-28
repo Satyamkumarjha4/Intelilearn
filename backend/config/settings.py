@@ -1,0 +1,151 @@
+"""Django settings for Lesson Crafter.
+
+All configuration comes from the environment: the root .env file, which docker compose also
+injects. Every value has a development default, so CI and tests run with no .env at all.
+"""
+
+import sys
+from pathlib import Path
+from urllib.parse import quote
+
+import environ
+
+from .databases import build_databases, local_database_url
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+TESTING = "pytest" in sys.modules
+
+env = environ.Env()
+# Root .env when running on the host; inside docker it is absent and compose provides the variables.
+# Never overrides variables that are already set.
+environ.Env.read_env(BASE_DIR.parent / ".env")
+
+SECRET_KEY = env("DJANGO_SECRET_KEY", default="dev-insecure-secret-key-change-me")
+DEBUG = env.bool("DJANGO_DEBUG", default=False)
+ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1", "backend"])
+CSRF_TRUSTED_ORIGINS = env.list(
+    "DJANGO_CSRF_TRUSTED_ORIGINS",
+    default=[
+        f"http://localhost:{env('FRONTEND_PORT', default='3000')}",
+        f"http://localhost:{env('BACKEND_PORT', default='8000')}",
+    ],
+)
+
+INSTALLED_APPS = [
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    # third party
+    "rest_framework",
+    "drf_spectacular",
+    "drf_spectacular_sidecar",
+    # local
+    "core",
+]
+
+MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+]
+
+ROOT_URLCONF = "config.urls"
+
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ],
+        },
+    },
+]
+
+ASGI_APPLICATION = "config.asgi.application"
+
+# --- Databases: Supabase when SUPABASE_DATABASE_URL is set, otherwise the docker Postgres ---
+LOCAL_DATABASE_URL = local_database_url(
+    host=env("POSTGRES_HOST", default="localhost"),
+    port=env.int("POSTGRES_PORT", default=5432),
+    name=env("POSTGRES_DB", default="lessoncrafter"),
+    user=env("POSTGRES_USER", default="lessoncrafter"),
+    password=env("POSTGRES_PASSWORD", default="lessoncrafter"),
+)
+SUPABASE_DATABASE_URL = env("SUPABASE_DATABASE_URL", default="")
+DATABASES = build_databases(env, local_url=LOCAL_DATABASE_URL, supabase_url=SUPABASE_DATABASE_URL, testing=TESTING)
+USING_SUPABASE = "local" in DATABASES and not TESTING
+# Copy local rows that Supabase doesn't have yet, every time the backend starts against Supabase.
+SYNC_LOCAL_TO_SUPABASE = env.bool("SYNC_LOCAL_TO_SUPABASE", default=True)
+
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
+
+LANGUAGE_CODE = "en-us"
+TIME_ZONE = "UTC"
+USE_I18N = True
+USE_TZ = True
+
+STATIC_URL = "static/"
+# Local-only project: WhiteNoise serves admin/Swagger assets straight from the apps, no collectstatic step.
+WHITENOISE_USE_FINDERS = True
+WHITENOISE_AUTOREFRESH = DEBUG
+MEDIA_URL = "media/"
+MEDIA_ROOT = env.path("MEDIA_ROOT", default=BASE_DIR / "media")
+
+# --- Redis / Celery ---
+_redis_password = env("REDIS_PASSWORD", default="")
+_redis_auth = f":{quote(_redis_password, safe='')}@" if _redis_password else ""
+_redis_base = f"redis://{_redis_auth}{env('REDIS_HOST', default='localhost')}:{env.int('REDIS_PORT', default=6379)}"
+REDIS_URL = f"{_redis_base}/0"
+CELERY_BROKER_URL = f"{_redis_base}/0"
+CELERY_RESULT_BACKEND = f"{_redis_base}/1"
+CELERY_TASK_ACKS_LATE = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TIMEZONE = TIME_ZONE
+
+# --- DRF / OpenAPI ---
+REST_FRAMEWORK = {
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Lesson Crafter API",
+    "DESCRIPTION": "Diagnose what a learner knows, then generate a lesson or study sheet for the rest.",
+    "VERSION": "0.1.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    "SCHEMA_PATH_PREFIX": r"/api",
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
+    "REDOC_DIST": "SIDECAR",
+    "SWAGGER_UI_SETTINGS": {"persistAuthorization": True, "displayRequestDuration": True},
+}
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "root": {"handlers": ["console"], "level": env("LOG_LEVEL", default="INFO")},
+}
