@@ -7,23 +7,27 @@ import operator
 from typing import Annotated, Any, Literal, TypedDict
 
 
-def merge_dicts(current: dict | None, update: dict | None) -> dict:
-    """Shallow merge; a value of None deletes the key (used to drop degraded items)."""
-    merged = dict(current or {})
-    for key, value in (update or {}).items():
-        if value is None:
-            merged.pop(key, None)
-        else:
-            merged[key] = value
-    return merged
+class Reducers:
+    """LangGraph reducers for the keys that parallel `Send` branches write."""
 
+    @staticmethod
+    def merge_dicts(current: dict | None, update: dict | None) -> dict:
+        """Shallow merge; a value of None deletes the key (used to drop degraded items)."""
+        merged = dict(current or {})
+        for key, value in (update or {}).items():
+            if value is None:
+                merged.pop(key, None)
+            else:
+                merged[key] = value
+        return merged
 
-def merge_counts(current: dict | None, update: dict | None) -> dict:
-    """Add counts per key; a value of None resets the key (used when a failed run is retried)."""
-    merged = dict(current or {})
-    for key, value in (update or {}).items():
-        merged[key] = 0 if value is None else merged.get(key, 0) + value
-    return merged
+    @staticmethod
+    def merge_counts(current: dict | None, update: dict | None) -> dict:
+        """Add counts per key; a value of None resets the key (used when a failed run is retried)."""
+        merged = dict(current or {})
+        for key, value in (update or {}).items():
+            merged[key] = 0 if value is None else merged.get(key, 0) + value
+        return merged
 
 
 class FlowState(TypedDict, total=False):
@@ -51,23 +55,25 @@ class FlowState(TypedDict, total=False):
 
     # Stage B (parallel writers → reducers)
     plan: dict  # LessonPlan
-    pages: Annotated[dict[str, dict], merge_dicts]  # introduction / core / advanced → PageContent
+    pages: Annotated[dict[str, dict], Reducers.merge_dicts]  # introduction / core / advanced → PageContent
     final_test: dict | None  # FinalTest
     interactive_plan: dict  # InteractivePlan
-    media: Annotated[dict[str, dict], merge_dicts]  # spec_id → MediaRef
-    interactives: Annotated[dict[str, dict], merge_dicts]  # spec_id → InteractiveComponent
-    widget_kinds: Annotated[dict[str, str], merge_dicts]  # spec_id → kind actually built (media → svg fallback)
+    media: Annotated[dict[str, dict], Reducers.merge_dicts]  # spec_id → MediaRef
+    interactives: Annotated[dict[str, dict], Reducers.merge_dicts]  # spec_id → InteractiveComponent
+    widget_kinds: Annotated[
+        dict[str, str], Reducers.merge_dicts
+    ]  # spec_id → kind actually built (media → svg fallback)
     alignment: dict | None  # AlignmentReport
 
     # Stage C
-    page_code: Annotated[dict[str, str], merge_dicts]
-    component_code: Annotated[dict[str, str], merge_dicts]  # component name → checked TSX
+    page_code: Annotated[dict[str, str], Reducers.merge_dicts]
+    component_code: Annotated[dict[str, str], Reducers.merge_dicts]  # component name → checked TSX
     document_code: str | None
     render_report: dict | None
 
     # control
-    attempts: Annotated[dict[str, int], merge_counts]
-    feedback: Annotated[dict[str, list[str]], merge_dicts]
+    attempts: Annotated[dict[str, int], Reducers.merge_counts]
+    feedback: Annotated[dict[str, list[str]], Reducers.merge_dicts]
     warnings: Annotated[list[str], operator.add]
     failed_node: str | None  # where await_retry resumes
     retry_keys: list[str]  # attempt counters reset on retry
