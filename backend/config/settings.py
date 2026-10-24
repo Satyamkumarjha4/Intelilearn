@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     # local
     "core",
     "accounts",
+    "llm_registry",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -131,6 +132,16 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TIMEZONE = TIME_ZONE
+
+# Shared cache (Redis db 2): the resolved model registry and per-minute LLM rate-limit counters.
+# Tests use an in-process cache so they don't depend on Redis.
+CACHES = {
+    "default": (
+        {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}
+        if TESTING
+        else {"BACKEND": "django.core.cache.backends.redis.RedisCache", "LOCATION": f"{_redis_base}/2"}
+    )
+}
 
 # --- LLM registry ---
 # Thinking-token budgets for models whose reasoning is controlled by a budget (see llm_registry/reasoning.py).
