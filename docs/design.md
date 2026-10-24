@@ -116,8 +116,8 @@ flowchart TB
 | | graph | `Validator` per artefact | Deterministic rules per output type, fed back as retry feedback | ◐ (`validate_*` functions) |
 | | graph | `RoutingPolicy` | Diagnostic score → route uses admin thresholds | ◐ (`route_for`) |
 | | media | `MediaSource` (`Wikimedia…`, `Openverse…`, `Giphy…`) | Sources are added or disabled by settings | ◐ (methods on `MediaLibrary`) |
-| | health | `HealthCheck` (`Database…`, `Redis…`, `Celery…`) | Each dependency checked the same way | ◐ (`_database`, `_redis`, `_celery`) |
-| **Composite** | health | `HealthService` aggregates `HealthCheck`s | Overall status = worst child status | ◐ |
+| | health | `HealthCheck` (`Database…`, `Redis…`, `Celery…`) | Each dependency checked the same way | ✅ |
+| **Composite** | health | `HealthService` aggregates `HealthCheck`s | Overall status = worst child status | ✅ |
 | | graph | `CompositeValidator` | Deterministic validator + optional LLM reviewer (`diagnostic.review`) behave as one validator | ☐ Phase 3 |
 | **Template Method** | graph | `Node`, `LLMNode`, `ValidateNode`, `PublishNode`, `AwaitNode` | Every LLM node follows prompt → gateway → state update; every publish/await pair keeps side effects out of the re-executed `await` | ☐ Phase 3 (functions today) |
 | | prompts | `Prompt` (`system()`, `user()`, shared feedback and language blocks) | 15+ prompts share the same skeleton | ☐ Phase 3 (functions today) |
@@ -227,8 +227,15 @@ classDiagram
     class RedisHealthCheck
     class CeleryHealthCheck
     class HealthService {
-        +checks: list~HealthCheck~
+        -list~HealthCheck~ checks
         +report() HealthReport
+    }
+    class HealthReport {
+        <<value>>
+        +dict components
+        +bool ok
+        +str status
+        +to_dict() dict
     }
     class CheckResult {
         <<value>>
@@ -263,6 +270,8 @@ classDiagram
     HealthCheck <|-- CeleryHealthCheck
     HealthService o-- HealthCheck
     HealthCheck ..> CheckResult
+    HealthService ..> HealthReport
+    HealthReport *-- CheckResult
     HealthView --> HealthService
     DatabaseSyncer ..> SyncReport
     SyncReport *-- ModelResult
@@ -1102,7 +1111,7 @@ Code written before this document that doesn't follow it yet. Behaviour must not
 | ~~`llm_registry/serialization.py`, `seed.py`~~ | ~~functions~~ | `RegistrySerializer` (`export` / `load`), `DefaultRegistry` | ✅ Done |
 | ~~`llm_registry/node_specs.py`~~ | ~~dict + `get_spec()`~~ | `NodeSpecCatalog` (`NODE_SPECS[key]`) | ✅ Done |
 | ~~`llm_registry/redaction.py`~~ | ~~`redact()`~~ | `Redactor` + the stateless `REDACTOR` default | ✅ Done |
-| `core/views.py` | `_database`, `_redis`, `_celery` | `HealthCheck`s + `HealthService` | Next health change |
+| ~~`core/views.py`~~ | ~~`_database`, `_redis`, `_celery`~~ | `HealthCheck`s + `HealthService` (`core/health.py`) | ✅ Done |
 | `core/sync.py` | `sync_databases()` | `DatabaseSyncer` | When Supabase is enabled |
 | `config/databases.py` | functions | `DatabaseConfig` | Low priority |
 | `accounts/cookies.py` | functions | `AuthCookies` | Next auth change |
