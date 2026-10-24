@@ -7,7 +7,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from .models import LLMModel, NodeConfig, NodeModelBinding, Provider
-from .signals import ensure_node_configs
+from .node_configs import NodeConfigSync
 
 
 class RegistrySerializer:
@@ -62,7 +62,7 @@ class RegistrySerializer:
             raise ValidationError(
                 f"Unsupported registry format {data.get('format_version')!r}; expected {self.FORMAT_VERSION}."
             )
-        ensure_node_configs()
+        NodeConfigSync().ensure()
         counts = {"providers": 0, "models": 0, "nodes": 0, "bindings": 0}
 
         providers = {}

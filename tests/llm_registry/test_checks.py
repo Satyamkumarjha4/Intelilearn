@@ -1,3 +1,15 @@
+"""Unit under test: `llm_registry.checks.RegistryHealth`, the `manage.py check` warnings (through the registered
+`registry_check` hook) for registry problems that would otherwise surface only in the middle of a lesson.
+
+Why: a required node with no usable model, or with models whose API keys are missing, fails the first lesson that
+reaches it. The check says so at start-up, once per kind of problem rather than once per node.
+
+Use cases:
+- an empty registry warns that nodes have no usable model
+- missing API keys are reported once, naming the variables to set
+- a healthy registry has no warnings
+"""
+
 import pytest
 
 from llm_registry.checks import registry_check

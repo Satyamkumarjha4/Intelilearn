@@ -415,8 +415,8 @@ classDiagram
 ```
 
 - `ProviderProfile` (`profiles.py`) holds everything that differs per vendor: allowed params and renames, whether a base URL or API key is needed, whether the client takes `timeout`, and reasoning translation. `OpenAICompatibleProfile` and `GroqProfile` subclass `OpenAIProfile`. `Provider.profile` returns the row's profile.
-- Every save or delete of a registry row fires a receiver that calls `RegistryResolver().invalidate()` (Observer). A `post_migrate` receiver creates missing `NodeConfig` rows from `NodeSpecCatalog`.
-- The `registry_check` system check is a thin function over a `RegistryHealth` class with one method per warning group.
+- Every save or delete of a registry row fires a receiver that calls `RegistryResolver().invalidate()` (Observer). A `post_migrate` receiver calls `NodeConfigSync().ensure()` (`node_configs.py`), which creates missing `NodeConfig` rows from `NODE_SPECS`.
+- The `registry_check` system check is a thin hook over `RegistryHealth().warnings()`, one warning per kind of problem.
 
 ### 4.4 `llm_registry`: the gateway
 

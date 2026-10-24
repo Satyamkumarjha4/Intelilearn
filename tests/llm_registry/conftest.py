@@ -3,13 +3,13 @@ from dataclasses import asdict
 import pytest
 
 from llm_registry.models import LLMModel, NodeConfig, NodeModelBinding, Provider
+from llm_registry.node_configs import NodeConfigSync
 from llm_registry.resolver import ResolvedModel, ResolvedNode
-from llm_registry.signals import ensure_node_configs
 
 
 @pytest.fixture
 def node_configs(db):
-    ensure_node_configs()
+    NodeConfigSync().ensure()
     return {n.node_key: n for n in NodeConfig.objects.all()}
 
 
