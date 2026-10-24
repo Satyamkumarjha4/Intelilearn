@@ -9,7 +9,7 @@ env: ## Create .env from .env.example (keeps an existing one)
 	@test -f .env && echo ".env already exists" || (cp .env.example .env && echo "created .env")
 
 up: ## Build and start the stack (db, redis, backend, worker, frontend)
-	$(COMPOSE) up --build
+	$(COMPOSE) up --build --renew-anon-volumes
 
 down: ## Stop the stack (data volumes are kept)
 	$(COMPOSE) down
@@ -35,8 +35,8 @@ sync-supabase: ## Copy local Postgres rows that Supabase lacks (needs SUPABASE_D
 test: ## Run the test suite (always against the local docker Postgres, never Supabase)
 	$(RUN_BACKEND) pytest
 
-lint: ## Lint backend (ruff) and frontend (eslint + tsc)
-	$(COMPOSE) run --rm --no-deps backend sh -c "ruff check . && ruff format --check ."
+lint: ## Lint backend (ruff, OpenAPI schema) and frontend (eslint + tsc)
+	$(COMPOSE) run --rm --no-deps backend sh -c "ruff check . && ruff format --check . && python manage.py spectacular --validate --fail-on-warn --file /dev/null"
 	$(COMPOSE) run --rm --no-deps frontend sh -c "bun run lint && bunx next typegen && bunx tsc --noEmit"
 
 check: lint test ## Lint + tests: run before finishing any change

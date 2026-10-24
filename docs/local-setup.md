@@ -22,6 +22,7 @@ The root `.env` is the **single source of configuration**. Django reads it, `doc
 |---|---|---|
 | Host ports | `BACKEND_PORT`, `FRONTEND_PORT`, `POSTGRES_PORT`, `REDIS_PORT` | 8000, 3000, 5432, 6379 |
 | Django | `DJANGO_SECRET_KEY`, `DJANGO_DEBUG`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`, `LOG_LEVEL` | dev key, false, localhost…, derived from ports, INFO |
+| Auth | `JWT_ACCESS_MINUTES`, `JWT_REFRESH_DAYS`, `AUTH_COOKIE_SECURE`, `AUTH_THROTTLE_RATE` | 30, 7, false, 20/min |
 | Local Postgres | `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | localhost, lessoncrafter ×3 |
 | Supabase | `SUPABASE_DATABASE_URL`, `SYNC_LOCAL_TO_SUPABASE` | empty, true |
 | Redis | `REDIS_HOST`, `REDIS_PASSWORD` | localhost, none |
@@ -37,7 +38,7 @@ The root `.env` is the **single source of configuration**. Django reads it, `doc
 make up            # = docker compose up --build
 ```
 
-On start, `backend` runs `manage.py bootstrap`: it migrates the active database, first syncing to Supabase when that's configured (see below). Code changes reload automatically: uvicorn `--reload` for the API, `watchfiles` for the Celery worker, and Turbopack for Next.js. Postgres and Redis data persist in the `postgres-data` and `redis-data` volumes.
+On start, `make up` also renews the frontend's anonymous `node_modules` and `.next` volumes, so new packages are picked up. On start, `backend` runs `manage.py bootstrap`: it migrates the active database, first syncing to Supabase when that's configured (see below). Code changes reload automatically: uvicorn `--reload` for the API, `watchfiles` for the Celery worker, and Turbopack for Next.js. Postgres and Redis data persist in the `postgres-data` and `redis-data` volumes.
 
 | URL | What |
 |---|---|

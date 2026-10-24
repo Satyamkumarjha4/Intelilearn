@@ -28,7 +28,7 @@ This gives same-origin cookies and needs no CORS configuration. `EventSource` wo
 | `/lessons/new` | Topic and optional context ("what do you already know / why are you learning this") |
 | `/lessons/[id]` | **Stage-driven view** (below) |
 
-`proxy.ts` (Next 16 renamed `middleware.ts` to `proxy.ts`; it runs on the Node.js runtime) redirects to `/auth` when there is no `lc_access` cookie, and to `/onboarding` when the profile is incomplete (read from a small `lc_onboarded` cookie). The API still enforces everything.
+`proxy.ts` (Next 16 renamed `middleware.ts` to `proxy.ts`; it runs on the Node.js runtime) guards `/onboarding`, `/profile`, and `/lessons/*`. Without the `lc_session` marker it redirects to `/auth?next=…`; without `lc_onboarded` it redirects to `/onboarding`. A signed-in visitor to `/auth` is sent home. It checks `lc_session` rather than `lc_access`, because the access cookie expires after 30 minutes while the session (refresh token) lasts 7 days; the API client refreshes silently. The API still enforces everything.
 
 ## `/lessons/[id]`: the stage-driven view
 

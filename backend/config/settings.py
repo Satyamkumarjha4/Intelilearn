@@ -5,6 +5,7 @@ injects. Every value has a development default, so CI and tests run with no .env
 """
 
 import sys
+from datetime import timedelta
 from pathlib import Path
 from urllib.parse import quote
 
@@ -42,9 +43,13 @@ INSTALLED_APPS = [
     "rest_framework",
     "drf_spectacular",
     "drf_spectacular_sidecar",
+    "rest_framework_simplejwt.token_blacklist",
     # local
     "core",
+    "accounts",
 ]
+
+AUTH_USER_MODEL = "accounts.User"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -129,7 +134,24 @@ CELERY_TIMEZONE = TIME_ZONE
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    "DEFAULT_AUTHENTICATION_CLASSES": ["accounts.authentication.CookieJWTAuthentication"],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "EXCEPTION_HANDLER": "core.exceptions.api_exception_handler",
+    "DEFAULT_THROTTLE_RATES": {"auth": env("AUTH_THROTTLE_RATE", default="20/min")},
 }
+
+# --- Auth: JWTs in httpOnly cookies (see accounts/cookies.py) ---
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=env.int("JWT_ACCESS_MINUTES", default=30)),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=env.int("JWT_REFRESH_DAYS", default=7)),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "SIGNING_KEY": SECRET_KEY,
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "user_id",
+}
+# Only sent over HTTPS when true; local development runs on plain http.
+AUTH_COOKIE_SECURE = env.bool("AUTH_COOKIE_SECURE", default=False)
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "Lesson Crafter API",
@@ -140,7 +162,9 @@ SPECTACULAR_SETTINGS = {
     "SWAGGER_UI_DIST": "SIDECAR",
     "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
     "REDOC_DIST": "SIDECAR",
-    "SWAGGER_UI_SETTINGS": {"persistAuthorization": True, "displayRequestDuration": True},
+    "SWAGGER_UI_SETTINGS": {"persistAuthorization": True, "displayRequestDuration": True, "withCredentials": True},
+    # Separate request/response components, so read-only fields don't appear in request bodies.
+    "COMPONENT_SPLIT_REQUEST": True,
 }
 
 LOGGING = {
