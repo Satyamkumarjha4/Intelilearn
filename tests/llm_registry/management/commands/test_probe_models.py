@@ -1,10 +1,21 @@
+"""Unit under test: the `manage.py probe_models` command (ModelProber per model, plus one gateway call per --node).
+
+Why: it is how you check real API keys and models from the shell before a lesson depends on them, so it must exit
+non-zero on any failure (scripts rely on that) and never print an API key.
+
+Use cases:
+- probes the given model and runs one call through a node's chain
+- failures exit non-zero, with keys redacted in the output
+- an unknown model is a clear error
+"""
+
 import pytest
 from django.core.management import CommandError, call_command
 from langchain_core.messages import AIMessage
 
 from llm_registry.models import ModelCall
-from llm_registry.seed import default_registry
-from llm_registry.serialization import import_registry
+from llm_registry.seed import DefaultRegistry
+from llm_registry.serialization import RegistrySerializer
 
 pytestmark = pytest.mark.django_db
 
@@ -39,11 +50,11 @@ class Chat:
 
 @pytest.fixture
 def seeded():
-    import_registry(default_registry())
+    RegistrySerializer().load(DefaultRegistry().build())
 
 
 def test_probes_the_given_model_and_runs_a_node(seeded, monkeypatch, capsys):
-    monkeypatch.setattr("llm_registry.providers.build_chat_model", lambda model, timeout: Chat())
+    monkeypatch.setattr("llm_registry.providers.CHAT_MODEL_FACTORY", lambda model, timeout: Chat())
 
     call_command("probe_models", model=["groq/llama-3.3-70b-versatile"], node=["learner.assess"])
 
@@ -55,7 +66,7 @@ def test_probes_the_given_model_and_runs_a_node(seeded, monkeypatch, capsys):
 
 
 def test_failures_exit_non_zero_with_keys_redacted(seeded, monkeypatch, capsys):
-    monkeypatch.setattr("llm_registry.providers.build_chat_model", lambda model, timeout: Chat(fail=True))
+    monkeypatch.setattr("llm_registry.providers.CHAT_MODEL_FACTORY", lambda model, timeout: Chat(fail=True))
 
     with pytest.raises(CommandError, match="failed"):
         call_command("probe_models", model=["groq/llama-3.3-70b-versatile"])

@@ -64,5 +64,5 @@ An AI tutor that diagnoses what a learner knows, then generates a lesson or stud
 
 ## Code style
 
-- Python: ruff, line length 120 (`make lint`). Frontend: eslint and `tsc` (run with `next typegen` first).
+- Python: ruff, line length 120, over `backend/` and `tests/` (`make lint`). Frontend: eslint and `tsc` (run with `next typegen` first).
 - Match the surrounding code's naming, structure, and comment density. Comments explain *why*, not *what*.

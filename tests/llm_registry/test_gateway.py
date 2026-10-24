@@ -1,8 +1,31 @@
+"""Unit under test: `llm_registry.gateway.Gateway`, the one way graph nodes call an LLM: it walks a node's model
+chain with retries, schema repair, fallbacks, rate limits and call logging. Driven with scripted fake chat models.
+
+Why: every lesson step goes through it. A wrong retry or fallback decision either fails a lesson a working fallback
+could have finished, or burns the time budget retrying an error that can't succeed; a missing log row hides which
+model actually answered and what it cost.
+
+Use cases:
+- the primary model answers, and the call is logged with its tokens
+- a transient error is retried on the same model with backoff
+- exhausted retries fall back to the next model, with a fallback event
+- a fatal error skips straight to the fallback
+- an invalid structured reply gets one repair attempt with the parse error
+- a second invalid reply moves to the next model
+- a reply with no parsed output counts as invalid
+- when every model fails, AllModelsFailed carries every error
+- a model that can't even be built (missing key) falls back
+- text nodes return the text; tool nodes return the message with its tool calls
+- a disabled node is refused; a structured node without a schema is a programming error
+- the rate limiter is asked before each call, per provider and per model
+- cost is computed from the model's prices
+"""
+
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import BaseModel
 
-from llm_registry.gateway import AllModelsFailed, Gateway, NodeDisabled, backoff_delay, is_retryable
+from llm_registry.gateway import AllModelsFailed, Gateway, NodeDisabled
 from llm_registry.models import ModelCall
 from llm_registry.providers import MissingAPIKey
 
@@ -13,6 +36,20 @@ MESSAGES = [HumanMessage("hello")]
 
 class Answer(BaseModel):
     value: int
+
+
+class NoRateLimit:
+    def acquire(self, limits):
+        return 0
+
+
+class RecordingLimiter:
+    def __init__(self, seen):
+        self.seen = seen
+
+    def acquire(self, limits):
+        self.seen.append(limits)
+        return 0
 
 
 class RateLimited(Exception):
@@ -41,7 +78,7 @@ def run(resolved_model, make_snapshot):
         chain = [resolved_model(name, max_retries=retries) for name in scripts]
         snapshot = make_snapshot("learner.assess", output, chain, enabled=enabled)
         sleeps, events = [], []
-        gateway = Gateway(lambda model, timeout: fakes[model.model_name], sleep=sleeps.append, limiter=lambda limits: 0)
+        gateway = Gateway(lambda model, timeout: fakes[model.model_name], sleep=sleeps.append, limiter=NoRateLimit())
         try:
             result = gateway.invoke(
                 "learner.assess", MESSAGES, snapshot=snapshot, schema=schema, tools=tools, on_event=events.append
@@ -148,7 +185,7 @@ def test_building_the_model_can_fail_and_fall_back(resolved_model, make_snapshot
         return fallback
 
     snapshot = make_snapshot("learner.assess", "structured", [resolved_model("keyless"), resolved_model("fallback")])
-    result = Gateway(factory, sleep=lambda s: None, limiter=lambda l: 0).invoke(
+    result = Gateway(factory, sleep=lambda s: None, limiter=NoRateLimit()).invoke(
         "learner.assess", MESSAGES, snapshot=snapshot, schema=Answer
     )
 
@@ -157,7 +194,9 @@ def test_building_the_model_can_fail_and_fall_back(resolved_model, make_snapshot
 
 
 def test_text_output_returns_the_text(run, FakeChat):
-    result, _, _ = run({"primary": FakeChat(AIMessage(content="function LessonComponent() {}"))}, output="text", schema=None)
+    result, _, _ = run(
+        {"primary": FakeChat(AIMessage(content="function LessonComponent() {}"))}, output="text", schema=None
+    )
 
     assert result.output == "function LessonComponent() {}"
 
@@ -186,7 +225,7 @@ def test_structured_node_without_schema_is_a_programming_error(run, FakeChat):
 def test_rate_limiter_is_asked_before_each_call(resolved_model, make_snapshot, FakeChat):
     seen = []
     snapshot = make_snapshot("learner.assess", "structured", [resolved_model("m", provider_rpm=15, model_rpm=5)])
-    Gateway(lambda m, t: FakeChat(ok()), sleep=lambda s: None, limiter=seen.append).invoke(
+    Gateway(lambda m, t: FakeChat(ok()), sleep=lambda s: None, limiter=RecordingLimiter(seen)).invoke(
         "learner.assess", MESSAGES, snapshot=snapshot, schema=Answer
     )
     assert seen == [{"provider:fake": 15, "model:fake/m": 5}]
@@ -195,44 +234,7 @@ def test_rate_limiter_is_asked_before_each_call(resolved_model, make_snapshot, F
 def test_cost_is_computed_from_model_prices(resolved_model, make_snapshot, FakeChat):
     model = resolved_model("m", input_cost_per_mtok=1.0, output_cost_per_mtok=4.0)
     snapshot = make_snapshot("learner.assess", "structured", [model])
-    Gateway(lambda m, t: FakeChat(ok()), sleep=lambda s: None, limiter=lambda l: 0).invoke(
+    Gateway(lambda m, t: FakeChat(ok()), sleep=lambda s: None, limiter=NoRateLimit()).invoke(
         "learner.assess", MESSAGES, snapshot=snapshot, schema=Answer
     )
     assert float(ModelCall.objects.get().cost) == pytest.approx((10 * 1 + 5 * 4) / 1e6)
-
-
-class _Response:
-    def __init__(self, status, headers=None):
-        self.status_code, self.headers = status, headers or {}
-
-
-class _HTTPError(Exception):
-    def __init__(self, status, headers=None):
-        super().__init__(f"HTTP {status}")
-        self.response = _Response(status, headers)
-
-
-class APITimeoutError(Exception):
-    pass
-
-
-@pytest.mark.parametrize(
-    ("exc", "retryable"),
-    [
-        (_HTTPError(429), True),
-        (_HTTPError(503), True),
-        (_HTTPError(400), False),
-        (_HTTPError(404), False),
-        (TimeoutError(), True),
-        (APITimeoutError(), True),
-        (MissingAPIKey("x"), False),
-        (ValueError("weird"), False),
-    ],
-)
-def test_error_classification(exc, retryable):
-    assert is_retryable(exc) is retryable
-
-
-def test_retry_after_header_is_honoured():
-    assert backoff_delay(1, _HTTPError(429, {"retry-after": "7"})) == 7
-    assert backoff_delay(1, _HTTPError(429, {"retry-after": "999"})) == 30  # capped

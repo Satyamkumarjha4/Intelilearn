@@ -37,7 +37,7 @@ Each phase ends with something runnable and checkable.
 - [x] **Test model** capability probes; `seed_registry`; `export_registry` and import; admin JSON export; grouped `manage.py check` warnings
 - [x] Unit tests with fake chat models, and real clients built offline to verify parameter names
 
-**Done when:** you can bind `media.search` in the admin, and the admin refuses a model without tool calling. **Test model** reports each capability. `resolve_registry()` reflects your edits. ✅ Verified in the admin: node chains and health, spec requirements, a vision-less model refused for `media.verify`, and Test model reporting a missing key. Live calls are untested until API keys are set.
+**Done when:** you can bind `media.search` in the admin, and the admin refuses a model without tool calling. **Test model** reports each capability. `RegistryResolver().resolve()` reflects your edits. ✅ Verified in the admin: node chains and health, spec requirements, a vision-less model refused for `media.verify`, and Test model reporting a missing key. Live calls are untested until API keys are set.
 
 ## Phase 3: Async flow infrastructure and Stage A (diagnose)
 
@@ -85,8 +85,9 @@ Each phase ends with something runnable and checkable.
 
 ## Across phases: design alignment
 
-- [ ] Close the [refactor backlog](design.md#refactor-backlog): code from phases 0–2 brought in line with the object design (OOP, SOLID, the named patterns), each item behaviour-neutral with tests green before and after. Items marked "Phase 3" land before or with Phase 3.
-- [ ] Every existing test file has the header from [testing.md](testing.md#31-the-file-header-required) (unit under test, why, use cases).
+- [x] Close the [refactor backlog](design.md#refactor-backlog) for phases 0–2: code brought in line with the object design (OOP, SOLID, the named patterns), each item behaviour-neutral with tests green before and after.
+- [ ] The backlog items for the lesson-flow code (`graph/`, `lessons/`) land with Phases 3–6.
+- [x] Every existing test file has the header from [testing.md](testing.md#31-the-file-header-required) (unit under test, why, use cases), and `tests/` is linted like the backend.
 
 ## Later (not now)
 

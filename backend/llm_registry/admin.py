@@ -7,42 +7,49 @@ from django.http import HttpResponse
 from django.utils.html import format_html, format_html_join
 
 from .models import LLMModel, ModelCall, NodeConfig, NodeModelBinding, Provider
-from .probes import probe_model
-from .serialization import export_registry
+from .probes import ModelProber
+from .serialization import RegistrySerializer
 
 # JSON fields hold small parameter objects; the default textarea is far too large, especially inline.
 COMPACT_JSON = {models.JSONField: {"widget": forms.Textarea(attrs={"rows": 2, "cols": 36})}}
 
 
-def _yes_no(ok: bool, yes="✔", no="✘"):
-    return format_html('<span style="color:{}">{}</span>', "#16a34a" if ok else "#dc2626", yes if ok else no)
+class StatusMarks:
+    """Green tick / red cross for list columns."""
+
+    @staticmethod
+    def mark(ok: bool, yes="✔", no="✘"):
+        return format_html('<span style="color:{}">{}</span>', "#16a34a" if ok else "#dc2626", yes if ok else no)
 
 
-@admin.action(description="Export the whole registry as JSON")
-def export_json(modeladmin, request, queryset):
-    response = HttpResponse(json.dumps(export_registry(), indent=2), content_type="application/json")
-    response["Content-Disposition"] = 'attachment; filename="llm-registry.json"'
-    return response
+class RegistryExportActions:
+    """Adds "Export the whole registry as JSON" to a registry changelist."""
+
+    @admin.action(description="Export the whole registry as JSON")
+    def export_json(self, request, queryset):
+        response = HttpResponse(json.dumps(RegistrySerializer().export(), indent=2), content_type="application/json")
+        response["Content-Disposition"] = 'attachment; filename="llm-registry.json"'
+        return response
 
 
 @admin.register(Provider)
-class ProviderAdmin(admin.ModelAdmin):
+class ProviderAdmin(RegistryExportActions, StatusMarks, admin.ModelAdmin):
     list_display = ["key", "kind", "api_key_env", "key_present", "rpm_limit", "is_enabled"]
     list_filter = ["kind", "is_enabled"]
-    actions = [export_json]
+    actions = ["export_json"]
 
     @admin.display(description="Key set?")
     def key_present(self, obj):
-        return _yes_no(obj.has_api_key)
+        return self.mark(obj.has_api_key)
 
 
 @admin.register(LLMModel)
-class LLMModelAdmin(admin.ModelAdmin):
+class LLMModelAdmin(RegistryExportActions, StatusMarks, admin.ModelAdmin):
     formfield_overrides = COMPACT_JSON
     list_display = ["__str__", "label", "capability_flags", "context_window", "max_output_tokens", "is_enabled"]
     list_filter = ["provider", "is_enabled", "supports_tool_calling", "supports_vision", "supports_reasoning"]
     search_fields = ["name", "label"]
-    actions = ["test_model", export_json]
+    actions = ["test_model", "export_json"]
     fieldsets = [
         (None, {"fields": ["provider", "name", "label", "is_enabled", "default_params"]}),
         (
@@ -68,7 +75,7 @@ class LLMModelAdmin(admin.ModelAdmin):
     @admin.action(description="Test model (makes real API calls)")
     def test_model(self, request, queryset):
         for llm_model in queryset.select_related("provider")[:5]:
-            for result in probe_model(llm_model):
+            for result in ModelProber().probe(llm_model):
                 level = messages.SUCCESS if result.ok else messages.ERROR
                 self.message_user(
                     request,
@@ -78,7 +85,7 @@ class LLMModelAdmin(admin.ModelAdmin):
                 )
 
 
-class BindingInline(admin.TabularInline):
+class BindingInline(StatusMarks, admin.TabularInline):
     model = NodeModelBinding
     formfield_overrides = COMPACT_JSON
     extra = 0
@@ -111,12 +118,12 @@ class BindingInline(admin.TabularInline):
             return "–"
         problems = obj.problems()
         if not problems:
-            return _yes_no(True, yes="✔ ok")
+            return self.mark(True, yes="✔ ok")
         return format_html_join("", '<div style="color:#dc2626">{}</div>', ((p,) for p in problems))
 
 
 @admin.register(NodeConfig)
-class NodeConfigAdmin(admin.ModelAdmin):
+class NodeConfigAdmin(RegistryExportActions, StatusMarks, admin.ModelAdmin):
     formfield_overrides = COMPACT_JSON
     list_display = ["node_key", "stage", "is_enabled", "reasoning_effort", "chain", "health"]
     list_filter = ["is_enabled"]
@@ -132,7 +139,7 @@ class NodeConfigAdmin(admin.ModelAdmin):
         "timeout_s",
         "params_override",
     ]
-    actions = [export_json]
+    actions = ["export_json"]
 
     def has_add_permission(self, request):
         return False  # one row per NodeSpec, created automatically
@@ -173,7 +180,7 @@ class NodeConfigAdmin(admin.ModelAdmin):
         usable = [b for b in obj.bindings.all() if b.is_enabled and b.model.is_enabled and not b.problems()]
         if not obj.is_enabled:
             return "off"
-        return _yes_no(bool(usable), no="✘ no usable model")
+        return self.mark(bool(usable), no="✘ no usable model")
 
 
 @admin.register(ModelCall)

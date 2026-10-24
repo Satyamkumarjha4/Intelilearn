@@ -130,7 +130,7 @@ A new public method without a test is incomplete, as is a branch nobody exercise
 | Command | Runs |
 |---|---|
 | `make test` | All backend tests except `live`, against the docker Postgres |
-| `make lint` | ruff, ruff format, OpenAPI validation, eslint, `tsc`, and `bun test` |
+| `make lint` | ruff and ruff format (backend and tests), OpenAPI validation, eslint, `tsc`, and `bun test` |
 | `make check` | `lint` + `test`; required before finishing any task, and run by CI on every push ([ci.md](ci.md)) |
 | `pytest -m live` | Golden topics and real provider calls; needs API keys; run by hand only |
 

@@ -40,8 +40,9 @@ jobs:
           set -o pipefail
           cd backend
           uv sync --frozen
-          check uv run ruff check .
-          check uv run ruff format --check .
+          # tests/ too, with the backend's config (it has none of its own)
+          check uv run ruff check --config pyproject.toml . ../tests
+          check uv run ruff format --check --config pyproject.toml . ../tests
           check uv run python manage.py spectacular --validate --fail-on-warn --file /dev/null
           cd ../frontend
           bun install --frozen-lockfile

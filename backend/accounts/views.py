@@ -14,7 +14,7 @@ from rest_framework_simplejwt.settings import api_settings as jwt_settings
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 from .authentication import CookieJWTAuthentication
-from .cookies import REFRESH_COOKIE, clear_auth_cookies, set_auth_cookies, set_onboarded_cookie
+from .cookies import AuthCookies
 from .models import User
 from .serializers import LoginSerializer, ProfileSerializer, RegisterSerializer, UserSerializer
 from .throttling import AuthRateThrottle, LoginAccountThrottle
@@ -37,14 +37,14 @@ class _PublicAuthView(APIView):
         # Without an authenticator DRF would turn AuthenticationFailed into 403; keep it a 401.
         return 'Bearer realm="api"'
 
-
-def _signed_in_response(user, status_code=status.HTTP_200_OK):
-    refresh = RefreshToken.for_user(user)
-    response = Response({"user": UserSerializer(user).data}, status=status_code)
-    set_auth_cookies(
-        response, access=str(refresh.access_token), refresh=str(refresh), onboarded=user.profile.is_complete
-    )
-    return response
+    def signed_in_response(self, user, status_code=status.HTTP_200_OK) -> Response:
+        """The user, with fresh tokens set as cookies (register and login)."""
+        refresh = RefreshToken.for_user(user)
+        response = Response({"user": UserSerializer(user).data}, status=status_code)
+        AuthCookies().set_session(
+            response, access=str(refresh.access_token), refresh=str(refresh), onboarded=user.profile.is_complete
+        )
+        return response
 
 
 _user_envelope = {"type": "object", "properties": {"user": {"$ref": "#/components/schemas/User"}}}
@@ -80,7 +80,7 @@ class RegisterView(_PublicAuthView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         update_last_login(None, user)
-        return _signed_in_response(user, status.HTTP_201_CREATED)
+        return self.signed_in_response(user, status.HTTP_201_CREATED)
 
 
 class LoginView(_PublicAuthView):
@@ -102,7 +102,7 @@ class LoginView(_PublicAuthView):
         if user is None:
             raise AuthenticationFailed("Invalid email or password.", code="invalid_credentials")
         update_last_login(None, user)
-        return _signed_in_response(user)
+        return self.signed_in_response(user)
 
 
 class RefreshView(_PublicAuthView):
@@ -119,7 +119,7 @@ class RefreshView(_PublicAuthView):
     )
     def post(self, request):
         user = None
-        if raw_refresh := request.COOKIES.get(REFRESH_COOKIE):
+        if raw_refresh := request.COOKIES.get(AuthCookies.REFRESH):
             serializer = TokenRefreshSerializer(data={"refresh": raw_refresh})
             try:
                 serializer.is_valid(raise_exception=True)
@@ -133,11 +133,11 @@ class RefreshView(_PublicAuthView):
                 {"detail": "Session expired. Please sign in again.", "code": "session_expired"},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
-            clear_auth_cookies(response)
+            AuthCookies().clear(response)
             return response
 
         response = Response({"user": UserSerializer(user).data})
-        set_auth_cookies(
+        AuthCookies().set_session(
             response,
             access=tokens["access"],
             refresh=tokens.get("refresh", raw_refresh),
@@ -149,14 +149,14 @@ class RefreshView(_PublicAuthView):
 class LogoutView(_PublicAuthView):
     @extend_schema(tags=AUTH_TAG, summary="Sign out", request=None, responses={204: None})
     def post(self, request):
-        token = request.COOKIES.get(REFRESH_COOKIE)
+        token = request.COOKIES.get(AuthCookies.REFRESH)
         if token:
             try:
                 RefreshToken(token).blacklist()
             except TokenError:
                 pass  # already expired or blacklisted: signing out still succeeds
         response = Response(status=status.HTTP_204_NO_CONTENT)
-        clear_auth_cookies(response)
+        AuthCookies().clear(response)
         return response
 
 
@@ -192,5 +192,5 @@ class ProfileView(generics.RetrieveUpdateAPIView):
         return self._update_and_mark(super().patch(request, *args, **kwargs))
 
     def _update_and_mark(self, response):
-        set_onboarded_cookie(response, response.data["profile_complete"])
+        AuthCookies().set_onboarded(response, response.data["profile_complete"])
         return response

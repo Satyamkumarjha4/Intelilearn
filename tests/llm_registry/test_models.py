@@ -1,3 +1,20 @@
+"""Unit under test: the validation in `llm_registry.models` (Provider, LLMModel, NodeConfig, NodeModelBinding).
+
+Why: these clean() rules are what the admin enforces. A binding that a model can't serve (no tool calling, too small
+an output, unsupported params) or a required node switched off would only fail in the middle of a lesson.
+
+Use cases:
+- a binding is refused when the model lacks a capability the node requires
+- a binding is refused when the model's output limit is below the node's minimum
+- a binding is refused when the merged params aren't supported by the provider
+- a capable binding passes
+- a required node can't be disabled; an optional node can
+- tool-calling nodes need a tool-step limit
+- a reasoning model must say how reasoning is controlled
+- Ollama needs a base URL, OpenAI needs an API key variable name
+- has_api_key reads the environment
+"""
+
 import os
 
 import pytest

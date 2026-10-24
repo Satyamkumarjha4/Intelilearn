@@ -11,7 +11,7 @@ from urllib.parse import quote
 
 import environ
 
-from .databases import build_databases, local_database_url
+from .databases import DatabaseConfig
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 TESTING = "pytest" in sys.modules
@@ -85,7 +85,7 @@ TEMPLATES = [
 ASGI_APPLICATION = "config.asgi.application"
 
 # --- Databases: Supabase when SUPABASE_DATABASE_URL is set, otherwise the docker Postgres ---
-LOCAL_DATABASE_URL = local_database_url(
+LOCAL_DATABASE_URL = DatabaseConfig.local_url(
     host=env("POSTGRES_HOST", default="localhost"),
     port=env.int("POSTGRES_PORT", default=5432),
     name=env("POSTGRES_DB", default="lessoncrafter"),
@@ -93,7 +93,7 @@ LOCAL_DATABASE_URL = local_database_url(
     password=env("POSTGRES_PASSWORD", default="lessoncrafter"),
 )
 SUPABASE_DATABASE_URL = env("SUPABASE_DATABASE_URL", default="")
-DATABASES = build_databases(env, local_url=LOCAL_DATABASE_URL, supabase_url=SUPABASE_DATABASE_URL, testing=TESTING)
+DATABASES = DatabaseConfig(env).build(local_url=LOCAL_DATABASE_URL, supabase_url=SUPABASE_DATABASE_URL, testing=TESTING)
 USING_SUPABASE = "local" in DATABASES and not TESTING
 # Copy local rows that Supabase doesn't have yet, every time the backend starts against Supabase.
 SYNC_LOCAL_TO_SUPABASE = env.bool("SYNC_LOCAL_TO_SUPABASE", default=True)
@@ -144,7 +144,7 @@ CACHES = {
 }
 
 # --- LLM registry ---
-# Thinking-token budgets for models whose reasoning is controlled by a budget (see llm_registry/reasoning.py).
+# Thinking-token budgets for models whose reasoning is controlled by a budget (see llm_registry/profiles.py).
 LLM_REASONING_BUDGETS = {
     "low": env.int("LLM_REASONING_BUDGET_LOW", default=2048),
     "medium": env.int("LLM_REASONING_BUDGET_MEDIUM", default=8192),

@@ -3,7 +3,7 @@ from pathlib import Path
 
 from django.core.management import BaseCommand
 
-from llm_registry.serialization import export_registry
+from llm_registry.serialization import RegistrySerializer
 
 
 class Command(BaseCommand):
@@ -13,7 +13,7 @@ class Command(BaseCommand):
         parser.add_argument("--output", type=Path)
 
     def handle(self, *args, output=None, **options):
-        text = json.dumps(export_registry(), indent=2)
+        text = json.dumps(RegistrySerializer().export(), indent=2)
         if output:
             output.write_text(text + "\n")
             self.stdout.write(self.style.SUCCESS(f"Registry written to {output}"))

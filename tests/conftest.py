@@ -1,3 +1,12 @@
+"""Fixtures shared by every backend test.
+
+- `_clear_cache` (autouse): empties the cache around each test, because throttle counters and the resolved registry
+  live there and would otherwise leak between tests.
+- `api_client`: a DRF APIClient with no credentials.
+- `user`: ada@example.com, with the shared test PASSWORD.
+- `signed_in_client`: an APIClient signed in as `user` through the real login endpoint, so it carries the auth cookies.
+"""
+
 import pytest
 from django.core.cache import cache
 from rest_framework.test import APIClient

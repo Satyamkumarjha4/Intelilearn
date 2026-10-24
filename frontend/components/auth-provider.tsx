@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-import { api, ApiError } from "@/lib/api";
+import { apiClient, ApiError } from "@/lib/api";
 import type { User } from "@/lib/types";
 
 type AuthState = {
@@ -19,7 +19,7 @@ const AuthContext = createContext<AuthState | null>(null);
 
 async function fetchMe(): Promise<User | null> {
   try {
-    return await api<User>("/auth/me");
+    return await apiClient.request<User>("/auth/me");
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) return null;
     throw error;
@@ -46,19 +46,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
-    const { user } = await api<{ user: User }>("/auth/login", { method: "POST", body: { email, password } });
+    const { user } = await apiClient.request<{ user: User }>("/auth/login", {
+      method: "POST",
+      body: { email, password },
+    });
     setUser(user);
     return user;
   }, []);
 
   const register = useCallback(async (name: string, email: string, password: string) => {
-    const { user } = await api<{ user: User }>("/auth/register", { method: "POST", body: { name, email, password } });
+    const { user } = await apiClient.request<{ user: User }>("/auth/register", {
+      method: "POST",
+      body: { name, email, password },
+    });
     setUser(user);
     return user;
   }, []);
 
   const logout = useCallback(async () => {
-    await api("/auth/logout", { method: "POST" });
+    await apiClient.request("/auth/logout", { method: "POST" });
     setUser(null);
     router.push("/auth");
     router.refresh();

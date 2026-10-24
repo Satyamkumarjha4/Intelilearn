@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { safeNext } from "@/lib/safe-redirect";
+import { RedirectPolicy } from "@/lib/safe-redirect";
 
 import { AuthForm } from "./auth-form";
 
@@ -12,7 +12,7 @@ export default async function AuthPage({ searchParams }: PageProps<"/auth">) {
 
   return (
     <main className="flex flex-1 items-center justify-center px-4 py-12">
-      <AuthForm initialMode={mode} next={safeNext(params.next)} />
+      <AuthForm initialMode={mode} next={RedirectPolicy.safeNext(params.next)} />
     </main>
   );
 }

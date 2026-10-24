@@ -8,43 +8,64 @@ lc_onboarded  "profile complete" marker for the Next.js route guard   path=/
 The markers carry no authority; the API checks the tokens on every request.
 """
 
+from datetime import timedelta
+
 from django.conf import settings
 
-ACCESS_COOKIE = "lc_access"
-REFRESH_COOKIE = "lc_refresh"
-SESSION_COOKIE = "lc_session"
-ONBOARDED_COOKIE = "lc_onboarded"
-REFRESH_COOKIE_PATH = "/api/auth"
 
+class AuthCookies:
+    ACCESS = "lc_access"
+    REFRESH = "lc_refresh"
+    SESSION = "lc_session"
+    ONBOARDED = "lc_onboarded"
+    REFRESH_PATH = "/api/auth"
 
-def _set(response, name, value, max_age, path="/"):
-    response.set_cookie(
-        name,
-        value,
-        max_age=int(max_age.total_seconds()),
-        path=path,
-        httponly=True,
-        secure=settings.AUTH_COOKIE_SECURE,
-        samesite="Lax",
-    )
+    def __init__(
+        self,
+        *,
+        secure: bool | None = None,
+        access_lifetime: timedelta | None = None,
+        refresh_lifetime: timedelta | None = None,
+    ):
+        # Defaults are read from settings at call time, so per-test settings overrides apply.
+        self._secure, self._access_lifetime, self._refresh_lifetime = secure, access_lifetime, refresh_lifetime
 
+    def set_session(self, response, *, access: str, refresh: str, onboarded: bool) -> None:
+        self._set(response, self.ACCESS, access, self.access_lifetime)
+        self._set(response, self.REFRESH, refresh, self.refresh_lifetime, path=self.REFRESH_PATH)
+        self._set(response, self.SESSION, "1", self.refresh_lifetime)
+        self.set_onboarded(response, onboarded)
 
-def set_auth_cookies(response, *, access: str, refresh: str, onboarded: bool) -> None:
-    jwt = settings.SIMPLE_JWT
-    _set(response, ACCESS_COOKIE, access, jwt["ACCESS_TOKEN_LIFETIME"])
-    _set(response, REFRESH_COOKIE, refresh, jwt["REFRESH_TOKEN_LIFETIME"], path=REFRESH_COOKIE_PATH)
-    _set(response, SESSION_COOKIE, "1", jwt["REFRESH_TOKEN_LIFETIME"])
-    set_onboarded_cookie(response, onboarded)
+    def set_onboarded(self, response, onboarded: bool) -> None:
+        if onboarded:
+            self._set(response, self.ONBOARDED, "1", self.refresh_lifetime)
+        else:
+            response.delete_cookie(self.ONBOARDED, path="/", samesite="Lax")
 
+    def clear(self, response) -> None:
+        for name in (self.ACCESS, self.SESSION, self.ONBOARDED):
+            response.delete_cookie(name, path="/", samesite="Lax")
+        response.delete_cookie(self.REFRESH, path=self.REFRESH_PATH, samesite="Lax")
 
-def set_onboarded_cookie(response, onboarded: bool) -> None:
-    if onboarded:
-        _set(response, ONBOARDED_COOKIE, "1", settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"])
-    else:
-        response.delete_cookie(ONBOARDED_COOKIE, path="/", samesite="Lax")
+    @property
+    def access_lifetime(self) -> timedelta:
+        return self._access_lifetime or settings.SIMPLE_JWT["ACCESS_TOKEN_LIFETIME"]
 
+    @property
+    def refresh_lifetime(self) -> timedelta:
+        return self._refresh_lifetime or settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"]
 
-def clear_auth_cookies(response) -> None:
-    for name in (ACCESS_COOKIE, SESSION_COOKIE, ONBOARDED_COOKIE):
-        response.delete_cookie(name, path="/", samesite="Lax")
-    response.delete_cookie(REFRESH_COOKIE, path=REFRESH_COOKIE_PATH, samesite="Lax")
+    @property
+    def secure(self) -> bool:
+        return self._secure if self._secure is not None else settings.AUTH_COOKIE_SECURE
+
+    def _set(self, response, name: str, value: str, max_age: timedelta, path: str = "/") -> None:
+        response.set_cookie(
+            name,
+            value,
+            max_age=int(max_age.total_seconds()),
+            path=path,
+            httponly=True,
+            secure=self.secure,
+            samesite="Lax",
+        )

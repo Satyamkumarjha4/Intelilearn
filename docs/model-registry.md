@@ -154,7 +154,7 @@ Adding a node takes three steps: add a `NodeSpec`, write the node, and run `migr
 
 ## Reasoning
 
-`reasoning_effort` (`none` / `low` / `medium` / `high`) is set per node, with an optional override per binding. The gateway translates it in one place (`llm_registry/reasoning.py`):
+`reasoning_effort` (`none` / `low` / `medium` / `high`) is set per node, with an optional override per binding. The gateway translates it in one place, the provider kind's `ProviderProfile` (`llm_registry/profiles.py`):
 
 | `reasoning_control` | Translation |
 |---|---|
@@ -180,7 +180,7 @@ LLMModel.default_params  <  NodeConfig.params_override  <  NodeModelBinding.para
 reasoning:  NodeSpec.default_reasoning  <  NodeConfig.reasoning_effort  <  NodeModelBinding.reasoning_effort
 ```
 
-Allowed parameter keys depend on what each integration supports (`llm_registry/params.py`):
+Allowed parameter keys depend on what each integration supports (`ProviderProfile.allowed_params` in `llm_registry/profiles.py`):
 
 | Provider kind | Allowed keys |
 |---|---|
@@ -210,8 +210,8 @@ class ResolvedNode:
     chain: list[ResolvedModel]      # primary first
 ```
 
-- `resolve_registry()` returns `{node_key: ResolvedNode}`. It skips disabled rows and bindings that no longer satisfy the spec, and orders chains by priority. The result is cached in Redis (the Django cache). Saving or deleting any registry row clears it, so the next resolve rebuilds it.
-- **Snapshot per lesson:** when a lesson is created, the resolved registry is stored in `Lesson.config_snapshot`, and the whole flow uses it, including resumes days later. Admin edits apply to *new* lessons. Every lesson records exactly which models built it.
+- `RegistryResolver().resolve()` returns `{node_key: ResolvedNode}`. It skips disabled rows and bindings that no longer satisfy the spec, and orders chains by priority. The result is cached in Redis (the Django cache). Saving or deleting any registry row clears it, so the next resolve rebuilds it.
+- **Snapshot per lesson:** when a lesson is created, `RegistryResolver().snapshot().to_json()` is stored in `Lesson.config_snapshot`, and the whole flow uses it, including resumes days later. Admin edits apply to *new* lessons. Every lesson records exactly which models built it. The gateway reads it back with `RegistrySnapshot.from_json(...)` (it also accepts the dict directly).
 - **Startup check** (`manage.py check`): every required node has at least one enabled binding whose provider key is present in the environment. Missing keys are warnings, so you can run with only the providers you have keys for.
 
 ## Gateway
@@ -231,7 +231,7 @@ result.model.label     # which model actually answered
 result.fallback_index  # 0 = primary
 ```
 
-The chat-model factory, the sleep function, and the rate limiter can be injected, which is how the tests run the gateway with scripted fake models.
+Every collaborator can be injected, which is how the tests run the gateway with scripted fake models: the chat-model factory (`providers.py`), the sleep function, the rate limiter (`ratelimit.py`), the retry policy (`retry.py`), the `ModelCall` recorder (`recorder.py`), and the output adapters, one per output mode (`outputs.py`).
 
 ### Algorithm
 

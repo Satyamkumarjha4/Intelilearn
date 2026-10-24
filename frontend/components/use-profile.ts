@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { api, ApiError } from "@/lib/api";
+import { apiClient, ApiError } from "@/lib/api";
 import type { Profile } from "@/lib/types";
 
 /** Loads the signed-in user's profile once. */
@@ -12,7 +12,7 @@ export function useProfile() {
 
   useEffect(() => {
     let active = true;
-    api<Profile>("/profile")
+    apiClient.request<Profile>("/profile")
       .then((data) => active && setProfile(data))
       .catch((err) => active && setError(err instanceof ApiError ? err.message : "Could not load your profile."));
     return () => {

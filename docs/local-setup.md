@@ -92,7 +92,7 @@ make logs            # follow all logs
 make migrate / makemigrations / superuser / shell
 make sync-supabase   # run the local → Supabase copy manually
 make test            # pytest (always the docker Postgres, never Supabase)
-make lint            # ruff + eslint + tsc
+make lint            # ruff (backend + tests) + OpenAPI schema + eslint + tsc + bun test
 make check           # lint + test: run before finishing any change
 make down            # stop; volumes are kept
 ```

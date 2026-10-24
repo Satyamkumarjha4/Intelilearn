@@ -4,6 +4,7 @@ The admin edits *how* a node runs (NodeConfig / NodeModelBinding); these specs d
 a binding whose model lacks a required capability, or has too small an output/context window, is refused.
 """
 
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -106,11 +107,30 @@ _SPECS = [
              "GradeReport", frozenset({_S})),
 ]  # fmt: skip
 
-NODE_SPECS: dict[str, NodeSpec] = {spec.key: spec for spec in _SPECS}
+
+class NodeSpecCatalog(Mapping[str, NodeSpec]):
+    """Registry of every node key the graph uses: read by the admin, migrations, checks and the resolver."""
+
+    def __init__(self, specs: Iterable[NodeSpec]):
+        self._specs = {spec.key: spec for spec in specs}
+
+    def __getitem__(self, node_key: str) -> NodeSpec:
+        try:
+            return self._specs[node_key]
+        except KeyError:
+            raise KeyError(f"Unknown node key {node_key!r}; add a NodeSpec in llm_registry/node_specs.py") from None
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._specs)
+
+    def __len__(self) -> int:
+        return len(self._specs)
+
+    def required(self) -> list[NodeSpec]:
+        return [spec for spec in self._specs.values() if not spec.optional]
+
+    def optional(self) -> list[NodeSpec]:
+        return [spec for spec in self._specs.values() if spec.optional]
 
 
-def get_spec(node_key: str) -> NodeSpec:
-    try:
-        return NODE_SPECS[node_key]
-    except KeyError:
-        raise KeyError(f"Unknown node key {node_key!r}; add a NodeSpec in llm_registry/node_specs.py") from None
+NODE_SPECS = NodeSpecCatalog(_SPECS)

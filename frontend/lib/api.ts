@@ -1,5 +1,5 @@
-// Browser-side API client. Every call goes to same-origin /api/*, which next.config.ts proxies to Django.
-// Auth lives in httpOnly cookies set by the API, so there are no tokens to handle here — only:
+// Browser-side API client. Every call goes to same-origin /api/*, which app/api/[...path]/route.ts proxies to
+// Django. Auth lives in httpOnly cookies set by the API, so there are no tokens to handle here — only:
 //   - the CSRF header on unsafe methods (Django checks it for cookie-authenticated requests)
 //   - one silent POST /api/auth/refresh + retry when a request comes back 401
 
@@ -17,72 +17,87 @@ export class ApiError extends Error {
   }
 }
 
+export type RequestOptions = { method?: string; body?: unknown };
+
+type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
+
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 // Auth endpoints never trigger the refresh-and-retry (it would loop or hide a real 401).
 const NO_REFRESH_PATHS = new Set(["/auth/login", "/auth/register", "/auth/refresh", "/auth/logout", "/auth/csrf"]);
 
-function readCookie(name: string): string | null {
+function documentCookie(name: string): string | null {
   const match = document.cookie.split("; ").find((part) => part.startsWith(`${name}=`));
   return match ? decodeURIComponent(match.slice(name.length + 1)) : null;
 }
 
-async function csrfToken(): Promise<string> {
-  let token = readCookie("csrftoken");
-  if (!token) {
-    await fetch("/api/auth/csrf", { credentials: "same-origin" });
-    token = readCookie("csrftoken");
-  }
-  return token ?? "";
-}
+export class ApiClient {
+  private refreshing: Promise<boolean> | null = null;
 
-let refreshing: Promise<boolean> | null = null;
+  // Collaborators are injected so tests can drive the client without a browser or a server.
+  constructor(
+    private readonly fetcher: Fetch = (input, init) => fetch(input, init),
+    private readonly readCookie: (name: string) => string | null = documentCookie,
+  ) {}
 
-/** Renew the access cookie. Concurrent 401s share one refresh request. */
-export function refreshSession(): Promise<boolean> {
-  refreshing ??= (async () => {
-    try {
-      const response = await fetch("/api/auth/refresh", {
-        method: "POST",
+  async request<T = unknown>(path: string, options: RequestOptions = {}): Promise<T> {
+    const method = options.method ?? "GET";
+
+    const send = async () => {
+      const headers: Record<string, string> = { Accept: "application/json" };
+      if (options.body !== undefined) headers["Content-Type"] = "application/json";
+      if (UNSAFE_METHODS.has(method)) headers["X-CSRFToken"] = await this.csrfToken();
+      return this.fetcher(`/api${path}`, {
+        method,
+        headers,
         credentials: "same-origin",
-        headers: { "X-CSRFToken": await csrfToken() },
+        body: options.body === undefined ? undefined : JSON.stringify(options.body),
       });
-      return response.ok;
-    } finally {
-      refreshing = null;
+    };
+
+    let response = await send();
+    if (response.status === 401 && !NO_REFRESH_PATHS.has(path) && (await this.refreshSession())) {
+      response = await send();
     }
-  })();
-  return refreshing;
-}
-
-async function toApiError(response: Response): Promise<ApiError> {
-  const body = await response.json().catch(() => null);
-  return new ApiError(
-    response.status,
-    body?.code ?? "error",
-    body?.detail ?? `Request failed (${response.status})`,
-    body?.fields ?? {},
-  );
-}
-
-export async function api<T = unknown>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
-  const method = options.method ?? "GET";
-
-  const send = async () => {
-    const headers: Record<string, string> = { Accept: "application/json" };
-    if (options.body !== undefined) headers["Content-Type"] = "application/json";
-    if (UNSAFE_METHODS.has(method)) headers["X-CSRFToken"] = await csrfToken();
-    return fetch(`/api${path}`, {
-      method,
-      headers,
-      credentials: "same-origin",
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
-    });
-  };
-
-  let response = await send();
-  if (response.status === 401 && !NO_REFRESH_PATHS.has(path) && (await refreshSession())) {
-    response = await send();
+    if (!response.ok) throw await this.toApiError(response);
+    return (response.status === 204 ? undefined : await response.json()) as T;
   }
-  if (!response.ok) throw await toApiError(response);
-  return (response.status === 204 ? undefined : await response.json()) as T;
+
+  /** Renew the access cookie. Concurrent 401s share one refresh request. */
+  refreshSession(): Promise<boolean> {
+    this.refreshing ??= (async () => {
+      try {
+        const response = await this.fetcher("/api/auth/refresh", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "X-CSRFToken": await this.csrfToken() },
+        });
+        return response.ok;
+      } finally {
+        this.refreshing = null;
+      }
+    })();
+    return this.refreshing;
+  }
+
+  private async csrfToken(): Promise<string> {
+    let token = this.readCookie("csrftoken");
+    if (!token) {
+      await this.fetcher("/api/auth/csrf", { credentials: "same-origin" });
+      token = this.readCookie("csrftoken");
+    }
+    return token ?? "";
+  }
+
+  private async toApiError(response: Response): Promise<ApiError> {
+    const body = await response.json().catch(() => null);
+    return new ApiError(
+      response.status,
+      body?.code ?? "error",
+      body?.detail ?? `Request failed (${response.status})`,
+      body?.fields ?? {},
+    );
+  }
 }
+
+/** The client components use; one instance so concurrent 401s share a single refresh. */
+export const apiClient = new ApiClient();

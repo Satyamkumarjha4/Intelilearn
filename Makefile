@@ -1,6 +1,9 @@
 .DEFAULT_GOAL := help
 COMPOSE := docker compose
 RUN_BACKEND := $(COMPOSE) run --rm backend
+# Backend and the repo-root tests/ (mounted at /tests); --config keeps the backend's ruff settings and first-party
+# packages for both, since tests/ has no config of its own.
+RUFF_PATHS := --config pyproject.toml . ../tests
 
 help: ## List commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
@@ -39,7 +42,7 @@ test: ## Run the test suite (always against the local docker Postgres, never Sup
 	$(RUN_BACKEND) pytest
 
 lint: ## Lint backend (ruff, OpenAPI schema) and frontend (eslint, tsc, bun test)
-	$(COMPOSE) run --rm --no-deps backend sh -c "ruff check . && ruff format --check . && python manage.py spectacular --validate --fail-on-warn --file /dev/null"
+	$(COMPOSE) run --rm --no-deps backend sh -c "ruff check $(RUFF_PATHS) && ruff format --check $(RUFF_PATHS) && python manage.py spectacular --validate --fail-on-warn --file /dev/null"
 	$(COMPOSE) run --rm --no-deps frontend sh -c "bun run lint && bunx next typegen && bunx tsc --noEmit && bun test"
 
 check: lint test ## Lint + tests: run before finishing any change

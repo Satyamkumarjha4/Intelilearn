@@ -1,3 +1,18 @@
+"""Unit under test: `accounts.views.ProfileView` (`GET/PUT/PATCH /api/profile`) and the onboarded marker cookie.
+
+Why: onboarding fills the profile that shapes every lesson, and the `lc_onboarded` marker is what the Next.js route
+guard uses to send a new user to onboarding instead of the app.
+
+Use cases:
+- the profile requires authentication
+- a new profile is incomplete
+- onboarding (PUT) completes the profile and sets the marker
+- signing in after onboarding sets the marker
+- PUT requires the onboarding fields and rejects unknown choices
+- an empty select gets a readable message
+- PATCH can change the name but never the email
+"""
+
 import pytest
 
 pytestmark = pytest.mark.django_db
@@ -39,7 +54,9 @@ def test_login_after_onboarding_sets_onboarded_marker(signed_in_client, user):
     signed_in_client.put("/api/profile", ONBOARDING, format="json")
     signed_in_client.post("/api/auth/logout")
 
-    response = signed_in_client.post("/api/auth/login", {"email": user.email, "password": "correct-horse-battery-staple"})
+    response = signed_in_client.post(
+        "/api/auth/login", {"email": user.email, "password": "correct-horse-battery-staple"}
+    )
 
     assert response.cookies["lc_onboarded"].value == "1"
 

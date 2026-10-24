@@ -5,10 +5,10 @@ from pydantic import BaseModel, Field
 from llm_registry import providers
 from llm_registry.gateway import Gateway
 from llm_registry.models import LLMModel
-from llm_registry.node_specs import OutputMode, get_spec
-from llm_registry.probes import probe_model
-from llm_registry.redaction import redact
-from llm_registry.resolver import registry_snapshot
+from llm_registry.node_specs import NODE_SPECS, OutputMode
+from llm_registry.probes import ModelProber
+from llm_registry.redaction import REDACTOR
+from llm_registry.resolver import RegistryResolver
 
 
 class _Echo(BaseModel):
@@ -31,7 +31,7 @@ class Command(BaseCommand):
         failures = 0
         for llm_model in self._models(model):
             self.stdout.write(self.style.MIGRATE_HEADING(str(llm_model)))
-            for result in probe_model(llm_model, chat_factory=providers.build_chat_model):
+            for result in ModelProber(chat_factory=providers.CHAT_MODEL_FACTORY).probe(llm_model):
                 style = self.style.SUCCESS if result.ok else self.style.ERROR
                 failures += not result.ok
                 line = (
@@ -60,22 +60,22 @@ class Command(BaseCommand):
         return found
 
     def _run_node(self, node_key) -> bool:
-        spec = get_spec(node_key)
+        spec = NODE_SPECS[node_key]
         self.stdout.write(self.style.MIGRATE_HEADING(f"node {node_key} (through the gateway)"))
         if spec.output == OutputMode.TOOLS:
             self.stdout.write("  skipped: tool-calling nodes need real tools; use the model probes instead")
             return True
         events = []
         try:
-            result = Gateway(providers.build_chat_model).invoke(
+            result = Gateway(providers.CHAT_MODEL_FACTORY).invoke(
                 node_key,
                 [HumanMessage("This is a connectivity check. Reply with the single word: pong")],
-                snapshot=registry_snapshot(),
+                snapshot=RegistryResolver().snapshot(),
                 schema=_Echo if spec.output == OutputMode.STRUCTURED else None,
                 on_event=events.append,
             )
         except Exception as exc:
-            self.stdout.write(self.style.ERROR(f"  ✘ {type(exc).__name__}: {redact(str(exc))}"))
+            self.stdout.write(self.style.ERROR(f"  ✘ {type(exc).__name__}: {REDACTOR.redact(str(exc))}"))
             return False
         for event in events:
             self.stdout.write(f"  · {event['type']}: {event.get('model', '')} {event.get('reason', '')}".rstrip())

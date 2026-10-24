@@ -1,6 +1,6 @@
 from drf_spectacular.extensions import OpenApiAuthenticationExtension
 
-from .cookies import ACCESS_COOKIE
+from .cookies import AuthCookies
 
 
 class CookieJWTScheme(OpenApiAuthenticationExtension):
@@ -11,4 +11,4 @@ class CookieJWTScheme(OpenApiAuthenticationExtension):
     name = "cookieAuth"
 
     def get_security_definition(self, auto_schema):
-        return {"type": "apiKey", "in": "cookie", "name": ACCESS_COOKIE}
+        return {"type": "apiKey", "in": "cookie", "name": AuthCookies.ACCESS}

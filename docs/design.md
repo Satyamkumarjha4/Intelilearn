@@ -70,7 +70,7 @@ flowchart TB
         FR[FlowRunner]
         HS[HealthService]
         DS[DatabaseSyncer]
-        RS[RegistrySerializer / RegistrySeeder]
+        RS[RegistrySerializer / DefaultRegistry]
     end
     subgraph Orchestration["Graph orchestration (LangGraph)"]
         GB[Graph builders]
@@ -108,28 +108,28 @@ flowchart TB
 | | `graph/media.py` | `MediaLibrary` | One object for search, download, sniffing and storage | ✅ |
 | | flow execution | `FlowRunner` | Celery tasks and views start or resume a graph without knowing LangGraph | ☐ Phase 3 |
 | **Chain of Responsibility** | gateway | `ResolvedNode.chain` walked by `Gateway` | Each model in priority order handles the call or passes it on to the next fallback | ✅ |
-| **Strategy** | gateway | `OutputAdapter` (`Structured…`, `Tools…`, `Text…`) | Output mode varies per node; the retry loop must not branch on it | ◐ (`if node.output == …`) |
-| | gateway | `RetryPolicy` (`ExponentialBackoffPolicy`) | Which errors are retryable and how long to wait, swappable and testable | ◐ (`is_retryable`, `backoff_delay`) |
-| | providers | `ProviderProfile` per provider kind | Allowed params, renames and reasoning kwargs differ per vendor | ◐ (dict tables + `if kind ==`) |
-| | rate limits | `RateLimiter` (`CacheWindowRateLimiter`) | Gateway depends on "wait for room", not on Redis | ◐ (`ratelimit.acquire`) |
-| | probes | `CapabilityProbe` per capability | Each capability has its own check; `ModelProber` runs the declared ones | ◐ (`probe_model`) |
+| **Strategy** | gateway | `OutputAdapter` (`Structured…`, `Tools…`, `Text…`) | Output mode varies per node; the retry loop must not branch on it | ✅ |
+| | gateway | `RetryPolicy` (`ExponentialBackoffPolicy`) | Which errors are retryable and how long to wait, swappable and testable | ✅ |
+| | providers | `ProviderProfile` per provider kind | Allowed params, renames and reasoning kwargs differ per vendor | ✅ |
+| | rate limits | `RateLimiter` (`CacheWindowRateLimiter`) | Gateway depends on "wait for room", not on Redis | ✅ |
+| | probes | `CapabilityProbe` per capability | Each capability has its own check; `ModelProber` runs the declared ones | ✅ |
 | | graph | `Validator` per artefact | Deterministic rules per output type, fed back as retry feedback | ◐ (`validate_*` functions) |
 | | graph | `RoutingPolicy` | Diagnostic score → route uses admin thresholds | ◐ (`route_for`) |
 | | media | `MediaSource` (`Wikimedia…`, `Openverse…`, `Giphy…`) | Sources are added or disabled by settings | ◐ (methods on `MediaLibrary`) |
-| | health | `HealthCheck` (`Database…`, `Redis…`, `Celery…`) | Each dependency checked the same way | ◐ (`_database`, `_redis`, `_celery`) |
-| **Composite** | health | `HealthService` aggregates `HealthCheck`s | Overall status = worst child status | ◐ |
+| | health | `HealthCheck` (`Database…`, `Redis…`, `Celery…`) | Each dependency checked the same way | ✅ |
+| **Composite** | health | `HealthService` aggregates `HealthCheck`s | Overall status = worst child status | ✅ |
 | | graph | `CompositeValidator` | Deterministic validator + optional LLM reviewer (`diagnostic.review`) behave as one validator | ☐ Phase 3 |
 | **Template Method** | graph | `Node`, `LLMNode`, `ValidateNode`, `PublishNode`, `AwaitNode` | Every LLM node follows prompt → gateway → state update; every publish/await pair keeps side effects out of the re-executed `await` | ☐ Phase 3 (functions today) |
 | | prompts | `Prompt` (`system()`, `user()`, shared feedback and language blocks) | 15+ prompts share the same skeleton | ☐ Phase 3 (functions today) |
 | | accounts | `_PublicAuthView` | Auth views share permission, throttle and CSRF set-up | ✅ |
-| | Django | `BaseCommand`, `AppConfig`, `ModelAdmin` | Framework-defined hooks | ✅ |
+| | Django | `BaseCommand`, `AppConfig`, `ModelAdmin` (registry admins share the `StatusMarks` and `RegistryExportActions` mixins) | Framework-defined hooks | ✅ |
 | **Builder** | graph | `FlowGraphBuilder`, `StudyMaterialGraphBuilder`, `RuntimeRepairGraphBuilder`, `MediaGraphBuilder`, `CodeFixLoopBuilder` | Graphs are assembled step by step (nodes, edges, conditional edges) then compiled | ◐ (`build_*` functions) |
 | | codegen | `DocumentAssembler` | The TSX document is built from page and component parts | ◐ (`codegen.py` functions) |
-| **Factory** | providers | `ChatModelFactory` (`LangChainChatModelFactory`) | Builds a LangChain client from a `ResolvedModel`; tests inject a fake factory | ◐ (`build_chat_model` function, already injected) |
+| **Factory** | providers | `ChatModelFactory` (`LangChainChatModelFactory`) | Builds a LangChain client from a `ResolvedModel`; tests inject a fake factory | ✅ |
 | | graph | `default_context()` (composition root) | The one place concrete adapters are chosen | ✅ |
-| **Registry** | specs | `NodeSpecCatalog` over `NODE_SPECS` | Node keys are discovered by the admin, migrations and checks | ◐ (dict + `get_spec`) |
+| **Registry** | specs | `NODE_SPECS`, a `NodeSpecCatalog` (read-only `Mapping`) | Node keys are discovered by the admin, migrations and checks | ✅ |
 | | graph | `GraphRegistry` over `GRAPH_BUILDERS` | `GraphRun.graph` name → builder | ◐ (dict) |
-| | providers | `ProviderProfiles` | Provider kind → `ProviderProfile` | ☐ |
+| | providers | `ProviderProfiles` | Provider kind → `ProviderProfile` | ✅ |
 | **Adapter** | sandbox | `SandboxRunner` | Wraps `node sandbox/scripts/*.mjs` subprocesses as Python methods | ✅ |
 | | media | `MediaSource` implementations | Wrap each external search API to one shape | ◐ |
 | | accounts | `CookieJWTAuthentication` | Adapts simplejwt to read the token from a cookie with CSRF | ✅ |
@@ -137,7 +137,7 @@ flowchart TB
 | **Observer** | Django signals | registry cache invalidation, `NodeConfig` sync on `post_migrate`, profile creation, media file deletion | Side effects follow saves without the saver knowing | ✅ |
 | | progress | `EventPublisher` → Redis pub/sub → SSE `RunEventStream` | Nodes emit events; any number of browsers listen | ◐ (`emit`), ☐ Phase 3 (publisher, SSE) |
 | | gateway | `on_event` callback | Retries and fallbacks surface as progress events | ✅ |
-| **Proxy (caching)** | resolver | `RegistryResolver` with cache-aside in Redis | Resolution is expensive; invalidated on every registry save | ◐ (functions) |
+| **Proxy (caching)** | resolver | `RegistryResolver` with cache-aside in Redis | Resolution is expensive; invalidated on every registry save | ✅ |
 | **Repository** | Django managers | `UserManager`, `LessonQuerySet.owned_by(user)` | Ownership filtering lives in one place, so a forgotten filter can't leak lessons | ✅ / ☐ Phase 3 |
 | **Singleton** | settings | `FlowSettings.load()` | One editable settings row | ✅ |
 | **Memento** | snapshots | `Lesson.config_snapshot`, `settings_snapshot`, `LessonVersion` | A lesson keeps the registry and code it was built with; repairs can roll back | ✅ / ☐ Phase 6 |
@@ -176,6 +176,10 @@ classDiagram
         -enforce_csrf(request)
     }
     class AuthCookies {
+        +str ACCESS
+        +str REFRESH
+        +str SESSION
+        +str ONBOARDED
         +set_session(response, access, refresh, onboarded)
         +set_onboarded(response, onboarded)
         +clear(response)
@@ -184,6 +188,7 @@ classDiagram
         <<abstract>>
         permission_classes
         throttle_scope
+        +signed_in_response(user, status_code) Response
     }
     class RegisterView
     class LoginView
@@ -210,7 +215,7 @@ classDiagram
 
 - `PublicAuthView` in the diagram is `_PublicAuthView` in code (module-private base).
 - `Profile` is created by a `post_save` receiver (Observer) that only calls `Profile.objects.get_or_create`.
-- `AuthCookies` replaces the functions in `cookies.py`; names and lifetimes come from settings.
+- `AuthCookies` (`cookies.py`) owns the cookie names, paths and flags; lifetimes and `Secure` come from settings unless injected. `CookieJWTAuthentication` and the OpenAPI scheme read `AuthCookies.ACCESS`.
 
 ### 4.2 `core` and `config`
 
@@ -227,8 +232,15 @@ classDiagram
     class RedisHealthCheck
     class CeleryHealthCheck
     class HealthService {
-        +checks: list~HealthCheck~
+        -list~HealthCheck~ checks
         +report() HealthReport
+    }
+    class HealthReport {
+        <<value>>
+        +dict components
+        +bool ok
+        +str status
+        +to_dict() dict
     }
     class CheckResult {
         <<value>>
@@ -240,9 +252,12 @@ classDiagram
         +get(request) Response
     }
     class DatabaseSyncer {
-        +sync(source, target) SyncReport
+        +str source
+        +str target
+        +sync() SyncReport
+        -copy(model, result) list
         -models_in_dependency_order() list
-        -reset_sequences(alias, models)
+        -reset_sequences(models)
     }
     class SyncReport {
         <<value>>
@@ -255,7 +270,10 @@ classDiagram
         +int skipped
     }
     class DatabaseConfig {
-        +build(env, local_url, supabase_url, testing) dict
+        -env
+        -int conn_max_age
+        +local_url(host, port, name, user, password)$ str
+        +build(local_url, supabase_url, testing) dict
     }
 
     HealthCheck <|-- DatabaseHealthCheck
@@ -263,6 +281,8 @@ classDiagram
     HealthCheck <|-- CeleryHealthCheck
     HealthService o-- HealthCheck
     HealthCheck ..> CheckResult
+    HealthService ..> HealthReport
+    HealthReport *-- CheckResult
     HealthView --> HealthService
     DatabaseSyncer ..> SyncReport
     SyncReport *-- ModelResult
@@ -270,6 +290,7 @@ classDiagram
 
 - `bootstrap` and `sync_to_supabase` commands call `DatabaseSyncer().sync()`.
 - `DatabaseConfig` is used from `settings.py`, which stays a module.
+- Framework hooks stay thin: the DRF `EXCEPTION_HANDLER` (`api_exception_handler`) runs DRF's handler and then `ApiErrorFormatter().format(...)` for the `{detail, code, fields?}` shape; the `check --deploy` hook returns `DeploySecurityChecks().errors()`.
 
 ### 4.3 `llm_registry`: registry and resolution
 
@@ -322,12 +343,15 @@ classDiagram
         +bool optional
     }
     class NodeSpecCatalog {
-        +get(key) NodeSpec
-        +all() list~NodeSpec~
-        +keys() list~str~
+        <<Mapping>>
+        +__getitem__(key) NodeSpec
+        +required() list~NodeSpec~
+        +optional() list~NodeSpec~
     }
     class RegistryResolver {
         -Cache cache
+        -ProviderProfiles profiles
+        -NodeSpecCatalog specs
         +resolve() dict~str, ResolvedNode~
         +snapshot() RegistrySnapshot
         +invalidate()
@@ -337,6 +361,7 @@ classDiagram
         <<value>>
         +int version
         +node(key) ResolvedNode
+        +node_keys() list~str~
         +to_json() dict
         +from_json(data)$ RegistrySnapshot
     }
@@ -360,11 +385,18 @@ classDiagram
     class ProviderProfile {
         <<abstract>>
         +str kind
-        +allowed_params() set~str~
+        +str langchain_provider
+        +frozenset allowed_params
+        +bool needs_base_url
+        +bool needs_api_key
+        +bool supports_client_timeout
         +validate_params(params) list~str~
         +to_integration_kwargs(params) dict
         +reasoning_kwargs(control, effort) dict
+        +apply_reasoning(control, effort, params, disables_sampling) tuple
+        #_reasoning_kwargs(control, effort)* dict
     }
+    class OpenAICompatibleProfile
     class OpenAIProfile
     class AnthropicProfile
     class GoogleGenAIProfile
@@ -372,13 +404,15 @@ classDiagram
     class OllamaProfile
     class ProviderProfiles {
         +for_kind(kind) ProviderProfile
+        +kinds() list~str~
     }
     class RegistrySerializer {
+        +int FORMAT_VERSION
         +export() dict
-        +import_(data, replace_bindings) dict
+        +load(data, replace_bindings) dict
     }
-    class RegistrySeeder {
-        +seed(data)
+    class DefaultRegistry {
+        +build() dict
     }
 
     Provider "1" *-- "many" LLMModel
@@ -392,17 +426,18 @@ classDiagram
     RegistrySnapshot *-- ResolvedNode
     ResolvedNode *-- ResolvedModel
     ProviderProfile <|-- OpenAIProfile
+    OpenAIProfile <|-- OpenAICompatibleProfile
+    OpenAIProfile <|-- GroqProfile
     ProviderProfile <|-- AnthropicProfile
     ProviderProfile <|-- GoogleGenAIProfile
-    ProviderProfile <|-- GroqProfile
     ProviderProfile <|-- OllamaProfile
     ProviderProfiles o-- ProviderProfile
-    RegistrySeeder --> RegistrySerializer
+    DefaultRegistry ..> RegistrySerializer : same JSON format
 ```
 
-- `ProviderProfile` merges what `params.py` and `reasoning.py` hold as tables and `if kind ==` branches. `OpenAICompatibleProfile` subclasses `OpenAIProfile`.
-- Every save or delete of a registry row fires a receiver that calls `RegistryResolver().invalidate()` (Observer). A `post_migrate` receiver creates missing `NodeConfig` rows from `NodeSpecCatalog`.
-- The `registry_check` system check is a thin function over a `RegistryHealth` class with one method per warning group.
+- `ProviderProfile` (`profiles.py`) holds everything that differs per vendor: allowed params and renames, whether a base URL or API key is needed, whether the client takes `timeout`, and reasoning translation. `OpenAICompatibleProfile` and `GroqProfile` subclass `OpenAIProfile`. `Provider.profile` returns the row's profile.
+- Every save or delete of a registry row fires a receiver that calls `RegistryResolver().invalidate()` (Observer). A `post_migrate` receiver calls `NodeConfigSync().ensure()` (`node_configs.py`), which creates missing `NodeConfig` rows from `NODE_SPECS`.
+- The `registry_check` system check is a thin hook over `RegistryHealth().warnings()`, one warning per kind of problem.
 
 ### 4.4 `llm_registry`: the gateway
 
@@ -420,24 +455,36 @@ classDiagram
         -ModelCallRecorder recorder
         -OutputAdapters adapters
         +invoke(...) GatewayResult
-        -try_model(node, model, index, messages) GatewayResult
+        -try_model(call, model, index, messages) GatewayResult
     }
     class ChatModelFactory {
         <<interface>>
-        +build(model, timeout_s) BaseChatModel
+        +__call__(model, timeout_s) BaseChatModel
     }
     class LangChainChatModelFactory {
-        +build(model, timeout_s) BaseChatModel
+        -ProviderProfiles profiles
+        +__call__(model, timeout_s) BaseChatModel
     }
     class OutputAdapter {
-        <<interface>>
-        +bind(chat, schema, tools) Runnable
-        +interpret(reply) Outcome
+        <<abstract>>
+        +OutputMode mode
+        +check_request(node_key, schema, tools)
+        +bind(chat, structured_output_method, schema, tools)* Runnable
+        +interpret(reply)* Outcome
+        +repair_messages(messages, outcome) list
+    }
+    class Outcome {
+        <<value>>
+        +bool ok
+        +output
+        +AIMessage message
+        +str problem
+    }
+    class OutputAdapters {
+        +for_mode(mode) OutputAdapter
     }
     class StructuredOutputAdapter {
-        +bind(chat, schema, tools) Runnable
-        +interpret(reply) Outcome
-        +repair_messages(messages, reply, problem) list
+        +repair_messages(messages, outcome) list
     }
     class ToolsOutputAdapter
     class TextOutputAdapter
@@ -457,12 +504,18 @@ classDiagram
         +acquire(limits) float
     }
     class CacheWindowRateLimiter {
-        +int max_wait_s
+        +int WINDOW_S
+        +float max_wait_s
+        -cache
+        -sleep
+        -clock
         +acquire(limits) float
+        -try_take(scope, limit, now) float
     }
     class ModelCallRecorder {
         -Redactor redactor
         +record(node_key, model, attempt, status, latency_ms, error, message)
+        +cost(model, input_tokens, output_tokens)$ float
     }
     class Redactor {
         +redact(text) str
@@ -484,16 +537,18 @@ classDiagram
     Gateway o-- RetryPolicy
     Gateway o-- RateLimiter
     Gateway o-- ModelCallRecorder
-    Gateway ..> OutputAdapter : picked by node.output
+    Gateway o-- OutputAdapters
+    OutputAdapters o-- OutputAdapter : by node.output
+    OutputAdapter ..> Outcome
     Gateway ..> GatewayResult
     Gateway ..> AllModelsFailed : raises
     Gateway ..> NodeDisabled : raises
     ChatModelFactory <|.. LangChainChatModelFactory
     LangChainChatModelFactory ..> ProviderProfiles
     LangChainChatModelFactory ..> MissingAPIKey : raises
-    OutputAdapter <|.. StructuredOutputAdapter
-    OutputAdapter <|.. ToolsOutputAdapter
-    OutputAdapter <|.. TextOutputAdapter
+    OutputAdapter <|-- StructuredOutputAdapter
+    OutputAdapter <|-- ToolsOutputAdapter
+    OutputAdapter <|-- TextOutputAdapter
     RetryPolicy <|.. ExponentialBackoffPolicy
     RateLimiter <|.. CacheWindowRateLimiter
     ModelCallRecorder --> Redactor
@@ -539,19 +594,28 @@ classDiagram
     class ModelProber {
         -ChatModelFactory chat_factory
         -list~CapabilityProbe~ probes
-        +probe(llm_model, timeout_s) list~ProbeResult~
+        -int timeout_s
+        +probe(llm_model) list~ProbeResult~
+    }
+    class ProbeTarget {
+        <<value>>
+        +llm_model
+        +chat
+        +chat_at(effort)
     }
     class CapabilityProbe {
         <<abstract>>
         +str capability
         +applies_to(llm_model) bool
-        +run(chat) ProbeResult
-        #check(chat)*
+        +run(target) ProbeResult
+        #check(target)* str
     }
-    class PlainTextProbe
+    class TextProbe
     class StructuredOutputProbe
     class ToolCallingProbe
-    class VisionProbe
+    class VisionProbe {
+        +solid_png(rgb, size)$ bytes
+    }
     class ReasoningProbe
     class ProbeResult {
         <<value>>
@@ -561,7 +625,8 @@ classDiagram
         +str detail
     }
     ModelProber o-- CapabilityProbe
-    CapabilityProbe <|-- PlainTextProbe
+    CapabilityProbe <|-- TextProbe
+    CapabilityProbe ..> ProbeTarget
     CapabilityProbe <|-- StructuredOutputProbe
     CapabilityProbe <|-- ToolCallingProbe
     CapabilityProbe <|-- VisionProbe
@@ -1000,6 +1065,8 @@ sequenceDiagram
 classDiagram
     direction LR
     class ApiClient {
+        -Fetch fetcher
+        -readCookie(name) str
         -Promise refreshing
         +request(path, options) Promise~T~
         +refreshSession() Promise~bool~
@@ -1027,6 +1094,7 @@ classDiagram
     ApiClient ..> ApiError : throws
 ```
 
+- Components call the shared `apiClient` instance (`apiClient.request<T>(path, options)`), so concurrent 401s share one refresh. `fetch` and the cookie reader are constructor parameters, so `lib/api.test.ts` drives the client with a scripted fake `fetch`.
 - `useRunEvents`, `useProfile` and the `LessonSandbox` component are hooks/components that own one instance of these classes.
 - `SandboxBridge` accepts only messages whose `event.source` is its iframe.
 
@@ -1045,20 +1113,22 @@ classDiagram
 
 Code written before this document that doesn't follow it yet. Behaviour must not change in a refactor: tests stay green before and after, and only imports and names in tests change. Tick items off here as they land.
 
+Every phase 0–2 item is done. The rows still open describe the work-in-progress lesson-flow code (`graph/`, `lessons/`), which is kept on the `phase-3/lesson-flow` branch rather than in `main`. It is brought in line with this design, with tests, as Phase 3 lands.
+
 | Module | Today | Target | Do it |
 |---|---|---|---|
-| `llm_registry/params.py`, `reasoning.py` | dict tables and `if kind ==` | `ProviderProfile` per kind + `ProviderProfiles` | Next provider change |
-| `llm_registry/gateway.py` | `is_retryable`, `backoff_delay`, `_record`, `if node.output ==` | `ExponentialBackoffPolicy`, `ModelCallRecorder`, `OutputAdapter`s | Before Phase 3 |
-| `llm_registry/ratelimit.py` | `acquire()` function | `CacheWindowRateLimiter` | With the gateway |
-| `llm_registry/resolver.py` | module functions | `RegistryResolver`, `RegistrySnapshot` | With the gateway |
-| `llm_registry/probes.py` | `probe_model()` | `ModelProber` + `CapabilityProbe`s | Next probe change |
-| `llm_registry/serialization.py`, `seed.py` | functions | `RegistrySerializer`, `RegistrySeeder` | Next registry change |
-| `llm_registry/node_specs.py` | dict + `get_spec()` | `NodeSpecCatalog` | With the resolver |
-| `llm_registry/redaction.py` | `redact()` | `Redactor` | With the gateway |
-| `core/views.py` | `_database`, `_redis`, `_celery` | `HealthCheck`s + `HealthService` | Next health change |
-| `core/sync.py` | `sync_databases()` | `DatabaseSyncer` | When Supabase is enabled |
-| `config/databases.py` | functions | `DatabaseConfig` | Low priority |
-| `accounts/cookies.py` | functions | `AuthCookies` | Next auth change |
+| ~~`llm_registry/params.py`, `reasoning.py`~~ | ~~dict tables and `if kind ==`~~ | `ProviderProfile` per kind + `ProviderProfiles` (`profiles.py`) | ✅ Done |
+| ~~`llm_registry/gateway.py`~~ | ~~`is_retryable`, `backoff_delay`, `_record`, `if node.output ==`~~ | `ExponentialBackoffPolicy` (`retry.py`), `ModelCallRecorder` (`recorder.py`), `OutputAdapter`s (`outputs.py`), `LangChainChatModelFactory` (`providers.py`) | ✅ Done |
+| ~~`llm_registry/ratelimit.py`~~ | ~~`acquire()` function~~ | `RateLimiter` Protocol + `CacheWindowRateLimiter` | ✅ Done |
+| ~~`llm_registry/resolver.py`~~ | ~~module functions~~ | `RegistryResolver`, `RegistrySnapshot` | ✅ Done |
+| ~~`llm_registry/probes.py`~~ | ~~`probe_model()`~~ | `ModelProber` + `CapabilityProbe`s | ✅ Done |
+| ~~`llm_registry/serialization.py`, `seed.py`~~ | ~~functions~~ | `RegistrySerializer` (`export` / `load`), `DefaultRegistry` | ✅ Done |
+| ~~`llm_registry/node_specs.py`~~ | ~~dict + `get_spec()`~~ | `NodeSpecCatalog` (`NODE_SPECS[key]`) | ✅ Done |
+| ~~`llm_registry/redaction.py`~~ | ~~`redact()`~~ | `Redactor` + the stateless `REDACTOR` default | ✅ Done |
+| ~~`core/views.py`~~ | ~~`_database`, `_redis`, `_celery`~~ | `HealthCheck`s + `HealthService` (`core/health.py`) | ✅ Done |
+| ~~`core/sync.py`~~ | ~~`sync_databases()`~~ | `DatabaseSyncer(source, target).sync()` | ✅ Done |
+| ~~`config/databases.py`~~ | ~~functions~~ | `DatabaseConfig(env).build(...)`, `DatabaseConfig.local_url(...)` | ✅ Done |
+| ~~`accounts/cookies.py`~~ | ~~functions~~ | `AuthCookies`; `_signed_in_response` → `_PublicAuthView.signed_in_response` | ✅ Done |
 | `graph/grading.py` | functions | `QuizGrader`, `RoutingPolicy` | Phase 3 |
 | `graph/validators.py` | `validate_*` functions | `Validator` classes, `AssessmentGuard` | Phase 3 |
 | `graph/prompts.py` | functions in one 470-line module | `graph/prompts/` package, one `Prompt` subclass per node | Phase 3 |
@@ -1068,5 +1138,5 @@ Code written before this document that doesn't follow it yet. Behaviour must not
 | `graph/codegen.py` | functions | `DocumentAssembler`, `CodeSanitizer` | Phase 6 |
 | `graph/media.py` | search methods on `MediaLibrary` | `MediaSource` classes, `MediaDownloader`, `LicensePolicy` | Phase 5 |
 | `lessons/document.py` | functions | `LessonDocumentBuilder`, `MediaUrlSigner` | Phase 6 |
-| `frontend/lib/api.ts` | module functions + `ApiError` | `ApiClient` (exported singleton instance for components) | Next frontend API change |
-| `frontend/lib/safe-redirect.ts` | `safeNext()` | `RedirectPolicy.safeNext` | With `api.ts` |
+| ~~`frontend/lib/api.ts`~~ | ~~module functions + `ApiError`~~ | `ApiClient` + the shared `apiClient` instance | ✅ Done |
+| ~~`frontend/lib/safe-redirect.ts`~~ | ~~`safeNext()`~~ | `RedirectPolicy.safeNext` | ✅ Done |

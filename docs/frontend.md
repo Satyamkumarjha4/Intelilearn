@@ -12,7 +12,7 @@ Swagger UI and the admin are opened on the Django origin directly (`NEXT_PUBLIC_
 
 This gives same-origin cookies and needs no CORS configuration. `EventSource` works as-is.
 
-After sign-in, `/auth?next=…` only redirects to a path on this site (`lib/safe-redirect.ts`). Anything else, such as `//evil.com` or `/\evil.com`, falls back to `/`.
+After sign-in, `/auth?next=…` only redirects to a path on this site (`RedirectPolicy.safeNext` in `lib/safe-redirect.ts`). Anything else, such as `//evil.com` or `/\evil.com`, falls back to `/`.
 
 ## Pages
 
@@ -104,6 +104,6 @@ Adding a library to the scope is a deliberate change. You update `src/scope`, up
 
 ## `lib/`
 
-- `api.ts`: fetch wrapper with credentials, the CSRF header, one silent refresh on 401, and typed errors.
+- `api.ts`: `ApiClient` and the shared `apiClient` instance. Same-origin credentials, the CSRF header on unsafe methods, one silent refresh on 401 (shared by concurrent requests, never for the auth endpoints), and typed `ApiError`s.
 - `types.ts`: mirrors [api.md](api.md).
 - `useRunEvents(runId)`: `EventSource` wrapper. It rebuilds state from `snapshot` and closes on terminal events.
