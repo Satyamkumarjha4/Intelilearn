@@ -18,10 +18,10 @@ from typing import Any
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from pydantic import BaseModel
 
-from . import ratelimit
 from .models import ModelCall
 from .node_specs import OutputMode
 from .providers import MissingAPIKey, build_chat_model
+from .ratelimit import CacheWindowRateLimiter, RateLimiter, RateLimitWaitExceeded
 from .redaction import REDACTOR
 from .resolver import ResolvedModel, ResolvedNode, node_from_snapshot
 
@@ -68,7 +68,7 @@ def _status_code(exc: Exception) -> int | None:
 
 
 def is_retryable(exc: Exception) -> bool:
-    if isinstance(exc, MissingAPIKey | ratelimit.RateLimitWaitExceeded):
+    if isinstance(exc, MissingAPIKey | RateLimitWaitExceeded):
         return False
     if isinstance(exc, TimeoutError | ConnectionError):
         return True
@@ -108,9 +108,10 @@ class Gateway:
         chat_factory: ChatFactory = build_chat_model,
         *,
         sleep: Callable[[float], None] = time.sleep,
-        limiter: Callable[[dict], Any] = ratelimit.acquire,
+        limiter: RateLimiter | None = None,
     ):
-        self.chat_factory, self.sleep, self.limiter = chat_factory, sleep, limiter
+        self.chat_factory, self.sleep = chat_factory, sleep
+        self.limiter = limiter if limiter is not None else CacheWindowRateLimiter()
 
     def invoke(
         self,
@@ -159,7 +160,7 @@ class Gateway:
             attempt += 1
             started = time.perf_counter()
             try:
-                self.limiter(
+                self.limiter.acquire(
                     {f"provider:{model.provider_key}": model.provider_rpm, f"model:{model.label}": model.model_rpm}
                 )
                 reply = runnable.invoke(messages)

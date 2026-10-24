@@ -1,6 +1,20 @@
+"""Unit under test: `llm_registry.ratelimit.CacheWindowRateLimiter`, per-minute request limits per provider and
+model, shared by every worker through the cache.
+
+Why: parallel graph branches call the same provider at once. Without a shared limit they exceed the plan's quota
+and burn retries on 429s; waiting for the next window keeps a lesson running instead of failing it.
+
+Use cases:
+- calls within the limit don't wait
+- a call over the limit waits until the next one-minute window
+- every scope (provider and model) is checked
+- scopes without a limit are ignored
+- refuses to wait longer than max_wait_s
+"""
+
 import pytest
 
-from llm_registry.ratelimit import RateLimitWaitExceeded, acquire
+from llm_registry.ratelimit import CacheWindowRateLimiter, RateLimitWaitExceeded
 
 
 class Clock:
@@ -15,38 +29,42 @@ class Clock:
         self.now += seconds
 
 
+def limiter(clock, **kwargs):
+    return CacheWindowRateLimiter(sleep=clock.sleep, clock=clock, **kwargs)
+
+
 def test_calls_within_the_limit_do_not_wait():
     clock = Clock()
     for _ in range(3):
-        assert acquire({"provider:x": 3}, sleep=clock.sleep, clock=clock) == 0
+        assert limiter(clock).acquire({"provider:x": 3}) == 0
 
 
 def test_call_over_the_limit_waits_for_the_next_window():
     clock = Clock()
     for _ in range(2):
-        acquire({"provider:x": 2}, sleep=clock.sleep, clock=clock)
+        limiter(clock).acquire({"provider:x": 2})
 
-    waited = acquire({"provider:x": 2}, sleep=clock.sleep, clock=clock)
+    waited = limiter(clock).acquire({"provider:x": 2})
 
     assert 39 < waited < 41  # 20s into the window → ~40s until the next one
 
 
 def test_every_scope_is_checked():
     clock = Clock()
-    acquire({"provider:x": 10, "model:x/m": 1}, sleep=clock.sleep, clock=clock)
+    limiter(clock).acquire({"provider:x": 10, "model:x/m": 1})
 
-    assert acquire({"provider:x": 10, "model:x/m": 1}, sleep=clock.sleep, clock=clock) > 0
+    assert limiter(clock).acquire({"provider:x": 10, "model:x/m": 1}) > 0
 
 
 def test_unlimited_scopes_are_ignored():
     clock = Clock()
     for _ in range(50):
-        assert acquire({"provider:x": None}, sleep=clock.sleep, clock=clock) == 0
+        assert limiter(clock).acquire({"provider:x": None}) == 0
 
 
-def test_refuses_to_wait_forever(monkeypatch):
-    monkeypatch.setattr("llm_registry.ratelimit.MAX_WAIT_S", 10)
+def test_refuses_to_wait_forever():
     clock = Clock()
-    acquire({"provider:x": 1}, sleep=clock.sleep, clock=clock)
+    short = limiter(clock, max_wait_s=10)
+    short.acquire({"provider:x": 1})
     with pytest.raises(RateLimitWaitExceeded):
-        acquire({"provider:x": 1}, sleep=clock.sleep, clock=clock)
+        short.acquire({"provider:x": 1})

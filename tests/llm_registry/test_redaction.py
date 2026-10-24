@@ -23,6 +23,11 @@ MASK = Redactor.MASK
 redact = REDACTOR.redact
 
 
+class NoRateLimit:
+    def acquire(self, limits):
+        return 0
+
+
 @pytest.fixture(autouse=True)
 def _keys(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "my-real-gemini-key-123")
@@ -74,7 +79,7 @@ def test_fallback_event_reason_is_redacted(resolved_model, make_snapshot, FakeCh
     fakes = {"a": FakeChat(Unauthorized("bad key my-real-gemini-key-123")), "b": FakeChat(ok)}
     events = []
     snapshot = make_snapshot("learner.assess", "structured", [resolved_model("a"), resolved_model("b")])
-    Gateway(lambda m, t: fakes[m.model_name], sleep=lambda s: None, limiter=lambda limits: 0).invoke(
+    Gateway(lambda m, t: fakes[m.model_name], sleep=lambda s: None, limiter=NoRateLimit()).invoke(
         "learner.assess", [HumanMessage("hi")], snapshot=snapshot, schema=Answer, on_event=events.append
     )
 

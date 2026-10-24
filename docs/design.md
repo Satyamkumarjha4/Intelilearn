@@ -111,7 +111,7 @@ flowchart TB
 | **Strategy** | gateway | `OutputAdapter` (`Structured…`, `Tools…`, `Text…`) | Output mode varies per node; the retry loop must not branch on it | ◐ (`if node.output == …`) |
 | | gateway | `RetryPolicy` (`ExponentialBackoffPolicy`) | Which errors are retryable and how long to wait, swappable and testable | ◐ (`is_retryable`, `backoff_delay`) |
 | | providers | `ProviderProfile` per provider kind | Allowed params, renames and reasoning kwargs differ per vendor | ✅ |
-| | rate limits | `RateLimiter` (`CacheWindowRateLimiter`) | Gateway depends on "wait for room", not on Redis | ◐ (`ratelimit.acquire`) |
+| | rate limits | `RateLimiter` (`CacheWindowRateLimiter`) | Gateway depends on "wait for room", not on Redis | ✅ |
 | | probes | `CapabilityProbe` per capability | Each capability has its own check; `ModelProber` runs the declared ones | ◐ (`probe_model`) |
 | | graph | `Validator` per artefact | Deterministic rules per output type, fed back as retry feedback | ◐ (`validate_*` functions) |
 | | graph | `RoutingPolicy` | Diagnostic score → route uses admin thresholds | ◐ (`route_for`) |
@@ -466,8 +466,13 @@ classDiagram
         +acquire(limits) float
     }
     class CacheWindowRateLimiter {
-        +int max_wait_s
+        +int WINDOW_S
+        +float max_wait_s
+        -cache
+        -sleep
+        -clock
         +acquire(limits) float
+        -try_take(scope, limit, now) float
     }
     class ModelCallRecorder {
         -Redactor redactor
@@ -1061,7 +1066,7 @@ Code written before this document that doesn't follow it yet. Behaviour must not
 |---|---|---|---|
 | ~~`llm_registry/params.py`, `reasoning.py`~~ | ~~dict tables and `if kind ==`~~ | `ProviderProfile` per kind + `ProviderProfiles` (`profiles.py`) | ✅ Done |
 | `llm_registry/gateway.py` | `is_retryable`, `backoff_delay`, `_record`, `if node.output ==` | `ExponentialBackoffPolicy`, `ModelCallRecorder`, `OutputAdapter`s | Before Phase 3 |
-| `llm_registry/ratelimit.py` | `acquire()` function | `CacheWindowRateLimiter` | With the gateway |
+| ~~`llm_registry/ratelimit.py`~~ | ~~`acquire()` function~~ | `RateLimiter` Protocol + `CacheWindowRateLimiter` | ✅ Done |
 | `llm_registry/resolver.py` | module functions | `RegistryResolver`, `RegistrySnapshot` | With the gateway |
 | `llm_registry/probes.py` | `probe_model()` | `ModelProber` + `CapabilityProbe`s | Next probe change |
 | `llm_registry/serialization.py`, `seed.py` | functions | `RegistrySerializer`, `RegistrySeeder` | Next registry change |

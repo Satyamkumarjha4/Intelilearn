@@ -15,6 +15,20 @@ class Answer(BaseModel):
     value: int
 
 
+class NoRateLimit:
+    def acquire(self, limits):
+        return 0
+
+
+class RecordingLimiter:
+    def __init__(self, seen):
+        self.seen = seen
+
+    def acquire(self, limits):
+        self.seen.append(limits)
+        return 0
+
+
 class RateLimited(Exception):
     status_code = 429
 
@@ -41,7 +55,7 @@ def run(resolved_model, make_snapshot):
         chain = [resolved_model(name, max_retries=retries) for name in scripts]
         snapshot = make_snapshot("learner.assess", output, chain, enabled=enabled)
         sleeps, events = [], []
-        gateway = Gateway(lambda model, timeout: fakes[model.model_name], sleep=sleeps.append, limiter=lambda limits: 0)
+        gateway = Gateway(lambda model, timeout: fakes[model.model_name], sleep=sleeps.append, limiter=NoRateLimit())
         try:
             result = gateway.invoke(
                 "learner.assess", MESSAGES, snapshot=snapshot, schema=schema, tools=tools, on_event=events.append
@@ -148,7 +162,7 @@ def test_building_the_model_can_fail_and_fall_back(resolved_model, make_snapshot
         return fallback
 
     snapshot = make_snapshot("learner.assess", "structured", [resolved_model("keyless"), resolved_model("fallback")])
-    result = Gateway(factory, sleep=lambda s: None, limiter=lambda limits: 0).invoke(
+    result = Gateway(factory, sleep=lambda s: None, limiter=NoRateLimit()).invoke(
         "learner.assess", MESSAGES, snapshot=snapshot, schema=Answer
     )
 
@@ -188,7 +202,7 @@ def test_structured_node_without_schema_is_a_programming_error(run, FakeChat):
 def test_rate_limiter_is_asked_before_each_call(resolved_model, make_snapshot, FakeChat):
     seen = []
     snapshot = make_snapshot("learner.assess", "structured", [resolved_model("m", provider_rpm=15, model_rpm=5)])
-    Gateway(lambda m, t: FakeChat(ok()), sleep=lambda s: None, limiter=seen.append).invoke(
+    Gateway(lambda m, t: FakeChat(ok()), sleep=lambda s: None, limiter=RecordingLimiter(seen)).invoke(
         "learner.assess", MESSAGES, snapshot=snapshot, schema=Answer
     )
     assert seen == [{"provider:fake": 15, "model:fake/m": 5}]
@@ -197,7 +211,7 @@ def test_rate_limiter_is_asked_before_each_call(resolved_model, make_snapshot, F
 def test_cost_is_computed_from_model_prices(resolved_model, make_snapshot, FakeChat):
     model = resolved_model("m", input_cost_per_mtok=1.0, output_cost_per_mtok=4.0)
     snapshot = make_snapshot("learner.assess", "structured", [model])
-    Gateway(lambda m, t: FakeChat(ok()), sleep=lambda s: None, limiter=lambda limits: 0).invoke(
+    Gateway(lambda m, t: FakeChat(ok()), sleep=lambda s: None, limiter=NoRateLimit()).invoke(
         "learner.assess", MESSAGES, snapshot=snapshot, schema=Answer
     )
     assert float(ModelCall.objects.get().cost) == pytest.approx((10 * 1 + 5 * 4) / 1e6)
