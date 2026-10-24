@@ -1,15 +1,15 @@
 from django.db.models.signals import post_delete, post_migrate, post_save
 from django.dispatch import receiver
 
-from . import resolver
 from .models import LLMModel, NodeConfig, NodeModelBinding, Provider
 from .node_specs import NODE_SPECS
+from .resolver import RegistryResolver
 
 REGISTRY_MODELS = (Provider, LLMModel, NodeConfig, NodeModelBinding)
 
 
 def _invalidate(sender, **kwargs):
-    resolver.invalidate()
+    RegistryResolver().invalidate()
 
 
 for model in REGISTRY_MODELS:
@@ -32,7 +32,7 @@ def ensure_node_configs(using="default") -> int:
     ]
     NodeConfig.objects.using(using).bulk_create(missing)
     if missing:
-        resolver.invalidate()
+        RegistryResolver().invalidate()
     return len(missing)
 
 

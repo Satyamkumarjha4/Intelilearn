@@ -8,7 +8,7 @@ from llm_registry.models import LLMModel
 from llm_registry.node_specs import NODE_SPECS, OutputMode
 from llm_registry.probes import probe_model
 from llm_registry.redaction import REDACTOR
-from llm_registry.resolver import registry_snapshot
+from llm_registry.resolver import RegistryResolver
 
 
 class _Echo(BaseModel):
@@ -70,7 +70,7 @@ class Command(BaseCommand):
             result = Gateway(providers.build_chat_model).invoke(
                 node_key,
                 [HumanMessage("This is a connectivity check. Reply with the single word: pong")],
-                snapshot=registry_snapshot(),
+                snapshot=RegistryResolver().snapshot(),
                 schema=_Echo if spec.output == OutputMode.STRUCTURED else None,
                 on_event=events.append,
             )

@@ -23,7 +23,7 @@ from .node_specs import OutputMode
 from .providers import MissingAPIKey, build_chat_model
 from .ratelimit import CacheWindowRateLimiter, RateLimiter, RateLimitWaitExceeded
 from .redaction import REDACTOR
-from .resolver import ResolvedModel, ResolvedNode, node_from_snapshot
+from .resolver import RegistrySnapshot, ResolvedModel, ResolvedNode
 
 logger = logging.getLogger(__name__)
 
@@ -118,14 +118,14 @@ class Gateway:
         node_key: str,
         messages: Sequence[BaseMessage],
         *,
-        snapshot: dict,
+        snapshot: dict | RegistrySnapshot,
         schema: type[BaseModel] | None = None,
         tools: Sequence[Any] | None = None,
         lesson_id: Any = None,
         run_id: Any = None,
         on_event: EventSink | None = None,
     ) -> GatewayResult:
-        node = node_from_snapshot(snapshot, node_key)
+        node = RegistrySnapshot.from_json(snapshot).node(node_key)
         if not node.enabled:
             raise NodeDisabled(f"{node_key} is disabled in the registry")
         if node.output == OutputMode.STRUCTURED and schema is None:

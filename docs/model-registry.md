@@ -210,8 +210,8 @@ class ResolvedNode:
     chain: list[ResolvedModel]      # primary first
 ```
 
-- `resolve_registry()` returns `{node_key: ResolvedNode}`. It skips disabled rows and bindings that no longer satisfy the spec, and orders chains by priority. The result is cached in Redis (the Django cache). Saving or deleting any registry row clears it, so the next resolve rebuilds it.
-- **Snapshot per lesson:** when a lesson is created, the resolved registry is stored in `Lesson.config_snapshot`, and the whole flow uses it, including resumes days later. Admin edits apply to *new* lessons. Every lesson records exactly which models built it.
+- `RegistryResolver().resolve()` returns `{node_key: ResolvedNode}`. It skips disabled rows and bindings that no longer satisfy the spec, and orders chains by priority. The result is cached in Redis (the Django cache). Saving or deleting any registry row clears it, so the next resolve rebuilds it.
+- **Snapshot per lesson:** when a lesson is created, `RegistryResolver().snapshot().to_json()` is stored in `Lesson.config_snapshot`, and the whole flow uses it, including resumes days later. Admin edits apply to *new* lessons. Every lesson records exactly which models built it. The gateway reads it back with `RegistrySnapshot.from_json(...)` (it also accepts the dict directly).
 - **Startup check** (`manage.py check`): every required node has at least one enabled binding whose provider key is present in the environment. Missing keys are warnings, so you can run with only the providers you have keys for.
 
 ## Gateway

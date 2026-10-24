@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from django.core.management import call_command
 
 from llm_registry.models import LLMModel, NodeConfig, NodeModelBinding, Provider
-from llm_registry.resolver import resolve_registry
+from llm_registry.resolver import RegistryResolver
 from llm_registry.seed import default_registry
 from llm_registry.serialization import export_registry, import_registry
 
@@ -15,7 +15,7 @@ pytestmark = pytest.mark.django_db
 def test_default_seed_is_valid_and_covers_every_required_node():
     import_registry(default_registry())
 
-    resolved = resolve_registry()
+    resolved = RegistryResolver().resolve()
     for node in NodeConfig.objects.all():
         if node.is_enabled:
             assert resolved[node.node_key].chain, f"{node.node_key} has no usable model"

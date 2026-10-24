@@ -137,7 +137,7 @@ flowchart TB
 | **Observer** | Django signals | registry cache invalidation, `NodeConfig` sync on `post_migrate`, profile creation, media file deletion | Side effects follow saves without the saver knowing | ✅ |
 | | progress | `EventPublisher` → Redis pub/sub → SSE `RunEventStream` | Nodes emit events; any number of browsers listen | ◐ (`emit`), ☐ Phase 3 (publisher, SSE) |
 | | gateway | `on_event` callback | Retries and fallbacks surface as progress events | ✅ |
-| **Proxy (caching)** | resolver | `RegistryResolver` with cache-aside in Redis | Resolution is expensive; invalidated on every registry save | ◐ (functions) |
+| **Proxy (caching)** | resolver | `RegistryResolver` with cache-aside in Redis | Resolution is expensive; invalidated on every registry save | ✅ |
 | **Repository** | Django managers | `UserManager`, `LessonQuerySet.owned_by(user)` | Ownership filtering lives in one place, so a forgotten filter can't leak lessons | ✅ / ☐ Phase 3 |
 | **Singleton** | settings | `FlowSettings.load()` | One editable settings row | ✅ |
 | **Memento** | snapshots | `Lesson.config_snapshot`, `settings_snapshot`, `LessonVersion` | A lesson keeps the registry and code it was built with; repairs can roll back | ✅ / ☐ Phase 6 |
@@ -329,6 +329,8 @@ classDiagram
     }
     class RegistryResolver {
         -Cache cache
+        -ProviderProfiles profiles
+        -NodeSpecCatalog specs
         +resolve() dict~str, ResolvedNode~
         +snapshot() RegistrySnapshot
         +invalidate()
@@ -338,6 +340,7 @@ classDiagram
         <<value>>
         +int version
         +node(key) ResolvedNode
+        +node_keys() list~str~
         +to_json() dict
         +from_json(data)$ RegistrySnapshot
     }
@@ -1068,7 +1071,7 @@ Code written before this document that doesn't follow it yet. Behaviour must not
 | ~~`llm_registry/params.py`, `reasoning.py`~~ | ~~dict tables and `if kind ==`~~ | `ProviderProfile` per kind + `ProviderProfiles` (`profiles.py`) | ✅ Done |
 | `llm_registry/gateway.py` | `is_retryable`, `backoff_delay`, `_record`, `if node.output ==` | `ExponentialBackoffPolicy`, `ModelCallRecorder`, `OutputAdapter`s | Before Phase 3 |
 | ~~`llm_registry/ratelimit.py`~~ | ~~`acquire()` function~~ | `RateLimiter` Protocol + `CacheWindowRateLimiter` | ✅ Done |
-| `llm_registry/resolver.py` | module functions | `RegistryResolver`, `RegistrySnapshot` | With the gateway |
+| ~~`llm_registry/resolver.py`~~ | ~~module functions~~ | `RegistryResolver`, `RegistrySnapshot` | ✅ Done |
 | `llm_registry/probes.py` | `probe_model()` | `ModelProber` + `CapabilityProbe`s | Next probe change |
 | `llm_registry/serialization.py`, `seed.py` | functions | `RegistrySerializer`, `RegistrySeeder` | Next registry change |
 | ~~`llm_registry/node_specs.py`~~ | ~~dict + `get_spec()`~~ | `NodeSpecCatalog` (`NODE_SPECS[key]`) | ✅ Done |
