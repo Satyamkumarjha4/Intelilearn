@@ -21,7 +21,9 @@ env = environ.Env()
 # Never overrides variables that are already set.
 environ.Env.read_env(BASE_DIR.parent / ".env")
 
-SECRET_KEY = env("DJANGO_SECRET_KEY", default="dev-insecure-secret-key-change-me")
+# The default only exists so tests and CI run without a .env; `check --deploy` refuses it (core/checks.py).
+DEV_SECRET_KEY = "dev-insecure-secret-key-change-me"
+SECRET_KEY = env("DJANGO_SECRET_KEY", default=DEV_SECRET_KEY)
 DEBUG = env.bool("DJANGO_DEBUG", default=False)
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1", "backend"])
 CSRF_TRUSTED_ORIGINS = env.list(
