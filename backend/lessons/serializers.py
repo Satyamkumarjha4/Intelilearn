@@ -3,7 +3,7 @@
 from rest_framework import serializers
 
 from .models import GraphRun, Lesson, Quiz, QuizAttempt
-from .stages import Route
+from .stages import MaterialKind, Route
 
 
 class LessonCreateSerializer(serializers.Serializer):
@@ -53,6 +53,7 @@ class LessonDetailSerializer(LessonSummarySerializer):
     prerequisites_to_cover = serializers.SerializerMethodField()
     active_run_id = serializers.SerializerMethodField()
     results = serializers.SerializerMethodField()
+    materials = serializers.SerializerMethodField()
 
     class Meta(LessonSummarySerializer.Meta):
         fields = [
@@ -64,6 +65,7 @@ class LessonDetailSerializer(LessonSummarySerializer):
             "prerequisites_to_cover",
             "active_run_id",
             "results",
+            "materials",
         ]
         read_only_fields = fields
 
@@ -78,6 +80,9 @@ class LessonDetailSerializer(LessonSummarySerializer):
     def get_active_run_id(self, lesson: Lesson) -> str | None:
         run = lesson.runs.filter(status__in=[GraphRun.Status.QUEUED, GraphRun.Status.RUNNING]).first()
         return str(run.id) if run else None
+
+    def get_materials(self, lesson: Lesson) -> list[str]:
+        return sorted(lesson.materials.values_list("kind", flat=True))
 
     def get_results(self, lesson: Lesson) -> dict:
         """The score of each quiz that was answered, so the page can show it again after a reload."""
@@ -136,3 +141,42 @@ class RunSerializer(serializers.ModelSerializer):
         model = GraphRun
         fields = ["id", "lesson_id", "graph", "trigger", "status", "node_status", "error"]
         read_only_fields = fields
+
+
+class MaterialKindSerializer(serializers.Serializer):
+    kind = serializers.ChoiceField(choices=MaterialKind.choices)
+
+
+class StudyMaterialSerializer(serializers.Serializer):
+    kind = serializers.ChoiceField(choices=MaterialKind.choices)
+    content = serializers.DictField(help_text="The sheet (docs/lesson-graph.md). Practice solutions are left out.")
+    solutions = serializers.DictField(
+        help_text="Practice sheet only: {question_id: solution} for the questions named in `reveal`."
+    )
+
+
+class PracticeGradeRequestSerializer(serializers.Serializer):
+    answers = serializers.DictField(
+        child=serializers.JSONField(), help_text="{question_id: option index | number | text}"
+    )
+
+
+class PracticeScoreSerializer(serializers.Serializer):
+    awarded = serializers.IntegerField()
+    available = serializers.IntegerField(help_text="Marks of the questions marked automatically.")
+    open_marks = serializers.IntegerField(help_text="Marks of the questions left to self-checking.")
+    correct = serializers.IntegerField()
+    marked = serializers.IntegerField()
+
+
+class PracticeResultSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    correct = serializers.BooleanField(allow_null=True, help_text="null: not marked automatically.")
+    marks = serializers.IntegerField()
+    awarded = serializers.IntegerField(allow_null=True)
+    solution = serializers.DictField()
+
+
+class PracticeGradeSerializer(serializers.Serializer):
+    score = PracticeScoreSerializer()
+    results = PracticeResultSerializer(many=True)

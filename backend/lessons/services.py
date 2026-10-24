@@ -11,13 +11,16 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.module_loading import import_string
 
-from graph.grading import AnswerError, QuizGrader, RoutingPolicy
+from graph.grading import AnswerError, AnswerGrader, QuizGrader, RoutingPolicy
+from graph.schemas import public_question
 from llm_registry.resolver import RegistryResolver
 
 from .errors import (
     AlreadyAttempted,
+    AlreadyExists,
     InvalidAnswers,
     LessonNotConfigured,
+    MaterialNotFound,
     NotAttempted,
     QueueUnavailable,
     QuizNotFound,
@@ -26,7 +29,7 @@ from .errors import (
     WrongStage,
 )
 from .events import EventPublisher, RedisEventPublisher, RunEvent
-from .models import FlowSettings, GraphRun, Lesson, Quiz, QuizAttempt, Stage
+from .models import FlowSettings, GraphRun, Lesson, MaterialKind, Quiz, QuizAttempt, Stage, StudyMaterial
 
 
 class TaskQueue(Protocol):
@@ -194,3 +197,103 @@ class QuizService:
         if quiz is None:
             raise QuizNotFound()
         return quiz
+
+
+class MaterialService:
+    """Study sheets: choosing the first one (resumes the flow), asking for more, serving them, grading practice."""
+
+    #: what a practice question's solution is made of (never sent before it is revealed)
+    SOLUTION_FIELDS = (
+        "correct_index", "answer", "tolerance", "unit", "model_answer", "key_points", "rubric", "reference_solution",
+        "test_cases",
+    )  # fmt: skip
+
+    def __init__(self, queue: TaskQueue | None = None, grader: AnswerGrader | None = None):
+        self.dispatcher = RunDispatcher(queue)
+        self.grader = grader or AnswerGrader()
+
+    def choose(self, lesson: Lesson, kind: str) -> GraphRun:
+        """The learner's pick after aceing the diagnostic: resume the paused flow with it."""
+        with transaction.atomic():
+            lesson = Lesson.objects.select_for_update().get(pk=lesson.pk)
+            if lesson.stage != Stage.AWAITING_CHOICE:
+                raise WrongStage("The lesson is not waiting for a study sheet choice.")
+            if has_active_run(lesson):
+                raise RunInProgress()
+            run = GraphRun.objects.create(
+                lesson=lesson,
+                graph=GraphRun.Graph.FLOW,
+                trigger=GraphRun.Trigger.RESUME_CHOICE,
+                payload={"resume": kind},
+            )
+        self.dispatcher.dispatch(run)
+        return run
+
+    def request_extra(self, lesson: Lesson, kind: str) -> GraphRun:
+        """Another sheet for a ready mastery lesson, written by the small `study_material` graph."""
+        with transaction.atomic():
+            lesson = Lesson.objects.select_for_update().get(pk=lesson.pk)
+            if lesson.stage != Stage.READY or lesson.route != "mastery":
+                raise WrongStage("More study sheets are only available once a mastery lesson is ready.")
+            if StudyMaterial.objects.filter(lesson=lesson, kind=kind).exists():
+                raise AlreadyExists()
+            if has_active_run(lesson):
+                raise RunInProgress()
+            run = GraphRun.objects.create(
+                lesson=lesson,
+                graph=GraphRun.Graph.STUDY_MATERIAL,
+                trigger=GraphRun.Trigger.EXTRA_MATERIAL,
+                payload={"input": {"mastery_choice": kind, "extra_material": True}},
+            )
+        self.dispatcher.dispatch(run)
+        return run
+
+    def kinds(self, lesson: Lesson) -> list[str]:
+        return sorted(lesson.materials.values_list("kind", flat=True))
+
+    def get(self, lesson: Lesson, kind: str, reveal: list[str] | None = None) -> dict:
+        """The sheet. A practice sheet's questions come without solutions; `reveal` (ids, or "all") adds some."""
+        material = self._material(lesson, kind)
+        content = material.content
+        if kind != MaterialKind.PRACTICE_SHEET:
+            return {"kind": kind, "content": content, "solutions": {}}
+        wanted = {q["id"] for q in content["questions"]} if "all" in (reveal or []) else set(reveal or [])
+        solutions = {q["id"]: self._solution(q) for q in content["questions"] if q["id"] in wanted}
+        public = {**content, "questions": [public_question(q) | {"id": q["id"]} for q in content["questions"]]}
+        return {"kind": kind, "content": public, "solutions": solutions}
+
+    def grade_practice(self, lesson: Lesson, answers) -> dict:
+        """Mark a practice sheet on submit. What cannot be marked here shows its solution for self-checking."""
+        material = self._material(lesson, MaterialKind.PRACTICE_SHEET)
+        if not isinstance(answers, dict):
+            raise InvalidAnswers("Send the answers as an object of question id → answer.")
+        questions = material.content["questions"]
+        sheet = self.grader.grade_all(questions, answers)
+        by_id = {q["id"]: q for q in questions}
+        results = [
+            {
+                "id": g.question_id,
+                "correct": g.correct,
+                "marks": g.marks,
+                "awarded": g.awarded,
+                "solution": self._solution(by_id[g.question_id]),
+            }
+            for g in sheet.grades
+        ]
+        score = {
+            "awarded": sheet.awarded, "available": sheet.available, "open_marks": sheet.open_marks,
+            "correct": sheet.correct, "marked": sheet.marked,
+        }  # fmt: skip
+        return {"score": score, "results": results}
+
+    def _solution(self, question: dict) -> dict:
+        return {key: question[key] for key in self.SOLUTION_FIELDS if question.get(key) is not None}
+
+    @staticmethod
+    def _material(lesson: Lesson, kind: str) -> StudyMaterial:
+        if kind not in MaterialKind.values:
+            raise MaterialNotFound()
+        material = StudyMaterial.objects.filter(lesson=lesson, kind=kind).first()
+        if material is None:
+            raise MaterialNotFound()
+        return material

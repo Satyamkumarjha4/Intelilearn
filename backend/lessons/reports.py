@@ -55,6 +55,31 @@ class AssessmentSection(ReportSection):
         return lines
 
 
+class MaterialsSection(ReportSection):
+    @staticmethod
+    def size(kind: str, content: dict) -> str:
+        if kind == "cheat_sheet":
+            items = sum(len(section["items"]) for section in content["sections"])
+            return f"{items} items in {len(content['sections'])} sections"
+        if kind == "revision_sheet":
+            return f"{len(content['subtopics'])} subtopics"
+        return f"{len(content['questions'])} questions"
+
+    def lines(self, lesson: Lesson) -> list[str]:
+        lines = []
+        for material in lesson.materials.all():
+            content = material.content
+            size = {
+                "cheat_sheet": lambda c: (
+                    f"{sum(len(s['items']) for s in c['sections'])} items in {len(c['sections'])} sections"
+                ),
+                "revision_sheet": lambda c: f"{len(c['subtopics'])} subtopics",
+                "practice_sheet": lambda c: f"{len(c['questions'])} questions",
+            }[material.kind](content)
+            lines.append(f"  {material.kind}: {content['title']} ({size})")
+        return lines
+
+
 class RunsSection(ReportSection):
     def lines(self, lesson: Lesson) -> list[str]:
         runs = list(lesson.runs.order_by("created_at"))
@@ -74,6 +99,7 @@ class LessonReport:
             HeaderSection(),
             QuizSection(),
             AssessmentSection(),
+            MaterialsSection(),
             WarningsSection(),
             RunsSection(),
         ]

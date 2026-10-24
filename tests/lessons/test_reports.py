@@ -7,6 +7,7 @@ Use cases:
 - the header names the topic, owner, stage, route, level, the learner's context and any error
 - quiz scores are listed with the per-band breakdown, and an inconsistent result is flagged
 - the assessment lists the level, start point, knowledge, gaps and the prerequisites to cover
+- the study sheets are listed with their title and size
 - warnings and recent runs are listed
 - a brand-new lesson reports without error and without empty sections
 """
@@ -80,3 +81,19 @@ def test_warnings_and_runs_are_listed(lesson):
     report = text(lesson)
 
     assert "- Dropped a widget" in report and "flow/start: paused" in report
+
+
+def test_study_sheets_are_listed_with_their_size(lesson):
+    from support.study_data import make_cheat_sheet, make_practice_sheet, make_revision_sheet
+
+    from lessons.models import StudyMaterial
+
+    StudyMaterial.objects.create(lesson=lesson, kind="cheat_sheet", content=make_cheat_sheet())
+    StudyMaterial.objects.create(lesson=lesson, kind="revision_sheet", content=make_revision_sheet())
+    StudyMaterial.objects.create(lesson=lesson, kind="practice_sheet", content=make_practice_sheet())
+
+    report = text(lesson)
+
+    assert "cheat_sheet: Binary search cheat sheet (7 items in 2 sections)" in report
+    assert "revision_sheet: Binary search revision (4 subtopics)" in report
+    assert "practice_sheet: Binary search practice (15 questions)" in report

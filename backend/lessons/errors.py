@@ -60,3 +60,15 @@ class RunEnded(LessonError):
     status_code = status.HTTP_409_CONFLICT
     default_code = "run_ended"
     default_detail = "That run has already ended."
+
+
+class MaterialNotFound(LessonError):
+    status_code = status.HTTP_404_NOT_FOUND
+    default_code = "not_found"
+    default_detail = "That study sheet does not exist (yet)."
+
+
+class AlreadyExists(LessonError):
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "already_exists"
+    default_detail = "The lesson already has that study sheet."

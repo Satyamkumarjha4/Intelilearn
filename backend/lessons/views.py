@@ -15,23 +15,28 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from .events import RunEventStream, RunSnapshot
-from .models import GraphRun, Lesson, Stage
+from .models import GraphRun, Lesson, MaterialKind, Stage
 from .serializers import (
     LessonCreatedSerializer,
     LessonCreateSerializer,
     LessonDetailSerializer,
     LessonSummarySerializer,
+    MaterialKindSerializer,
+    PracticeGradeRequestSerializer,
+    PracticeGradeSerializer,
     QuizAttemptRequestSerializer,
     QuizAttemptResponseSerializer,
     QuizForLearnerSerializer,
     QuizReviewSerializer,
     RunSerializer,
     RunStartedSerializer,
+    StudyMaterialSerializer,
 )
-from .services import LessonService, QuizService
+from .services import LessonService, MaterialService, QuizService
 
 LESSONS_TAG = ["lessons"]
 QUIZZES_TAG = ["quizzes"]
+MATERIALS_TAG = ["study sheets"]
 RUNS_TAG = ["runs"]
 LESSON_ID = OpenApiParameter("lesson_id", str, OpenApiParameter.PATH)
 KIND = OpenApiParameter("kind", str, OpenApiParameter.PATH, enum=["diagnostic", "prerequisite"])
@@ -183,6 +188,83 @@ class QuizReviewView(OwnedLessons, APIView):
     )
     def get(self, request, lesson_id, kind):
         return Response(QuizService().review(self.lesson_of(request, lesson_id), kind))
+
+
+class MaterialChoiceView(OwnedLessons, APIView):
+    @extend_schema(
+        tags=MATERIALS_TAG,
+        summary="Choose the first study sheet",
+        description="After a perfect diagnostic. Resumes the lesson's flow. Only when `stage` is `awaiting_choice`.",
+        parameters=[LESSON_ID],
+        request=MaterialKindSerializer,
+        responses={202: RunStartedSerializer, 409: OpenApiResponse(description="Not waiting for the choice.")},
+    )
+    def post(self, request, lesson_id):
+        serializer = MaterialKindSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        run = MaterialService().choose(self.lesson_of(request, lesson_id), serializer.validated_data["kind"])
+        return Response({"run_id": run.id}, status=status.HTTP_202_ACCEPTED)
+
+
+class MaterialRequestView(OwnedLessons, APIView):
+    @extend_schema(
+        tags=MATERIALS_TAG,
+        summary="Ask for another study sheet",
+        description="For a ready mastery lesson. Runs the small `study_material` graph; the lesson stays `ready`.",
+        parameters=[LESSON_ID],
+        request=MaterialKindSerializer,
+        responses={
+            202: RunStartedSerializer,
+            409: OpenApiResponse(description="Wrong stage, exists, or a run is active."),
+        },
+    )
+    def post(self, request, lesson_id):
+        serializer = MaterialKindSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        run = MaterialService().request_extra(self.lesson_of(request, lesson_id), serializer.validated_data["kind"])
+        return Response({"run_id": run.id}, status=status.HTTP_202_ACCEPTED)
+
+
+class MaterialView(OwnedLessons, APIView):
+    @extend_schema(
+        tags=MATERIALS_TAG,
+        summary="Get a study sheet",
+        description=(
+            "A practice sheet comes without solutions. `reveal=<question id>` (repeat it, or comma-separate) or "
+            "`reveal=all` adds them under `solutions`."
+        ),
+        parameters=[
+            LESSON_ID,
+            OpenApiParameter("kind", str, OpenApiParameter.PATH, enum=[value for value, _ in MaterialKind.choices]),
+            OpenApiParameter(
+                "reveal", str, many=True, description="Question ids whose solutions to include, or `all`."
+            ),
+        ],
+        responses={200: StudyMaterialSerializer},
+    )
+    def get(self, request, lesson_id, kind):
+        reveal = [part for value in request.query_params.getlist("reveal") for part in value.split(",") if part]
+        return Response(MaterialService().get(self.lesson_of(request, lesson_id), kind, reveal))
+
+
+class PracticeGradeView(OwnedLessons, APIView):
+    @extend_schema(
+        tags=MATERIALS_TAG,
+        summary="Grade a practice sheet",
+        description=(
+            "Multiple-choice and numerical answers are marked. Short, long and code answers are not, and show their "
+            "solution for self-checking. Nothing is stored: practice can be repeated."
+        ),
+        parameters=[LESSON_ID],
+        request=PracticeGradeRequestSerializer,
+        responses={200: PracticeGradeSerializer},
+    )
+    def post(self, request, lesson_id):
+        serializer = PracticeGradeRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response(
+            MaterialService().grade_practice(self.lesson_of(request, lesson_id), serializer.validated_data["answers"])
+        )
 
 
 class OwnedRuns:

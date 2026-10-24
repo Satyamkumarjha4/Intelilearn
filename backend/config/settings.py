@@ -222,7 +222,12 @@ SPECTACULAR_SETTINGS = {
     # Separate request/response components, so read-only fields don't appear in request bodies.
     "COMPONENT_SPLIT_REQUEST": True,
     # One name per choice set that appears in several components.
-    "ENUM_NAME_OVERRIDES": {"RouteEnum": "lessons.stages.Route", "StageEnum": "lessons.stages.Stage"},
+    "ENUM_NAME_OVERRIDES": {
+        "RouteEnum": "lessons.stages.Route",
+        "StageEnum": "lessons.stages.Stage",
+        "MaterialKindEnum": "lessons.stages.MaterialKind",
+        "QuizKindEnum": "lessons.models.Quiz.Kind",
+    },
 }
 
 LOGGING = {

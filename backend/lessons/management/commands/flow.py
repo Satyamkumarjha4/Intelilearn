@@ -2,6 +2,8 @@
 
     manage.py flow start "Binary search" --email ada@example.com --inline
     manage.py flow answer <lesson> diagnostic --correct 5 --inline
+    manage.py flow choose <lesson> cheat_sheet --inline        (after a perfect diagnostic)
+    manage.py flow sheet <lesson> revision_sheet --inline      (another sheet later)
     manage.py flow show <lesson>          (add --json for the raw rows)
     manage.py flow retry <lesson> --inline
     manage.py flow runs <lesson>
@@ -19,9 +21,9 @@ from django.db.models.functions import Cast
 from rest_framework.exceptions import APIException
 
 from accounts.models import User
-from lessons.models import Lesson, Quiz
+from lessons.models import Lesson, MaterialKind, Quiz
 from lessons.reports import LessonReport
-from lessons.services import LessonService, QuizService
+from lessons.services import LessonService, MaterialService, QuizService
 from lessons.tasks import InlineTaskQueue
 
 
@@ -129,6 +131,40 @@ class AnswerFlow(Subcommand):
         }
 
 
+class ChooseFlow(Subcommand):
+    name, help = "choose", "Pick the first study sheet after a perfect diagnostic."
+
+    def add_arguments(self, parser):
+        parser.add_argument("lesson")
+        parser.add_argument("kind", choices=MaterialKind.values)
+
+    def run(self, command, options):
+        lesson = self.lesson(options["lesson"])
+        try:
+            run = MaterialService(queue=self.queue(options)).choose(lesson, options["kind"])
+        except APIException as exc:
+            raise CommandError(str(exc.detail)) from exc
+        command.stdout.write(f"run {run.id}" + ("" if options["inline"] else " (queued)"))
+        self.show_state(command, lesson)
+
+
+class SheetFlow(Subcommand):
+    name, help = "sheet", "Ask for another study sheet for a ready mastery lesson."
+
+    def add_arguments(self, parser):
+        parser.add_argument("lesson")
+        parser.add_argument("kind", choices=MaterialKind.values)
+
+    def run(self, command, options):
+        lesson = self.lesson(options["lesson"])
+        try:
+            run = MaterialService(queue=self.queue(options)).request_extra(lesson, options["kind"])
+        except APIException as exc:
+            raise CommandError(str(exc.detail)) from exc
+        command.stdout.write(f"run {run.id}" + ("" if options["inline"] else " (queued)"))
+        self.show_state(command, lesson)
+
+
 class RetryFlow(Subcommand):
     name, help = "retry", "Retry a failed lesson from its last checkpoint."
 
@@ -186,8 +222,16 @@ class RunsFlow(Subcommand):
 
 
 class Command(BaseCommand):
-    help = "Drive the lesson flow from the terminal (start, answer, show, retry, runs)."
-    SUBCOMMANDS: list[Subcommand] = [StartFlow(), AnswerFlow(), ShowFlow(), RetryFlow(), RunsFlow()]
+    help = "Drive the lesson flow from the terminal (start, answer, choose, sheet, show, retry, runs)."
+    SUBCOMMANDS: list[Subcommand] = [
+        StartFlow(),
+        AnswerFlow(),
+        ChooseFlow(),
+        SheetFlow(),
+        ShowFlow(),
+        RetryFlow(),
+        RunsFlow(),
+    ]
 
     def add_arguments(self, parser):
         sub = parser.add_subparsers(dest="action", required=True)
