@@ -3,12 +3,15 @@ import type {
   Answer,
   LessonDetail,
   LessonSummary,
+  MaterialKind,
   Page,
+  PracticeGrade,
   QuizForLearner,
   QuizKind,
   QuizResultSummary,
   QuizReview,
   Stage,
+  StudyMaterial,
 } from "@/lib/types";
 
 export type LessonQuery = { q?: string; stage?: Stage | ""; cursor?: string | null; pageSize?: number };
@@ -57,6 +60,23 @@ export class LessonsApi {
 
   review(id: string, kind: QuizKind): Promise<QuizReview> {
     return this.client.request(`/lessons/${id}/quizzes/${kind}/review`);
+  }
+
+  choose(id: string, kind: MaterialKind): Promise<{ run_id: string }> {
+    return this.client.request(`/lessons/${id}/choice`, { method: "POST", body: { kind } });
+  }
+
+  requestMaterial(id: string, kind: MaterialKind): Promise<{ run_id: string }> {
+    return this.client.request(`/lessons/${id}/materials`, { method: "POST", body: { kind } });
+  }
+
+  material<T>(id: string, kind: MaterialKind, reveal: string[] = []): Promise<StudyMaterial<T>> {
+    const query = reveal.length ? `?${reveal.map((q) => `reveal=${encodeURIComponent(q)}`).join("&")}` : "";
+    return this.client.request(`/lessons/${id}/materials/${kind}${query}`);
+  }
+
+  gradePractice(id: string, answers: Record<string, number | string>): Promise<PracticeGrade> {
+    return this.client.request(`/lessons/${id}/materials/practice_sheet/grade`, { method: "POST", body: { answers } });
   }
 
   cancelRun(runId: string): Promise<void> {

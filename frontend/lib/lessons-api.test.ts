@@ -10,6 +10,7 @@
  * - reads, deletes and retries a lesson
  * - reads a quiz and submits answers to its attempt endpoint
  * - reads the review and cancels a run
+ * - chooses a sheet, asks for another, reads one (with revealed solutions) and grades practice answers
  * - extracts the cursor from a `next` link, and handles no link
  */
 import { describe, expect, test } from "bun:test";
@@ -89,6 +90,27 @@ describe("LessonsApi", () => {
 
     expect(calls.map((c) => c.path)).toEqual(["/lessons/l1/quizzes/diagnostic/review", "/runs/r1/cancel"]);
     expect(calls[1].options).toEqual({ method: "POST" });
+  });
+
+  test("chooses a sheet, asks for another, reads one with revealed solutions and grades practice", async () => {
+    const { api, calls } = fakeClient();
+
+    await api.choose("l1", "cheat_sheet");
+    await api.requestMaterial("l1", "revision_sheet");
+    await api.material("l1", "cheat_sheet");
+    await api.material("l1", "practice_sheet", ["t1", "t 2"]);
+    await api.gradePractice("l1", { t1: 2, t2: "4" });
+
+    expect(calls).toEqual([
+      { path: "/lessons/l1/choice", options: { method: "POST", body: { kind: "cheat_sheet" } } },
+      { path: "/lessons/l1/materials", options: { method: "POST", body: { kind: "revision_sheet" } } },
+      { path: "/lessons/l1/materials/cheat_sheet", options: undefined },
+      { path: "/lessons/l1/materials/practice_sheet?reveal=t1&reveal=t%202", options: undefined },
+      {
+        path: "/lessons/l1/materials/practice_sheet/grade",
+        options: { method: "POST", body: { answers: { t1: 2, t2: "4" } } },
+      },
+    ]);
   });
 
   test("extracts the cursor from a next link", () => {

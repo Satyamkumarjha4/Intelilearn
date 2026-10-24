@@ -78,6 +78,7 @@ export type LessonDetail = LessonSummary & {
   prerequisites_to_cover: string[];
   active_run_id: string | null;
   results: Record<QuizKind, QuizResultSummary | null>;
+  materials: MaterialKind[];
 };
 
 export type Page<T> = { results: T[]; next: string | null; previous: string | null };
@@ -117,3 +118,64 @@ export type RunEvent =
   | { name: "done"; data: { lesson_id: string; stage: Stage } }
   | { name: "error"; data: { message: string; code: string } }
   | { name: "cancelled"; data: Record<string, never> };
+
+// --- Study sheets (docs/lesson-graph.md, docs/api.md) ---
+
+export type MaterialKind = "cheat_sheet" | "revision_sheet" | "practice_sheet";
+
+export type CheatItem = {
+  label: string;
+  kind: "formula" | "rule" | "term" | "fact" | "pattern";
+  content: string;
+  formula: string;
+  variables: { symbol: string; meaning: string }[];
+  when_to_use: string;
+};
+export type CheatSheet = { title: string; summary: string; sections: { heading: string; items: CheatItem[] }[] };
+
+export type WorkedExample = { problem: string; solution: string };
+export type RevisionSheet = {
+  title: string;
+  overview: string;
+  subtopics: {
+    title: string;
+    summary: string;
+    key_points: string[];
+    worked_examples: WorkedExample[];
+    common_mistakes: string[];
+  }[];
+  final_tips: string[];
+};
+
+export type QuestionType = "mcq" | "numerical" | "short_answer" | "long_answer" | "code";
+export type PracticeQuestion = {
+  id: string;
+  type: QuestionType;
+  concept: string;
+  difficulty: "easy" | "medium" | "hard";
+  marks: number;
+  question: string;
+  options?: string[];
+  unit?: string;
+  language?: string;
+  starter_code?: string;
+};
+export type PracticeSheet = { title: string; instructions: string; questions: PracticeQuestion[] };
+
+export type Solution = {
+  correct_index?: number;
+  answer?: number;
+  tolerance?: number;
+  unit?: string;
+  model_answer?: string;
+  key_points?: string[];
+  rubric?: string[];
+  reference_solution?: string;
+};
+
+export type StudyMaterial<T> = { kind: MaterialKind; content: T; solutions: Record<string, Solution> };
+
+export type PracticeGrade = {
+  score: { awarded: number; available: number; open_marks: number; correct: number; marked: number };
+  results: { id: string; correct: boolean | null; marks: number; awarded: number | null; solution: Solution }[];
+};
