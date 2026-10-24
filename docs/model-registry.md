@@ -272,7 +272,7 @@ This is a starting point that you tune in the admin afterwards. **Verify model I
 | Node | Primary | Fallback |
 |---|---|---|
 | diagnostic.generate | gemini / gemini-2.5-flash | groq / llama-3.3-70b-versatile |
-| diagnostic.review *(off)* | groq / llama-3.3-70b-versatile | n/a |
+| diagnostic.review | gemini / gemini-2.5-flash | groq / llama-3.3-70b-versatile |
 | learner.assess | gemini / gemini-2.5-flash | groq / llama-3.3-70b-versatile |
 | study.generate | gemini / gemini-2.5-flash | groq / llama-3.3-70b-versatile |
 | lesson.plan | gemini / gemini-2.5-pro | gemini / gemini-2.5-flash |
@@ -280,7 +280,7 @@ This is a starting point that you tune in the admin afterwards. **Verify model I
 | test.generate | gemini / gemini-2.5-flash | groq / llama-3.3-70b-versatile |
 | interactive.plan | gemini / gemini-2.5-flash | groq / llama-3.3-70b-versatile |
 | media.search | gemini / gemini-2.5-flash | groq / llama-3.3-70b-versatile |
-| media.verify *(off until tuned)* | gemini / gemini-2.5-flash | n/a |
+| media.verify | gemini / gemini-2.5-flash | gemini / gemini-2.5-flash-lite |
 | interactive.generate | gemini / gemini-2.5-flash | gemini / gemini-2.5-pro |
 | alignment.judge | gemini / gemini-2.5-pro | gemini / gemini-2.5-flash |
 | page.compile | gemini / gemini-2.5-flash | gemini / gemini-2.5-pro |

@@ -78,10 +78,12 @@ Each phase ends with something runnable and checkable.
 
 ## Phase 7: Test grading and hardening (still local)
 
-- [ ] `grade_test` graph (deterministic MCQ and numerical grading; `test.grade` for the rest), `TestSubmission`, `TestResultPanel`
-- [ ] Tracing (LangSmith or Langfuse callbacks in the gateway)
-- [ ] `ModelCall` dashboards in the admin; `diagnostic.review` and `media.verify` tuned and enabled
-- [ ] Golden-topic live suite
+- [x] `grade_test` graph (deterministic MCQ and numerical grading; `test.grade` for the rest), `TestSubmission`, `TestResultPanel`
+- [x] Tracing (LangSmith or Langfuse callbacks in the gateway)
+- [x] `ModelCall` dashboards in the admin; `diagnostic.review` and `media.verify` enabled by default and unable to fail a lesson (tuning against real models is still to do)
+- [x] Golden-topic live suite (`pytest -m live`; written and its checks tested offline, **not run**: it needs real API keys)
+
+**Done when:** a submitted test is graded (instantly for multiple choice and numerical answers, through `test.grade` for the rest) and shown in the viewer; tracing can be switched on by environment; the admin shows cost and latency per node; the live suite exists and is excluded from `make check`. ✅ Verified on the offline stack with headless Chromium driving the real frontend: a ten-question test was submitted from the lesson; the six automatic marks appeared at once ("8 of 20 marks so far"), the four written answers were graded by the `grade_test` run and the card became complete (14 of 20, 70%, "Graded by AI" on those four, topics to revisit, model answers on request); with the fake model server missing the output, the same submission ended as "Grading stopped" with the readable reason and the automatic marks kept, and the next submission graded normally. Not verified: real models grading real answers, tracing against a real LangSmith or Langfuse account, the effect of enabling the quiz reviewer and the picture check on real lessons, and the live suite itself.
 
 ## Across phases: design alignment
 

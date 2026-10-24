@@ -1200,6 +1200,87 @@ classDiagram
 - `RepairTargetLocator`, `RegressionCheck` and `CodeSignature` are pure: no ORM, no network, no sandbox.
 - `CodeService` owns the lesson's code use cases (serve, request a repair, list versions, restore); views stay thin.
 
+### 4.13 Test grading, tracing and usage (Phase 7)
+
+```mermaid
+classDiagram
+    direction LR
+    class AnswerGrader {
+        +grade(question, answer) QuestionGrade
+        +grade_all(questions, answers) SheetGrade
+    }
+    class ScoreCard {
+        +build(questions, answers, sheet, model) dict
+        +open_items(questions, answers) list
+    }
+    class Solution {
+        +of(question)$ dict
+    }
+    class GradeReportValidator {
+        +validate(report, questions) list~str~
+    }
+    class GradeTestPrompt
+    class SubmissionService {
+        +submit(lesson, answers) tuple
+        +get(lesson, submission_id) TestSubmission
+    }
+    class RunEffects {
+        +on_stopped(run, message)
+    }
+    class RunEffect {
+        <<interface>>
+        +apply(run, message)
+    }
+    class SubmissionEffect
+    class GradeTestGraphBuilder
+    class LoadSubmissionNode
+    class GradeOpenNode
+    class ValidateGradeNode
+    class PersistGradeNode
+    class CallbackProvider {
+        <<interface>>
+        +config(node_key, model, lesson_id, run_id) dict
+    }
+    class NoTracing
+    class LangSmithTracing
+    class LangfuseTracing
+    class SafeTracing
+    class TracingProviders {
+        +for_name(name)$ CallbackProvider
+        +from_settings()$ CallbackProvider
+    }
+    class UsageReport {
+        +within(window) UsageReport
+        +per_node() list~Usage~
+        +per_model() list~Usage~
+        +total() Usage
+    }
+
+    SubmissionService o-- AnswerGrader
+    SubmissionService o-- ScoreCard
+    ScoreCard ..> Solution
+    GradeTestGraphBuilder o-- LoadSubmissionNode
+    GradeTestGraphBuilder o-- GradeOpenNode
+    GradeTestGraphBuilder o-- ValidateGradeNode
+    GradeTestGraphBuilder o-- PersistGradeNode
+    GradeOpenNode ..> GradeTestPrompt
+    ValidateGradeNode ..> GradeReportValidator
+    PersistGradeNode o-- ScoreCard
+    RunEffects o-- RunEffect
+    RunEffect <|.. SubmissionEffect
+    CallbackProvider <|.. NoTracing
+    CallbackProvider <|.. LangSmithTracing
+    CallbackProvider <|.. LangfuseTracing
+    CallbackProvider <|.. SafeTracing
+    SafeTracing o-- CallbackProvider
+    TracingProviders ..> CallbackProvider
+```
+
+- **One grader for every score.** `AnswerGrader` marks practice sheets and the lesson test; `ScoreCard` adds blank answers, the model's capped marks, topics to revisit and each question's solution.
+- **Strategy**: `CallbackProvider` (tracing; none, LangSmith, Langfuse, chosen by `LLM_TRACING` through `TracingProviders`) and `RunEffect` (what a run that did not finish leaves behind, per graph). `SafeTracing` is a Decorator that makes tracing unable to fail a model call.
+- `UsageReport` is a read model over the `ModelCall` log, with no side effects, behind the admin's usage page.
+- The optional judges (`diagnostic.review`, `media.verify`) degrade instead of failing: see [lesson-graph.md](lesson-graph.md).
+
 ## 5. How to extend
 
 | You are adding | Do this |

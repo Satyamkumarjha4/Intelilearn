@@ -129,8 +129,9 @@ A lesson is a learner's request to learn one topic, from the diagnostic quiz thr
 |---|---|---|
 | lesson | FK | |
 | answers | JSON | `{question_id: answer}` |
-| result | JSON, null | `GradeReport`: score per question, feedback, total, topics to revisit |
+| result | JSON, null | The `ScoreCard` (`graph/grading.py`): score, per-question marks, feedback and solution, topics to revisit. At first only what could be marked at once (`complete: false`) |
 | status | enum `grading` \| `graded` \| `failed` | |
+| error | text | Why grading failed (blank otherwise) |
 | submitted_at / graded_at | datetime | |
 
 Multiple submissions are allowed, so the learner can retake the test.

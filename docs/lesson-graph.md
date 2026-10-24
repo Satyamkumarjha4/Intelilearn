@@ -367,7 +367,7 @@ This writes pages, the test, media links, the assembled code and its parts (`cod
 | Graph | Trigger | Nodes |
 |---|---|---|
 | `runtime_repair` | The browser iframe reports an error the sandbox check missed | `load_repair` → `repair_runtime` (`runtime.repair` → code-fix loop) → `assemble_repaired` → `regression_check` → `verify_repair` (render check) → `save_repair` (a new `code_version`) |
-| `grade_test` | The learner submits page 4 | MCQ and numerical graded deterministically. Short, long, and code answers graded by `test.grade` against the model answer or rubric. Produces a `TestResult` with feedback per question and recommended topics to revisit. |
+| `grade_test` | The learner submits page 4 | `load_submission` → `grade_open` (`test.grade`) → `validate_grade` → `persist_grade`, or straight to `persist_grade` when nothing needs a judgement. Produces a `ScoreCard` with feedback per question and topics to revisit. |
 | `study_material` | The learner requests another sheet type | `generate_study_material` → validate → persist |
 
 
@@ -377,6 +377,17 @@ This writes pages, the test, media links, the assembled code and its parts (`cod
 - **Failure policy.** Generated layout is never worth failing a lesson for. A page whose code keeps failing the checks, or keeps crashing in the browser, falls back to the **standard layout** (`DocumentAssembler.template_page`: every section, the interactives and figures at their anchors), and an interactive that keeps crashing is dropped; both leave a warning. Only a document that fails *after* the fallback fails the run, and a retry resumes at `assemble_document` without rewriting the pages.
 - **Rounds** are `render_check_max_rounds` (default 2) repairs, then one fallback, then one last check (`RenderPolicy`). A repair goes only to the pages and interactives that the browser blamed, with its errors as feedback.
 - **One runtime.** The render check loads the same bundle (`sandbox/dist/runtime.js`) and harness (with its CSP) the browser uses, so a lesson that passes behaves the same in the learner's iframe.
+
+### The optional judges never fail a lesson
+
+`diagnostic.review` (a judge of the diagnostic quiz) and `media.verify` (a vision check of a found picture) are on in the default registry, but they are bonuses on top of rules that already passed. A judge whose models all fail is skipped with a warning. A quiz that passes every rule is kept, with a warning, when only the reviewer still objects after the last attempt (a rule that fails still fails the run). A picture the vision models cannot check is kept unchecked. Their effect on real lessons has not been measured: see the roadmap.
+
+### How `grade_test` is built
+
+- **The request marks what it can.** `SubmissionService` marks multiple-choice and numerical answers with `AnswerGrader` (the grader practice sheets use, so a score never depends on where the test was taken) and gives blank answers 0, then stores a first `ScoreCard` with the open-ended answers still `awarded: null`. Only if some open-ended answer has something to judge is a `grade_test` run queued.
+- **The model sees only what needs a judgement**, with the reference for its type (key points, rubric, model answer, or reference solution and test cases; code is read, not run). The learner's answer is delimited as data and the prompt says to ignore any instruction inside it.
+- **Its marks are checked** (`GradeReportValidator`): every question once, within its marks, with feedback; a bad grading goes back with the problems, up to `test.grade.max_attempts`, then the run fails with the reason. Marks are capped at the question's worth again when the card is built.
+- **No Retry.** A run that cannot grade (or is cancelled, or cannot be queued) marks its submission `failed` through `RunEffects`; the lesson stays ready and the learner submits again. One grading at a time per lesson.
 
 ### How `runtime_repair` is built
 
