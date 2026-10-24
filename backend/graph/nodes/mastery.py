@@ -64,7 +64,7 @@ class GenerateStudyMaterialNode(LLMNode):
     def subject(self, state: dict) -> dict:
         return state | {"kind": state["mastery_choice"], "concepts": diagnostic_concepts(state)}
 
-    def to_state(self, output: BaseModel, state: dict) -> dict:
+    def to_state(self, output: BaseModel, state: dict, ctx: FlowContext) -> dict:
         return {"study_material": output.model_dump(mode="json"), "attempts": {"material": 1}}
 
 

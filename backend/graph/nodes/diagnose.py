@@ -48,7 +48,7 @@ class GenerateDiagnosticNode(LLMNode):
     schema = DiagnosticBundle
     feedback_key = "diagnostic"
 
-    def to_state(self, output: DiagnosticBundle, state: dict) -> dict:
+    def to_state(self, output: DiagnosticBundle, state: dict, ctx: FlowContext) -> dict:
         return {"bundle": output.model_dump(mode="json"), "attempts": {"diagnostic": 1}}
 
 
@@ -180,7 +180,7 @@ class AssessLearnerNode(LLMNode):
             "prerequisite_questions": bundle["prerequisite_questions"],
         }
 
-    def to_state(self, output: Any, state: dict) -> dict:
+    def to_state(self, output: Any, state: dict, ctx: FlowContext) -> dict:
         assessment = self.guard.apply(output.model_dump(mode="json"), state["prerequisites_to_cover"])
         self.lesson(state).record(assessment=assessment, level=assessment["level"])
         return {"assessment": assessment}

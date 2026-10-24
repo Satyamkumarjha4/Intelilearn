@@ -1,4 +1,5 @@
-"""Unit under test: `graph.builders.FlowGraphBuilder` and its segments: the compiled lesson-flow graph, Stage A.
+"""Unit under test: `graph.builders.FlowGraphBuilder` and its segments: the compiled lesson-flow graph, Stage A and the
+mastery path (the diagnose and mastery segments; Stage B is in test_author_graph.py).
 
 Why: the wiring is where a correct set of nodes still goes wrong: a router pointing at the wrong node, an interrupt
 that loses state on resume, a retry that does not reset its counters. These tests run the real graph with a scripted
@@ -21,10 +22,10 @@ Use cases:
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
+from support.driver import GraphDriver
 from support.study_data import make_cheat_sheet, make_practice_sheet
 
-from graph.builders import DiagnoseSegment, FlowGraphBuilder, StudyMaterialGraphBuilder
-from graph.grading import QuizGrader
+from graph.builders import DiagnoseSegment, FlowGraphBuilder, MasterySegment, StudyMaterialGraphBuilder
 from lessons.models import Lesson, Quiz, QuizAttempt, Stage, StudyMaterial
 
 ASSESSMENT = {
@@ -38,42 +39,8 @@ ASSESSMENT = {
 }
 
 
-class Run:
-    """Drives the compiled graph like `FlowRunner`: stream a segment, remember the nodes that ran, then resume."""
-
-    def __init__(self, lesson, ctx, lesson_state):
-        self.lesson, self.ctx = lesson, ctx
-        self.graph = FlowGraphBuilder().build(InMemorySaver())
-        self.config = {"configurable": {"thread_id": str(lesson.id)}}
-        Lesson.objects.filter(pk=lesson.pk).update(
-            config_snapshot=lesson_state["snapshot"], settings_snapshot=lesson_state["settings"]
-        )
-        self.nodes: list[str] = []
-        self.interrupt = None
-
-    def stream(self, payload):
-        self.interrupt = None
-        for _mode, chunk in self.graph.stream(payload, self.config, context=self.ctx, stream_mode=["updates"]):
-            for node, update in chunk.items():
-                if node == "__interrupt__":
-                    self.interrupt = update[0].value
-                else:
-                    self.nodes.append(node)
-        return self
-
-    def start(self):
-        return self.stream({"lesson_id": str(self.lesson.id)})
-
-    def answer(self, kind: str, right: int):
-        quiz = Quiz.objects.get(lesson=self.lesson, kind=kind)
-        answers = {q["id"]: q["correct_index"] if n < right else (q["correct_index"] + 1) % 4
-                   for n, q in enumerate(quiz.questions)}  # fmt: skip
-        result = QuizGrader().grade(quiz.questions, answers).as_dict()
-        attempt = QuizAttempt.objects.create(quiz=quiz, answers=answers, result=result)
-        return self.stream(Command(resume=str(attempt.id)))
-
-    def state(self):
-        return self.graph.get_state(self.config).values
+def Run(lesson, ctx, lesson_state):
+    return GraphDriver(lesson, ctx, lesson_state, [DiagnoseSegment(), MasterySegment()])
 
 
 @pytest.fixture
@@ -291,8 +258,10 @@ def test_a_bundle_that_stays_invalid_fails_the_run_and_retry_starts_over(run, ga
 def test_exits_that_no_segment_provides_lead_to_the_end():
     exits = FlowGraphBuilder(segments=[DiagnoseSegment()])._exits()
 
-    assert exits == {"failed": "mark_failed", "lesson": "__end__", "mastery": "__end__"}
+    assert exits == {"failed": "mark_failed", "lesson": "__end__", "mastery": "__end__", "build": "__end__"}
 
 
-def test_the_mastery_segment_provides_the_mastery_exit():
-    assert FlowGraphBuilder()._exits()["mastery"] == "publish_mastery_options"
+def test_the_default_flow_wires_the_mastery_and_author_segments_in():
+    exits = FlowGraphBuilder()._exits()
+
+    assert (exits["mastery"], exits["lesson"]) == ("publish_mastery_options", "plan_lesson")

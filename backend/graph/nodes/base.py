@@ -72,10 +72,13 @@ class LLMNode(Node):
 
     def run(self, state: dict, ctx: FlowContext) -> dict:
         self.before(state)
-        feedback = self.feedback(state, self.feedback_key) if self.feedback_key else None
-        messages = self.prompt.messages(self.subject(state), feedback)
+        messages = self.prompt.messages(self.subject(state), self.feedback_for(state))
         result = ctx.invoke(state, self.node_key, messages, schema=self.schema_of(state))
-        return self.to_state(result.output, state)
+        return self.to_state(result.output, state, ctx)
+
+    def feedback_for(self, state: dict) -> list[str] | None:
+        """What the validator said about the previous attempt (from the state under `feedback_key`)."""
+        return self.feedback(state, self.feedback_key) if self.feedback_key else None
 
     def schema_of(self, state: dict) -> type[BaseModel] | None:
         """The structured-output schema; most nodes have one, a few choose it from the state."""
@@ -88,7 +91,7 @@ class LLMNode(Node):
         return state
 
     @abstractmethod
-    def to_state(self, output: Any, state: dict) -> dict: ...
+    def to_state(self, output: Any, state: dict, ctx: FlowContext) -> dict: ...
 
 
 class ValidateNode(Node):

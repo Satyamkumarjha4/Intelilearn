@@ -78,7 +78,7 @@ class NodeBudget:
 class FlowContext:
     gateway: LLMGateway
     sandbox: CodeSandbox | None = None
-    media: Any = None  # graph.media.MediaLibrary (Phase 5)
+    media: Any = None  # graph.media.MediaLibrary
     events: EventSink | None = None
     run_id: str | None = None
 
@@ -109,6 +109,9 @@ def default_context(run_id: str | None = None, events: EventSink | None = None) 
     """The composition root: the real gateway, sandbox and media library."""
     from llm_registry.gateway import Gateway
 
+    from .media import MediaLibrary
     from .sandbox import SandboxRunner
 
-    return FlowContext(gateway=Gateway(), sandbox=SandboxRunner(), events=events, run_id=run_id)
+    return FlowContext(
+        gateway=Gateway(), sandbox=SandboxRunner(), media=MediaLibrary.default(), events=events, run_id=run_id
+    )
