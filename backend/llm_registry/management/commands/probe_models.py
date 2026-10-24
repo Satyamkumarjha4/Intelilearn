@@ -31,7 +31,7 @@ class Command(BaseCommand):
         failures = 0
         for llm_model in self._models(model):
             self.stdout.write(self.style.MIGRATE_HEADING(str(llm_model)))
-            for result in probe_model(llm_model, chat_factory=providers.build_chat_model):
+            for result in probe_model(llm_model, chat_factory=providers.CHAT_MODEL_FACTORY):
                 style = self.style.SUCCESS if result.ok else self.style.ERROR
                 failures += not result.ok
                 line = (
@@ -67,7 +67,7 @@ class Command(BaseCommand):
             return True
         events = []
         try:
-            result = Gateway(providers.build_chat_model).invoke(
+            result = Gateway(providers.CHAT_MODEL_FACTORY).invoke(
                 node_key,
                 [HumanMessage("This is a connectivity check. Reply with the single word: pong")],
                 snapshot=RegistryResolver().snapshot(),

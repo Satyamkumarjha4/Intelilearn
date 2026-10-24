@@ -10,7 +10,7 @@ from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
-from .providers import build_chat_model
+from .providers import CHAT_MODEL_FACTORY
 from .redaction import REDACTOR
 from .resolver import ResolvedModel
 
@@ -64,7 +64,7 @@ def _run(capability: str, fn) -> ProbeResult:
         )
 
 
-def probe_model(llm_model, *, chat_factory=build_chat_model, timeout_s: int = 60) -> list[ProbeResult]:
+def probe_model(llm_model, *, chat_factory=CHAT_MODEL_FACTORY, timeout_s: int = 60) -> list[ProbeResult]:
     """Probe every capability the LLMModel row declares. Makes real API calls."""
     provider = llm_model.provider
 

@@ -231,7 +231,7 @@ result.model.label     # which model actually answered
 result.fallback_index  # 0 = primary
 ```
 
-The chat-model factory, the sleep function, and the rate limiter can be injected, which is how the tests run the gateway with scripted fake models.
+Every collaborator can be injected, which is how the tests run the gateway with scripted fake models: the chat-model factory (`providers.py`), the sleep function, the rate limiter (`ratelimit.py`), the retry policy (`retry.py`), the `ModelCall` recorder (`recorder.py`), and the output adapters, one per output mode (`outputs.py`).
 
 ### Algorithm
 

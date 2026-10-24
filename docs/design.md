@@ -108,8 +108,8 @@ flowchart TB
 | | `graph/media.py` | `MediaLibrary` | One object for search, download, sniffing and storage | ✅ |
 | | flow execution | `FlowRunner` | Celery tasks and views start or resume a graph without knowing LangGraph | ☐ Phase 3 |
 | **Chain of Responsibility** | gateway | `ResolvedNode.chain` walked by `Gateway` | Each model in priority order handles the call or passes it on to the next fallback | ✅ |
-| **Strategy** | gateway | `OutputAdapter` (`Structured…`, `Tools…`, `Text…`) | Output mode varies per node; the retry loop must not branch on it | ◐ (`if node.output == …`) |
-| | gateway | `RetryPolicy` (`ExponentialBackoffPolicy`) | Which errors are retryable and how long to wait, swappable and testable | ◐ (`is_retryable`, `backoff_delay`) |
+| **Strategy** | gateway | `OutputAdapter` (`Structured…`, `Tools…`, `Text…`) | Output mode varies per node; the retry loop must not branch on it | ✅ |
+| | gateway | `RetryPolicy` (`ExponentialBackoffPolicy`) | Which errors are retryable and how long to wait, swappable and testable | ✅ |
 | | providers | `ProviderProfile` per provider kind | Allowed params, renames and reasoning kwargs differ per vendor | ✅ |
 | | rate limits | `RateLimiter` (`CacheWindowRateLimiter`) | Gateway depends on "wait for room", not on Redis | ✅ |
 | | probes | `CapabilityProbe` per capability | Each capability has its own check; `ModelProber` runs the declared ones | ◐ (`probe_model`) |
@@ -125,7 +125,7 @@ flowchart TB
 | | Django | `BaseCommand`, `AppConfig`, `ModelAdmin` | Framework-defined hooks | ✅ |
 | **Builder** | graph | `FlowGraphBuilder`, `StudyMaterialGraphBuilder`, `RuntimeRepairGraphBuilder`, `MediaGraphBuilder`, `CodeFixLoopBuilder` | Graphs are assembled step by step (nodes, edges, conditional edges) then compiled | ◐ (`build_*` functions) |
 | | codegen | `DocumentAssembler` | The TSX document is built from page and component parts | ◐ (`codegen.py` functions) |
-| **Factory** | providers | `ChatModelFactory` (`LangChainChatModelFactory`) | Builds a LangChain client from a `ResolvedModel`; tests inject a fake factory | ◐ (`build_chat_model` function, already injected) |
+| **Factory** | providers | `ChatModelFactory` (`LangChainChatModelFactory`) | Builds a LangChain client from a `ResolvedModel`; tests inject a fake factory | ✅ |
 | | graph | `default_context()` (composition root) | The one place concrete adapters are chosen | ✅ |
 | **Registry** | specs | `NODE_SPECS`, a `NodeSpecCatalog` (read-only `Mapping`) | Node keys are discovered by the admin, migrations and checks | ✅ |
 | | graph | `GraphRegistry` over `GRAPH_BUILDERS` | `GraphRun.graph` name → builder | ◐ (dict) |
@@ -433,24 +433,36 @@ classDiagram
         -ModelCallRecorder recorder
         -OutputAdapters adapters
         +invoke(...) GatewayResult
-        -try_model(node, model, index, messages) GatewayResult
+        -try_model(call, model, index, messages) GatewayResult
     }
     class ChatModelFactory {
         <<interface>>
-        +build(model, timeout_s) BaseChatModel
+        +__call__(model, timeout_s) BaseChatModel
     }
     class LangChainChatModelFactory {
-        +build(model, timeout_s) BaseChatModel
+        -ProviderProfiles profiles
+        +__call__(model, timeout_s) BaseChatModel
     }
     class OutputAdapter {
-        <<interface>>
-        +bind(chat, schema, tools) Runnable
-        +interpret(reply) Outcome
+        <<abstract>>
+        +OutputMode mode
+        +check_request(node_key, schema, tools)
+        +bind(chat, structured_output_method, schema, tools)* Runnable
+        +interpret(reply)* Outcome
+        +repair_messages(messages, outcome) list
+    }
+    class Outcome {
+        <<value>>
+        +bool ok
+        +output
+        +AIMessage message
+        +str problem
+    }
+    class OutputAdapters {
+        +for_mode(mode) OutputAdapter
     }
     class StructuredOutputAdapter {
-        +bind(chat, schema, tools) Runnable
-        +interpret(reply) Outcome
-        +repair_messages(messages, reply, problem) list
+        +repair_messages(messages, outcome) list
     }
     class ToolsOutputAdapter
     class TextOutputAdapter
@@ -481,6 +493,7 @@ classDiagram
     class ModelCallRecorder {
         -Redactor redactor
         +record(node_key, model, attempt, status, latency_ms, error, message)
+        +cost(model, input_tokens, output_tokens)$ float
     }
     class Redactor {
         +redact(text) str
@@ -502,16 +515,18 @@ classDiagram
     Gateway o-- RetryPolicy
     Gateway o-- RateLimiter
     Gateway o-- ModelCallRecorder
-    Gateway ..> OutputAdapter : picked by node.output
+    Gateway o-- OutputAdapters
+    OutputAdapters o-- OutputAdapter : by node.output
+    OutputAdapter ..> Outcome
     Gateway ..> GatewayResult
     Gateway ..> AllModelsFailed : raises
     Gateway ..> NodeDisabled : raises
     ChatModelFactory <|.. LangChainChatModelFactory
     LangChainChatModelFactory ..> ProviderProfiles
     LangChainChatModelFactory ..> MissingAPIKey : raises
-    OutputAdapter <|.. StructuredOutputAdapter
-    OutputAdapter <|.. ToolsOutputAdapter
-    OutputAdapter <|.. TextOutputAdapter
+    OutputAdapter <|-- StructuredOutputAdapter
+    OutputAdapter <|-- ToolsOutputAdapter
+    OutputAdapter <|-- TextOutputAdapter
     RetryPolicy <|.. ExponentialBackoffPolicy
     RateLimiter <|.. CacheWindowRateLimiter
     ModelCallRecorder --> Redactor
@@ -1069,7 +1084,7 @@ Code written before this document that doesn't follow it yet. Behaviour must not
 | Module | Today | Target | Do it |
 |---|---|---|---|
 | ~~`llm_registry/params.py`, `reasoning.py`~~ | ~~dict tables and `if kind ==`~~ | `ProviderProfile` per kind + `ProviderProfiles` (`profiles.py`) | ✅ Done |
-| `llm_registry/gateway.py` | `is_retryable`, `backoff_delay`, `_record`, `if node.output ==` | `ExponentialBackoffPolicy`, `ModelCallRecorder`, `OutputAdapter`s | Before Phase 3 |
+| ~~`llm_registry/gateway.py`~~ | ~~`is_retryable`, `backoff_delay`, `_record`, `if node.output ==`~~ | `ExponentialBackoffPolicy` (`retry.py`), `ModelCallRecorder` (`recorder.py`), `OutputAdapter`s (`outputs.py`), `LangChainChatModelFactory` (`providers.py`) | ✅ Done |
 | ~~`llm_registry/ratelimit.py`~~ | ~~`acquire()` function~~ | `RateLimiter` Protocol + `CacheWindowRateLimiter` | ✅ Done |
 | ~~`llm_registry/resolver.py`~~ | ~~module functions~~ | `RegistryResolver`, `RegistrySnapshot` | ✅ Done |
 | `llm_registry/probes.py` | `probe_model()` | `ModelProber` + `CapabilityProbe`s | Next probe change |

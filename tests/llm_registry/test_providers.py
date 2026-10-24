@@ -1,4 +1,19 @@
-"""Builds real LangChain clients (no network) to prove our parameter names match the installed integrations."""
+"""Unit under test: `llm_registry.providers.LangChainChatModelFactory`, which builds a real LangChain client from a
+ResolvedModel. The clients are built offline (no request is sent) to prove our parameter names match the installed
+integrations.
+
+Why: integrations silently ignore unknown keyword arguments. A misspelled reasoning or limit parameter would build a
+working client that quietly ignores what the admin configured.
+
+Use cases:
+- Gemini with a thinking budget, and with a thinking level
+- Anthropic with an effort level, and with an extended-thinking budget
+- OpenAI reasoning effort, token limit, timeout and no client-side retries
+- an OpenAI-compatible provider uses its base URL
+- Groq
+- Ollama (no timeout or retries arguments; max_tokens sent as num_predict)
+- a missing API key is a clear error naming the variable
+"""
 
 import pytest
 from langchain_anthropic import ChatAnthropic
@@ -7,7 +22,9 @@ from langchain_groq import ChatGroq
 from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 
-from llm_registry.providers import MissingAPIKey, build_chat_model
+from llm_registry.providers import LangChainChatModelFactory, MissingAPIKey
+
+factory = LangChainChatModelFactory()
 
 
 @pytest.fixture(autouse=True)
@@ -23,14 +40,14 @@ def test_gemini_with_thinking_budget(resolved_model):
         params={"temperature": 0.5, "max_tokens": 1000, "top_k": 20},
         reasoning={"thinking_budget": 8192},
     )
-    chat = build_chat_model(model, 45)
+    chat = factory(model, 45)
 
     assert isinstance(chat, ChatGoogleGenerativeAI)
     assert (chat.temperature, chat.max_output_tokens, chat.top_k, chat.thinking_budget) == (0.5, 1000, 20, 8192)
 
 
 def test_gemini_with_thinking_level(resolved_model):
-    chat = build_chat_model(
+    chat = factory(
         resolved_model(provider_kind="google_genai", model_name="gemini-3-pro", api_key_env="TEST_LLM_KEY",
                        reasoning={"thinking_level": "high"}),
         45,
@@ -39,12 +56,12 @@ def test_gemini_with_thinking_level(resolved_model):
 
 
 def test_anthropic_effort_and_thinking(resolved_model):
-    effort = build_chat_model(
+    effort = factory(
         resolved_model(provider_kind="anthropic", model_name="claude-x", api_key_env="TEST_LLM_KEY",
                        params={"max_tokens": 2000}, reasoning={"effort": "high"}),
         45,
     )  # fmt: skip
-    budget = build_chat_model(
+    budget = factory(
         resolved_model(provider_kind="anthropic", model_name="claude-x", api_key_env="TEST_LLM_KEY",
                        params={"max_tokens": 30000},
                        reasoning={"thinking": {"type": "enabled", "budget_tokens": 24576}}),
@@ -58,7 +75,7 @@ def test_anthropic_effort_and_thinking(resolved_model):
 
 
 def test_openai_reasoning_and_limits(resolved_model):
-    chat = build_chat_model(
+    chat = factory(
         resolved_model(provider_kind="openai", model_name="gpt-x", api_key_env="TEST_LLM_KEY",
                        params={"max_tokens": 4000, "seed": 7}, reasoning={"reasoning_effort": "low"}),
         45,
@@ -68,7 +85,7 @@ def test_openai_reasoning_and_limits(resolved_model):
 
 
 def test_openai_compatible_uses_base_url(resolved_model):
-    chat = build_chat_model(
+    chat = factory(
         resolved_model(provider_kind="openai_compatible", model_name="meta/llama", api_key_env="TEST_LLM_KEY",
                        base_url="https://openrouter.ai/api/v1"),
         45,
@@ -78,7 +95,7 @@ def test_openai_compatible_uses_base_url(resolved_model):
 
 
 def test_groq(resolved_model):
-    chat = build_chat_model(
+    chat = factory(
         resolved_model(provider_kind="groq", model_name="llama", api_key_env="TEST_LLM_KEY",
                        params={"temperature": 0.2}, reasoning={"reasoning_effort": "medium"}),
         45,
@@ -88,7 +105,7 @@ def test_groq(resolved_model):
 
 
 def test_ollama(resolved_model):
-    chat = build_chat_model(
+    chat = factory(
         resolved_model(provider_kind="ollama", model_name="qwen3", base_url="http://localhost:11434",
                        params={"max_tokens": 512}, reasoning={"reasoning": True}),
         45,
@@ -100,4 +117,4 @@ def test_ollama(resolved_model):
 def test_missing_key_is_a_clear_error(resolved_model, monkeypatch):
     monkeypatch.delenv("TEST_LLM_KEY")
     with pytest.raises(MissingAPIKey, match="TEST_LLM_KEY"):
-        build_chat_model(resolved_model(provider_kind="openai", api_key_env="TEST_LLM_KEY"), 45)
+        factory(resolved_model(provider_kind="openai", api_key_env="TEST_LLM_KEY"), 45)
