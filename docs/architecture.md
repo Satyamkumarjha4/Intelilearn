@@ -10,7 +10,7 @@ A learner signs in and asks to learn a topic. Lesson Crafter first **diagnoses**
 
 A **lesson** has four pages: Introduction (with prerequisites if needed), Core concepts, Advanced concepts, and a Test (10–15 questions of mixed types). The pages include interactive graphs, simulations, animations, and real images or GIFs. The content is validated against the learner's level, compiled into a TypeScript document, security-scanned, test-rendered in a headless sandbox, and only then shown.
 
-The complete flow is in [lesson-graph.md](lesson-graph.md).
+The complete flow is in [lesson-graph.md](lesson-graph.md). The classes, layers and design patterns are in [design.md](design.md), and the test-driven workflow in [testing.md](testing.md).
 
 ## Components
 
