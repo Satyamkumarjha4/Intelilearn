@@ -154,7 +154,7 @@ Adding a node takes three steps: add a `NodeSpec`, write the node, and run `migr
 
 ## Reasoning
 
-`reasoning_effort` (`none` / `low` / `medium` / `high`) is set per node, with an optional override per binding. The gateway translates it in one place (`llm_registry/reasoning.py`):
+`reasoning_effort` (`none` / `low` / `medium` / `high`) is set per node, with an optional override per binding. The gateway translates it in one place, the provider kind's `ProviderProfile` (`llm_registry/profiles.py`):
 
 | `reasoning_control` | Translation |
 |---|---|
@@ -180,7 +180,7 @@ LLMModel.default_params  <  NodeConfig.params_override  <  NodeModelBinding.para
 reasoning:  NodeSpec.default_reasoning  <  NodeConfig.reasoning_effort  <  NodeModelBinding.reasoning_effort
 ```
 
-Allowed parameter keys depend on what each integration supports (`llm_registry/params.py`):
+Allowed parameter keys depend on what each integration supports (`ProviderProfile.allowed_params` in `llm_registry/profiles.py`):
 
 | Provider kind | Allowed keys |
 |---|---|

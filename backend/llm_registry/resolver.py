@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass, field
 from django.core.cache import cache
 
 from .node_specs import NODE_SPECS, Effort
-from .reasoning import apply_reasoning
+from .profiles import PROVIDER_PROFILES
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +65,8 @@ def _resolve_binding(node, binding) -> ResolvedModel:
     effort = binding.reasoning_effort or node.reasoning_effort or node.spec.default_reasoning
     if not model.supports_reasoning:
         effort = Effort.NONE
-    params, reasoning = apply_reasoning(
-        provider.kind, model.reasoning_control, effort, params, disables_sampling=model.reasoning_disables_sampling
+    params, reasoning = PROVIDER_PROFILES.for_kind(provider.kind).apply_reasoning(
+        model.reasoning_control, effort, params, disables_sampling=model.reasoning_disables_sampling
     )
     return ResolvedModel(
         provider_key=provider.key,

@@ -66,13 +66,10 @@ def _run(capability: str, fn) -> ProbeResult:
 
 def probe_model(llm_model, *, chat_factory=build_chat_model, timeout_s: int = 60) -> list[ProbeResult]:
     """Probe every capability the LLMModel row declares. Makes real API calls."""
-    from .reasoning import apply_reasoning
-
     provider = llm_model.provider
 
     def resolved(effort: str = "none") -> ResolvedModel:
-        params, reasoning = apply_reasoning(
-            provider.kind,
+        params, reasoning = provider.profile.apply_reasoning(
             llm_model.reasoning_control,
             effort,
             dict(llm_model.default_params),

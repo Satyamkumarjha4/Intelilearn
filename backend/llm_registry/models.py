@@ -4,8 +4,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 from .node_specs import NODE_SPECS, Capability, Effort, OutputMode, get_spec
-from .params import ProviderKind, validate_params
-from .reasoning import ReasoningControl
+from .profiles import PROVIDER_PROFILES, ProviderKind, ReasoningControl
 
 EFFORT_CHOICES = [(e.value, e.value.capitalize()) for e in Effort]
 
@@ -36,13 +35,17 @@ class Provider(models.Model):
     def has_api_key(self) -> bool:
         return not self.api_key_env or bool(os.environ.get(self.api_key_env))
 
+    @property
+    def profile(self):
+        return PROVIDER_PROFILES.for_kind(self.kind)
+
     def clean(self):
-        needs_url = self.kind in (ProviderKind.OLLAMA, ProviderKind.OPENAI_COMPATIBLE)
-        if needs_url and not self.base_url:
+        profile = self.profile
+        if profile.needs_base_url and not self.base_url:
             raise ValidationError({"base_url": "Required for this provider kind."})
-        if not needs_url and self.base_url:
+        if not profile.needs_base_url and self.base_url:
             raise ValidationError({"base_url": "Only Ollama and OpenAI-compatible providers take a base URL."})
-        if self.kind != ProviderKind.OLLAMA and not self.api_key_env:
+        if profile.needs_api_key and not self.api_key_env:
             raise ValidationError({"api_key_env": "Name the environment variable that holds this provider's API key."})
 
 
@@ -99,7 +102,7 @@ class LLMModel(models.Model):
 
     def clean(self):
         errors = {}
-        if self.provider_id and (problems := validate_params(self.provider.kind, self.default_params)):
+        if self.provider_id and (problems := self.provider.profile.validate_params(self.default_params)):
             errors["default_params"] = problems
         if self.supports_reasoning and self.reasoning_control == ReasoningControl.NONE:
             errors["reasoning_control"] = "Choose how reasoning is controlled for a reasoning model."
@@ -178,7 +181,7 @@ class NodeModelBinding(models.Model):
         if model.context_window < spec.min_context:
             issues.append(f"{model} has a {model.context_window}-token context; {spec.key} needs {spec.min_context}.")
         merged = {**model.default_params, **self.node.params_override, **self.params_override}
-        issues += validate_params(model.provider.kind, merged)
+        issues += model.provider.profile.validate_params(merged)
         return issues
 
     def clean(self):

@@ -110,7 +110,7 @@ flowchart TB
 | **Chain of Responsibility** | gateway | `ResolvedNode.chain` walked by `Gateway` | Each model in priority order handles the call or passes it on to the next fallback | ✅ |
 | **Strategy** | gateway | `OutputAdapter` (`Structured…`, `Tools…`, `Text…`) | Output mode varies per node; the retry loop must not branch on it | ◐ (`if node.output == …`) |
 | | gateway | `RetryPolicy` (`ExponentialBackoffPolicy`) | Which errors are retryable and how long to wait, swappable and testable | ◐ (`is_retryable`, `backoff_delay`) |
-| | providers | `ProviderProfile` per provider kind | Allowed params, renames and reasoning kwargs differ per vendor | ◐ (dict tables + `if kind ==`) |
+| | providers | `ProviderProfile` per provider kind | Allowed params, renames and reasoning kwargs differ per vendor | ✅ |
 | | rate limits | `RateLimiter` (`CacheWindowRateLimiter`) | Gateway depends on "wait for room", not on Redis | ◐ (`ratelimit.acquire`) |
 | | probes | `CapabilityProbe` per capability | Each capability has its own check; `ModelProber` runs the declared ones | ◐ (`probe_model`) |
 | | graph | `Validator` per artefact | Deterministic rules per output type, fed back as retry feedback | ◐ (`validate_*` functions) |
@@ -129,7 +129,7 @@ flowchart TB
 | | graph | `default_context()` (composition root) | The one place concrete adapters are chosen | ✅ |
 | **Registry** | specs | `NodeSpecCatalog` over `NODE_SPECS` | Node keys are discovered by the admin, migrations and checks | ◐ (dict + `get_spec`) |
 | | graph | `GraphRegistry` over `GRAPH_BUILDERS` | `GraphRun.graph` name → builder | ◐ (dict) |
-| | providers | `ProviderProfiles` | Provider kind → `ProviderProfile` | ☐ |
+| | providers | `ProviderProfiles` | Provider kind → `ProviderProfile` | ✅ |
 | **Adapter** | sandbox | `SandboxRunner` | Wraps `node sandbox/scripts/*.mjs` subprocesses as Python methods | ✅ |
 | | media | `MediaSource` implementations | Wrap each external search API to one shape | ◐ |
 | | accounts | `CookieJWTAuthentication` | Adapts simplejwt to read the token from a cookie with CSRF | ✅ |
@@ -360,11 +360,18 @@ classDiagram
     class ProviderProfile {
         <<abstract>>
         +str kind
-        +allowed_params() set~str~
+        +str langchain_provider
+        +frozenset allowed_params
+        +bool needs_base_url
+        +bool needs_api_key
+        +bool supports_client_timeout
         +validate_params(params) list~str~
         +to_integration_kwargs(params) dict
         +reasoning_kwargs(control, effort) dict
+        +apply_reasoning(control, effort, params, disables_sampling) tuple
+        #_reasoning_kwargs(control, effort)* dict
     }
+    class OpenAICompatibleProfile
     class OpenAIProfile
     class AnthropicProfile
     class GoogleGenAIProfile
@@ -372,6 +379,7 @@ classDiagram
     class OllamaProfile
     class ProviderProfiles {
         +for_kind(kind) ProviderProfile
+        +kinds() list~str~
     }
     class RegistrySerializer {
         +export() dict
@@ -392,15 +400,16 @@ classDiagram
     RegistrySnapshot *-- ResolvedNode
     ResolvedNode *-- ResolvedModel
     ProviderProfile <|-- OpenAIProfile
+    OpenAIProfile <|-- OpenAICompatibleProfile
+    OpenAIProfile <|-- GroqProfile
     ProviderProfile <|-- AnthropicProfile
     ProviderProfile <|-- GoogleGenAIProfile
-    ProviderProfile <|-- GroqProfile
     ProviderProfile <|-- OllamaProfile
     ProviderProfiles o-- ProviderProfile
     RegistrySeeder --> RegistrySerializer
 ```
 
-- `ProviderProfile` merges what `params.py` and `reasoning.py` hold as tables and `if kind ==` branches. `OpenAICompatibleProfile` subclasses `OpenAIProfile`.
+- `ProviderProfile` (`profiles.py`) holds everything that differs per vendor: allowed params and renames, whether a base URL or API key is needed, whether the client takes `timeout`, and reasoning translation. `OpenAICompatibleProfile` and `GroqProfile` subclass `OpenAIProfile`. `Provider.profile` returns the row's profile.
 - Every save or delete of a registry row fires a receiver that calls `RegistryResolver().invalidate()` (Observer). A `post_migrate` receiver creates missing `NodeConfig` rows from `NodeSpecCatalog`.
 - The `registry_check` system check is a thin function over a `RegistryHealth` class with one method per warning group.
 
@@ -1047,7 +1056,7 @@ Code written before this document that doesn't follow it yet. Behaviour must not
 
 | Module | Today | Target | Do it |
 |---|---|---|---|
-| `llm_registry/params.py`, `reasoning.py` | dict tables and `if kind ==` | `ProviderProfile` per kind + `ProviderProfiles` | Next provider change |
+| ~~`llm_registry/params.py`, `reasoning.py`~~ | ~~dict tables and `if kind ==`~~ | `ProviderProfile` per kind + `ProviderProfiles` (`profiles.py`) | ✅ Done |
 | `llm_registry/gateway.py` | `is_retryable`, `backoff_delay`, `_record`, `if node.output ==` | `ExponentialBackoffPolicy`, `ModelCallRecorder`, `OutputAdapter`s | Before Phase 3 |
 | `llm_registry/ratelimit.py` | `acquire()` function | `CacheWindowRateLimiter` | With the gateway |
 | `llm_registry/resolver.py` | module functions | `RegistryResolver`, `RegistrySnapshot` | With the gateway |

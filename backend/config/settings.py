@@ -144,7 +144,7 @@ CACHES = {
 }
 
 # --- LLM registry ---
-# Thinking-token budgets for models whose reasoning is controlled by a budget (see llm_registry/reasoning.py).
+# Thinking-token budgets for models whose reasoning is controlled by a budget (see llm_registry/profiles.py).
 LLM_REASONING_BUDGETS = {
     "low": env.int("LLM_REASONING_BUDGET_LOW", default=2048),
     "medium": env.int("LLM_REASONING_BUDGET_MEDIUM", default=8192),
