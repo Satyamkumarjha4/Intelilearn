@@ -29,6 +29,16 @@ from .nodes.author_routers import (
     PlanRouter,
     WidgetRouter,
 )
+from .nodes.build import (
+    AssembleDocumentNode,
+    CompilePageNode,
+    PersistLessonNode,
+    PrepareBuildNode,
+    RenderCheckNode,
+    RepairComponentNode,
+    RepairPageNode,
+)
+from .nodes.build_routers import AssembledRouter, BuildRouter, RenderRouter
 from .nodes.diagnose import (
     AssessLearnerNode,
     AwaitDiagnosticNode,
@@ -172,6 +182,40 @@ class AuthorSegment(Segment):
         graph.add_edge("fix_item", "alignment_judge")
 
 
+class BuildSegment(Segment):
+    """Stage C: compile the pages in parallel, assemble, render check in headless Chromium, repair only what broke,
+    persist. Provides the `build` exit (the author segment's exit after the alignment judge)."""
+
+    retry_targets = ("assemble_document",)
+    provides = {"build": "prepare_build"}
+
+    def add_nodes(self, graph: StateGraph) -> None:
+        for node in (
+            PrepareBuildNode(),
+            CompilePageNode(),
+            AssembleDocumentNode(),
+            RenderCheckNode(),
+            RepairPageNode(),
+            RepairComponentNode(),
+            PersistLessonNode(),
+        ):
+            graph.add_node(node.name, node)
+
+    def add_edges(self, graph: StateGraph, exits: dict[str, str]) -> None:
+        failed = exits["failed"]
+        graph.add_conditional_edges("prepare_build", BuildRouter(), ["compile_page"])
+        graph.add_edge("compile_page", "assemble_document")
+        graph.add_conditional_edges("assemble_document", AssembledRouter(), ["render_check", failed])
+        graph.add_conditional_edges(
+            "render_check",
+            RenderRouter(),
+            ["persist_lesson", "repair_page", "repair_component", "assemble_document", failed],
+        )
+        graph.add_edge("repair_page", "assemble_document")
+        graph.add_edge("repair_component", "assemble_document")
+        graph.add_edge("persist_lesson", END)
+
+
 class FailureSegment(Segment):
     """`mark_failed` records why; `await_retry` pauses until the learner presses Retry."""
 
@@ -194,7 +238,7 @@ class FlowGraphBuilder(GraphBuilder):
 
     @staticmethod
     def default_segments() -> list[Segment]:
-        return [DiagnoseSegment(), MasterySegment(), AuthorSegment()]
+        return [DiagnoseSegment(), MasterySegment(), AuthorSegment(), BuildSegment()]
 
     def _exits(self) -> dict[str, str]:
         # Exits that no segment provides lead to END.
