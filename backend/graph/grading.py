@@ -4,8 +4,10 @@ Answers are {question_id: option_index | "dont_know"}. "I don't know" scores as 
 from inflating the learner's level (10 four-option questions give ~2.5 correct by chance).
 """
 
+import math
+import re
 from dataclasses import asdict, dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 from .schemas.diagnostic import BANDS
 
@@ -121,3 +123,80 @@ class RoutingPolicy:
         """0/5 → all prerequisites, 5/5 → none, partial → only the missed ones (in the original order)."""
         missed = {q["prerequisite"].strip().lower() for q in questions if not result.per_question[q["id"]]}
         return [p for p in prerequisites if p["name"].strip().lower() in missed]
+
+
+@dataclass(frozen=True)
+class QuestionGrade:
+    question_id: str
+    marks: int
+    correct: bool | None  # None: not marked here (open-ended)
+    awarded: int | None
+
+
+@dataclass(frozen=True)
+class SheetGrade:
+    grades: list[QuestionGrade]
+
+    @property
+    def awarded(self) -> int:
+        return sum(g.awarded or 0 for g in self.grades)
+
+    @property
+    def available(self) -> int:
+        """Marks of the questions that were marked here."""
+        return sum(g.marks for g in self.grades if g.correct is not None)
+
+    @property
+    def open_marks(self) -> int:
+        """Marks of the questions left to self-checking or a model."""
+        return sum(g.marks for g in self.grades if g.correct is None)
+
+    @property
+    def correct(self) -> int:
+        return sum(1 for g in self.grades if g.correct)
+
+    @property
+    def marked(self) -> int:
+        return sum(1 for g in self.grades if g.correct is not None)
+
+
+class AnswerGrader:
+    """Marks the answers that have exactly one right answer; open-ended ones get no verdict.
+
+    One grader for practice sheets and the lesson test, so a learner's score never depends on where they took it.
+    """
+
+    NUMBER = re.compile(r"^\s*([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\s*([^\d\s.+-].*)?$")
+
+    def grade(self, question: dict, answer: Any) -> QuestionGrade:
+        marks = question["marks"]
+        kind = question["type"]
+        if kind == "mcq":
+            right = self._is_int(answer) and answer == question["correct_index"]
+        elif kind == "numerical":
+            right = self._numerical(question, answer)
+        else:
+            return QuestionGrade(question["id"], marks, None, None)
+        return QuestionGrade(question["id"], marks, right, marks if right else 0)
+
+    def grade_all(self, questions: list[dict], answers: dict) -> SheetGrade:
+        return SheetGrade([self.grade(q, answers.get(q["id"])) for q in questions])
+
+    @staticmethod
+    def _is_int(value: Any) -> bool:
+        return isinstance(value, int) and not isinstance(value, bool)
+
+    def _numerical(self, question: dict, answer: Any) -> bool:
+        value = self._number(answer)
+        if value is None or not math.isfinite(value):
+            return False
+        return abs(value - question["answer"]) <= question["tolerance"] + 1e-9
+
+    def _number(self, answer: Any) -> float | None:
+        if isinstance(answer, bool):
+            return None
+        if isinstance(answer, (int, float)):
+            return float(answer)
+        if isinstance(answer, str) and (match := self.NUMBER.match(answer)):
+            return float(match.group(1))
+        return None
