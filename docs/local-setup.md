@@ -93,6 +93,8 @@ With models bound (section 4) and a user registered, `manage.py flow` drives the
 ```bash
 docker compose exec backend python manage.py flow start "Binary search" --email you@example.com --inline
 docker compose exec backend python manage.py flow answer <lesson> diagnostic --correct 5 --inline   # first 5 right, rest wrong
+docker compose exec backend python manage.py flow choose <lesson> cheat_sheet --inline    # after a perfect diagnostic
+docker compose exec backend python manage.py flow sheet <lesson> revision_sheet --inline   # another sheet later
 docker compose exec backend python manage.py flow show <lesson>        # stage, route, scores, assessment, runs (--json for rows)
 docker compose exec backend python manage.py flow retry <lesson> --inline
 docker compose exec backend python manage.py flow runs <lesson>

@@ -80,9 +80,12 @@ Base path: `/api` (Django, port 8000). A Next.js route handler proxies `/api/*` 
 
 | Method | Path | Body | Response |
 |---|---|---|---|
-| POST | `/lessons/{id}/choice` | `{kind: "cheat_sheet" \| "revision_sheet" \| "practice_sheet"}` | `202 {run_id}`: resumes the flow. Only when `stage=awaiting_choice`. |
-| POST | `/lessons/{id}/materials` | `{kind}` | `202 {run_id}`: requests an *additional* sheet later (runs the `study_material` graph) |
-| GET | `/lessons/{id}/materials/{kind}` | none | `StudyMaterial`. For a practice sheet, solutions are omitted until `?reveal=question_id` (or `?reveal=all`). |
+| POST | `/lessons/{id}/choice` | `{kind: "cheat_sheet" \| "revision_sheet" \| "practice_sheet"}` | `202 {run_id}`: resumes the flow. `409 wrong_stage` unless `stage=awaiting_choice`; `409 run_in_progress`; `400` for an unknown kind. |
+| POST | `/lessons/{id}/materials` | `{kind}` | `202 {run_id}`: requests an *additional* sheet (runs the `study_material` graph in its own thread; the lesson stays `ready`). Only for a ready mastery lesson (`409 wrong_stage`), once per kind (`409 already_exists`), one at a time (`409 run_in_progress`). A failed extra run ends with its reason and does not fail the lesson; ask again. |
+| GET | `/lessons/{id}/materials/{kind}` | `?reveal=<question id>` (repeat it, or comma-separate) or `?reveal=all` | `{kind, content, solutions}`. The content is the sheet; for a practice sheet its questions have **no solution fields** and `solutions` holds `{question_id: solution}` for the revealed ones. `404` if the sheet does not exist. |
+| POST | `/lessons/{id}/materials/practice_sheet/grade` | `{answers: {question_id: option index \| number \| text}}` | `200 {score: {awarded, available, open_marks, correct, marked}, results: [{id, correct, marks, awarded, solution}]}`. Multiple-choice and numerical answers are marked (a numerical answer may be typed as `4`, `4.0` or `4 steps`; the tolerance is absolute and inclusive); short, long and code answers get `correct: null` and show their solution for self-checking. Nothing is stored, so practice can be repeated. |
+
+`LessonDetail.materials` lists the kinds a lesson already has.
 
 ### Lesson document and final test
 

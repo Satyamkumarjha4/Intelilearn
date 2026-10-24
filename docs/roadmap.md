@@ -52,11 +52,11 @@ Each phase ends with something runnable and checkable.
 
 ## Phase 4: Mastery path
 
-- [ ] `CheatSheet`, `RevisionSheet`, and `PracticeSheet` schemas; `study.generate`; validators
-- [ ] Choice interrupt and `study_material` graph for extra sheets
-- [ ] `StudyMaterialView` templates, practice-sheet grading, PDF export
+- [x] `CheatSheet`, `RevisionSheet`, and `PracticeSheet` schemas; `study.generate`; validators
+- [x] Choice interrupt and `study_material` graph for extra sheets
+- [x] `StudyMaterialView` templates, practice-sheet grading, PDF export
 
-**Done when:** 10/10 on the diagnostic leads to a choice, and all three sheets render.
+**Done when:** 10/10 on the diagnostic leads to a choice, and all three sheets render. ✅ Verified in a real browser on the fake-LLM stack: 10/10 → choice → cheat sheet (KaTeX rendered, PDF downloaded and starts with `%PDF`) → revision and practice sheets requested later through the extra-sheet graph → practice answers checked and a solution revealed → the three tabs survive a reload. Not verified: sheet quality from real models, and the LaTeX validity check (it needs the Node sandbox from Phase 5; until then `SandboxRunner.latex` skips it with a log line).
 
 ## Phase 5: Stage B (author)
 

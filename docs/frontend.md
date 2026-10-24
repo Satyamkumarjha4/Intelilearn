@@ -38,6 +38,9 @@ Logic lives in small classes in `lib/` (tested with `bun test`), and the compone
 | `PipelineModel` | The progress steps for a stage, driven by run events: running or done, retry and fallback notes, warnings |
 | `QuizSession` | One question at a time, "I don't know" as an answer, the payload only when complete |
 | `StageView` | Which screen a lesson is on, what to say after a score, bands in order |
+| `PracticeSession` | A practice sheet attempt: answers, revealed solutions, marks from the server (nothing is stored server-side) |
+| `PlainText` | Markdown and LaTeX reduced to plain text for the PDF |
+| `StudyPdf` | A study sheet as a PDF (`@react-pdf/renderer`), built from the structured JSON and loaded only when the learner downloads |
 
 `useLesson(id)` loads the lesson, follows its active run, refetches when a run segment ends, and polls every 4 s while the lesson is working as a safety net. After Retry the lesson stays `failed` until its first node runs, so an active run always shows the progress screen. Quiz scores and reviews survive a reload (`LessonDetail.results`).
 
@@ -64,6 +67,8 @@ When an `awaiting_input` or `done` event arrives, the page refetches the lesson,
 - A **Review answers** link opens the review endpoint, with correct answers and explanations.
 
 ### `StudyMaterialView` (fixed templates, no generated code)
+
+Sheets render Markdown with KaTeX (`components/markdown.tsx`: `react-markdown`, `remark-math`, `rehype-katex`). A print stylesheet in `globals.css` hides the site chrome and controls; **Print** uses it and **Download PDF** uses `StudyPdf`.
 
 - **Cheat sheet**: dense grid of formula and rule cards (KaTeX), short notes, and a print stylesheet.
 - **Revision sheet**: long-form notes with a table of contents and collapsible sections.
