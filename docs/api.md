@@ -91,12 +91,12 @@ Base path: `/api` (Django, port 8000). A Next.js route handler proxies `/api/*` 
 
 | Method | Path | Body | Response |
 |---|---|---|---|
-| GET | `/lessons/{id}/document` | none | `{code, code_version, data: LESSON}`. `data` holds pages, final test (without answers), and media as signed URLs. |
-| POST | `/lessons/{id}/repair` | `{error: {message, stack?, page?}, code_version}` | `202 {run_id}`. `409` if `code_version` is stale or `max_auto_runtime_repairs` is reached. |
+| GET | `/lessons/{id}/document` | none | `{code, code_version, data: LESSON}`. `data` holds pages, final test (without answers), and media as signed URLs. `409 wrong_stage` until the lesson is ready. |
+| POST | `/lessons/{id}/repair` | `{error: {message, stack?, page?}, code_version}` | `202 {run_id}`: queues the `runtime_repair` graph (a new `code_version` on success; a failed run leaves the code alone). `409 stale_code_version`, `409 repair_limit_reached` (each request counts against `max_auto_runtime_repairs`), `409 wrong_stage`, `409 run_in_progress`; `400` for a message over 2000 characters or a missing field. |
 | POST | `/lessons/{id}/test/submissions` | `{answers: {question_id: value}}` | `202 {submission_id, run_id}`. MCQ and numerical answers are graded instantly; the rest go through `test.grade`. |
 | GET | `/lessons/{id}/test/submissions/{sid}` | none | `{status, result: GradeReport \| null}` |
-| GET | `/lessons/{id}/versions` | none | `LessonVersion[]` |
-| POST | `/lessons/{id}/versions/{n}/restore` | none | `200` |
+| GET | `/lessons/{id}/versions` | none | `[{code_version, reason, created_at}]`, newest first. The code itself is not listed. A version is kept before each repair and each restore. |
+| POST | `/lessons/{id}/versions/{n}/restore` | none | `200 {code_version}`: version `n` becomes current under a new `code_version`, and the code it replaced is kept. `404` for an unknown version (the current one has no row), `409 wrong_stage` / `run_in_progress`. |
 
 ### Media
 

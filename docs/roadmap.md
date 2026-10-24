@@ -69,10 +69,10 @@ Each phase ends with something runnable and checkable.
 
 ## Phase 6: Stage C (build and verify) and the lesson viewer
 
-- [ ] `sandbox/` package: runtime, scope (Mafs, motion, KaTeX, Figure, Assessment…), `check.mjs`, `render-check.mjs`, fixtures
-- [ ] `page.compile` ×3, `code_fix_loop`, `assemble_document`, `render_check`, `repair_page`, `persist_lesson`
-- [ ] Frontend `LessonSandbox` (CSP, postMessage protocol) and `LessonViewer`
-- [ ] `runtime_repair` graph and `LessonVersion`
+- [x] `sandbox/` package: runtime, scope (Mafs, motion, KaTeX, Figure, Assessment…), `check.mjs`, `render-check.mjs`, fixtures
+- [x] `page.compile` ×3, `code_fix_loop`, `assemble_document`, `render_check`, `repair_page`, `persist_lesson`
+- [x] Frontend `LessonSandbox` (CSP, postMessage protocol) and `LessonViewer`
+- [x] `runtime_repair` graph and `LessonVersion`
 
 **Done when:** you can go from topic to a rendered four-page lesson in the browser. A known-malicious snippet is rejected by `check.mjs`, and a lesson broken on purpose is repaired.
 
@@ -86,7 +86,7 @@ Each phase ends with something runnable and checkable.
 ## Across phases: design alignment
 
 - [x] Close the [refactor backlog](design.md#refactor-backlog) for phases 0–2: code brought in line with the object design (OOP, SOLID, the named patterns), each item behaviour-neutral with tests green before and after.
-- [ ] The backlog items for the lesson-flow code (`graph/`, `lessons/`) land with Phases 3–6 (grading, validators, prompts, Stage A nodes and the flow builder done in Phase 3).
+- [x] The backlog items for the lesson-flow code (`graph/`, `lessons/`) landed with Phases 3–6 (grading, validators, prompts, Stage A nodes and the flow builder in Phase 3; media in Phase 5; code generation, the build nodes and the document builder in Phase 6).
 - [x] Every existing test file has the header from [testing.md](testing.md#31-the-file-header-required) (unit under test, why, use cases), and `tests/` is linted like the backend.
 
 ## Later (not now)

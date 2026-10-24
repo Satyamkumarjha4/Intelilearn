@@ -302,14 +302,19 @@ class AlignmentReport(BaseModel):
 
 ```mermaid
 flowchart TD
-    B([alignment passed]) --> fan_compile{{"Send ×3"}}
-    fan_compile --> compile_page --> code_fix_loop[[code_fix_loop per page]]
-    code_fix_loop -->|valid| pages_join
-    code_fix_loop -->|exhausted| fail_run
-    pages_join --> assemble_document --> render_check
+    B([alignment passed]) --> prepare_build --> fan_compile{{"Send ×3"}}
+    fan_compile --> compile_page["compile_page (page.compile → code_fix_loop)"]
+    compile_page -->|fixed| assemble_document
+    compile_page -->|code keeps failing: standard layout + warning| assemble_document
+    assemble_document -->|clash between parts: standard layout once| assemble_document
+    assemble_document --> render_check
+    assemble_document -->|still fails| fail_run
     render_check -->|pass| persist_lesson --> END([END: show to learner])
-    render_check -->|errors on page X, rounds left| repair_page[code.repair for page X] --> code_fix_loop
-    render_check -->|exhausted| fail_run
+    render_check -->|errors, rounds left| fan_repair{{"Send per broken part"}}
+    fan_repair --> repair_page[repair_page] --> assemble_document
+    fan_repair --> repair_component[repair_component] --> assemble_document
+    render_check -->|rounds spent| fallback["standard layout for broken pages, broken interactive dropped (+ warning)"] --> assemble_document
+    render_check -->|still broken after the fallback| fail_run
 ```
 
 ### `compile_page` (`page.compile`)
@@ -355,19 +360,37 @@ Failures are mapped to a page, and only that page goes back through `repair_page
 
 ### `persist_lesson`
 
-This writes pages, the test, media links, the assembled code, `code_version = 1`, and warnings, then sets `stage=ready`. The frontend receives `done` and renders the document in its sandboxed iframe.
+This writes pages, the test, media links, the assembled code and its parts (`code_parts`), the next `code_version`, and warnings, then sets `stage=ready`. Only the media the document uses is kept. The frontend receives `done` and renders the document in its sandboxed iframe.
 
 ## After the lesson is ready (separate small graphs)
 
 | Graph | Trigger | Nodes |
 |---|---|---|
-| `runtime_repair` | The browser iframe reports an error the sandbox check missed | `runtime.repair` → `code_fix_loop` → `render_check` → regression check (all sections and assets still present) → save a new `code_version` |
+| `runtime_repair` | The browser iframe reports an error the sandbox check missed | `load_repair` → `repair_runtime` (`runtime.repair` → code-fix loop) → `assemble_repaired` → `regression_check` → `verify_repair` (render check) → `save_repair` (a new `code_version`) |
 | `grade_test` | The learner submits page 4 | MCQ and numerical graded deterministically. Short, long, and code answers graded by `test.grade` against the model answer or rubric. Produces a `TestResult` with feedback per question and recommended topics to revisit. |
 | `study_material` | The learner requests another sheet type | `generate_study_material` → validate → persist |
 
+
+### How Stage C is built
+
+- **The code-fix loop is a subgraph run inside the node** (`CodeFixer`), so `compile_page`, `repair_page` and `repair_component` all hold code to the same checks: sanitize → static check → `code.repair` with the exact errors and the contract, up to `code.repair.max_attempts`.
+- **Failure policy.** Generated layout is never worth failing a lesson for. A page whose code keeps failing the checks, or keeps crashing in the browser, falls back to the **standard layout** (`DocumentAssembler.template_page`: every section, the interactives and figures at their anchors), and an interactive that keeps crashing is dropped; both leave a warning. Only a document that fails *after* the fallback fails the run, and a retry resumes at `assemble_document` without rewriting the pages.
+- **Rounds** are `render_check_max_rounds` (default 2) repairs, then one fallback, then one last check (`RenderPolicy`). A repair goes only to the pages and interactives that the browser blamed, with its errors as feedback.
+- **One runtime.** The render check loads the same bundle (`sandbox/dist/runtime.js`) and harness (with its CSP) the browser uses, so a lesson that passes behaves the same in the learner's iframe.
+
+### How `runtime_repair` is built
+
+- **Input** `{lesson_id, repair_error: {message, stack?, page?}, expected_code_version}`, run in its own thread. A crash can only be repaired on a ready lesson at the version the browser was showing; a stale report is refused and nothing is changed.
+- **`RepairTargetLocator`** finds the broken part from the error: an interactive named in the message or stack (`Interactive_x`), else the page the viewer reports or `Page_x` in the stack. The test page is written by code, so it is never a target. An error that cannot be traced is refused rather than guessed.
+- **Only that part is rewritten** (`runtime.repair`), held to the same code checks as a first draft; code identical to the old code is refused.
+- **`RegressionCheck`** (cheap, so before the browser): the same pages and interactives, and everything each page placed before (interactives, figures, the sections loop, named sections) is still placed.
+- **`verify_repair`** renders the repaired document in the headless browser; any error refuses the repair.
+- **`save_repair`** (one transaction, re-checking the version) keeps the old code as a `LessonVersion` and stores the new code under `code_version + 1`. Any refusal raises `RepairFailed`: the run ends with its reason, the lesson stays ready with the code it had, and no retry is offered.
+- **The cap.** Each `POST /repair` counts against `max_auto_runtime_repairs` whether or not it succeeds, so a crash the model cannot fix cannot loop. `POST /versions/{n}/restore` is not counted.
+
 ## How Stage B is built
 
-- **Segments.** The flow graph is assembled from segments (diagnose, mastery, author); the author segment provides the `lesson` exit and leads, for now, to `END` (Stage C plugs in at its `build` exit).
+- **Segments.** The flow graph is assembled from segments (diagnose, mastery, author, build); the author segment provides the `lesson` exit, which leads to the build segment's `prepare_build`.
 - **Parallel items and joins.** `Send` branches carry the shared context (`BranchBuilder`) and write under keys with reducers (`pages`, `final_test`, `interactives`, `media`, `feedback`, `attempts`). `authored_join` and `widgets_join` read each item's problems and attempts: items under their attempt budget are sent again *alone* (the router builds the `Send`s), items out of attempts are kept with a warning (pages, test) or dropped with a warning (widgets).
 - **One writer for first drafts and fixes.** `ContentWriter` asks for a page, the test or a component and checks it (`PageValidator`, `FinalTestValidator`, the sandbox's `check.mjs`), so a fix after the alignment judge is held to the same rules.
 - **Alignment is decided in code** (`AlignmentPolicy`): pass, fix (only flagged items that exist, one issue per item), accept with a warning (rounds spent, nothing major) or fail (rounds spent, a major issue). A fix that fails its own checks keeps the old version.
