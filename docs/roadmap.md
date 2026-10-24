@@ -74,7 +74,7 @@ Each phase ends with something runnable and checkable.
 - [x] Frontend `LessonSandbox` (CSP, postMessage protocol) and `LessonViewer`
 - [x] `runtime_repair` graph and `LessonVersion`
 
-**Done when:** you can go from topic to a rendered four-page lesson in the browser. A known-malicious snippet is rejected by `check.mjs`, and a lesson broken on purpose is repaired.
+**Done when:** you can go from topic to a rendered four-page lesson in the browser. A known-malicious snippet is rejected by `check.mjs`, and a lesson broken on purpose is repaired. ✅ Verified on the offline fake-LLM stack with headless Chromium driving the real frontend: topic → diagnostic → a ready lesson whose four pages (Introduction, Core, Advanced, Test) render in the sandboxed iframe (`sandbox="allow-scripts"`), with the stored image loading through its signed URL and the standard layout and widgets in place; a snippet that calls `fetch` with `document.cookie` is rejected by `check.mjs` (`forbidden-global`, `no-url`); with an interactive broken on purpose in the stored code, the page reported the crash, `runtime_repair` ran all six nodes, the lesson went to version 2 with the SVG widget showing, and version 1 was kept with its reason. The walk-through found a real bug that the unit tests had missed (an error from an interactive's boundary carried no `codeVersion`, so the page never asked for the repair); it is fixed and the render check now enforces it. Not verified: pages and interactives written by real models (the fake compiles the standard layout and answers a repair with a plain diagram), and the visual quality of generated layouts.
 
 ## Phase 7: Test grading and hardening (still local)
 
