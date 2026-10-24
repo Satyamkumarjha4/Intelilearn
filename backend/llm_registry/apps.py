@@ -7,4 +7,4 @@ class LlmRegistryConfig(AppConfig):
     verbose_name = "LLM model registry"
 
     def ready(self):
-        from . import signals  # noqa: F401  (register cache/node-config signals)
+        from . import checks, signals  # noqa: F401  (register system checks and cache/node-config signals)
