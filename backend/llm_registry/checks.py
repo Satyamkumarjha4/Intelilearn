@@ -66,3 +66,47 @@ class RegistryHealth:
 @register(Tags.database)
 def registry_check(app_configs=None, **kwargs):
     return RegistryHealth().warnings()
+
+
+class TracingHealth:
+    """Tracing that is switched on but cannot work. Only names of settings are reported, never their values."""
+
+    REQUIRED_ENV = {
+        "langsmith": ("LANGSMITH_API_KEY",),
+        "langfuse": ("LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY"),
+    }
+
+    def warnings(self) -> list[Warning]:
+        import os
+
+        from django.conf import settings
+
+        from .tracing import TracingNotAvailable, TracingProviders
+
+        name = (getattr(settings, "LLM_TRACING", "none") or "none").strip().lower()
+        try:
+            provider = TracingProviders.for_name(name)
+        except TracingNotAvailable as exc:
+            return [Warning(str(exc), hint="Tracing is off until it is fixed.", id="llm_registry.W010")]
+        if name == "none":
+            return []
+        missing = [var for var in self.REQUIRED_ENV.get(name, ()) if not os.environ.get(var)]
+        if missing:
+            return [
+                Warning(
+                    f"LLM_TRACING={name} but {', '.join(missing)} is not set.",
+                    hint="Set it in .env, or set LLM_TRACING=none.",
+                    id="llm_registry.W011",
+                )
+            ]
+        if name == "langfuse":
+            try:
+                provider.handler()
+            except TracingNotAvailable as exc:
+                return [Warning(str(exc), id="llm_registry.W012")]
+        return []
+
+
+@register(Tags.compatibility)
+def tracing_check(app_configs=None, **kwargs):
+    return TracingHealth().warnings()

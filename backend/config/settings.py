@@ -182,6 +182,11 @@ GIPHY_API_KEY = env("GIPHY_API_KEY", default="")
 # Signed media URLs (/api/media/{id}?exp=&sig=) stay valid this long.
 MEDIA_URL_TTL_S = env.int("MEDIA_URL_TTL_S", default=6 * 3600)
 
+# Tracing of the model calls (llm_registry/tracing.py): none, langsmith or langfuse. Off by default, because a trace
+# holds the prompts and replies, which contain what the learner wrote. The services' own keys are read from the
+# environment by their SDKs (LANGSMITH_API_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST).
+LLM_TRACING = env("LLM_TRACING", default="none")
+
 # --- DRF / OpenAPI ---
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
