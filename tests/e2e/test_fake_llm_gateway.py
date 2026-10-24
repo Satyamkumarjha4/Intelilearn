@@ -7,6 +7,7 @@ HTTP. This does, offline, and it validates the fake that the browser walk-throug
 Use cases:
 - a structured-output call (json_schema) returns a valid DiagnosticBundle, and the call is logged with tokens
 - a function-calling model gets the same bundle through a tool call
+- the three study sheets come back valid and pass the study validator for the concepts in the prompt
 - a schema the fake does not know is refused, and the gateway reports every model failed
 """
 
@@ -14,8 +15,9 @@ import pytest
 from e2e.fake_llm_server import FakeLLMServer
 from pydantic import BaseModel
 
-from graph.prompts import DiagnosticPrompt
-from graph.schemas import DiagnosticBundle, LearnerAssessment
+from graph.prompts import DiagnosticPrompt, StudyMaterialPrompt
+from graph.schemas import MATERIAL_SCHEMAS, DiagnosticBundle, LearnerAssessment
+from graph.validators import StudyMaterialValidator
 from llm_registry.gateway import AllModelsFailed, Gateway
 from llm_registry.models import LLMModel, ModelCall, NodeConfig, NodeModelBinding, Provider
 from llm_registry.node_configs import NodeConfigSync
@@ -83,3 +85,16 @@ def test_the_assessment_schema_is_served(server, monkeypatch):
                               schema=LearnerAssessment)  # fmt: skip
 
     assert result.output.level == "intermediate"
+
+
+@pytest.mark.parametrize("kind", ["cheat_sheet", "revision_sheet", "practice_sheet"])
+def test_a_study_sheet_is_valid_and_covers_the_concepts_in_the_prompt(server, monkeypatch, kind):
+    snapshot = bind_fake(server, "json_schema", monkeypatch)
+    concepts = ["Halving the range", "Time complexity", "Loop invariants"]
+    state = STATE | {"kind": kind, "concepts": concepts}
+
+    result = Gateway().invoke("study.generate", StudyMaterialPrompt().messages(state), snapshot=snapshot,
+                              schema=MATERIAL_SCHEMAS[kind])  # fmt: skip
+
+    content = result.output.model_dump(mode="json")
+    assert StudyMaterialValidator().validate(content, kind=kind, concepts=concepts) == []
