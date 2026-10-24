@@ -132,6 +132,14 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TIMEZONE = TIME_ZONE
 
+# --- LLM registry ---
+# Thinking-token budgets for models whose reasoning is controlled by a budget (see llm_registry/reasoning.py).
+LLM_REASONING_BUDGETS = {
+    "low": env.int("LLM_REASONING_BUDGET_LOW", default=2048),
+    "medium": env.int("LLM_REASONING_BUDGET_MEDIUM", default=8192),
+    "high": env.int("LLM_REASONING_BUDGET_HIGH", default=24576),
+}
+
 # --- DRF / OpenAPI ---
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
