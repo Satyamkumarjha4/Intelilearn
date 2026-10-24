@@ -154,6 +154,9 @@ SIMPLE_JWT = {
 }
 # Only sent over HTTPS when true; local development runs on plain http.
 AUTH_COOKIE_SECURE = env.bool("AUTH_COOKIE_SECURE", default=False)
+# Same switch for Django's own cookies (admin session, CSRF): one setting to flip when moving to HTTPS.
+SESSION_COOKIE_SECURE = AUTH_COOKIE_SECURE
+CSRF_COOKIE_SECURE = AUTH_COOKIE_SECURE
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "Lesson Crafter API",
