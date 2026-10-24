@@ -152,6 +152,18 @@ LLM_REASONING_BUDGETS = {
     "high": env.int("LLM_REASONING_BUDGET_HIGH", default=24576),
 }
 
+# --- Lesson flow ---
+# The sandbox/ package (Node): check.mjs and render-check.mjs run in a subprocess (see graph/sandbox.py).
+SANDBOX_DIR = env.path("SANDBOX_DIR", default=BASE_DIR.parent / "sandbox")
+NODE_BINARY = env("NODE_BINARY", default="node")
+SANDBOX_CHECK_TIMEOUT_S = env.int("SANDBOX_CHECK_TIMEOUT_S", default=30)
+SANDBOX_RENDER_TIMEOUT_S = env.int("SANDBOX_RENDER_TIMEOUT_S", default=180)
+SANDBOX_PAGE_TIMEOUT_MS = env.int("SANDBOX_PAGE_TIMEOUT_MS", default=8000)
+# Optional GIF search for the media agent (also add "giphy" to FlowSettings.media_sources and licences).
+GIPHY_API_KEY = env("GIPHY_API_KEY", default="")
+# Signed media URLs (/api/media/{id}?exp=&sig=) stay valid this long.
+MEDIA_URL_TTL_S = env.int("MEDIA_URL_TTL_S", default=6 * 3600)
+
 # --- DRF / OpenAPI ---
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
