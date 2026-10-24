@@ -7,7 +7,6 @@ from rest_framework import generics, status
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
@@ -18,6 +17,7 @@ from .authentication import CookieJWTAuthentication
 from .cookies import REFRESH_COOKIE, clear_auth_cookies, set_auth_cookies, set_onboarded_cookie
 from .models import User
 from .serializers import LoginSerializer, ProfileSerializer, RegisterSerializer, UserSerializer
+from .throttling import AuthRateThrottle, LoginAccountThrottle
 
 AUTH_TAG = ["auth"]
 
@@ -66,7 +66,7 @@ class CsrfView(APIView):
 
 
 class RegisterView(_PublicAuthView):
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [AuthRateThrottle]
     throttle_scope = "auth"
 
     @extend_schema(
@@ -84,7 +84,7 @@ class RegisterView(_PublicAuthView):
 
 
 class LoginView(_PublicAuthView):
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [AuthRateThrottle, LoginAccountThrottle]
     throttle_scope = "auth"
 
     @extend_schema(
@@ -106,8 +106,9 @@ class LoginView(_PublicAuthView):
 
 
 class RefreshView(_PublicAuthView):
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = "auth"
+    # Its own budget: the app refreshes routinely, which must not eat into the login limit.
+    throttle_classes = [AuthRateThrottle]
+    throttle_scope = "auth_refresh"
 
     @extend_schema(
         tags=AUTH_TAG,

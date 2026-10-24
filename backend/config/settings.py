@@ -139,7 +139,14 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": ["accounts.authentication.CookieJWTAuthentication"],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "EXCEPTION_HANDLER": "core.exceptions.api_exception_handler",
-    "DEFAULT_THROTTLE_RATES": {"auth": env("AUTH_THROTTLE_RATE", default="20/min")},
+    "DEFAULT_THROTTLE_RATES": {
+        "auth": env("AUTH_THROTTLE_RATE", default="20/min"),  # register/login, per client address
+        "auth_account": env("AUTH_ACCOUNT_THROTTLE_RATE", default="10/min"),  # login attempts per email
+        "auth_refresh": env("AUTH_REFRESH_THROTTLE_RATE", default="60/min"),
+    },
+    # Requests arrive through the Next.js proxy; the client address is the X-Forwarded-For entry it appends.
+    # Keep the API port bound to localhost (BIND_ADDRESS) so nobody can reach Django directly with a forged header.
+    "NUM_PROXIES": env.int("TRUSTED_PROXY_COUNT", default=1),
 }
 
 # --- Auth: JWTs in httpOnly cookies (see accounts/cookies.py) ---
