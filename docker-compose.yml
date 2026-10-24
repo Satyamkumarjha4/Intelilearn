@@ -2,6 +2,9 @@
 # default, so `docker compose up` also works with no .env (e.g. in CI).
 #   make up        App: http://localhost:${FRONTEND_PORT}   Swagger: http://localhost:${BACKEND_PORT}/api/docs
 #
+# Published ports bind to BIND_ADDRESS (default 127.0.0.1), so Postgres, Redis and the API are not reachable
+# from your LAN. Set BIND_ADDRESS=0.0.0.0 only if you really need that.
+#
 # Database: the `db` service, unless SUPABASE_DATABASE_URL is set. Then the backend uses Supabase
 # and first copies local rows up to it on every start (see docs/local-setup.md).
 
@@ -37,7 +40,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-lessoncrafter}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lessoncrafter}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -50,14 +53,14 @@ services:
     image: redis:7-alpine
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      REDISCLI_AUTH: ${REDIS_PASSWORD:-} # lets the healthcheck authenticate when a password is set
     command: ["sh", "-c", 'exec redis-server --appendonly yes $${REDIS_PASSWORD:+--requirepass "$$REDIS_PASSWORD"}']
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${BIND_ADDRESS:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # authenticate only when a password is set (an empty REDISCLI_AUTH would make every call fail AUTH)
+      test: ["CMD-SHELL", '[ -z "$$REDIS_PASSWORD" ] || export REDISCLI_AUTH="$$REDIS_PASSWORD"; redis-cli ping | grep -q PONG']
       interval: 3s
       timeout: 3s
       retries: 20
@@ -69,7 +72,7 @@ services:
       sh -c "python manage.py bootstrap &&
              uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --reload --lifespan off"
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "${BIND_ADDRESS:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
 
   worker:
     <<: *backend
@@ -86,7 +89,7 @@ services:
       - /app/node_modules
       - /app/.next
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "${BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-3000}:3000"
     depends_on:
       - backend
 

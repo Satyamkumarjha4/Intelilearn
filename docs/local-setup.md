@@ -20,14 +20,16 @@ The root `.env` is the **single source of configuration**. Django reads it, `doc
 
 | Group | Variables | Default |
 |---|---|---|
-| Host ports | `BACKEND_PORT`, `FRONTEND_PORT`, `POSTGRES_PORT`, `REDIS_PORT` | 8000, 3000, 5432, 6379 |
+| Host ports | `BIND_ADDRESS`, `BACKEND_PORT`, `FRONTEND_PORT`, `POSTGRES_PORT`, `REDIS_PORT` | 127.0.0.1 (not reachable from your LAN), 8000, 3000, 5432, 6379 |
 | Django | `DJANGO_SECRET_KEY`, `DJANGO_DEBUG`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`, `LOG_LEVEL` | dev key, false, localhost…, derived from ports, INFO |
-| Auth | `JWT_ACCESS_MINUTES`, `JWT_REFRESH_DAYS`, `AUTH_COOKIE_SECURE`, `AUTH_THROTTLE_RATE` | 30, 7, false, 20/min |
+| Auth | `JWT_ACCESS_MINUTES`, `JWT_REFRESH_DAYS`, `AUTH_COOKIE_SECURE` (also makes Django's session and CSRF cookies secure) | 30, 7, false |
+| Rate limits | `AUTH_THROTTLE_RATE`, `AUTH_ACCOUNT_THROTTLE_RATE`, `AUTH_REFRESH_THROTTLE_RATE`, `TRUSTED_PROXY_COUNT` | 20/min, 10/min, 60/min, 1 |
 | Local Postgres | `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | localhost, lessoncrafter ×3 |
 | Supabase | `SUPABASE_DATABASE_URL`, `SYNC_LOCAL_TO_SUPABASE` | empty, true |
 | Redis | `REDIS_HOST`, `REDIS_PASSWORD` | localhost, none |
 | Frontend | `DJANGO_API_ORIGIN`, `NEXT_PUBLIC_BACKEND_URL` | `http://localhost:${BACKEND_PORT}` |
-| LLM keys | `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | empty (phase 2) |
+| LLM keys | `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | empty. The default registry uses Gemini and Groq. |
+| Reasoning budgets | `LLM_REASONING_BUDGET_LOW/MEDIUM/HIGH` | 2048 / 8192 / 24576 |
 
 - The `POSTGRES_HOST`, `POSTGRES_PORT`, `REDIS_HOST`, and `REDIS_PORT` values in `.env` describe how the **host** reaches the services. Inside docker, compose overrides them with the service names and internal ports (`db:5432`, `redis:6379`).
 - **Changing `POSTGRES_USER`, `POSTGRES_PASSWORD`, or `POSTGRES_DB` after the first start** has no effect on the existing `postgres-data` volume. Postgres only applies them when it initialises an empty volume. To apply new credentials to a volume holding nothing you need, run `docker compose down && docker volume rm lessoncrafter_postgres-data`. Otherwise, change them with SQL (`ALTER USER …`).
@@ -38,7 +40,7 @@ The root `.env` is the **single source of configuration**. Django reads it, `doc
 make up            # = docker compose up --build
 ```
 
-On start, `make up` also renews the frontend's anonymous `node_modules` and `.next` volumes, so new packages are picked up. On start, `backend` runs `manage.py bootstrap`: it migrates the active database, first syncing to Supabase when that's configured (see below). Code changes reload automatically: uvicorn `--reload` for the API, `watchfiles` for the Celery worker, and Turbopack for Next.js. Postgres and Redis data persist in the `postgres-data` and `redis-data` volumes.
+On start, `make up` also recreates the frontend's anonymous `node_modules` and `.next` volumes (removing the old ones), so new packages are picked up. On start, `backend` runs `manage.py bootstrap`: it migrates the active database, first syncing to Supabase when that's configured (see below). Code changes reload automatically: uvicorn `--reload` for the API, `watchfiles` for the Celery worker, and Turbopack for Next.js. Postgres and Redis data persist in the `postgres-data` and `redis-data` volumes.
 
 | URL | What |
 |---|---|
@@ -68,6 +70,19 @@ About the sync (`backend/core/sync.py`, also available as `make sync-supabase`):
 Getting the Supabase URL: in the dashboard, go to **Connect** and copy the **Session pooler** string (port 5432). Append `?sslmode=require`. Do **not** use the transaction pooler (6543): Django, and later the LangGraph checkpointer, need session features.
 
 **Lock down the Data API** after migrations that add tables: run `backend/scripts/enable_rls.sql` in the Supabase SQL editor (added in Phase 1). It enables RLS with no policies, so the public Data API can read nothing. Django connects as `postgres` and bypasses RLS.
+
+## 4. Model registry (once)
+
+```bash
+docker compose exec backend python manage.py seed_registry   # Gemini + Groq defaults; a no-op if already seeded
+docker compose exec backend python manage.py check           # warns about nodes without a usable model or API key
+docker compose exec backend python manage.py probe_models    # real calls: every bound model, each declared capability
+docker compose exec backend python manage.py probe_models --node learner.assess   # plus one call through a node's chain
+```
+
+`probe_models` exits non-zero when a check fails, and API keys never appear in its output.
+
+Tune models, fallbacks, and parameters in the admin under **LLM model registry**. Share a tuned setup with `manage.py export_registry --output registry.json` and `seed_registry --file registry.json`. See [model-registry.md](model-registry.md).
 
 ## Everyday commands
 
@@ -108,9 +123,10 @@ The backend image installs into `/opt/venv`, outside the bind-mounted `/app`. Th
 | `password authentication failed` after editing `POSTGRES_*` | The volume keeps its original credentials. See section 1. |
 | Health: `celery: no workers responded` | `docker compose logs worker`. It restarts on file changes, so check for a Python error. |
 | New dependency not found | `docker compose up --build`. |
+| `no space left on device` from Docker while `df` shows free space (btrfs) | Metadata is full and there's no unallocated space for more. Run `sudo btrfs balance start -dusage=20 /` (then `-dusage=50`) to give empty data chunks back, and `docker volume prune` for old anonymous `node_modules` volumes. |
 
 ## Later phases add
 
 - `sandbox/` package: Node and Playwright Chromium in the backend image.
 - `manage.py setup_checkpointer` for the LangGraph Postgres checkpoint tables.
-- `manage.py seed_registry` and the `manage.py flow ...` commands.
+- The `manage.py flow ...` commands.

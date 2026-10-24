@@ -32,7 +32,7 @@ Provider ──< LLMModel ──< NodeModelBinding >── NodeConfig ── Nod
 | kind | enum | LangChain integration: `google_genai`, `groq`, `openai`, `anthropic`, `ollama`, `openai_compatible` |
 | api_key_env | char, null | **Name** of the environment variable holding the key. Keys are never stored in the DB. |
 | base_url | URL, null | For `ollama` and `openai_compatible` |
-| rpm_limit / tpm_limit | int, null | Provider-wide budget, enforced with a Redis token bucket |
+| rpm_limit | int, null | Provider-wide requests per minute, shared by all workers (fixed one-minute windows in Redis). A call over the limit **waits** for the next window, for up to 120 s, instead of failing. |
 | is_enabled | bool | Disabling a provider skips all of its models |
 
 ### `LLMModel`
@@ -55,7 +55,7 @@ Provider ──< LLMModel ──< NodeModelBinding >── NodeConfig ── Nod
 | **Limits** | | |
 | context_window | int | |
 | max_output_tokens | int | |
-| rpm_limit / tpm_limit | int, null | Per-model budget |
+| rpm_limit | int, null | Per-model requests per minute, on top of the provider's |
 | input_cost_per_mtok / output_cost_per_mtok | decimal, null | Used to cost each `ModelCall` |
 | is_enabled | bool | |
 
@@ -93,11 +93,11 @@ Provider ──< LLMModel ──< NodeModelBinding >── NodeConfig ── Nod
 
 ### `ModelCall`
 
-`lesson` (FK, null), `node_key`, `model`, `attempt`, `fallback_index`, `status` (`ok` \| `retryable_error` \| `fatal_error` \| `invalid_output`), `error`, `latency_ms`, `input_tokens`, `output_tokens`, `reasoning_tokens`, `tool_calls`, `cost`, `created_at`
+`lesson_id`, `run_id` (plain UUIDs, so the registry doesn't depend on the lessons app), `node_key`, `provider_key`, `model_name`, `attempt`, `fallback_index`, `status` (`ok` \| `retryable_error` \| `fatal_error` \| `invalid_output`), `error`, `latency_ms`, `input_tokens`, `output_tokens`, `reasoning_tokens`, `tool_calls`, `cost`, `created_at`
 
 ## Node specs
 
-These are defined in code (`llm_registry/node_specs.py`). The graph imports the keys, the admin reads the requirements, and a data migration creates a `NodeConfig` row for each spec.
+These are defined in code (`llm_registry/node_specs.py`). The graph imports the keys, the admin reads the requirements, and a `post_migrate` handler creates a `NodeConfig` row, with the spec's defaults, for any spec that doesn't have one yet.
 
 ```python
 @dataclass(frozen=True)
@@ -133,7 +133,7 @@ class NodeSpec:
 | `runtime.repair` | post | text (TSX) | n/a | 32k | medium | |
 | `test.grade` | post | structured → `GradeReport` | structured_output | 4k | medium | |
 
-Adding a node takes three steps: add a `NodeSpec`, write the node, and make a migration that creates its `NodeConfig` and a default binding.
+Adding a node takes three steps: add a `NodeSpec`, write the node, and run `migrate`, which creates its `NodeConfig`. Then bind models in the admin or add them to `llm_registry/seed.py`.
 
 ## Structured output
 
@@ -158,11 +158,20 @@ Adding a node takes three steps: add a `NodeSpec`, write the node, and make a mi
 
 | `reasoning_control` | Translation |
 |---|---|
-| `effort` | Pass the provider's effort-style parameter (OpenAI-style `reasoning_effort`, and equivalents) |
-| `budget_tokens` | Map to a thinking-token budget, for example low 2k, medium 8k, high 24k (configurable), capped under `max_tokens` |
+| `effort` | The provider's effort parameter (table below) |
+| `budget_tokens` | A thinking-token budget: `LLM_REASONING_BUDGET_LOW/MEDIUM/HIGH` (2048 / 8192 / 24576). For Anthropic, `max_tokens` is raised to budget + 4096 so there's room for the answer. |
 | `none` | Ignored |
 
-If `reasoning_disables_sampling` is set, the gateway removes sampling parameters when reasoning is on. Check the exact parameter name for each provider against current LangChain integration docs when implementing `reasoning.py`, because these change often.
+Parameter names, checked against the installed `langchain-*` packages (`tests/llm_registry/test_providers.py` builds each client to prove it):
+
+| Provider kind | `effort` control | `budget_tokens` control |
+|---|---|---|
+| openai, openai_compatible, groq | `reasoning_effort` | *(same as effort)* |
+| anthropic | `effort` | `thinking={"type": "enabled", "budget_tokens": N}` |
+| google_genai | `thinking_level` | `thinking_budget=N` |
+| ollama | `reasoning=True` / `False` | *(same)* |
+
+If `reasoning_disables_sampling` is set, `temperature`, `top_p`, and `top_k` are removed while reasoning is on. Models without `supports_reasoning` always run with effort `none`.
 
 ## Parameter resolution
 
@@ -171,7 +180,17 @@ LLMModel.default_params  <  NodeConfig.params_override  <  NodeModelBinding.para
 reasoning:  NodeSpec.default_reasoning  <  NodeConfig.reasoning_effort  <  NodeModelBinding.reasoning_effort
 ```
 
-Allowed parameter keys per provider kind: `temperature`, `top_p`, `top_k`, `max_tokens`, `stop`, `seed`, `presence_penalty`, `frequency_penalty`. Reasoning is not set through `params`; it has its own field.
+Allowed parameter keys depend on what each integration supports (`llm_registry/params.py`):
+
+| Provider kind | Allowed keys |
+|---|---|
+| openai, openai_compatible | `temperature`, `top_p`, `max_tokens`, `stop`, `seed`, `presence_penalty`, `frequency_penalty` |
+| anthropic | `temperature`, `top_p`, `top_k`, `max_tokens`, `stop` |
+| google_genai | `temperature`, `top_p`, `top_k`, `max_tokens`, `stop`, `seed`, `presence_penalty`, `frequency_penalty` |
+| groq | `temperature`, `max_tokens`, `stop` |
+| ollama | `temperature`, `top_p`, `top_k`, `max_tokens` (sent as `num_predict`), `stop`, `seed` |
+
+Reasoning is not set through `params`; it has its own field.
 
 ## Resolution and snapshots
 
@@ -191,11 +210,30 @@ class ResolvedNode:
     chain: list[ResolvedModel]      # primary first
 ```
 
-- `resolve_registry()` returns `{node_key: ResolvedNode}`. It skips disabled rows and bindings that no longer satisfy the spec, and orders chains by priority. The result is cached in Redis. Any registry save bumps a version key, which invalidates the cache.
+- `resolve_registry()` returns `{node_key: ResolvedNode}`. It skips disabled rows and bindings that no longer satisfy the spec, and orders chains by priority. The result is cached in Redis (the Django cache). Saving or deleting any registry row clears it, so the next resolve rebuilds it.
 - **Snapshot per lesson:** when a lesson is created, the resolved registry is stored in `Lesson.config_snapshot`, and the whole flow uses it, including resumes days later. Admin edits apply to *new* lessons. Every lesson records exactly which models built it.
 - **Startup check** (`manage.py check`): every required node has at least one enabled binding whose provider key is present in the environment. Missing keys are warnings, so you can run with only the providers you have keys for.
 
-## Gateway algorithm
+## Gateway
+
+```python
+from llm_registry.gateway import Gateway
+
+result = Gateway().invoke(
+    "learner.assess", messages,
+    snapshot=lesson.config_snapshot,    # never the live registry
+    schema=LearnerAssessment,           # structured nodes; tools=[...] for tool nodes
+    lesson_id=lesson.id, run_id=run.id,
+    on_event=publish,                   # receives {"type": "retrying" | "fallback_model", ...}
+)
+result.output          # parsed Pydantic object / AIMessage (tools) / str (text)
+result.model.label     # which model actually answered
+result.fallback_index  # 0 = primary
+```
+
+The chat-model factory, the sleep function, and the rate limiter can be injected, which is how the tests run the gateway with scripted fake models.
+
+### Algorithm
 
 ```
 for index, model in enumerate(node.chain):
@@ -217,10 +255,15 @@ raise AllModelsFailed(node_key, errors)
 ## Admin
 
 - **Provider**: shows whether the key is present (✔/✘) without revealing it.
-- **LLMModel**: capability flags grouped in a fieldset. The **Test model** action runs a probe for each declared capability: a plain prompt, a small structured-output schema, a dummy tool call, and a 1×1 image. It reports pass or fail and latency, so a wrongly ticked capability is caught before a lesson depends on it.
+- **LLMModel**: capability flags grouped in a fieldset. The **Test model** action runs a probe for each declared capability: a plain prompt, a small structured-output schema, a dummy tool call, a generated 16×16 PNG for vision, and a low-effort reasoning call. It reports pass or fail and latency per capability, so a wrongly ticked capability is caught before a lesson depends on it. A client that can't even be built, for example because of a missing key, is reported as a failed `setup` probe.
 - **NodeConfig**: shows the spec (read-only requirements), inline bindings ordered by priority, and each binding's **effective** parameters and reasoning setting. It warns when a required node has no enabled binding.
 - **ModelCall**: read-only list with filters. The changelist shows failure rate and fallback rate per node and model.
 - **Export / import**: exports the registry as JSON. `manage.py seed_registry --file registry.json` loads it.
+- **`manage.py probe_models`** runs the same probes from the command line (`--model provider/name`, repeatable), plus, with `--node key`, one real call through that node's whole chain. It exits non-zero if anything fails.
+
+## Secrets in errors
+
+Provider SDK errors sometimes echo request details. Before any error text is stored (`ModelCall.error`) or shown (admin messages, probe output, `fallback_model` events, `AllModelsFailed`), `llm_registry/redaction.py` masks the values of secret-looking environment variables (`…_API_KEY`, `…_TOKEN`, `…_SECRET`, `…PASSWORD`) and common key formats (Google `AIza…`, Groq `gsk_…`, OpenAI and Anthropic `sk-…`, bearer tokens).
 
 ## Default seed (`manage.py seed_registry`)
 

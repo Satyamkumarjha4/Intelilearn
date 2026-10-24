@@ -30,14 +30,14 @@ Each phase ends with something runnable and checkable.
 
 ## Phase 2: Model registry
 
-- [ ] `Provider`, `LLMModel` (with capabilities), `NodeConfig`, `NodeModelBinding`, `ModelCall`
-- [ ] `NODE_SPECS` and a data migration; capability, limit, and parameter validation in the admin
-- [ ] Resolver, Redis cache, and version bump on save
-- [ ] Gateway: structured output (`include_raw`, one in-place repair), tool calling, reasoning translation, retries, fallback chain, rate limiter, `ModelCall` logging
-- [ ] **Test model** capability probes; `seed_registry`; export/import; `manage.py check` hook
-- [ ] Unit tests with fake chat models
+- [x] `Provider`, `LLMModel` (with capabilities), `NodeConfig`, `NodeModelBinding`, `ModelCall`
+- [x] `NODE_SPECS` (16 nodes) with `NodeConfig` rows created after migrate; capability, limit, and parameter validation in the admin
+- [x] Resolver with Redis cache, cleared on every registry save; per-lesson snapshots
+- [x] Gateway: structured output (`include_raw`, one in-place repair), tool calling, reasoning translation (parameter names verified per provider), retries with backoff and `Retry-After`, fallback chain, per-minute rate limiter, `ModelCall` logging with tokens and cost
+- [x] **Test model** capability probes; `seed_registry`; `export_registry` and import; admin JSON export; grouped `manage.py check` warnings
+- [x] Unit tests with fake chat models, and real clients built offline to verify parameter names
 
-**Done when:** you can bind `media.search` in the admin, and the admin refuses a model without tool calling. **Test model** reports each capability. `resolve_registry()` reflects your edits.
+**Done when:** you can bind `media.search` in the admin, and the admin refuses a model without tool calling. **Test model** reports each capability. `resolve_registry()` reflects your edits. ✅ Verified in the admin: node chains and health, spec requirements, a vision-less model refused for `media.verify`, and Test model reporting a missing key. Live calls are untested until API keys are set.
 
 ## Phase 3: Async flow infrastructure and Stage A (diagnose)
 
@@ -82,6 +82,11 @@ Each phase ends with something runnable and checkable.
 - [ ] Tracing (LangSmith or Langfuse callbacks in the gateway)
 - [ ] `ModelCall` dashboards in the admin; `diagnostic.review` and `media.verify` tuned and enabled
 - [ ] Golden-topic live suite
+
+## Across phases: design alignment
+
+- [ ] Close the [refactor backlog](design.md#refactor-backlog): code from phases 0–2 brought in line with the object design (OOP, SOLID, the named patterns), each item behaviour-neutral with tests green before and after. Items marked "Phase 3" land before or with Phase 3.
+- [ ] Every existing test file has the header from [testing.md](testing.md#31-the-file-header-required) (unit under test, why, use cases).
 
 ## Later (not now)
 

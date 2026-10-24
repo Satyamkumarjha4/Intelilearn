@@ -1,6 +1,6 @@
 # API reference
 
-Base path: `/api` (Django, port 8000). Next.js rewrites `/api/:path*` to Django, so the browser only calls same-origin `/api/...`.
+Base path: `/api` (Django, port 8000). A Next.js route handler proxies `/api/*` to Django, so the browser only calls same-origin `/api/...`.
 
 ## Conventions
 
@@ -19,7 +19,12 @@ Base path: `/api` (Django, port 8000). Next.js rewrites `/api/:path*` to Django,
   | `lc_onboarded` | `1` once the profile is complete (route-guard marker) | `/` | refresh lifetime |
 
   `CookieJWTAuthentication` accepts `Authorization: Bearer <access>` first, which is useful for scripts and needs no CSRF, and falls back to the `lc_access` cookie. The markers carry no authority. `Secure` is set when `AUTH_COOKIE_SECURE=true`.
-- **Rate limit**: register, login, and refresh share the `auth` throttle (`AUTH_THROTTLE_RATE`, default `20/min` per client).
+- **Rate limits**:
+  - `auth`: register and login, per client address (`AUTH_THROTTLE_RATE`, default `20/min`)
+  - `auth_account`: login attempts per email address, whatever the client (`AUTH_ACCOUNT_THROTTLE_RATE`, `10/min`)
+  - `auth_refresh`: token refresh, per client (`AUTH_REFRESH_THROTTLE_RATE`, `60/min`)
+
+  The client address is the `X-Forwarded-For` entry added by the Next.js proxy (`TRUSTED_PROXY_COUNT=1`). The API port is bound to localhost, so nobody can reach Django directly with a forged header.
 - **CSRF**: unsafe methods send `X-CSRFToken`, taken from the `csrftoken` cookie (`GET /auth/csrf` sets it). This is enforced for every cookie-authenticated request and for the auth endpoints; Swagger UI adds the header automatically.
 - **Ownership**: every lesson-scoped route returns `404` unless `lesson.owner == request.user`.
 - **Errors**: `{"detail": "...", "code": "...", "fields": {...}}`.

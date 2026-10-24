@@ -21,7 +21,9 @@ env = environ.Env()
 # Never overrides variables that are already set.
 environ.Env.read_env(BASE_DIR.parent / ".env")
 
-SECRET_KEY = env("DJANGO_SECRET_KEY", default="dev-insecure-secret-key-change-me")
+# The default only exists so tests and CI run without a .env; `check --deploy` refuses it (core/checks.py).
+DEV_SECRET_KEY = "dev-insecure-secret-key-change-me"
+SECRET_KEY = env("DJANGO_SECRET_KEY", default=DEV_SECRET_KEY)
 DEBUG = env.bool("DJANGO_DEBUG", default=False)
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1", "backend"])
 CSRF_TRUSTED_ORIGINS = env.list(
@@ -47,6 +49,7 @@ INSTALLED_APPS = [
     # local
     "core",
     "accounts",
+    "llm_registry",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -130,6 +133,24 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TIMEZONE = TIME_ZONE
 
+# Shared cache (Redis db 2): the resolved model registry and per-minute LLM rate-limit counters.
+# Tests use an in-process cache so they don't depend on Redis.
+CACHES = {
+    "default": (
+        {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}
+        if TESTING
+        else {"BACKEND": "django.core.cache.backends.redis.RedisCache", "LOCATION": f"{_redis_base}/2"}
+    )
+}
+
+# --- LLM registry ---
+# Thinking-token budgets for models whose reasoning is controlled by a budget (see llm_registry/reasoning.py).
+LLM_REASONING_BUDGETS = {
+    "low": env.int("LLM_REASONING_BUDGET_LOW", default=2048),
+    "medium": env.int("LLM_REASONING_BUDGET_MEDIUM", default=8192),
+    "high": env.int("LLM_REASONING_BUDGET_HIGH", default=24576),
+}
+
 # --- DRF / OpenAPI ---
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
@@ -137,7 +158,14 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": ["accounts.authentication.CookieJWTAuthentication"],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "EXCEPTION_HANDLER": "core.exceptions.api_exception_handler",
-    "DEFAULT_THROTTLE_RATES": {"auth": env("AUTH_THROTTLE_RATE", default="20/min")},
+    "DEFAULT_THROTTLE_RATES": {
+        "auth": env("AUTH_THROTTLE_RATE", default="20/min"),  # register/login, per client address
+        "auth_account": env("AUTH_ACCOUNT_THROTTLE_RATE", default="10/min"),  # login attempts per email
+        "auth_refresh": env("AUTH_REFRESH_THROTTLE_RATE", default="60/min"),
+    },
+    # Requests arrive through the Next.js proxy; the client address is the X-Forwarded-For entry it appends.
+    # Keep the API port bound to localhost (BIND_ADDRESS) so nobody can reach Django directly with a forged header.
+    "NUM_PROXIES": env.int("TRUSTED_PROXY_COUNT", default=1),
 }
 
 # --- Auth: JWTs in httpOnly cookies (see accounts/cookies.py) ---
@@ -152,6 +180,9 @@ SIMPLE_JWT = {
 }
 # Only sent over HTTPS when true; local development runs on plain http.
 AUTH_COOKIE_SECURE = env.bool("AUTH_COOKIE_SECURE", default=False)
+# Same switch for Django's own cookies (admin session, CSRF): one setting to flip when moving to HTTPS.
+SESSION_COOKIE_SECURE = AUTH_COOKIE_SECURE
+CSRF_COOKIE_SECURE = AUTH_COOKIE_SECURE
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "Lesson Crafter API",
