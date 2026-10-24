@@ -11,7 +11,7 @@ from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
 from .providers import build_chat_model
-from .redaction import redact
+from .redaction import REDACTOR
 from .resolver import ResolvedModel
 
 
@@ -50,7 +50,7 @@ class ProbeResult:
     detail: str
 
     def __post_init__(self):
-        self.detail = redact(self.detail)  # shown in admin messages
+        self.detail = REDACTOR.redact(self.detail)  # shown in admin messages
 
 
 def _run(capability: str, fn) -> ProbeResult:

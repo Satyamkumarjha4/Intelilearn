@@ -1,8 +1,26 @@
+"""Unit under test: `llm_registry.redaction.Redactor`, which masks credentials in text before it is stored or shown.
+
+Why: provider SDK errors can echo request details. Anything unmasked lands in ModelCall.error, admin messages,
+progress events sent to the browser and probe output, which would leak a paid API key.
+
+Use cases:
+- masks the values of configured secret environment variables
+- masks well-known key formats even when they aren't configured
+- masks bearer tokens
+- leaves ordinary text (and too-short "secrets") untouched
+- uses an injected environment instead of os.environ
+- the gateway redacts AllModelsFailed errors
+- the gateway redacts the reason in fallback events
+"""
+
 import pytest
 from langchain_core.messages import AIMessage
 
 from llm_registry.gateway import AllModelsFailed
-from llm_registry.redaction import MASK, redact
+from llm_registry.redaction import REDACTOR, Redactor
+
+MASK = Redactor.MASK
+redact = REDACTOR.redact
 
 
 @pytest.fixture(autouse=True)
@@ -26,6 +44,11 @@ def test_bearer_tokens_are_masked():
 
 def test_ordinary_text_is_untouched():
     assert redact("Rate limit exceeded (429), retry in 7s; abc") == "Rate limit exceeded (429), retry in 7s; abc"
+
+
+def test_an_injected_environment_is_used_instead_of_os_environ():
+    redactor = Redactor(environ={"OTHER_API_KEY": "injected-secret-value"})
+    assert redactor.redact("key injected-secret-value; my-real-gemini-key-123") == f"key {MASK}; my-real-gemini-key-123"
 
 
 def test_gateway_errors_are_redacted():

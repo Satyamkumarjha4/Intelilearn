@@ -1066,7 +1066,7 @@ Code written before this document that doesn't follow it yet. Behaviour must not
 | `llm_registry/probes.py` | `probe_model()` | `ModelProber` + `CapabilityProbe`s | Next probe change |
 | `llm_registry/serialization.py`, `seed.py` | functions | `RegistrySerializer`, `RegistrySeeder` | Next registry change |
 | `llm_registry/node_specs.py` | dict + `get_spec()` | `NodeSpecCatalog` | With the resolver |
-| `llm_registry/redaction.py` | `redact()` | `Redactor` | With the gateway |
+| ~~`llm_registry/redaction.py`~~ | ~~`redact()`~~ | `Redactor` + the stateless `REDACTOR` default | ✅ Done |
 | `core/views.py` | `_database`, `_redis`, `_celery` | `HealthCheck`s + `HealthService` | Next health change |
 | `core/sync.py` | `sync_databases()` | `DatabaseSyncer` | When Supabase is enabled |
 | `config/databases.py` | functions | `DatabaseConfig` | Low priority |

@@ -22,7 +22,7 @@ from . import ratelimit
 from .models import ModelCall
 from .node_specs import OutputMode
 from .providers import MissingAPIKey, build_chat_model
-from .redaction import redact
+from .redaction import REDACTOR
 from .resolver import ResolvedModel, ResolvedNode, node_from_snapshot
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ class NodeDisabled(RuntimeError):
 
 class AllModelsFailed(RuntimeError):
     def __init__(self, node_key: str, errors: list[str]):
-        errors = [redact(e) for e in errors]
+        errors = [REDACTOR.redact(e) for e in errors]
         self.node_key, self.errors = node_key, errors
         super().__init__(
             f"Every model for {node_key} failed: " + " | ".join(errors) if errors else f"{node_key} has no models"
@@ -136,7 +136,7 @@ class Gateway:
         for index, model in enumerate(node.chain):
             if index > 0 and on_event:
                 on_event({"type": "fallback_model", "node": node_key, "model": model.label, "fallback_index": index,
-                          "reason": redact(errors[-1]) if errors else ""})  # fmt: skip
+                          "reason": REDACTOR.redact(errors[-1]) if errors else ""})  # fmt: skip
             result = self._try_model(
                 node, model, index, list(messages), schema, tools, errors, lesson_id, run_id, on_event
             )
@@ -236,7 +236,7 @@ def _record(*, node_key, lesson_id, run_id, model, fallback_index, attempt, stat
             attempt=attempt,
             fallback_index=fallback_index,
             status=status,
-            error=redact(error)[:4000],
+            error=REDACTOR.redact(error)[:4000],
             latency_ms=latency_ms,
             input_tokens=input_tokens,
             output_tokens=output_tokens,

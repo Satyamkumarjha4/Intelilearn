@@ -7,7 +7,7 @@ from llm_registry.gateway import Gateway
 from llm_registry.models import LLMModel
 from llm_registry.node_specs import OutputMode, get_spec
 from llm_registry.probes import probe_model
-from llm_registry.redaction import redact
+from llm_registry.redaction import REDACTOR
 from llm_registry.resolver import registry_snapshot
 
 
@@ -75,7 +75,7 @@ class Command(BaseCommand):
                 on_event=events.append,
             )
         except Exception as exc:
-            self.stdout.write(self.style.ERROR(f"  ✘ {type(exc).__name__}: {redact(str(exc))}"))
+            self.stdout.write(self.style.ERROR(f"  ✘ {type(exc).__name__}: {REDACTOR.redact(str(exc))}"))
             return False
         for event in events:
             self.stdout.write(f"  · {event['type']}: {event.get('model', '')} {event.get('reason', '')}".rstrip())
