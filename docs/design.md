@@ -412,7 +412,11 @@ classDiagram
         +load(data, replace_bindings) dict
     }
     class DefaultRegistry {
+        +nodes
         +build() dict
+    }
+    class CheapRegistry {
+        +nodes
     }
 
     Provider "1" *-- "many" LLMModel
@@ -433,6 +437,7 @@ classDiagram
     ProviderProfile <|-- OllamaProfile
     ProviderProfiles o-- ProviderProfile
     DefaultRegistry ..> RegistrySerializer : same JSON format
+    DefaultRegistry <|-- CheapRegistry
 ```
 
 - `ProviderProfile` (`profiles.py`) holds everything that differs per vendor: allowed params and renames, whether a base URL or API key is needed, whether the client takes `timeout`, and reasoning translation. `OpenAICompatibleProfile` and `GroqProfile` subclass `OpenAIProfile`. `Provider.profile` returns the row's profile.
@@ -1305,7 +1310,7 @@ Every phase 0–2 item is done. The rows still open describe the work-in-progres
 | ~~`llm_registry/ratelimit.py`~~ | ~~`acquire()` function~~ | `RateLimiter` Protocol + `CacheWindowRateLimiter` | ✅ Done |
 | ~~`llm_registry/resolver.py`~~ | ~~module functions~~ | `RegistryResolver`, `RegistrySnapshot` | ✅ Done |
 | ~~`llm_registry/probes.py`~~ | ~~`probe_model()`~~ | `ModelProber` + `CapabilityProbe`s | ✅ Done |
-| ~~`llm_registry/serialization.py`, `seed.py`~~ | ~~functions~~ | `RegistrySerializer` (`export` / `load`), `DefaultRegistry` | ✅ Done |
+| ~~`llm_registry/serialization.py`, `seed.py`~~ | ~~functions~~ | `RegistrySerializer` (`export` / `load`), `DefaultRegistry`; seed profiles (`DefaultRegistry`, `CheapRegistry`) picked by name from `SEED_PROFILES` | ✅ Done |
 | ~~`llm_registry/node_specs.py`~~ | ~~dict + `get_spec()`~~ | `NodeSpecCatalog` (`NODE_SPECS[key]`) | ✅ Done |
 | ~~`llm_registry/redaction.py`~~ | ~~`redact()`~~ | `Redactor` + the stateless `REDACTOR` default | ✅ Done |
 | ~~`core/views.py`~~ | ~~`_database`, `_redis`, `_celery`~~ | `HealthCheck`s + `HealthService` (`core/health.py`) | ✅ Done |

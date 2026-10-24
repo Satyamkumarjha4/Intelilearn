@@ -41,7 +41,7 @@ def test_node_config_page_shows_its_bindings(admin_client, seeded):
     response = admin_client.get(reverse("admin:llm_registry_nodeconfig_change", args=[node.pk]))
 
     assert response.status_code == 200
-    assert "gemini-2.5-pro" in response.content.decode()
+    assert "gemini-3.5-flash-lite" in response.content.decode()
 
 
 def test_export_action_downloads_the_registry(admin_client, seeded):

@@ -78,6 +78,7 @@ Getting the Supabase URL: in the dashboard, go to **Connect** and copy the **Ses
 
 ```bash
 docker compose exec backend python manage.py seed_registry   # Gemini + Groq defaults; a no-op if already seeded
+docker compose exec backend python manage.py seed_registry --profile cheap --force   # cheapest models only, to try the flow
 docker compose exec backend python manage.py check           # warns about nodes without a usable model or API key
 docker compose exec backend python manage.py probe_models    # real calls: every bound model, each declared capability
 docker compose exec backend python manage.py probe_models --node learner.assess   # plus one call through a node's chain
