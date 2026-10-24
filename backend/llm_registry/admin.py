@@ -8,7 +8,7 @@ from django.utils.html import format_html, format_html_join
 
 from .models import LLMModel, ModelCall, NodeConfig, NodeModelBinding, Provider
 from .probes import ModelProber
-from .serialization import export_registry
+from .serialization import RegistrySerializer
 
 # JSON fields hold small parameter objects; the default textarea is far too large, especially inline.
 COMPACT_JSON = {models.JSONField: {"widget": forms.Textarea(attrs={"rows": 2, "cols": 36})}}
@@ -20,7 +20,7 @@ def _yes_no(ok: bool, yes="✔", no="✘"):
 
 @admin.action(description="Export the whole registry as JSON")
 def export_json(modeladmin, request, queryset):
-    response = HttpResponse(json.dumps(export_registry(), indent=2), content_type="application/json")
+    response = HttpResponse(json.dumps(RegistrySerializer().export(), indent=2), content_type="application/json")
     response["Content-Disposition"] = 'attachment; filename="llm-registry.json"'
     return response
 

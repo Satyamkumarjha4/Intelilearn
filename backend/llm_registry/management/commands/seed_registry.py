@@ -5,8 +5,8 @@ from django.core.exceptions import ValidationError
 from django.core.management import BaseCommand, CommandError
 
 from llm_registry.models import NodeModelBinding
-from llm_registry.seed import default_registry
-from llm_registry.serialization import import_registry
+from llm_registry.seed import DefaultRegistry
+from llm_registry.serialization import RegistrySerializer
 
 
 class Command(BaseCommand):
@@ -25,10 +25,10 @@ class Command(BaseCommand):
             if NodeModelBinding.objects.exists() and not force:
                 self.stdout.write("Registry already has bindings; leaving it alone (use --force to reset to defaults).")
                 return
-            data = default_registry()
+            data = DefaultRegistry().build()
 
         try:
-            counts = import_registry(data)
+            counts = RegistrySerializer().load(data)
         except ValidationError as exc:
             raise CommandError("; ".join(exc.messages)) from exc
         summary = ", ".join(f"{n} {name}" for name, n in counts.items())

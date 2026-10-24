@@ -70,7 +70,7 @@ flowchart TB
         FR[FlowRunner]
         HS[HealthService]
         DS[DatabaseSyncer]
-        RS[RegistrySerializer / RegistrySeeder]
+        RS[RegistrySerializer / DefaultRegistry]
     end
     subgraph Orchestration["Graph orchestration (LangGraph)"]
         GB[Graph builders]
@@ -386,11 +386,12 @@ classDiagram
         +kinds() list~str~
     }
     class RegistrySerializer {
+        +int FORMAT_VERSION
         +export() dict
-        +import_(data, replace_bindings) dict
+        +load(data, replace_bindings) dict
     }
-    class RegistrySeeder {
-        +seed(data)
+    class DefaultRegistry {
+        +build() dict
     }
 
     Provider "1" *-- "many" LLMModel
@@ -410,7 +411,7 @@ classDiagram
     ProviderProfile <|-- GoogleGenAIProfile
     ProviderProfile <|-- OllamaProfile
     ProviderProfiles o-- ProviderProfile
-    RegistrySeeder --> RegistrySerializer
+    DefaultRegistry ..> RegistrySerializer : same JSON format
 ```
 
 - `ProviderProfile` (`profiles.py`) holds everything that differs per vendor: allowed params and renames, whether a base URL or API key is needed, whether the client takes `timeout`, and reasoning translation. `OpenAICompatibleProfile` and `GroqProfile` subclass `OpenAIProfile`. `Provider.profile` returns the row's profile.
@@ -1098,7 +1099,7 @@ Code written before this document that doesn't follow it yet. Behaviour must not
 | ~~`llm_registry/ratelimit.py`~~ | ~~`acquire()` function~~ | `RateLimiter` Protocol + `CacheWindowRateLimiter` | ✅ Done |
 | ~~`llm_registry/resolver.py`~~ | ~~module functions~~ | `RegistryResolver`, `RegistrySnapshot` | ✅ Done |
 | ~~`llm_registry/probes.py`~~ | ~~`probe_model()`~~ | `ModelProber` + `CapabilityProbe`s | ✅ Done |
-| `llm_registry/serialization.py`, `seed.py` | functions | `RegistrySerializer`, `RegistrySeeder` | Next registry change |
+| ~~`llm_registry/serialization.py`, `seed.py`~~ | ~~functions~~ | `RegistrySerializer` (`export` / `load`), `DefaultRegistry` | ✅ Done |
 | ~~`llm_registry/node_specs.py`~~ | ~~dict + `get_spec()`~~ | `NodeSpecCatalog` (`NODE_SPECS[key]`) | ✅ Done |
 | ~~`llm_registry/redaction.py`~~ | ~~`redact()`~~ | `Redactor` + the stateless `REDACTOR` default | ✅ Done |
 | `core/views.py` | `_database`, `_redis`, `_celery` | `HealthCheck`s + `HealthService` | Next health change |

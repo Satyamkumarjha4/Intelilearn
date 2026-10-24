@@ -3,8 +3,8 @@ from django.core.management import CommandError, call_command
 from langchain_core.messages import AIMessage
 
 from llm_registry.models import ModelCall
-from llm_registry.seed import default_registry
-from llm_registry.serialization import import_registry
+from llm_registry.seed import DefaultRegistry
+from llm_registry.serialization import RegistrySerializer
 
 pytestmark = pytest.mark.django_db
 
@@ -39,7 +39,7 @@ class Chat:
 
 @pytest.fixture
 def seeded():
-    import_registry(default_registry())
+    RegistrySerializer().load(DefaultRegistry().build())
 
 
 def test_probes_the_given_model_and_runs_a_node(seeded, monkeypatch, capsys):

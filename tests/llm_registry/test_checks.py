@@ -1,8 +1,8 @@
 import pytest
 
 from llm_registry.checks import registry_check
-from llm_registry.seed import default_registry
-from llm_registry.serialization import import_registry
+from llm_registry.seed import DefaultRegistry
+from llm_registry.serialization import RegistrySerializer
 
 pytestmark = pytest.mark.django_db
 
@@ -18,7 +18,7 @@ def test_empty_registry_warns_about_missing_models(node_configs):
 def test_missing_api_keys_are_reported_once(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
-    import_registry(default_registry())
+    RegistrySerializer().load(DefaultRegistry().build())
 
     warnings = registry_check()
 
@@ -29,6 +29,6 @@ def test_missing_api_keys_are_reported_once(monkeypatch):
 def test_healthy_registry_has_no_warnings(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "k")
     monkeypatch.setenv("GROQ_API_KEY", "k")
-    import_registry(default_registry())
+    RegistrySerializer().load(DefaultRegistry().build())
 
     assert registry_check() == []

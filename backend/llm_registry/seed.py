@@ -4,7 +4,7 @@ Model ids and capability flags change often: verify them against each provider's
 everything in the admin. Loaded by `manage.py seed_registry`.
 """
 
-from .serialization import FORMAT_VERSION
+from .serialization import RegistrySerializer
 
 _GEMINI = {
     "supports_structured_output": True,
@@ -60,26 +60,29 @@ _NODES = {
 }
 
 
-def default_registry() -> dict:
-    return {
-        "format_version": FORMAT_VERSION,
-        "providers": [
-            {
-                "key": "gemini",
-                "kind": "google_genai",
-                "api_key_env": "GEMINI_API_KEY",
-                "base_url": "",
-                "is_enabled": True,
-            },
-            {"key": "groq", "kind": "groq", "api_key_env": "GROQ_API_KEY", "base_url": "", "is_enabled": True},
-        ],
-        "models": _MODELS,
-        "nodes": [
-            {
-                "node_key": key,
-                **settings,
-                "bindings": [{"provider": p, "model": m, "priority": i} for i, (p, m) in enumerate(chain)],
-            }
-            for key, (chain, settings) in _NODES.items()
-        ],
-    }
+class DefaultRegistry:
+    """The seed as RegistrySerializer JSON, so `seed_registry` loads it exactly like an exported file."""
+
+    def build(self) -> dict:
+        return {
+            "format_version": RegistrySerializer.FORMAT_VERSION,
+            "providers": [
+                {
+                    "key": "gemini",
+                    "kind": "google_genai",
+                    "api_key_env": "GEMINI_API_KEY",
+                    "base_url": "",
+                    "is_enabled": True,
+                },
+                {"key": "groq", "kind": "groq", "api_key_env": "GROQ_API_KEY", "base_url": "", "is_enabled": True},
+            ],
+            "models": _MODELS,
+            "nodes": [
+                {
+                    "node_key": key,
+                    **settings,
+                    "bindings": [{"provider": p, "model": m, "priority": i} for i, (p, m) in enumerate(chain)],
+                }
+                for key, (chain, settings) in _NODES.items()
+            ],
+        }
