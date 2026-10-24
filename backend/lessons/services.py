@@ -1,0 +1,196 @@
+"""The use cases behind the lessons API. Views parse and format; these decide.
+
+`LessonService` starts, retries and deletes lessons. `QuizService` serves a quiz to the learner, grades their answers
+(with the same grader the graph uses, so the score they see is the one the graph routes on) and queues the resume.
+"""
+
+from typing import Protocol
+
+from django.conf import settings
+from django.db import transaction
+from django.utils import timezone
+from django.utils.module_loading import import_string
+
+from graph.grading import AnswerError, QuizGrader, RoutingPolicy
+from llm_registry.resolver import RegistryResolver
+
+from .errors import (
+    AlreadyAttempted,
+    InvalidAnswers,
+    LessonNotConfigured,
+    NotAttempted,
+    QueueUnavailable,
+    QuizNotFound,
+    RunEnded,
+    RunInProgress,
+    WrongStage,
+)
+from .events import EventPublisher, RedisEventPublisher, RunEvent
+from .models import FlowSettings, GraphRun, Lesson, Quiz, QuizAttempt, Stage
+
+
+class TaskQueue(Protocol):
+    def enqueue(self, run: GraphRun) -> None: ...
+
+
+class RunDispatcher:
+    """Queues a run. If the queue is unreachable the run is failed (and so the lesson), so Retry works later."""
+
+    def __init__(self, queue: TaskQueue | None = None):
+        self.queue = queue or import_string(settings.LESSON_TASK_QUEUE)()
+
+    def dispatch(self, run: GraphRun) -> None:
+        try:
+            self.queue.enqueue(run)
+        except QueueUnavailable as exc:
+            GraphRun.objects.filter(pk=run.pk).update(status=GraphRun.Status.FAILED, error=str(exc.detail))
+            run.lesson.fail(str(exc.detail))
+            raise
+
+
+def has_active_run(lesson: Lesson) -> bool:
+    return GraphRun.objects.filter(lesson=lesson, status__in=[GraphRun.Status.QUEUED, GraphRun.Status.RUNNING]).exists()
+
+
+class LessonService:
+    FIRST_NODE = "diagnostic.generate"
+
+    def __init__(
+        self,
+        queue: TaskQueue | None = None,
+        resolver: RegistryResolver | None = None,
+        events: EventPublisher | None = None,
+    ):
+        self.dispatcher = RunDispatcher(queue)
+        self.resolver = resolver or RegistryResolver()
+        self.events = events or RedisEventPublisher()
+
+    def create(self, user, topic: str, user_context: str = "") -> tuple[Lesson, GraphRun]:
+        """A new lesson with its registry and settings snapshotted, and a queued start run."""
+        snapshot = self.resolver.snapshot()
+        first = snapshot.node(self.FIRST_NODE)
+        if not first.enabled or not first.chain:
+            raise LessonNotConfigured(
+                f"No AI model is bound to '{self.FIRST_NODE}'. An admin must bind one in the model registry first."
+            )
+        with transaction.atomic():
+            lesson = Lesson.objects.create(
+                owner=user,
+                topic=topic.strip(),
+                user_context=user_context.strip(),
+                config_snapshot=snapshot.to_json(),
+                settings_snapshot=FlowSettings.load().snapshot(),
+            )
+            run = GraphRun.objects.create(lesson=lesson, graph=GraphRun.Graph.FLOW, trigger=GraphRun.Trigger.START)
+        self.dispatcher.dispatch(run)
+        return lesson, run
+
+    def retry(self, lesson: Lesson) -> GraphRun:
+        """Resume a failed lesson from its last checkpoint."""
+        if lesson.stage != Stage.FAILED:
+            raise WrongStage("Only a failed lesson can be retried.")
+        if has_active_run(lesson):
+            raise RunInProgress()
+        run = GraphRun.objects.create(lesson=lesson, graph=GraphRun.Graph.FLOW, trigger=GraphRun.Trigger.RETRY)
+        self.dispatcher.dispatch(run)
+        return run
+
+    def cancel(self, run: GraphRun) -> None:
+        """Stop an active run after its current step. The lesson is marked failed, which makes it retryable."""
+        stopped = GraphRun.objects.filter(pk=run.pk, status__in=[GraphRun.Status.QUEUED, GraphRun.Status.RUNNING])
+        if not stopped.update(status=GraphRun.Status.CANCELLED, finished_at=timezone.now()):
+            raise RunEnded()
+        run.lesson.fail("Cancelled. Press Retry to continue where it stopped.")
+        self.events.publish(run.id, RunEvent("cancelled", {}))
+
+    def delete(self, lesson: Lesson) -> list:
+        """Cancel whatever is running, then remove the lesson and everything attached (media files go with them)."""
+        active = GraphRun.objects.filter(lesson=lesson, status__in=[GraphRun.Status.QUEUED, GraphRun.Status.RUNNING])
+        cancelled = list(active.values_list("pk", flat=True))
+        active.update(status=GraphRun.Status.CANCELLED)
+        lesson.delete()
+        return cancelled
+
+
+class QuizService:
+    #: kind → the stage the lesson waits in for that quiz, and the trigger of the run that resumes it
+    KINDS = {
+        Quiz.Kind.DIAGNOSTIC: (Stage.AWAITING_DIAGNOSTIC, GraphRun.Trigger.RESUME_DIAGNOSTIC),
+        Quiz.Kind.PREREQUISITE: (Stage.AWAITING_PREREQUISITE, GraphRun.Trigger.RESUME_PREREQUISITE),
+    }
+
+    def __init__(
+        self,
+        queue: TaskQueue | None = None,
+        grader: QuizGrader | None = None,
+        policy: RoutingPolicy | None = None,
+    ):
+        self.dispatcher = RunDispatcher(queue)
+        self.grader = grader or QuizGrader()
+        self.policy = policy or RoutingPolicy()
+
+    def for_learner(self, lesson: Lesson, kind: str) -> dict:
+        quiz = self._quiz(lesson, kind)
+        return {
+            "quiz_id": str(quiz.id),
+            "kind": quiz.kind,
+            "questions": quiz.public_questions(),
+            "allow_dont_know": True,
+        }
+
+    def submit(self, lesson: Lesson, kind: str, answers) -> tuple[dict, GraphRun]:
+        stage, trigger = self._kind(kind)
+        with transaction.atomic():
+            lesson = Lesson.objects.select_for_update().get(pk=lesson.pk)
+            quiz = self._quiz(lesson, kind)
+            if lesson.stage != stage:
+                raise WrongStage(f"The lesson is not waiting for the {kind} quiz.")
+            if QuizAttempt.objects.filter(quiz=quiz).exists():
+                raise AlreadyAttempted()
+            if has_active_run(lesson):
+                raise RunInProgress()
+            if not isinstance(answers, dict):
+                raise InvalidAnswers("Send the answers as an object of question id → option index.")
+            try:
+                result = self.grader.grade(quiz.questions, answers)
+            except AnswerError as exc:
+                raise InvalidAnswers(str(exc)) from exc
+            attempt = QuizAttempt.objects.create(quiz=quiz, answers=answers, result=result.as_dict())
+            run = GraphRun.objects.create(
+                lesson=lesson, graph=GraphRun.Graph.FLOW, trigger=trigger, payload={"resume": str(attempt.id)}
+            )
+        route = self.policy.route_for(result, lesson.settings_snapshot) if kind == Quiz.Kind.DIAGNOSTIC else None
+        self.dispatcher.dispatch(run)
+        return result.summary(route), run
+
+    def review(self, lesson: Lesson, kind: str) -> dict:
+        quiz = self._quiz(lesson, kind)
+        attempt = QuizAttempt.objects.filter(quiz=quiz).first()
+        if attempt is None:
+            raise NotAttempted()
+        questions = [
+            {
+                **{
+                    key: q[key]
+                    for key in ("id", "band", "question", "options", "correct_index", "explanation")
+                    if key in q
+                },
+                "answer": attempt.answers[q["id"]],
+                "correct": attempt.result["per_question"][q["id"]],
+            }
+            for q in quiz.questions
+        ]
+        return {"quiz_id": str(quiz.id), "kind": quiz.kind, "questions": questions, "result": attempt.result}
+
+    def _kind(self, kind: str):
+        try:
+            return self.KINDS[Quiz.Kind(kind)]
+        except ValueError:
+            raise QuizNotFound() from None
+
+    def _quiz(self, lesson: Lesson, kind: str) -> Quiz:
+        self._kind(kind)
+        quiz = Quiz.objects.filter(lesson=lesson, kind=kind).first()
+        if quiz is None:
+            raise QuizNotFound()
+        return quiz
