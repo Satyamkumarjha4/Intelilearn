@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { api, ApiError, type FieldErrors } from "@/lib/api";
+import { apiClient, ApiError, type FieldErrors } from "@/lib/api";
 import { EDUCATION_LEVELS, GOALS, LANGUAGES, LEARNING_PREFERENCES } from "@/lib/profile-options";
 import type { Profile, ProfileInput } from "@/lib/types";
 
@@ -77,7 +77,7 @@ export function ProfileForm({ initial, submitLabel, showAccountFields = false, o
     setFields({});
     try {
       const body = showAccountFields ? values : { ...values, name: undefined };
-      onSaved(await api<Profile>("/profile", { method: "PUT", body }));
+      onSaved(await apiClient.request<Profile>("/profile", { method: "PUT", body }));
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);

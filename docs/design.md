@@ -1009,6 +1009,8 @@ sequenceDiagram
 classDiagram
     direction LR
     class ApiClient {
+        -Fetch fetcher
+        -readCookie(name) str
         -Promise refreshing
         +request(path, options) Promise~T~
         +refreshSession() Promise~bool~
@@ -1036,6 +1038,7 @@ classDiagram
     ApiClient ..> ApiError : throws
 ```
 
+- Components call the shared `apiClient` instance (`apiClient.request<T>(path, options)`), so concurrent 401s share one refresh. `fetch` and the cookie reader are constructor parameters, so `lib/api.test.ts` drives the client with a scripted fake `fetch`.
 - `useRunEvents`, `useProfile` and the `LessonSandbox` component are hooks/components that own one instance of these classes.
 - `SandboxBridge` accepts only messages whose `event.source` is its iframe.
 
@@ -1077,5 +1080,5 @@ Code written before this document that doesn't follow it yet. Behaviour must not
 | `graph/codegen.py` | functions | `DocumentAssembler`, `CodeSanitizer` | Phase 6 |
 | `graph/media.py` | search methods on `MediaLibrary` | `MediaSource` classes, `MediaDownloader`, `LicensePolicy` | Phase 5 |
 | `lessons/document.py` | functions | `LessonDocumentBuilder`, `MediaUrlSigner` | Phase 6 |
-| `frontend/lib/api.ts` | module functions + `ApiError` | `ApiClient` (exported singleton instance for components) | Next frontend API change |
-| `frontend/lib/safe-redirect.ts` | `safeNext()` | `RedirectPolicy.safeNext` | With `api.ts` |
+| ~~`frontend/lib/api.ts`~~ | ~~module functions + `ApiError`~~ | `ApiClient` + the shared `apiClient` instance | ✅ Done |
+| ~~`frontend/lib/safe-redirect.ts`~~ | ~~`safeNext()`~~ | `RedirectPolicy.safeNext` | ✅ Done |
