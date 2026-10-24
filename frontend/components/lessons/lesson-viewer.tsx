@@ -6,13 +6,15 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { LessonSandbox } from "@/components/lessons/lesson-sandbox";
+import { TestResultPanel } from "@/components/lessons/test-result-panel";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
 import { lessonsApi } from "@/lib/lessons-api";
 import { RunEventStream, TERMINAL_EVENTS } from "@/lib/run-events";
 import { RepairGate, RepairReport, type SandboxError, type SandboxMessage } from "@/lib/sandbox-bridge";
-import type { LessonDocument, LessonVersion } from "@/lib/types";
+import { TestSubmitFlow } from "@/lib/test-session";
+import type { LessonDocument, LessonVersion, TestSubmission } from "@/lib/types";
 
 type Repair = { state: "idle" } | { state: "running" } | { state: "failed"; message: string } | { state: "limit" };
 type Panel = "code" | "versions" | null;
@@ -33,6 +35,8 @@ export function LessonViewer({ lessonId }: { lessonId: string }) {
   const [gate] = useState(() => new RepairGate());
   const [stream, setStream] = useState<RunEventStream | null>(null);
   const [instance, setInstance] = useState(0);
+  const [submission, setSubmission] = useState<TestSubmission | null>(null);
+  const [grading, setGrading] = useState<TestSubmitFlow | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -55,6 +59,19 @@ export function LessonViewer({ lessonId }: { lessonId: string }) {
   }, [lessonId]);
 
   useEffect(() => () => stream?.close(), [stream]);
+  useEffect(() => () => grading?.dispose(), [grading]);
+
+  const submitTest = (answers: Record<string, unknown>) => {
+    const flow = new TestSubmitFlow(lessonsApi, (runId, onEnd) => {
+      const events = new RunEventStream(runId, (event) => TERMINAL_EVENTS.has(event.name) && onEnd());
+      return () => events.close();
+    });
+    setGrading(flow);
+    setSubmission(null);
+    flow.run(lessonId, answers, setSubmission).catch((err) => {
+      toast.error(err instanceof ApiError ? err.message : "Could not submit the test.");
+    });
+  };
 
   const follow = useCallback(
     (runId: string) => {
@@ -101,7 +118,7 @@ export function LessonViewer({ lessonId }: { lessonId: string }) {
       setCrash(message.error);
       if (gate.shouldRepair(message.error, doc.code_version)) startRepair(message.error, doc.code_version);
     } else if (message.type === "test_submit") {
-      toast.info("Grading the test arrives in a later update.");
+      submitTest(message.answers);
     }
   };
 
@@ -195,6 +212,8 @@ export function LessonViewer({ lessonId }: { lessonId: string }) {
       )}
 
       <LessonSandbox key={instance} document={doc} theme={resolvedTheme === "dark" ? "dark" : "light"} onMessage={onMessage} />
+
+      {submission && <TestResultPanel submission={submission} />}
 
       {panel === "code" && (
         <pre className="max-h-96 overflow-auto rounded-lg border bg-muted/30 p-3 text-xs" aria-label="Lesson code">

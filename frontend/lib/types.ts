@@ -215,3 +215,32 @@ export type LessonSection = {
   callouts: { kind: "note" | "tip" | "warning" | "example"; text: string }[];
 };
 export type LessonPageContent = { key: string; title: string; sections: LessonSection[]; summary: string };
+
+export type QuestionResult = {
+  id: string;
+  type: QuestionType;
+  concept: string;
+  marks: number;
+  /** null while a model is still grading it. */
+  awarded: number | null;
+  correct: boolean | null;
+  graded_by: "auto" | "model" | "none";
+  feedback: string;
+  solution: Record<string, unknown>;
+};
+/** What a submitted lesson test scored (`TestSubmission.result`). */
+export type ScoreCard = {
+  complete: boolean;
+  score: { awarded: number; available: number; percent: number };
+  questions: QuestionResult[];
+  topics_to_revisit: string[];
+};
+export type TestSubmission = {
+  id: string;
+  status: "grading" | "graded" | "failed";
+  error: string;
+  result: ScoreCard | null;
+  submitted_at: string;
+  graded_at: string | null;
+};
+export type TestSubmissionCreated = { submission_id: string; run_id: string | null; status: TestSubmission["status"] };

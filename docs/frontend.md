@@ -126,7 +126,7 @@ Adding a library to the scope is a deliberate change. You update `src/scope`, up
 - The parent posts `{type: "render", code, data, codeVersion, theme}` (media URLs made absolute, because the iframe's origin is opaque) and `{type: "theme", theme}` when the theme changes, which does not restart the lesson. The runtime transforms the TSX with **sucrase** and evaluates it with the scope.
 - The runtime posts back `rendered` (with height), `error` (with `phase: transform | runtime`, message, stack, and page), and `test_submit` (answers from `Assessment`). The parent accepts only messages whose `event.source` is this iframe.
 - **Runtime errors that slipped past `render_check`** trigger `POST /repair`, **once per `code_version`** (`RepairGate`: one crash raises several errors, and one repair covers them; an error from a version the page has moved past is ignored). The server enforces `max_auto_runtime_repairs`: on `repair_limit_reached` the gate stops for good and the learner sees the error with **Rebuild** and **Versions**. A `stale_code_version` just reloads the document.
-- `test_submit` → `POST /test/submissions`. The result (score, feedback per question, topics to revisit) is shown in a `TestResultPanel` next to the iframe. (Until Phase 7 lands, the viewer answers a submitted test with a notice.)
+- `test_submit` → `POST /test/submissions`. The result (score, feedback per question, topics to revisit) is shown in a `TestResultPanel` next to the iframe.
 
 ## `lib/`
 
