@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "core",
     "accounts",
     "llm_registry",
+    "lessons",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
