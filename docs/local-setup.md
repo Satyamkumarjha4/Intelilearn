@@ -30,7 +30,8 @@ The root `.env` is the **single source of configuration**. Django reads it, `doc
 | Frontend | `DJANGO_API_ORIGIN`, `NEXT_PUBLIC_BACKEND_URL` | `http://localhost:${BACKEND_PORT}` |
 | LLM keys | `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | empty. The default registry uses Gemini and Groq. |
 | Reasoning budgets | `LLM_REASONING_BUDGET_LOW/MEDIUM/HIGH` | 2048 / 8192 / 24576 |
-| Lesson flow | `SANDBOX_DIR`, `NODE_BINARY`, `SANDBOX_CHECK_TIMEOUT_S`, `SANDBOX_RENDER_TIMEOUT_S`, `SANDBOX_PAGE_TIMEOUT_MS`, `GIPHY_API_KEY`, `MEDIA_URL_TTL_S` | `<repo>/sandbox`, node, 30, 180, 8000, empty, 21600 (6 h) |
+| Lesson flow | `FLOW_RUN_LOCK_TTL_S`, `LESSON_CREATE_THROTTLE_RATE`, `SSE_HEARTBEAT_S`, `SANDBOX_DIR`, `NODE_BINARY`, `SANDBOX_CHECK_TIMEOUT_S`, `SANDBOX_RENDER_TIMEOUT_S`, `SANDBOX_PAGE_TIMEOUT_MS`, `GIPHY_API_KEY`, `MEDIA_URL_TTL_S` | 600, 30/hour, 15, `<repo>/sandbox`, node, 30, 180, 8000, empty, 21600 (6 h) |
+| Offline walk-through | `FAKE_LLM_API_KEY` | empty (any value; not a secret) |
 
 - The `POSTGRES_HOST`, `POSTGRES_PORT`, `REDIS_HOST`, and `REDIS_PORT` values in `.env` describe how the **host** reaches the services. Inside docker, compose overrides them with the service names and internal ports (`db:5432`, `redis:6379`).
 - **Changing `POSTGRES_USER`, `POSTGRES_PASSWORD`, or `POSTGRES_DB` after the first start** has no effect on the existing `postgres-data` volume. Postgres only applies them when it initialises an empty volume. To apply new credentials to a volume holding nothing you need, run `docker compose down && docker volume rm lessoncrafter_postgres-data`. Otherwise, change them with SQL (`ALTER USER …`).
@@ -41,7 +42,7 @@ The root `.env` is the **single source of configuration**. Django reads it, `doc
 make up            # = docker compose up --build
 ```
 
-On start, `make up` also recreates the frontend's anonymous `node_modules` and `.next` volumes (removing the old ones), so new packages are picked up. On start, `backend` runs `manage.py bootstrap`: it migrates the active database, first syncing to Supabase when that's configured (see below). Code changes reload automatically: uvicorn `--reload` for the API, `watchfiles` for the Celery worker, and Turbopack for Next.js. Postgres and Redis data persist in the `postgres-data` and `redis-data` volumes.
+On start, `make up` also recreates the frontend's anonymous `node_modules` and `.next` volumes (removing the old ones), so new packages are picked up. On start, `backend` runs `manage.py bootstrap`: it migrates the active database, first syncing to Supabase when that's configured (see below), then creates the LangGraph checkpoint tables (`manage.py setup_checkpointer`, safe to repeat). Code changes reload automatically: uvicorn `--reload` for the API, `watchfiles` for the Celery worker, and Turbopack for Next.js. Postgres and Redis data persist in the `postgres-data` and `redis-data` volumes.
 
 | URL | What |
 |---|---|
@@ -85,6 +86,39 @@ docker compose exec backend python manage.py probe_models --node learner.assess 
 
 Tune models, fallbacks, and parameters in the admin under **LLM model registry**. Share a tuned setup with `manage.py export_registry --output registry.json` and `seed_registry --file registry.json`. See [model-registry.md](model-registry.md).
 
+## 5. Run a lesson from the terminal
+
+With models bound (section 4) and a user registered, `manage.py flow` drives the whole flow without a browser:
+
+```bash
+docker compose exec backend python manage.py flow start "Binary search" --email you@example.com --inline
+docker compose exec backend python manage.py flow answer <lesson> diagnostic --correct 5 --inline   # first 5 right, rest wrong
+docker compose exec backend python manage.py flow show <lesson>        # stage, route, scores, assessment, runs (--json for rows)
+docker compose exec backend python manage.py flow retry <lesson> --inline
+docker compose exec backend python manage.py flow runs <lesson>
+```
+
+`--inline` runs each step in the command's own process; without it the step is queued for the Celery worker. A lesson can be named by the first characters of its id.
+
+## 6. Walk through the app without API keys
+
+`tests/e2e/fake_llm_server.py` is a fake OpenAI-compatible server that answers every structured-output call with canned, schema-valid content, so the real gateway, worker and graph run end to end at no cost. It is a development aid, not part of the product.
+
+```bash
+export FAKE_LLM_API_KEY=fake                    # or put it in .env
+docker compose --profile e2e up -d fake-llm
+docker compose exec backend python manage.py seed_registry --file /tests/e2e/fake_registry.json
+```
+
+**That replaces the bindings of every node in the registry of the database you run it against**, so do it on a throwaway stack. To keep your own stack untouched, start a second one under another project name and ports:
+
+```bash
+BACKEND_PORT=7110 FRONTEND_PORT=7100 POSTGRES_PORT=7130 REDIS_PORT=7120 FAKE_LLM_API_KEY=fake \
+  docker compose -p lcfake --profile e2e up -d --build
+```
+
+If `.env` sets `DJANGO_CSRF_TRUSTED_ORIGINS`, that stack also needs it to list its own two ports. The fake is reached at `http://fake-llm.lan:9000/v1` (the registry insists on a domain-like host name, so the compose service has that alias). Add a builder to the fake whenever a phase adds an LLM output schema.
+
 ## Everyday commands
 
 ```bash
@@ -102,6 +136,7 @@ make down            # stop; volumes are kept
 
 - Tests live in the repo-root `tests/` folder, **mirroring `backend/`**: `backend/core/sync.py` is tested in `tests/core/test_sync.py`.
 - The pytest config is in `backend/pyproject.toml` (`testpaths = ["../tests"]`). In docker, `tests/` is mounted at `/tests`.
+- Graph and runner tests run nodes on LangGraph's worker threads, which have their own database connection and see only committed rows, so those tests use `pytest.mark.django_db(transaction=True)` (slower: the tables are flushed after each). Shared doubles live in `tests/support/`.
 - Under pytest, settings ignore `SUPABASE_DATABASE_URL`. Two test databases are created on the docker Postgres: `default` and `local`. The second one exists so the sync can be tested between two real databases.
 - **CI:** `docker compose run --rm backend pytest` needs no `.env`. Everything falls back to defaults.
 
@@ -129,5 +164,3 @@ The backend image installs into `/opt/venv`, outside the bind-mounted `/app`. Th
 ## Later phases add
 
 - `sandbox/` package: Node and Playwright Chromium in the backend image.
-- `manage.py setup_checkpointer` for the LangGraph Postgres checkpoint tables.
-- The `manage.py flow ...` commands.

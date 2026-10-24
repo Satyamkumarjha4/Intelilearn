@@ -35,6 +35,7 @@ By kind of change:
 - A module with a lot of behaviour may split into several files named by area: `tests/accounts/test_views.py` and `test_views_profile.py`.
 - Frontend unit tests sit beside the file they test as `*.test.ts` and run with `bun test`.
 - Sandbox scripts (`sandbox/scripts/*.mjs`) have fixture-driven tests in `sandbox/` (Phase 5–6).
+- Shared builders and doubles live in `tests/support/` (importable as `support.…`; `tests/` is on the test python path) and its fixtures are registered for every test from `tests/conftest.py`. A graph run executes nodes on LangGraph's worker threads, whose database connection only sees committed rows, so tests that run a whole graph or the runner are marked `django_db(transaction=True)`.
 - Fixtures: shared ones in `tests/conftest.py`; ones used by one package in that package's `conftest.py` (for example the registry rows and fake chat models in `tests/llm_registry/conftest.py`). Every fixture has a docstring when its purpose isn't obvious from its name.
 
 ## 3. Documenting tests
@@ -91,8 +92,10 @@ The design injects every collaborator through a constructor or `FlowContext` ([d
 | Collaborator | Double | Where |
 |---|---|---|
 | LLM chat models | Fake chat models scripted per call (`raw`, `parsed`, `parsing_error`, exceptions with `status_code`) | `tests/llm_registry/conftest.py` |
-| `LLMGateway` in graph tests | `FakeGateway`: scripted outputs per node key, records every call | `tests/graph/conftest.py` (Phase 3) |
-| `CodeSandbox` / `LatexChecker` | Fake returning canned `CheckResult`, `RenderReport`, LaTeX errors | `tests/graph/conftest.py` |
+| `LLMGateway` in graph tests | `FakeGateway`: scripted outputs per node key (objects, dicts, callables or exceptions), records every call | `tests/support/fakes.py`, with the fixtures in `tests/support/fixtures.py` |
+| `CodeSandbox` / `LatexChecker` | `FakeSandbox` returning canned LaTeX and code-check results | `tests/support/fakes.py` |
+| Event publisher, task queue | A list-backed publisher and `RecordingQueue` (`LESSON_TASK_QUEUE` points the API at it) | `tests/lessons/test_runner.py`, `tests/support/fixtures.py` |
+| The real gateway and LangChain client | `tests/e2e/fake_llm_server.py`, a fake OpenAI-compatible server run in a thread | `tests/e2e/` |
 | HTTP (media sources) | `httpx.MockTransport` with recorded responses | per test file |
 | Sleep, clock, rate limiter | Plain callables or fakes recording the delays | per test file |
 | Redis cache | The real test Redis, cleared around every test (`_clear_cache` in `tests/conftest.py`) | — |

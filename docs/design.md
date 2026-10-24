@@ -106,45 +106,45 @@ flowchart TB
 |---|---|---|---|---|
 | **Facade** | `llm_registry/gateway.py` | `Gateway` | One call (`invoke`) hides resolution, retries, fallback, rate limits, output parsing and logging from every node | ✅ |
 | | `graph/media.py` | `MediaLibrary` | One object for search, download, sniffing and storage | ✅ |
-| | flow execution | `FlowRunner` | Celery tasks and views start or resume a graph without knowing LangGraph | ☐ Phase 3 |
+| | flow execution | `FlowRunner` | Celery tasks and services run a graph segment without knowing LangGraph | ✅ |
 | **Chain of Responsibility** | gateway | `ResolvedNode.chain` walked by `Gateway` | Each model in priority order handles the call or passes it on to the next fallback | ✅ |
 | **Strategy** | gateway | `OutputAdapter` (`Structured…`, `Tools…`, `Text…`) | Output mode varies per node; the retry loop must not branch on it | ✅ |
 | | gateway | `RetryPolicy` (`ExponentialBackoffPolicy`) | Which errors are retryable and how long to wait, swappable and testable | ✅ |
 | | providers | `ProviderProfile` per provider kind | Allowed params, renames and reasoning kwargs differ per vendor | ✅ |
 | | rate limits | `RateLimiter` (`CacheWindowRateLimiter`) | Gateway depends on "wait for room", not on Redis | ✅ |
 | | probes | `CapabilityProbe` per capability | Each capability has its own check; `ModelProber` runs the declared ones | ✅ |
-| | graph | `Validator` per artefact | Deterministic rules per output type, fed back as retry feedback | ◐ (`validate_*` functions) |
-| | graph | `RoutingPolicy` | Diagnostic score → route uses admin thresholds | ◐ (`route_for`) |
+| | graph | `Validator` per artefact | Deterministic rules per output type, fed back as retry feedback | ✅ Stage A and study material · ◐ plan, page, test and interactive-plan validators are classes but not wired until Phase 5 |
+| | graph | `RoutingPolicy` | Diagnostic score → route uses admin thresholds | ✅ |
 | | media | `MediaSource` (`Wikimedia…`, `Openverse…`, `Giphy…`) | Sources are added or disabled by settings | ◐ (methods on `MediaLibrary`) |
 | | health | `HealthCheck` (`Database…`, `Redis…`, `Celery…`) | Each dependency checked the same way | ✅ |
 | **Composite** | health | `HealthService` aggregates `HealthCheck`s | Overall status = worst child status | ✅ |
-| | graph | `CompositeValidator` | Deterministic validator + optional LLM reviewer (`diagnostic.review`) behave as one validator | ☐ Phase 3 |
-| **Template Method** | graph | `Node`, `LLMNode`, `ValidateNode`, `PublishNode`, `AwaitNode` | Every LLM node follows prompt → gateway → state update; every publish/await pair keeps side effects out of the re-executed `await` | ☐ Phase 3 (functions today) |
-| | prompts | `Prompt` (`system()`, `user()`, shared feedback and language blocks) | 15+ prompts share the same skeleton | ☐ Phase 3 (functions today) |
+| | graph | `CompositeValidator` | Deterministic validator + optional LLM reviewer (`diagnostic.review`) behave as one validator | ✅ |
+| **Template Method** | graph | `Node`, `LLMNode`, `ValidateNode`, `PublishNode`, `AwaitNode` | Every LLM node follows prompt → gateway → state update; every publish/await pair keeps side effects out of the re-executed `await` | ✅ Stage A · ☐ later stages (Phases 4–6) |
+| | prompts | `Prompt` (`system()`, `user()`, shared feedback and language blocks) | 15+ prompts share the same skeleton | ✅ |
 | | accounts | `_PublicAuthView` | Auth views share permission, throttle and CSRF set-up | ✅ |
 | | Django | `BaseCommand`, `AppConfig`, `ModelAdmin` (registry admins share the `StatusMarks` and `RegistryExportActions` mixins) | Framework-defined hooks | ✅ |
-| **Builder** | graph | `FlowGraphBuilder`, `StudyMaterialGraphBuilder`, `RuntimeRepairGraphBuilder`, `MediaGraphBuilder`, `CodeFixLoopBuilder` | Graphs are assembled step by step (nodes, edges, conditional edges) then compiled | ◐ (`build_*` functions) |
+| **Builder** | graph | `FlowGraphBuilder`, `StudyMaterialGraphBuilder`, `RuntimeRepairGraphBuilder`, `MediaGraphBuilder`, `CodeFixLoopBuilder` | Graphs are assembled step by step (nodes, edges, conditional edges) then compiled | ✅ flow (Stage A) · ☐ the others (Phases 4–6) |
 | | codegen | `DocumentAssembler` | The TSX document is built from page and component parts | ◐ (`codegen.py` functions) |
 | **Factory** | providers | `ChatModelFactory` (`LangChainChatModelFactory`) | Builds a LangChain client from a `ResolvedModel`; tests inject a fake factory | ✅ |
 | | graph | `default_context()` (composition root) | The one place concrete adapters are chosen | ✅ |
 | **Registry** | specs | `NODE_SPECS`, a `NodeSpecCatalog` (read-only `Mapping`) | Node keys are discovered by the admin, migrations and checks | ✅ |
-| | graph | `GraphRegistry` over `GRAPH_BUILDERS` | `GraphRun.graph` name → builder | ◐ (dict) |
+| | graph | `GraphRegistry` over `GRAPH_BUILDERS` | `GraphRun.graph` name → builder | ✅ |
 | | providers | `ProviderProfiles` | Provider kind → `ProviderProfile` | ✅ |
 | **Adapter** | sandbox | `SandboxRunner` | Wraps `node sandbox/scripts/*.mjs` subprocesses as Python methods | ✅ |
 | | media | `MediaSource` implementations | Wrap each external search API to one shape | ◐ |
 | | accounts | `CookieJWTAuthentication` | Adapts simplejwt to read the token from a cookie with CSRF | ✅ |
 | | frontend | `app/api/[...path]/route.ts` | Remote proxy from Next.js to Django with forwarded headers | ✅ |
 | **Observer** | Django signals | registry cache invalidation, `NodeConfig` sync on `post_migrate`, profile creation, media file deletion | Side effects follow saves without the saver knowing | ✅ |
-| | progress | `EventPublisher` → Redis pub/sub → SSE `RunEventStream` | Nodes emit events; any number of browsers listen | ◐ (`emit`), ☐ Phase 3 (publisher, SSE) |
+| | progress | `EventPublisher` → Redis pub/sub → SSE `RunEventStream` | Nodes emit events; any number of browsers listen | ✅ |
 | | gateway | `on_event` callback | Retries and fallbacks surface as progress events | ✅ |
 | **Proxy (caching)** | resolver | `RegistryResolver` with cache-aside in Redis | Resolution is expensive; invalidated on every registry save | ✅ |
-| **Repository** | Django managers | `UserManager`, `LessonQuerySet.owned_by(user)` | Ownership filtering lives in one place, so a forgotten filter can't leak lessons | ✅ / ☐ Phase 3 |
+| **Repository** | Django managers | `UserManager`, `LessonQuerySet.owned_by(user)` | Ownership filtering lives in one place, so a forgotten filter can't leak lessons | ✅ |
 | **Singleton** | settings | `FlowSettings.load()` | One editable settings row | ✅ |
 | **Memento** | snapshots | `Lesson.config_snapshot`, `settings_snapshot`, `LessonVersion` | A lesson keeps the registry and code it was built with; repairs can roll back | ✅ / ☐ Phase 6 |
-| **State** | lessons | `Lesson.advance_to(stage)` with `StageTransitions` | Only legal stage moves happen (`awaiting_diagnostic` → `generating_lesson`, never `ready` → `awaiting_diagnostic`) | ☐ Phase 3 |
-| **Command** | execution | Celery task messages, LangGraph `Command(resume=…)`, `Send` | Work is captured as data, queued, retried and replayed from checkpoints | ✅ (LangGraph) / ☐ Phase 3 (tasks) |
+| **State** | lessons | `Lesson.advance_to(stage)` with `StageTransitions` | Only legal stage moves happen (`awaiting_diagnostic` → `generating_lesson`, never `ready` → `awaiting_diagnostic`) | ✅ |
+| **Command** | execution | Celery task messages, LangGraph `Command(resume=…)`, `Send` | Work is captured as data, queued, retried and replayed from checkpoints | ✅ |
 | **Value Object** | everywhere | `ResolvedModel`, `ResolvedNode`, `GatewayResult`, `SyncReport`, `ProbeResult`, `CheckResult`, `RenderReport`, Pydantic schemas | Immutable results that are safe to cache, snapshot and compare in tests | ✅ |
-| **Dependency Injection** | everywhere | constructor parameters, `FlowContext` (LangGraph runtime context) | DIP; fakes in tests | ✅ (gateway, sandbox, media) / ◐ (`FlowContext` fields typed `Any`) |
+| **Dependency Injection** | everywhere | constructor parameters, `FlowContext` (LangGraph runtime context) | DIP; fakes in tests | ✅ (`FlowContext` fields are Protocols) |
 
 ## 4. Module designs
 
@@ -846,9 +846,11 @@ classDiagram
     GraphRegistry o-- GraphBuilder
 ```
 
+- **Segments.** `FlowGraphBuilder` assembles the lesson flow from `Segment`s (diagnose, mastery, author, build) plus the failure segment (`mark_failed` → `await_retry`). A segment adds its nodes and edges and is told where its exits (`lesson`, `mastery`, `failed`) lead; a segment can `provide` an exit for the others (the author segment provides `lesson`). Exits nobody provides lead to `END`, so Stage A works on its own and later stages plug in.
 - **Node instances are the callables LangGraph registers** (`graph.add_node("plan_lesson", PlanLessonNode())`). `Node.__call__` unpacks `runtime.context`, calls `run`, and emits `node_started` / `retrying` / `degraded` events, so subclasses contain only their own logic.
 - **`PublishNode` / `AwaitNode` pairing** encodes the rule from [lesson-graph.md](lesson-graph.md): side effects go in `publish`; `AwaitNode` only calls `interrupt()`, because it re-executes on resume.
-- `FlowContext` fields are typed with Protocols (`LLMGateway`, `CodeSandbox`, `MediaProvider`, `EventSink`); `default_context()` is the composition root.
+- `FlowContext` fields are typed with Protocols (`LLMGateway`, `CodeSandbox`, `EventSink`; `MediaProvider` joins in Phase 5); `default_context()` is the composition root. `NodeBudget.of(state, node_key)` reads a node's attempts and whether it is enabled from the lesson's registry snapshot.
+- A node declares the `stage` the lesson is in while it works; running while the lesson is `failed` moves it back, which is how Retry resumes without the nodes knowing about retries. A node also closes its worker thread's database connection when it ends.
 - State stays a `TypedDict` (`FlowState`, `Branch`, `MediaState`, `FixState`, `RepairState`); reducers are static methods on `Reducers`.
 
 ### 4.8 `graph`: domain logic (grading, validation, prompts, codegen)
@@ -1010,9 +1012,9 @@ classDiagram
         -GraphRegistry graphs
         -CheckpointerFactory checkpointers
         -EventPublisher events
-        +start(lesson_id) GraphRun
-        +resume(lesson_id, payload, trigger) GraphRun
-        -stream(graph, input, run)
+        +execute(run_id) GraphRun
+        -stream(run) dict
+        -input(graph, run, config)
     }
     class EventPublisher {
         <<interface>>
@@ -1030,12 +1032,22 @@ classDiagram
         +finish(run, status, error)
     }
     class CheckpointerFactory {
-        +postgres() PostgresSaver
+        +conninfo() str
+        +saver() PostgresSaver
+        +setup()
     }
+    class RunLock
+    class FailureMessage
+    class RunEventTranslator
+    class RunSnapshot
     FlowRunner --> GraphRegistry
     FlowRunner --> CheckpointerFactory
     FlowRunner --> EventPublisher
     FlowRunner --> GraphRunRecorder
+    FlowRunner --> RunLock
+    FlowRunner --> FailureMessage
+    FlowRunner --> RunEventTranslator
+    RunEventsView ..> RunSnapshot
     EventPublisher <|.. RedisEventPublisher
     RunEventsView --> RunEventStream
 ```
@@ -1051,9 +1063,10 @@ sequenceDiagram
     B->>V: POST /lessons/{id}/quizzes/diagnostic/attempt
     V->>Q: submit(lesson, kind, answers)
     Q->>Q: QuizGrader.grade → QuizAttempt
-    Q->>C: enqueue(lesson_id, attempt_id)
+    Q->>Q: GraphRun(trigger, payload={resume: attempt_id})
+    Q->>C: enqueue(run)
     V-->>B: 202 {result, run_id}
-    C->>R: resume(lesson_id, attempt_id)
+    C->>R: execute(run_id)
     R->>R: graph.stream(Command(resume=attempt_id))
     R->>P: publish(run_id, node / awaiting_input / done)
     P-->>B: SSE via RunEventStream
@@ -1098,6 +1111,8 @@ classDiagram
 - `useRunEvents`, `useProfile` and the `LessonSandbox` component are hooks/components that own one instance of these classes.
 - `SandboxBridge` accepts only messages whose `event.source` is its iframe.
 
+Where the pieces live: `lessons/runner.py` (`FlowRunner`, `GraphRunRecorder`, `RunLock`, `FailureMessage`), `lessons/events.py` (`RunEvent`, `RunEventTranslator`, `RedisEventPublisher`, `RunEventStream`, `RunSnapshot`), `lessons/checkpoints.py`, `lessons/tasks.py` (the tasks, `CeleryTaskQueue`, and `InlineTaskQueue` for the `flow` command), `lessons/services.py` (`LessonService`, `QuizService`, `RunDispatcher` over the `TaskQueue` port, chosen by `LESSON_TASK_QUEUE`), `lessons/reports.py`. Domain failures are `APIException`s in `lessons/errors.py`, so the API formats them itself.
+
 ## 5. How to extend
 
 | You are adding | Do this |
@@ -1129,12 +1144,12 @@ Every phase 0–2 item is done. The rows still open describe the work-in-progres
 | ~~`core/sync.py`~~ | ~~`sync_databases()`~~ | `DatabaseSyncer(source, target).sync()` | ✅ Done |
 | ~~`config/databases.py`~~ | ~~functions~~ | `DatabaseConfig(env).build(...)`, `DatabaseConfig.local_url(...)` | ✅ Done |
 | ~~`accounts/cookies.py`~~ | ~~functions~~ | `AuthCookies`; `_signed_in_response` → `_PublicAuthView.signed_in_response` | ✅ Done |
-| `graph/grading.py` | functions | `QuizGrader`, `RoutingPolicy` | Phase 3 |
-| `graph/validators.py` | `validate_*` functions | `Validator` classes, `AssessmentGuard` | Phase 3 |
-| `graph/prompts.py` | functions in one 470-line module | `graph/prompts/` package, one `Prompt` subclass per node | Phase 3 |
-| `graph/nodes/*.py` | node functions + `outcome()` / `route_check()` helpers | `Node` subclasses, `Router` subclasses | Phase 3 |
-| `graph/flow.py`, `nodes/build.py`, `nodes/media_agent.py`, `nodes/repair.py` | `build_*` functions, `GRAPH_BUILDERS` dict | `GraphBuilder` subclasses, `GraphRegistry` | Phase 3 |
-| `graph/context.py` | `Any`-typed fields, `emit`/`warn`/`llm` functions | Protocol-typed `FlowContext`, `EventSink` | Phase 3 |
+| ~~`graph/grading.py`~~ | ~~functions~~ | `QuizGrader`, `RoutingPolicy` | ✅ Done |
+| ~~`graph/validators.py`~~ | ~~`validate_*` functions~~ | `Validator` classes, `AssessmentGuard` (`graph/validators/`) | ✅ Done (tests for the study, plan, page, test and interactive-plan validators come with Phases 4–5) |
+| ~~`graph/prompts.py`~~ | ~~functions in one 470-line module~~ | `graph/prompts/` package, one `Prompt` subclass per node | ✅ Done |
+| `graph/nodes/*.py` | Stage A done (`diagnose.py`, `failure.py`, `routers.py`, `base.py`); the draft author, build, media and repair nodes were removed and return as classes | `Node` subclasses, `Router` subclasses | Phases 4–6 |
+| `graph/builders.py`, `graph/registry.py` | `FlowGraphBuilder` with the diagnose and failure segments, `GraphRegistry` with `flow`; the draft study, media, code-fix and repair graphs were removed | `GraphBuilder` subclasses | Phases 4–6 |
+| ~~`graph/context.py`~~ | ~~`Any`-typed fields, `emit`/`warn`/`llm` functions~~ | Protocol-typed `FlowContext`, `EventSink` | ✅ Done |
 | `graph/codegen.py` | functions | `DocumentAssembler`, `CodeSanitizer` | Phase 6 |
 | `graph/media.py` | search methods on `MediaLibrary` | `MediaSource` classes, `MediaDownloader`, `LicensePolicy` | Phase 5 |
 | `lessons/document.py` | functions | `LessonDocumentBuilder`, `MediaUrlSigner` | Phase 6 |

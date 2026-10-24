@@ -26,7 +26,9 @@ Base path: `/api` (Django, port 8000). A Next.js route handler proxies `/api/*` 
 
   The client address is the `X-Forwarded-For` entry added by the Next.js proxy (`TRUSTED_PROXY_COUNT=1`). The API port is bound to localhost, so nobody can reach Django directly with a forged header.
 - **CSRF**: unsafe methods send `X-CSRFToken`, taken from the `csrftoken` cookie (`GET /auth/csrf` sets it). This is enforced for every cookie-authenticated request and for the auth endpoints; Swagger UI adds the header automatically.
-- **Ownership**: every lesson-scoped route returns `404` unless `lesson.owner == request.user`.
+- **Ownership**: every lesson-scoped route returns `404` unless `lesson.owner == request.user`. A malformed id is also a `404`.
+- **Rate limit** `lesson_create`: starting lessons, per user (`LESSON_CREATE_THROTTLE_RATE`, `30/hour`), because each lesson costs model calls.
+- **Lesson errors** (`code`): `400 invalid_answers`, `404 not_found`, `409 wrong_stage` · `already_attempted` · `not_attempted` · `run_in_progress` · `run_ended`, `503 llm_not_configured` (no model is bound for the first step) · `queue_unavailable` (the broker is down; the lesson is failed so Retry works later).
 - **Errors**: `{"detail": "...", "code": "...", "fields": {...}}`.
 - **Pagination**: cursor-based, `?cursor=&page_size=20` → `{results, next, previous}`.
 
@@ -50,9 +52,9 @@ Base path: `/api` (Django, port 8000). A Next.js route handler proxies `/api/*` 
 |---|---|---|---|
 | GET | `/lessons` | `?q=&stage=&cursor=` | paginated `LessonSummary[]` (own lessons only) |
 | POST | `/lessons` | `{topic, user_context?}` | `202 {lesson_id, run_id}`: snapshots the registry and settings, and enqueues `start_flow` |
-| GET | `/lessons/{id}` | none | `LessonDetail` (fields depend on the stage) |
+| GET | `/lessons/{id}` | none | `LessonDetail`: summary fields plus `user_context`, `error`, `warnings`, `assessment` (level, known concepts, gaps, start point, confidence; never the notes for the page writers), `prerequisites_to_cover` (names), `active_run_id` and `results` (the score of each quiz already answered, so a reload keeps them). Later phases add the content fields. |
 | DELETE | `/lessons/{id}` | none | `204` (cancels any active run, deletes media files) |
-| POST | `/lessons/{id}/retry` | none | `202 {run_id}`: only when `stage=failed`; resumes from the last checkpoint |
+| POST | `/lessons/{id}/retry` | none | `202 {run_id}`: only when `stage=failed` (`409` otherwise, or while a run is active); resumes from the last checkpoint. If the graph gave up after failed validations it resumes at the node that gave up; after a model failure it re-runs the failed node. |
 
 ### Quizzes (Stage A)
 
@@ -104,18 +106,18 @@ Base path: `/api` (Django, port 8000). A Next.js route handler proxies `/api/*` 
 | Method | Path | Response |
 |---|---|---|
 | GET | `/runs/{id}` | `{id, lesson_id, graph, trigger, status, node_status, error}` |
-| GET | `/runs/{id}/events` | `text/event-stream` |
-| POST | `/runs/{id}/cancel` | `202` |
+| GET | `/runs/{id}/events` | `text/event-stream` (works with a browser's `EventSource`, which sends `Accept: text/event-stream`) |
+| POST | `/runs/{id}/cancel` | `202`: stops the run after its current step and marks the lesson failed, so it can be retried. `409` once the run has ended. |
 
-The stream sends a `snapshot` first, relays Redis `run:{id}:events`, sends `: ping` every 15 s, and closes after a terminal event.
+The stream subscribes to Redis `run:{id}:events` *before* it sends a `snapshot`, so nothing published in between is lost; it sends `: ping` every `SSE_HEARTBEAT_S` (15) seconds and closes after a terminal event. A client that connects after the run ended gets the snapshot and then its terminal event. Because the stream starts with a snapshot, a reconnecting client catches up from `node_status`.
 
 | event | data | Terminal |
 |---|---|---|
-| `snapshot` | `{status, stage, node_status}` | |
+| `snapshot` | `{status, stage, lesson_id, node_status, error, awaiting}` | |
 | `node` | `{node, status, attempt?, reason?}` | |
-| `model` | `{node, model, fallback_index, reason}` (fallback used) | |
+| `model` | `{node, model, kind: "retry" \| "fallback", reason, attempt?, fallback_index?}`: a model call was retried or fell back (`node` is the registry node key) | |
 | `warning` | `{message}` | |
-| `awaiting_input` | `{kind: "diagnostic" \| "prerequisite" \| "mastery_choice"}` | ✓ (the run is `paused`) |
+| `awaiting_input` | `{kind: "diagnostic" \| "prerequisite" \| "mastery_choice", quiz_id?}`: published by the runner when the graph pauses, after the run is marked `paused` | ✓ |
 | `done` | `{lesson_id, stage}` | ✓ |
 | `error` | `{message, code}` | ✓ |
 | `cancelled` | `{}` | ✓ |

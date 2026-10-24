@@ -431,11 +431,10 @@ Any key written by parallel branches needs a reducer. Without one, LangGraph rai
 ## Execution
 
 - **Checkpointer:** `langgraph-checkpoint-postgres` (`PostgresSaver`) on the Supabase database, with `thread_id = lesson.id`. A thread can wait at an `interrupt()` for days, so its checkpoints must be durable. Redis stays for the queue, events, cache, and rate limits.
-- **Celery tasks:**
-  - `start_flow(lesson_id)` invokes with the initial state.
-  - `resume_flow(lesson_id, payload)` invokes with `Command(resume=payload)`.
-  - Both call `graph.stream(..., stream_mode=["updates", "custom"])` and publish each chunk to Redis. They use `acks_late=True`. If a worker dies, the redelivered task continues from the last checkpoint.
-- **Events:** nodes emit `node_started`, `retrying`, `fallback_model`, `degraded`, and `awaiting_input` through `get_stream_writer()`. See [api.md](api.md).
+- **Runs and tasks:** every execution segment is a `GraphRun` row created by the API (so `POST` can return its id at once) and queued as `start_flow(run_id)` or `resume_flow(run_id)`. Both call `FlowRunner.execute(run_id)`, which looks at the lesson's thread and feeds it what it needs: `Command(resume=…)` when it waits at an `interrupt()`, nothing when a crash left it mid-run (it continues from its last checkpoint), the first input for a new thread, and nothing at all when the thread already finished (a redelivered task). The task uses `acks_late` and `reject_on_worker_lost`; a per-run lock (TTL `FLOW_RUN_LOCK_TTL_S`, which is also Redis's `visibility_timeout`) keeps a redelivered task from running the graph twice while the first worker is alive.
+- **Two kinds of failure.** When a validator runs out of attempts the graph *gives up in the graph*: `mark_failed` records the reason, `await_retry` pauses, and Retry resumes at the node that gave up with its attempt counters reset. When a node *raises* (every model failed, the sandbox is missing, a bug), the run ends `failed` with a readable message (`FailureMessage`: unexpected errors are named by type only), the lesson is failed, and Retry re-runs that node from the checkpoint. A node that declares its `stage` moves a failed lesson back to it when it runs again.
+- **Events:** nodes emit `node` (running), `attempt` (a validation retry), `warning` and, through the gateway, `retrying` and `fallback_model` via `get_stream_writer()`. The runner translates them, together with the `updates` stream (a node finished) and the interrupt itself, into the run events of [api.md](api.md). `awaiting_input` comes from the interrupt, after the run is marked `paused`, so a learner who answers at once never races the run's bookkeeping.
+- **Threads:** LangGraph runs sync nodes on pool threads; a node closes its thread's database connection when it ends so runs don't leak connections. Under pytest those threads only see committed rows (see [testing.md](testing.md)).
 - **Parallelism:** `Send` branches run in the same superstep, so page writers, media searches, and page compiles make their LLM calls concurrently. Per-provider rate limits in Redis keep that within quota.
 
 ## Testing

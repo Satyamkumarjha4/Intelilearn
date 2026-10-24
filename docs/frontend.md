@@ -27,6 +27,20 @@ After sign-in, `/auth?next=…` only redirects to a path on this site (`Redirect
 
 `proxy.ts` (Next 16 renamed `middleware.ts` to `proxy.ts`; it runs on the Node.js runtime) guards `/onboarding`, `/profile`, and `/lessons/*`. Without the `lc_session` marker it redirects to `/auth?next=…`; without `lc_onboarded` it redirects to `/onboarding`. A signed-in visitor to `/auth` is sent home. It checks `lc_session` rather than `lc_access`, because the access cookie expires after 30 minutes while the session (refresh token) lasts 7 days; the API client refreshes silently. The API still enforces everything.
 
+## Lessons screens (Phase 3)
+
+Logic lives in small classes in `lib/` (tested with `bun test`), and the components in `components/lessons/` stay thin:
+
+| Class | What it does |
+|---|---|
+| `LessonsApi` | The lessons endpoints, typed; extracts the cursor from a list reply's `next` link |
+| `RunEventStream` | Follows a run's Server-Sent Events and closes itself after a terminal event (an open `EventSource` would reconnect to a finished run forever) |
+| `PipelineModel` | The progress steps for a stage, driven by run events: running or done, retry and fallback notes, warnings |
+| `QuizSession` | One question at a time, "I don't know" as an answer, the payload only when complete |
+| `StageView` | Which screen a lesson is on, what to say after a score, bands in order |
+
+`useLesson(id)` loads the lesson, follows its active run, refetches when a run segment ends, and polls every 4 s while the lesson is working as a safety net. After Retry the lesson stays `failed` until its first node runs, so an active run always shows the progress screen. Quiz scores and reviews survive a reload (`LessonDetail.results`).
+
 ## `/lessons/[id]`: the stage-driven view
 
 The page loads `GET /lessons/{id}`, subscribes to the active run's events, and renders by `stage`:
