@@ -1113,6 +1113,8 @@ classDiagram
 
 Code written before this document that doesn't follow it yet. Behaviour must not change in a refactor: tests stay green before and after, and only imports and names in tests change. Tick items off here as they land.
 
+Every phase 0–2 item is done. The rows still open describe the work-in-progress lesson-flow code (`graph/`, `lessons/`), which is kept on the `phase-3/lesson-flow` branch rather than in `main`. It is brought in line with this design, with tests, as Phase 3 lands.
+
 | Module | Today | Target | Do it |
 |---|---|---|---|
 | ~~`llm_registry/params.py`, `reasoning.py`~~ | ~~dict tables and `if kind ==`~~ | `ProviderProfile` per kind + `ProviderProfiles` (`profiles.py`) | ✅ Done |

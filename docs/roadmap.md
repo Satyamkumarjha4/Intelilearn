@@ -85,7 +85,8 @@ Each phase ends with something runnable and checkable.
 
 ## Across phases: design alignment
 
-- [ ] Close the [refactor backlog](design.md#refactor-backlog): code from phases 0–2 brought in line with the object design (OOP, SOLID, the named patterns), each item behaviour-neutral with tests green before and after. Items marked "Phase 3" land before or with Phase 3.
+- [x] Close the [refactor backlog](design.md#refactor-backlog) for phases 0–2: code brought in line with the object design (OOP, SOLID, the named patterns), each item behaviour-neutral with tests green before and after.
+- [ ] The backlog items for the lesson-flow code (`graph/`, `lessons/`) land with Phases 3–6.
 - [x] Every existing test file has the header from [testing.md](testing.md#31-the-file-header-required) (unit under test, why, use cases), and `tests/` is linted like the backend.
 
 ## Later (not now)
