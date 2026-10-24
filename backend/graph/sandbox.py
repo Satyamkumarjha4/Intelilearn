@@ -22,13 +22,13 @@ class SandboxError(RuntimeError):
     """The sandbox script itself failed (not the code it checked)."""
 
 
-@dataclass
+@dataclass(frozen=True)
 class CheckResult:
     ok: bool
     errors: list[str] = field(default_factory=list)
 
 
-@dataclass
+@dataclass(frozen=True)
 class RenderReport:
     ok: bool
     pages: dict[str, list[str]] = field(default_factory=dict)  # page key → errors
