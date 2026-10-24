@@ -1,3 +1,19 @@
+"""Unit under test: the auth views in `accounts.views` (register, login, me, refresh, logout) with
+`CookieJWTAuthentication` and CSRF.
+
+Why: this is the whole sign-in flow. Tokens must stay in httpOnly cookies, cookie-authenticated writes must need the
+CSRF header, and a refresh token must be rotated and the old one blacklisted, or a stolen token keeps working.
+
+Use cases:
+- register signs in with httpOnly cookies
+- register rejects a duplicate email (any case) and reports a weak password on the password field
+- login accepts any email case and rejects a wrong password
+- /auth/me requires authentication and returns the signed-in user
+- a Bearer header works without CSRF; the auth endpoints and cookie-authenticated writes require it
+- refresh rotates and blacklists the old token, and fails without a cookie or for a deactivated user
+- logout clears the cookies and blacklists the refresh token, and succeeds without a session
+"""
+
 import pytest
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken

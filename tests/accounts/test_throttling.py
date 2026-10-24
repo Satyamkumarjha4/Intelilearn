@@ -1,3 +1,16 @@
+"""Unit under test: `accounts.throttling` (AuthRateThrottle per client address, LoginAccountThrottle per email) as
+applied to the auth endpoints.
+
+Why: without a per-account limit a password can be guessed from many addresses; without the forwarded client address
+every visitor shares one bucket behind the Next.js proxy; and routine refreshes must not use up the login budget.
+
+Use cases:
+- login is limited per account, across client addresses
+- other accounts are not affected by one account's limit
+- the per-address limit keys on the X-Forwarded-For client address
+- token refresh has its own budget
+"""
+
 import pytest
 from rest_framework.throttling import SimpleRateThrottle
 

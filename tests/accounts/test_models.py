@@ -1,3 +1,16 @@
+"""Unit under test: `accounts.models`: User (email login, UserManager) and Profile (created with every user).
+
+Why: the email is the login identity. If it isn't normalised and matched case-insensitively, the same person can
+register twice or be unable to sign in, and a user without a profile breaks onboarding.
+
+Use cases:
+- create_user normalises the email and creates the profile
+- an email is required
+- create_superuser sets the staff and superuser flags
+- looking a user up by email ignores case
+- a profile is complete only once the onboarding fields are filled in
+"""
+
 import pytest
 
 from accounts.models import Profile, User

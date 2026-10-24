@@ -1,3 +1,15 @@
+"""Fixtures for the model registry tests.
+
+- `node_configs`: every NodeConfig row (created from the specs), keyed by node key.
+- `gemini`, `groq`: providers; `flash` (every capability, budget reasoning) and `llama` (no vision or reasoning)
+  are models on them; `bind(node_key, model, priority=0, ...)` binds one to a node.
+- `resolved_model(name, **overrides)` and `make_snapshot(node_key, output, chain)`: build gateway inputs without the
+  database.
+- `FakeChat(*script)`: a scripted stand-in for a LangChain chat model; each invoke returns (or raises) the next item.
+
+Test modules can't import from a conftest (importlib import mode), so the helpers are served as fixtures.
+"""
+
 from dataclasses import asdict
 
 import pytest

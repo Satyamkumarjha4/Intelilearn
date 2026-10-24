@@ -1,3 +1,14 @@
+"""Unit under test: the `manage.py probe_models` command (ModelProber per model, plus one gateway call per --node).
+
+Why: it is how you check real API keys and models from the shell before a lesson depends on them, so it must exit
+non-zero on any failure (scripts rely on that) and never print an API key.
+
+Use cases:
+- probes the given model and runs one call through a node's chain
+- failures exit non-zero, with keys redacted in the output
+- an unknown model is a clear error
+"""
+
 import pytest
 from django.core.management import CommandError, call_command
 from langchain_core.messages import AIMessage
