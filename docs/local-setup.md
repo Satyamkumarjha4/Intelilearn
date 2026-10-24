@@ -20,7 +20,7 @@ The root `.env` is the **single source of configuration**. Django reads it, `doc
 
 | Group | Variables | Default |
 |---|---|---|
-| Host ports | `BACKEND_PORT`, `FRONTEND_PORT`, `POSTGRES_PORT`, `REDIS_PORT` | 8000, 3000, 5432, 6379 |
+| Host ports | `BIND_ADDRESS`, `BACKEND_PORT`, `FRONTEND_PORT`, `POSTGRES_PORT`, `REDIS_PORT` | 127.0.0.1 (not reachable from your LAN), 8000, 3000, 5432, 6379 |
 | Django | `DJANGO_SECRET_KEY`, `DJANGO_DEBUG`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`, `LOG_LEVEL` | dev key, false, localhost…, derived from ports, INFO |
 | Auth | `JWT_ACCESS_MINUTES`, `JWT_REFRESH_DAYS`, `AUTH_COOKIE_SECURE`, `AUTH_THROTTLE_RATE` | 30, 7, false, 20/min |
 | Local Postgres | `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | localhost, lessoncrafter ×3 |
