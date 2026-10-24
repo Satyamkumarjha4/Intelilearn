@@ -28,7 +28,7 @@ The root `.env` is the **single source of configuration**. Django reads it, `doc
 | Supabase | `SUPABASE_DATABASE_URL`, `SYNC_LOCAL_TO_SUPABASE` | empty, true |
 | Redis | `REDIS_HOST`, `REDIS_PASSWORD` | localhost, none |
 | Frontend | `DJANGO_API_ORIGIN`, `NEXT_PUBLIC_BACKEND_URL` | `http://localhost:${BACKEND_PORT}` |
-| LLM keys | `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | empty (phase 2) |
+| LLM keys | `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | empty. The default registry uses Gemini and Groq. |
 | Reasoning budgets | `LLM_REASONING_BUDGET_LOW/MEDIUM/HIGH` | 2048 / 8192 / 24576 |
 
 - The `POSTGRES_HOST`, `POSTGRES_PORT`, `REDIS_HOST`, and `REDIS_PORT` values in `.env` describe how the **host** reaches the services. Inside docker, compose overrides them with the service names and internal ports (`db:5432`, `redis:6379`).
@@ -70,6 +70,19 @@ About the sync (`backend/core/sync.py`, also available as `make sync-supabase`):
 Getting the Supabase URL: in the dashboard, go to **Connect** and copy the **Session pooler** string (port 5432). Append `?sslmode=require`. Do **not** use the transaction pooler (6543): Django, and later the LangGraph checkpointer, need session features.
 
 **Lock down the Data API** after migrations that add tables: run `backend/scripts/enable_rls.sql` in the Supabase SQL editor (added in Phase 1). It enables RLS with no policies, so the public Data API can read nothing. Django connects as `postgres` and bypasses RLS.
+
+## 4. Model registry (once)
+
+```bash
+docker compose exec backend python manage.py seed_registry   # Gemini + Groq defaults; a no-op if already seeded
+docker compose exec backend python manage.py check           # warns about nodes without a usable model or API key
+docker compose exec backend python manage.py probe_models    # real calls: every bound model, each declared capability
+docker compose exec backend python manage.py probe_models --node learner.assess   # plus one call through a node's chain
+```
+
+`probe_models` exits non-zero when a check fails, and API keys never appear in its output.
+
+Tune models, fallbacks, and parameters in the admin under **LLM model registry**. Share a tuned setup with `manage.py export_registry --output registry.json` and `seed_registry --file registry.json`. See [model-registry.md](model-registry.md).
 
 ## Everyday commands
 
@@ -116,4 +129,4 @@ The backend image installs into `/opt/venv`, outside the bind-mounted `/app`. Th
 
 - `sandbox/` package: Node and Playwright Chromium in the backend image.
 - `manage.py setup_checkpointer` for the LangGraph Postgres checkpoint tables.
-- `manage.py seed_registry` and the `manage.py flow ...` commands.
+- The `manage.py flow ...` commands.
