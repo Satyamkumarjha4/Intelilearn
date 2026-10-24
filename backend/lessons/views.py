@@ -9,6 +9,7 @@ from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_sche
 from rest_framework import generics, status
 from rest_framework.exceptions import NotFound
 from rest_framework.pagination import CursorPagination
+from rest_framework.renderers import BaseRenderer, JSONRenderer
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
@@ -201,7 +202,27 @@ class RunView(OwnedRuns, APIView):
         return Response(RunSerializer(self.run_of(request, run_id)).data)
 
 
+class EventStreamRenderer(BaseRenderer):
+    """Lets a browser's EventSource (`Accept: text/event-stream`) through content negotiation. The view writes the
+    stream itself; an error is switched back to JSON by `RunEventsView.handle_exception`."""
+
+    media_type = "text/event-stream"
+    format = "event-stream"
+    charset = "utf-8"
+
+    def render(self, data, accepted_media_type=None, renderer_context=None):
+        return b""
+
+
 class RunEventsView(OwnedRuns, APIView):
+    renderer_classes = [EventStreamRenderer, JSONRenderer]
+
+    def handle_exception(self, exc):
+        response = super().handle_exception(exc)
+        self.request.accepted_renderer = JSONRenderer()
+        self.request.accepted_media_type = "application/json"
+        return response
+
     @extend_schema(
         tags=RUNS_TAG,
         summary="Follow a run (Server-Sent Events)",

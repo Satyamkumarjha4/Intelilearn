@@ -14,7 +14,7 @@ Use cases:
 - deleting a lesson removes it; retrying is only for failed lessons
 - the quiz has no answers; answering returns the score and route; bad, repeated or early answers get 400 and 409
 - the review is available only after answering
-- a run can be read, followed as an event stream (a finished run ends it at once) and cancelled once
+- a run can be read, followed as an event stream (a browser's EventSource gets 200, not 406) and cancelled once
 - the OpenAPI schema documents these endpoints
 """
 
@@ -329,6 +329,21 @@ class TestRuns:
         assert response["Cache-Control"] == "no-cache"
         assert body.startswith("event: snapshot\n") and "event: done\n" in body
         assert f'"lesson_id": "{lesson.id}"' in body
+
+    def test_a_browsers_event_source_is_served_not_refused_with_406(self, signed_in_client, lesson):
+        # Regression: EventSource sends "Accept: text/event-stream", which JSON-only content negotiation refused.
+        run = self.make_run(lesson)
+
+        response = signed_in_client.get(f"/api/runs/{run.id}/events", HTTP_ACCEPT="text/event-stream")
+
+        assert response.status_code == 200 and response["Content-Type"] == "text/event-stream"
+
+    def test_errors_on_the_event_stream_are_still_json(self, signed_in_client, make_lesson, other_user):
+        run = self.make_run(make_lesson(owner=other_user))
+
+        response = signed_in_client.get(f"/api/runs/{run.id}/events", HTTP_ACCEPT="text/event-stream")
+
+        assert response.status_code == 404 and response.json()["code"] == "not_found"
 
     def test_cancel_stops_an_active_run_once(self, signed_in_client, lesson):
         run = self.make_run(lesson, GraphRun.Status.RUNNING)
