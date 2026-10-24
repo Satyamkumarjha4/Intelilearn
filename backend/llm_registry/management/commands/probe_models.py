@@ -6,7 +6,7 @@ from llm_registry import providers
 from llm_registry.gateway import Gateway
 from llm_registry.models import LLMModel
 from llm_registry.node_specs import NODE_SPECS, OutputMode
-from llm_registry.probes import probe_model
+from llm_registry.probes import ModelProber
 from llm_registry.redaction import REDACTOR
 from llm_registry.resolver import RegistryResolver
 
@@ -31,7 +31,7 @@ class Command(BaseCommand):
         failures = 0
         for llm_model in self._models(model):
             self.stdout.write(self.style.MIGRATE_HEADING(str(llm_model)))
-            for result in probe_model(llm_model, chat_factory=providers.CHAT_MODEL_FACTORY):
+            for result in ModelProber(chat_factory=providers.CHAT_MODEL_FACTORY).probe(llm_model):
                 style = self.style.SUCCESS if result.ok else self.style.ERROR
                 failures += not result.ok
                 line = (

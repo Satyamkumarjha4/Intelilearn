@@ -112,7 +112,7 @@ flowchart TB
 | | gateway | `RetryPolicy` (`ExponentialBackoffPolicy`) | Which errors are retryable and how long to wait, swappable and testable | ✅ |
 | | providers | `ProviderProfile` per provider kind | Allowed params, renames and reasoning kwargs differ per vendor | ✅ |
 | | rate limits | `RateLimiter` (`CacheWindowRateLimiter`) | Gateway depends on "wait for room", not on Redis | ✅ |
-| | probes | `CapabilityProbe` per capability | Each capability has its own check; `ModelProber` runs the declared ones | ◐ (`probe_model`) |
+| | probes | `CapabilityProbe` per capability | Each capability has its own check; `ModelProber` runs the declared ones | ✅ |
 | | graph | `Validator` per artefact | Deterministic rules per output type, fed back as retry feedback | ◐ (`validate_*` functions) |
 | | graph | `RoutingPolicy` | Diagnostic score → route uses admin thresholds | ◐ (`route_for`) |
 | | media | `MediaSource` (`Wikimedia…`, `Openverse…`, `Giphy…`) | Sources are added or disabled by settings | ◐ (methods on `MediaLibrary`) |
@@ -572,19 +572,28 @@ classDiagram
     class ModelProber {
         -ChatModelFactory chat_factory
         -list~CapabilityProbe~ probes
-        +probe(llm_model, timeout_s) list~ProbeResult~
+        -int timeout_s
+        +probe(llm_model) list~ProbeResult~
+    }
+    class ProbeTarget {
+        <<value>>
+        +llm_model
+        +chat
+        +chat_at(effort)
     }
     class CapabilityProbe {
         <<abstract>>
         +str capability
         +applies_to(llm_model) bool
-        +run(chat) ProbeResult
-        #check(chat)*
+        +run(target) ProbeResult
+        #check(target)* str
     }
-    class PlainTextProbe
+    class TextProbe
     class StructuredOutputProbe
     class ToolCallingProbe
-    class VisionProbe
+    class VisionProbe {
+        +solid_png(rgb, size)$ bytes
+    }
     class ReasoningProbe
     class ProbeResult {
         <<value>>
@@ -594,7 +603,8 @@ classDiagram
         +str detail
     }
     ModelProber o-- CapabilityProbe
-    CapabilityProbe <|-- PlainTextProbe
+    CapabilityProbe <|-- TextProbe
+    CapabilityProbe ..> ProbeTarget
     CapabilityProbe <|-- StructuredOutputProbe
     CapabilityProbe <|-- ToolCallingProbe
     CapabilityProbe <|-- VisionProbe
@@ -1087,7 +1097,7 @@ Code written before this document that doesn't follow it yet. Behaviour must not
 | ~~`llm_registry/gateway.py`~~ | ~~`is_retryable`, `backoff_delay`, `_record`, `if node.output ==`~~ | `ExponentialBackoffPolicy` (`retry.py`), `ModelCallRecorder` (`recorder.py`), `OutputAdapter`s (`outputs.py`), `LangChainChatModelFactory` (`providers.py`) | ✅ Done |
 | ~~`llm_registry/ratelimit.py`~~ | ~~`acquire()` function~~ | `RateLimiter` Protocol + `CacheWindowRateLimiter` | ✅ Done |
 | ~~`llm_registry/resolver.py`~~ | ~~module functions~~ | `RegistryResolver`, `RegistrySnapshot` | ✅ Done |
-| `llm_registry/probes.py` | `probe_model()` | `ModelProber` + `CapabilityProbe`s | Next probe change |
+| ~~`llm_registry/probes.py`~~ | ~~`probe_model()`~~ | `ModelProber` + `CapabilityProbe`s | ✅ Done |
 | `llm_registry/serialization.py`, `seed.py` | functions | `RegistrySerializer`, `RegistrySeeder` | Next registry change |
 | ~~`llm_registry/node_specs.py`~~ | ~~dict + `get_spec()`~~ | `NodeSpecCatalog` (`NODE_SPECS[key]`) | ✅ Done |
 | ~~`llm_registry/redaction.py`~~ | ~~`redact()`~~ | `Redactor` + the stateless `REDACTOR` default | ✅ Done |

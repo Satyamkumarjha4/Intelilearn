@@ -7,7 +7,7 @@ from django.http import HttpResponse
 from django.utils.html import format_html, format_html_join
 
 from .models import LLMModel, ModelCall, NodeConfig, NodeModelBinding, Provider
-from .probes import probe_model
+from .probes import ModelProber
 from .serialization import export_registry
 
 # JSON fields hold small parameter objects; the default textarea is far too large, especially inline.
@@ -68,7 +68,7 @@ class LLMModelAdmin(admin.ModelAdmin):
     @admin.action(description="Test model (makes real API calls)")
     def test_model(self, request, queryset):
         for llm_model in queryset.select_related("provider")[:5]:
-            for result in probe_model(llm_model):
+            for result in ModelProber().probe(llm_model):
                 level = messages.SUCCESS if result.ok else messages.ERROR
                 self.message_user(
                     request,
