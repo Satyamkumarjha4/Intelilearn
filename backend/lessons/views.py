@@ -4,18 +4,20 @@ lessons (`Lesson.objects.owned_by`), so another user's lesson or run is a 404, n
 import uuid
 
 from django.conf import settings
-from django.http import StreamingHttpResponse
+from django.http import FileResponse, StreamingHttpResponse
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import generics, status
 from rest_framework.exceptions import NotFound
 from rest_framework.pagination import CursorPagination
+from rest_framework.permissions import AllowAny
 from rest_framework.renderers import BaseRenderer, JSONRenderer
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from .events import RunEventStream, RunSnapshot
-from .models import GraphRun, Lesson, MaterialKind, Stage
+from .media_urls import MediaUrlSigner
+from .models import GraphRun, Lesson, MaterialKind, MediaAsset, Stage
 from .serializers import (
     LessonCreatedSerializer,
     LessonCreateSerializer,
@@ -337,3 +339,36 @@ class RunCancelView(OwnedRuns, APIView):
         run = self.run_of(request, run_id)
         LessonService().cancel(run)
         return Response(status=status.HTTP_202_ACCEPTED)
+
+
+class MediaView(APIView):
+    """A lesson's image or GIF. The signature in the URL is the credential (the sandboxed iframe sends no cookie), and
+    every way of failing is the same 404."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        tags=["media"],
+        summary="Get a lesson's image or GIF",
+        description="Needs the `exp` and `sig` query parameters from the signed URL in the lesson document.",
+        parameters=[
+            OpenApiParameter("asset_id", str, OpenApiParameter.PATH),
+            OpenApiParameter("exp", int, description="Expiry, seconds since the epoch."),
+            OpenApiParameter("sig", str, description="HMAC signature."),
+        ],
+        responses={(200, "image/*"): OpenApiResponse(description="The file."), 404: None},
+    )
+    def get(self, request, asset_id):
+        exp, sig = request.query_params.get("exp", ""), request.query_params.get("sig", "")
+        if not MediaUrlSigner().verify(asset_id, exp, sig):
+            raise NotFound()
+        try:
+            asset = MediaAsset.objects.get(pk=parse_id(asset_id))
+            handle = asset.file.open("rb")
+        except (MediaAsset.DoesNotExist, FileNotFoundError, ValueError):
+            raise NotFound() from None
+        response = FileResponse(handle, content_type=asset.mime_type)
+        response["X-Content-Type-Options"] = "nosniff"
+        response["Cache-Control"] = f"private, max-age={min(settings.MEDIA_URL_TTL_S, 3600)}"
+        return response

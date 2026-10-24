@@ -55,6 +55,59 @@ class AssessmentSection(ReportSection):
         return lines
 
 
+class PlanSection(ReportSection):
+    def lines(self, lesson: Lesson) -> list[str]:
+        plan = lesson.plan
+        if not plan:
+            return []
+        spec = plan["final_test"]
+        lines = [f"  plan: {plan['title']} ({plan['level']}); {plan['summary']}"]
+        for page in plan["pages"]:
+            concepts = ", ".join(item["concept"] for item in page["outline"])
+            covers = (
+                f" [prerequisites: {', '.join(page['covers_prerequisites'])}]" if page["covers_prerequisites"] else ""
+            )
+            lines.append(f"    {page['key']}: {concepts}{covers}")
+        mix = ", ".join(f"{n} {kind}" for kind, n in spec["type_mix"].items() if n)
+        lines.append(f"    test: {spec['question_count']} questions ({mix})")
+        return lines
+
+
+class PagesSection(ReportSection):
+    def lines(self, lesson: Lesson) -> list[str]:
+        lines = []
+        for key, page in (lesson.pages or {}).items():
+            words = sum(len(s["body"].split()) for s in page["sections"])
+            headings = "; ".join(s["heading"] for s in page["sections"])
+            lines.append(f"  page {key}: {page['title']}: {len(page['sections'])} sections, {words} words ({headings})")
+        test = lesson.final_test
+        if test:
+            kinds: dict[str, int] = {}
+            for question in test["questions"]:
+                kinds[question["type"]] = kinds.get(question["type"], 0) + 1
+            mix = ", ".join(f"{n} {kind}" for kind, n in kinds.items())
+            lines.append(f"  test: {len(test['questions'])} questions ({mix})")
+        return lines
+
+
+class InteractivesSection(ReportSection):
+    def lines(self, lesson: Lesson) -> list[str]:
+        specs = (lesson.interactive_plan or {}).get("specs", [])
+        if not specs:
+            return []
+        assets = {a.spec_id: a for a in lesson.media.all()}
+        lines = ["  interactives:"]
+        for spec in specs:
+            state = "dropped" if spec.get("dropped") else ("media" if spec["id"] in assets else "built")
+            lines.append(f"    {spec['id']} ({spec['page']}, {spec['kind']}, {state}): {spec['purpose']}")
+        for asset in assets.values():
+            lines.append(
+                f"    media {asset.spec_id}: {asset.kind} {asset.width}x{asset.height} from {asset.source}, "
+                f"{asset.license}, by {asset.attribution}" + (", verified" if asset.verified else "")
+            )
+        return lines
+
+
 class MaterialsSection(ReportSection):
     @staticmethod
     def size(kind: str, content: dict) -> str:
@@ -99,6 +152,9 @@ class LessonReport:
             HeaderSection(),
             QuizSection(),
             AssessmentSection(),
+            PlanSection(),
+            PagesSection(),
+            InteractivesSection(),
             MaterialsSection(),
             WarningsSection(),
             RunsSection(),

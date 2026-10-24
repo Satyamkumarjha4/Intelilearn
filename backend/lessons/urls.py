@@ -17,6 +17,7 @@ urlpatterns = [
         name="practice-grade",
     ),
     path("lessons/<str:lesson_id>/materials/<str:kind>", views.MaterialView.as_view(), name="material"),
+    path("media/<str:asset_id>", views.MediaView.as_view(), name="media"),
     path("runs/<str:run_id>", views.RunView.as_view(), name="run"),
     path("runs/<str:run_id>/events", views.RunEventsView.as_view(), name="run-events"),
     path("runs/<str:run_id>/cancel", views.RunCancelView.as_view(), name="run-cancel"),
