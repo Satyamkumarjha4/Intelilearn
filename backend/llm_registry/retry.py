@@ -15,13 +15,18 @@ class RetryPolicy(Protocol):
 
 
 class ExponentialBackoffPolicy:
-    """Retry timeouts, 429, 5xx and connection errors with jittered exponential backoff, honouring Retry-After."""
+    """Retry timeouts, 429, 5xx and connection errors with jittered exponential backoff, honouring Retry-After.
+
+    A 429 that says a daily quota is spent is not retried: no backoff here outlasts it, so the next model takes over.
+    """
 
     RETRYABLE_STATUS = frozenset({408, 409, 425, 429, 500, 502, 503, 504, 529})
     # SDK exception class names that mean "transient" when no status code is attached.
     RETRYABLE_NAMES = ("Timeout", "RateLimit", "Connection", "InternalServer", "ServiceUnavailable", "Overloaded")
     # Errors that will fail the same way on every retry.
     NEVER_RETRY = (MissingAPIKey, RateLimitWaitExceeded)
+    # Wording of a spent daily quota on the free tiers (Groq: "requests per day (RPD)", Gemini: "...PerDay...").
+    DAILY_QUOTA_MARKERS = ("perday", "per day", "(rpd)", "(tpd)")
 
     def __init__(self, base_s: float = 1.0, max_s: float = 30.0, jitter: Callable[[], float] = random.random):
         self.base_s, self.max_s, self._jitter = base_s, max_s, jitter
@@ -33,7 +38,7 @@ class ExponentialBackoffPolicy:
             return True
         status = self._status_code(exc)
         if status is not None:
-            return status in self.RETRYABLE_STATUS
+            return status in self.RETRYABLE_STATUS and not (status == 429 and self._quota_spent(exc))
         names = [cls.__name__ for cls in type(exc).__mro__]
         return any(marker in name for name in names for marker in self.RETRYABLE_NAMES)
 
@@ -41,6 +46,13 @@ class ExponentialBackoffPolicy:
         if (hinted := self._retry_after(exc)) is not None:
             return min(hinted, self.max_s)
         return min(self.base_s * 2 ** (attempt - 1), self.max_s) * (0.5 + self._jitter() / 2)
+
+    def _quota_spent(self, exc: Exception) -> bool:
+        message = str(exc).lower()
+        if any(marker in message for marker in self.DAILY_QUOTA_MARKERS):
+            return True
+        hinted = self._retry_after(exc)
+        return hinted is not None and hinted > self.max_s  # asked to wait longer than we ever would
 
     @staticmethod
     def _status_code(exc: Exception) -> int | None:

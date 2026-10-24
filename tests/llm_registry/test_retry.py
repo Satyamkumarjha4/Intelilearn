@@ -7,6 +7,7 @@ not retrying a 429 or timeout throws away a model that would have answered secon
 Use cases:
 - 429, 5xx, timeouts and SDK "Timeout" classes are retryable; 4xx, a missing key and unknown errors are not
 - a Retry-After header is honoured, capped at the maximum delay
+- a 429 that says a daily quota is spent, or asks for a wait over the cap, is not retried: the next model takes it
 - backoff doubles per attempt, with jitter and a ceiling
 - waiting too long for the rate limiter is not retried
 """
@@ -24,8 +25,8 @@ class _Response:
 
 
 class _HTTPError(Exception):
-    def __init__(self, status, headers=None):
-        super().__init__(f"HTTP {status}")
+    def __init__(self, status, headers=None, message=None):
+        super().__init__(message or f"HTTP {status}")
         self.response = _Response(status, headers)
 
 
@@ -54,6 +55,24 @@ def test_retry_after_header_is_honoured():
     policy = ExponentialBackoffPolicy()
     assert policy.delay(1, _HTTPError(429, {"retry-after": "7"})) == 7
     assert policy.delay(1, _HTTPError(429, {"retry-after": "999"})) == 30  # capped
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        _HTTPError(429, message="Rate limit reached for model on tokens per day (TPD): Limit 100000"),
+        _HTTPError(429, message="Rate limit reached on requests per day (RPD): Limit 1000"),
+        _HTTPError(429, message="Quota exceeded for metric GenerateRequestsPerDayPerProjectPerModel-FreeTier"),
+        _HTTPError(429, {"retry-after": "3600"}),
+    ],
+)
+def test_spent_daily_quota_is_not_retried(exc):
+    assert ExponentialBackoffPolicy().is_retryable(exc) is False
+
+
+def test_per_minute_429_is_still_retried():
+    exc = _HTTPError(429, {"retry-after": "5"}, message="Rate limit reached on tokens per minute (TPM)")
+    assert ExponentialBackoffPolicy().is_retryable(exc) is True
 
 
 def test_backoff_doubles_per_attempt_with_jitter_and_a_ceiling():

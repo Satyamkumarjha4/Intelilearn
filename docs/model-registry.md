@@ -248,6 +248,7 @@ for index, model in enumerate(node.chain):
                 else: log(invalid_output); break          → next model
             log(ok); if index > 0: emit fallback_model event; return result
         except retryable (timeout, 429, 5xx, connection): log; backoff with jitter (honour Retry-After)
+                 (a 429 saying a daily quota is spent, or asking for a wait over the cap, is fatal instead)
         except fatal (401/403, model not found, 400 bad request): log; break   → next model
 raise AllModelsFailed(node_key, errors)
 ```

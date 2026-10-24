@@ -9,6 +9,7 @@ Use cases:
 - the primary model answers, and the call is logged with its tokens
 - a transient error is retried on the same model with backoff
 - exhausted retries fall back to the next model, with a fallback event
+- a spent daily quota (429) skips straight to the fallback, without retrying or sleeping
 - a fatal error skips straight to the fallback
 - an invalid structured reply gets one repair attempt with the parse error
 - a second invalid reply moves to the next model
@@ -125,6 +126,17 @@ def test_retries_exhausted_falls_back(run, FakeChat):
     assert result.fallback_index == 1
     assert len(primary.calls) == 3  # 1 try + 2 retries
     assert [e["type"] for e in events] == ["retrying", "retrying", "fallback_model"]
+
+
+def test_spent_daily_quota_falls_back_without_retrying(run, FakeChat):
+    primary = FakeChat(RateLimited("Rate limit reached on requests per day (RPD): Limit 1000"))
+    fallback = FakeChat(ok(4))
+
+    result, sleeps, events = run({"primary": primary, "fallback": fallback})
+
+    assert result.output.value == 4 and result.fallback_index == 1
+    assert len(primary.calls) == 1 and sleeps == []
+    assert [e["type"] for e in events] == ["fallback_model"]
 
 
 def test_fatal_error_skips_straight_to_fallback(run, FakeChat):
