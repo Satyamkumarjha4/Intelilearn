@@ -176,6 +176,10 @@ classDiagram
         -enforce_csrf(request)
     }
     class AuthCookies {
+        +str ACCESS
+        +str REFRESH
+        +str SESSION
+        +str ONBOARDED
         +set_session(response, access, refresh, onboarded)
         +set_onboarded(response, onboarded)
         +clear(response)
@@ -184,6 +188,7 @@ classDiagram
         <<abstract>>
         permission_classes
         throttle_scope
+        +signed_in_response(user, status_code) Response
     }
     class RegisterView
     class LoginView
@@ -210,7 +215,7 @@ classDiagram
 
 - `PublicAuthView` in the diagram is `_PublicAuthView` in code (module-private base).
 - `Profile` is created by a `post_save` receiver (Observer) that only calls `Profile.objects.get_or_create`.
-- `AuthCookies` replaces the functions in `cookies.py`; names and lifetimes come from settings.
+- `AuthCookies` (`cookies.py`) owns the cookie names, paths and flags; lifetimes and `Secure` come from settings unless injected. `CookieJWTAuthentication` and the OpenAPI scheme read `AuthCookies.ACCESS`.
 
 ### 4.2 `core` and `config`
 
@@ -1121,7 +1126,7 @@ Code written before this document that doesn't follow it yet. Behaviour must not
 | ~~`core/views.py`~~ | ~~`_database`, `_redis`, `_celery`~~ | `HealthCheck`s + `HealthService` (`core/health.py`) | ✅ Done |
 | ~~`core/sync.py`~~ | ~~`sync_databases()`~~ | `DatabaseSyncer(source, target).sync()` | ✅ Done |
 | ~~`config/databases.py`~~ | ~~functions~~ | `DatabaseConfig(env).build(...)`, `DatabaseConfig.local_url(...)` | ✅ Done |
-| `accounts/cookies.py` | functions | `AuthCookies` | Next auth change |
+| ~~`accounts/cookies.py`~~ | ~~functions~~ | `AuthCookies`; `_signed_in_response` → `_PublicAuthView.signed_in_response` | ✅ Done |
 | `graph/grading.py` | functions | `QuizGrader`, `RoutingPolicy` | Phase 3 |
 | `graph/validators.py` | `validate_*` functions | `Validator` classes, `AssessmentGuard` | Phase 3 |
 | `graph/prompts.py` | functions in one 470-line module | `graph/prompts/` package, one `Prompt` subclass per node | Phase 3 |

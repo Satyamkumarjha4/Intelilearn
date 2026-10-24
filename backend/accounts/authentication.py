@@ -2,7 +2,7 @@ from django.middleware.csrf import CsrfViewMiddleware
 from rest_framework import exceptions
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from .cookies import ACCESS_COOKIE
+from .cookies import AuthCookies
 
 
 class _CSRFCheck(CsrfViewMiddleware):
@@ -22,7 +22,7 @@ class CookieJWTAuthentication(JWTAuthentication):
         if header is not None:
             return super().authenticate(request)
 
-        raw_token = request.COOKIES.get(ACCESS_COOKIE)
+        raw_token = request.COOKIES.get(AuthCookies.ACCESS)
         if not raw_token:
             return None
 
