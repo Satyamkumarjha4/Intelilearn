@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src __ASSETS__ 'unsafe-eval'; style-src __ASSETS__ 'unsafe-inline'; font-src data:; img-src __MEDIA__ data:; connect-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'">
+<style type="text/tailwindcss">
+@custom-variant dark (&:where(.dark, .dark *));
+@theme {
+  --color-background: oklch(1 0 0);
+  --color-foreground: oklch(0.145 0 0);
+  --color-muted: oklch(0.97 0 0);
+  --color-muted-foreground: oklch(0.45 0 0);
+  --color-border: oklch(0.9 0 0);
+  --color-primary: oklch(0.205 0 0);
+  --color-primary-foreground: oklch(0.985 0 0);
+  --color-destructive: oklch(0.577 0.245 27);
+}
+@layer base {
+  :root.dark {
+    --color-background: oklch(0.145 0 0);
+    --color-foreground: oklch(0.985 0 0);
+    --color-muted: oklch(0.269 0 0);
+    --color-muted-foreground: oklch(0.72 0 0);
+    --color-border: oklch(1 0 0 / 14%);
+    --color-primary: oklch(0.922 0 0);
+    --color-primary-foreground: oklch(0.205 0 0);
+  }
+  html { color-scheme: light dark; }
+  body { background: var(--color-background); color: var(--color-foreground); font-family: ui-sans-serif, system-ui, sans-serif; margin: 0; }
+  * { border-color: var(--color-border); }
+}
+</style>
+<link rel="stylesheet" href="__RUNTIME_CSS__">
+<script src="__TAILWIND__"></script>
+</head>
+<body>
+<div id="root"></div>
+<script src="__RUNTIME__"></script>
+</body>
+</html>

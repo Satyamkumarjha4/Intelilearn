@@ -17,6 +17,10 @@ backend/staticfiles/
 node_modules/
 .next/
 
+# the built lesson runtime (bun run build in sandbox/; compose's sandbox-build service does it)
+sandbox/dist/
+frontend/public/sandbox/
+
 # editors / os
 .vscode/
 .idea/
