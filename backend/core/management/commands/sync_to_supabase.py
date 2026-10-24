@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.core.management import BaseCommand, CommandError, call_command
 
-from core.sync import sync_databases
+from core.sync import DatabaseSyncer
 
 
 class Command(BaseCommand):
@@ -15,7 +15,7 @@ class Command(BaseCommand):
         call_command("migrate", database="local", interactive=False, verbosity=0)
         call_command("migrate", database="default", interactive=False, verbosity=0)
 
-        report = sync_databases(source="local", target="default")
+        report = DatabaseSyncer(source="local", target="default").sync()
         for label, result in report.models.items():
             if result.inserted or result.conflicts:
                 self.stdout.write(

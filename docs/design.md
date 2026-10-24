@@ -247,9 +247,12 @@ classDiagram
         +get(request) Response
     }
     class DatabaseSyncer {
-        +sync(source, target) SyncReport
+        +str source
+        +str target
+        +sync() SyncReport
+        -copy(model, result) list
         -models_in_dependency_order() list
-        -reset_sequences(alias, models)
+        -reset_sequences(models)
     }
     class SyncReport {
         <<value>>
@@ -1112,7 +1115,7 @@ Code written before this document that doesn't follow it yet. Behaviour must not
 | ~~`llm_registry/node_specs.py`~~ | ~~dict + `get_spec()`~~ | `NodeSpecCatalog` (`NODE_SPECS[key]`) | ✅ Done |
 | ~~`llm_registry/redaction.py`~~ | ~~`redact()`~~ | `Redactor` + the stateless `REDACTOR` default | ✅ Done |
 | ~~`core/views.py`~~ | ~~`_database`, `_redis`, `_celery`~~ | `HealthCheck`s + `HealthService` (`core/health.py`) | ✅ Done |
-| `core/sync.py` | `sync_databases()` | `DatabaseSyncer` | When Supabase is enabled |
+| ~~`core/sync.py`~~ | ~~`sync_databases()`~~ | `DatabaseSyncer(source, target).sync()` | ✅ Done |
 | `config/databases.py` | functions | `DatabaseConfig` | Low priority |
 | `accounts/cookies.py` | functions | `AuthCookies` | Next auth change |
 | `graph/grading.py` | functions | `QuizGrader`, `RoutingPolicy` | Phase 3 |

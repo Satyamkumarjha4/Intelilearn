@@ -22,9 +22,6 @@ from django.db import IntegrityError, connections, transaction
 
 logger = logging.getLogger(__name__)
 
-# Created by `migrate` on the target, ephemeral, or tied to the ids of excluded models.
-EXCLUDED = {"contenttypes.contenttype", "auth.permission", "sessions.session", "admin.logentry"}
-
 
 @dataclass
 class ModelResult:
@@ -46,60 +43,70 @@ class SyncReport:
         return sum(r.conflicts for r in self.models.values())
 
 
-def _models_in_dependency_order() -> list:
-    # Many-to-many links are not copied as separate tables: each object carries them and they are
-    # saved with it (resolved by natural key where the related model has one, e.g. permissions).
-    app_list = [(config, None) for config in apps.get_app_configs() if config.models_module is not None]
-    ordered = serializers.sort_dependencies(app_list, allow_cycles=True)
-    return [m for m in ordered if m._meta.label_lower not in EXCLUDED and m._meta.managed and not m._meta.proxy]
+class DatabaseSyncer:
+    """Copies rows that `target` lacks from `source`, model by model in dependency order (insert-only)."""
 
+    # Created by `migrate` on the target, ephemeral, or tied to the ids of excluded models.
+    EXCLUDED = frozenset({"contenttypes.contenttype", "auth.permission", "sessions.session", "admin.logentry"})
 
-def _is_migrated(alias: str) -> bool:
-    return "django_migrations" in connections[alias].introspection.table_names()
+    def __init__(self, source: str = "local", target: str = "default"):
+        self.source, self.target = source, target
 
+    def sync(self) -> SyncReport:
+        report = SyncReport()
+        if not self._is_migrated(self.source):
+            logger.info("sync: source database %r has no tables yet; nothing to copy", self.source)
+            return report
 
-def sync_databases(source: str = "local", target: str = "default") -> SyncReport:
-    report = SyncReport()
-    if not _is_migrated(source):
-        logger.info("sync: source database %r has no tables yet; nothing to copy", source)
+        models = self._models_in_dependency_order()
+        deferred = []
+        for model in models:
+            deferred += self._copy(model, report.models.setdefault(model._meta.label, ModelResult()))
+        for item in deferred:
+            item.save_deferred_fields(using=self.target)
+        self._reset_sequences(models)
         return report
 
-    models = _models_in_dependency_order()
-    deferred = []
-    for model in models:
-        label = model._meta.label
-        result = report.models.setdefault(label, ModelResult())
-        source_qs = model._default_manager.using(source).order_by("pk")
+    def _copy(self, model, result: ModelResult) -> list:
+        """Insert this model's missing rows; return the objects whose forward references must be saved later."""
+        source_qs = model._default_manager.using(self.source).order_by("pk")
         if not source_qs.exists():
-            continue
-
-        existing = set(model._default_manager.using(target).values_list("pk", flat=True))
+            return []
+        existing = set(model._default_manager.using(self.target).values_list("pk", flat=True))
         payload = serializers.serialize("json", source_qs, use_natural_foreign_keys=True)
-        for item in serializers.deserialize("json", payload, using=target, handle_forward_references=True):
+        deferred = []
+        for item in serializers.deserialize("json", payload, using=self.target, handle_forward_references=True):
             if item.object.pk in existing:
                 result.skipped += 1
                 continue
             try:
-                with transaction.atomic(using=target):
-                    item.save(using=target)
+                with transaction.atomic(using=self.target):
+                    item.save(using=self.target)
                 result.inserted += 1
                 if item.deferred_fields:
                     deferred.append(item)
             except IntegrityError as exc:
                 result.conflicts += 1
-                logger.warning("sync: %s pk=%s skipped (conflict: %s)", label, item.object.pk, exc)
+                logger.warning("sync: %s pk=%s skipped (conflict: %s)", model._meta.label, item.object.pk, exc)
+        return deferred
 
-    for item in deferred:
-        item.save_deferred_fields(using=target)
+    def _models_in_dependency_order(self) -> list:
+        # Many-to-many links are not copied as separate tables: each object carries them and they are
+        # saved with it (resolved by natural key where the related model has one, e.g. permissions).
+        app_list = [(config, None) for config in apps.get_app_configs() if config.models_module is not None]
+        ordered = serializers.sort_dependencies(app_list, allow_cycles=True)
+        return [
+            m for m in ordered if m._meta.label_lower not in self.EXCLUDED and m._meta.managed and not m._meta.proxy
+        ]
 
-    _reset_sequences(target, models)
-    return report
+    @staticmethod
+    def _is_migrated(alias: str) -> bool:
+        return "django_migrations" in connections[alias].introspection.table_names()
 
-
-def _reset_sequences(alias: str, models: list) -> None:
-    connection = connections[alias]
-    statements = connection.ops.sequence_reset_sql(no_style(), models)
-    if statements:
-        with connection.cursor() as cursor:
-            for sql in statements:
-                cursor.execute(sql)
+    def _reset_sequences(self, models: list) -> None:
+        connection = connections[self.target]
+        statements = connection.ops.sequence_reset_sql(no_style(), models)
+        if statements:
+            with connection.cursor() as cursor:
+                for sql in statements:
+                    cursor.execute(sql)
