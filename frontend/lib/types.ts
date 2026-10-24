@@ -179,3 +179,39 @@ export type PracticeGrade = {
   score: { awarded: number; available: number; open_marks: number; correct: number; marked: number };
   results: { id: string; correct: boolean | null; marks: number; awarded: number | null; solution: Solution }[];
 };
+
+/** The media entry the lesson runtime reads (`LESSON.media[id]`). */
+export type LessonMedia = {
+  url: string;
+  kind: string;
+  alt: string;
+  caption: string;
+  attribution: string;
+  license: string;
+  source_url: string;
+  width: number;
+  height: number;
+};
+
+/** `GET /lessons/{id}/document`: what the sandbox runs and the data it renders. */
+export type LessonDocument = {
+  code: string;
+  code_version: number;
+  data: { media: Record<string, LessonMedia> } & Record<string, unknown>;
+};
+
+export type RepairError = { message: string; stack?: string; page?: string };
+export type LessonVersion = { code_version: number; reason: string; created_at: string };
+
+/** One section of a lesson page (`LESSON.pages.<key>.sections`), as the page writer produced it. */
+export type LessonSection = {
+  id: string;
+  heading: string;
+  body: string;
+  key_points: string[];
+  worked_examples: { problem: string; solution: string }[];
+  formulas: { latex: string; explanation: string }[];
+  code_snippets: { language: string; code: string; explanation: string }[];
+  callouts: { kind: "note" | "tip" | "warning" | "example"; text: string }[];
+};
+export type LessonPageContent = { key: string; title: string; sections: LessonSection[]; summary: string };

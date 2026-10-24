@@ -2,7 +2,9 @@ import { apiClient, type ApiClient } from "@/lib/api";
 import type {
   Answer,
   LessonDetail,
+  LessonDocument,
   LessonSummary,
+  LessonVersion,
   MaterialKind,
   Page,
   PracticeGrade,
@@ -10,6 +12,7 @@ import type {
   QuizKind,
   QuizResultSummary,
   QuizReview,
+  RepairError,
   Stage,
   StudyMaterial,
 } from "@/lib/types";
@@ -77,6 +80,22 @@ export class LessonsApi {
 
   gradePractice(id: string, answers: Record<string, number | string>): Promise<PracticeGrade> {
     return this.client.request(`/lessons/${id}/materials/practice_sheet/grade`, { method: "POST", body: { answers } });
+  }
+
+  document(id: string): Promise<LessonDocument> {
+    return this.client.request(`/lessons/${id}/document`);
+  }
+
+  requestRepair(id: string, error: RepairError, codeVersion: number): Promise<{ run_id: string }> {
+    return this.client.request(`/lessons/${id}/repair`, { method: "POST", body: { error, code_version: codeVersion } });
+  }
+
+  versions(id: string): Promise<LessonVersion[]> {
+    return this.client.request(`/lessons/${id}/versions`);
+  }
+
+  restoreVersion(id: string, number: number): Promise<{ code_version: number }> {
+    return this.client.request(`/lessons/${id}/versions/${number}/restore`, { method: "POST" });
   }
 
   cancelRun(runId: string): Promise<void> {
