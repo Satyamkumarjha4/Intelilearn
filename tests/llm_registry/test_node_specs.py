@@ -1,6 +1,20 @@
+"""Unit under test: `llm_registry.node_specs`, the NodeSpecCatalog of every LLM step the graph runs and what each
+needs (capabilities, output mode, minimum output and context).
+
+Why: the specs decide which models the admin may bind to a node. A missing or wrong requirement lets a model without
+tool calling or vision be bound, and the lesson fails mid-flow instead of at configuration time.
+
+Use cases:
+- every node documented in model-registry.md has a spec
+- only the quiz reviewer and the vision check are optional; every other node is required
+- tool calling, vision, text output and the alignment judge's context are declared
+- every structured node requires structured output
+- an unknown node key is a clear error that says how to add one
+"""
+
 import pytest
 
-from llm_registry.node_specs import NODE_SPECS, Capability, OutputMode, get_spec
+from llm_registry.node_specs import NODE_SPECS, Capability, OutputMode
 
 DOCUMENTED_NODES = {
     "diagnostic.generate", "diagnostic.review", "learner.assess", "study.generate", "lesson.plan", "page.generate",
@@ -14,15 +28,16 @@ def test_every_documented_node_has_a_spec():
 
 
 def test_only_judges_and_vision_check_are_optional():
-    assert {k for k, s in NODE_SPECS.items() if s.optional} == {"diagnostic.review", "media.verify"}
+    assert {s.key for s in NODE_SPECS.optional()} == {"diagnostic.review", "media.verify"}
+    assert len(NODE_SPECS.required()) == len(NODE_SPECS) - 2
 
 
 def test_capability_requirements():
-    assert get_spec("media.search").requires == {Capability.TOOL_CALLING}
-    assert get_spec("media.search").output == OutputMode.TOOLS
-    assert Capability.VISION in get_spec("media.verify").requires
-    assert get_spec("page.compile").output == OutputMode.TEXT
-    assert get_spec("alignment.judge").min_context >= 64_000
+    assert NODE_SPECS["media.search"].requires == {Capability.TOOL_CALLING}
+    assert NODE_SPECS["media.search"].output == OutputMode.TOOLS
+    assert Capability.VISION in NODE_SPECS["media.verify"].requires
+    assert NODE_SPECS["page.compile"].output == OutputMode.TEXT
+    assert NODE_SPECS["alignment.judge"].min_context >= 64_000
 
 
 def test_structured_nodes_require_structured_output():
@@ -33,4 +48,4 @@ def test_structured_nodes_require_structured_output():
 
 def test_unknown_node_is_a_clear_error():
     with pytest.raises(KeyError, match="add a NodeSpec"):
-        get_spec("nope.generate")
+        NODE_SPECS["nope.generate"]

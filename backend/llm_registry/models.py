@@ -3,7 +3,7 @@ import os
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from .node_specs import NODE_SPECS, Capability, Effort, OutputMode, get_spec
+from .node_specs import NODE_SPECS, Capability, Effort, OutputMode
 from .profiles import PROVIDER_PROFILES, ProviderKind, ReasoningControl
 
 EFFORT_CHOICES = [(e.value, e.value.capitalize()) for e in Effort]
@@ -130,7 +130,7 @@ class NodeConfig(models.Model):
 
     @property
     def spec(self):
-        return get_spec(self.node_key)
+        return NODE_SPECS[self.node_key]
 
     def clean(self):
         spec = self.spec

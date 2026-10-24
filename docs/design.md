@@ -127,7 +127,7 @@ flowchart TB
 | | codegen | `DocumentAssembler` | The TSX document is built from page and component parts | ◐ (`codegen.py` functions) |
 | **Factory** | providers | `ChatModelFactory` (`LangChainChatModelFactory`) | Builds a LangChain client from a `ResolvedModel`; tests inject a fake factory | ◐ (`build_chat_model` function, already injected) |
 | | graph | `default_context()` (composition root) | The one place concrete adapters are chosen | ✅ |
-| **Registry** | specs | `NodeSpecCatalog` over `NODE_SPECS` | Node keys are discovered by the admin, migrations and checks | ◐ (dict + `get_spec`) |
+| **Registry** | specs | `NODE_SPECS`, a `NodeSpecCatalog` (read-only `Mapping`) | Node keys are discovered by the admin, migrations and checks | ✅ |
 | | graph | `GraphRegistry` over `GRAPH_BUILDERS` | `GraphRun.graph` name → builder | ◐ (dict) |
 | | providers | `ProviderProfiles` | Provider kind → `ProviderProfile` | ✅ |
 | **Adapter** | sandbox | `SandboxRunner` | Wraps `node sandbox/scripts/*.mjs` subprocesses as Python methods | ✅ |
@@ -322,9 +322,10 @@ classDiagram
         +bool optional
     }
     class NodeSpecCatalog {
-        +get(key) NodeSpec
-        +all() list~NodeSpec~
-        +keys() list~str~
+        <<Mapping>>
+        +__getitem__(key) NodeSpec
+        +required() list~NodeSpec~
+        +optional() list~NodeSpec~
     }
     class RegistryResolver {
         -Cache cache
@@ -1070,7 +1071,7 @@ Code written before this document that doesn't follow it yet. Behaviour must not
 | `llm_registry/resolver.py` | module functions | `RegistryResolver`, `RegistrySnapshot` | With the gateway |
 | `llm_registry/probes.py` | `probe_model()` | `ModelProber` + `CapabilityProbe`s | Next probe change |
 | `llm_registry/serialization.py`, `seed.py` | functions | `RegistrySerializer`, `RegistrySeeder` | Next registry change |
-| `llm_registry/node_specs.py` | dict + `get_spec()` | `NodeSpecCatalog` | With the resolver |
+| ~~`llm_registry/node_specs.py`~~ | ~~dict + `get_spec()`~~ | `NodeSpecCatalog` (`NODE_SPECS[key]`) | ✅ Done |
 | ~~`llm_registry/redaction.py`~~ | ~~`redact()`~~ | `Redactor` + the stateless `REDACTOR` default | ✅ Done |
 | `core/views.py` | `_database`, `_redis`, `_celery` | `HealthCheck`s + `HealthService` | Next health change |
 | `core/sync.py` | `sync_databases()` | `DatabaseSyncer` | When Supabase is enabled |

@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from llm_registry import providers
 from llm_registry.gateway import Gateway
 from llm_registry.models import LLMModel
-from llm_registry.node_specs import OutputMode, get_spec
+from llm_registry.node_specs import NODE_SPECS, OutputMode
 from llm_registry.probes import probe_model
 from llm_registry.redaction import REDACTOR
 from llm_registry.resolver import registry_snapshot
@@ -60,7 +60,7 @@ class Command(BaseCommand):
         return found
 
     def _run_node(self, node_key) -> bool:
-        spec = get_spec(node_key)
+        spec = NODE_SPECS[node_key]
         self.stdout.write(self.style.MIGRATE_HEADING(f"node {node_key} (through the gateway)"))
         if spec.output == OutputMode.TOOLS:
             self.stdout.write("  skipped: tool-calling nodes need real tools; use the model probes instead")
