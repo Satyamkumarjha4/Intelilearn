@@ -78,6 +78,12 @@ class FlowState(TypedDict, total=False):
     repair_target: dict  # RepairTarget
     repaired_parts: dict  # {pages, interactives} with the repaired part replaced
 
+    # test grading
+    submission_id: str
+    test_answers: dict  # {question_id: answer} as submitted
+    grading_items: list[dict]  # the open-ended questions with an answer to judge, with that answer
+    grade_report: dict  # GradeReport
+
     # control
     attempts: Annotated[dict[str, int], Reducers.merge_counts]
     feedback: Annotated[dict[str, list[str]], Reducers.merge_dicts]

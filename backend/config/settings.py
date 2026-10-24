@@ -194,6 +194,7 @@ REST_FRAMEWORK = {
         "auth_account": env("AUTH_ACCOUNT_THROTTLE_RATE", default="10/min"),  # login attempts per email
         "auth_refresh": env("AUTH_REFRESH_THROTTLE_RATE", default="60/min"),
         "lesson_create": env("LESSON_CREATE_THROTTLE_RATE", default="30/hour"),  # each lesson costs model calls
+        "test_submit": env("TEST_SUBMIT_THROTTLE_RATE", default="30/hour"),  # open-ended answers cost model calls
     },
     # Requests arrive through the Next.js proxy; the client address is the X-Forwarded-For entry it appends.
     # Keep the API port bound to localhost (BIND_ADDRESS) so nobody can reach Django directly with a forged header.
@@ -234,6 +235,8 @@ SPECTACULAR_SETTINGS = {
         "StageEnum": "lessons.stages.Stage",
         "MaterialKindEnum": "lessons.stages.MaterialKind",
         "QuizKindEnum": "lessons.models.Quiz.Kind",
+        "RunStatusEnum": "lessons.models.GraphRun.Status",
+        "TestSubmissionStatusEnum": "lessons.models.TestSubmission.Status",
     },
 }
 

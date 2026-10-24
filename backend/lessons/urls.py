@@ -25,6 +25,16 @@ urlpatterns = [
         views.LessonVersionRestoreView.as_view(),
         name="lesson-version-restore",
     ),
+    path(
+        "lessons/<str:lesson_id>/test/submissions",
+        views.TestSubmissionsView.as_view(),
+        name="test-submissions",
+    ),
+    path(
+        "lessons/<str:lesson_id>/test/submissions/<str:submission_id>",
+        views.TestSubmissionView.as_view(),
+        name="test-submission",
+    ),
     path("media/<str:asset_id>", views.MediaView.as_view(), name="media"),
     path("runs/<str:run_id>", views.RunView.as_view(), name="run"),
     path("runs/<str:run_id>/events", views.RunEventsView.as_view(), name="run-events"),

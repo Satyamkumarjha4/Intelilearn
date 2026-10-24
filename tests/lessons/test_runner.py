@@ -21,6 +21,8 @@ Use cases:
 - an extra sheet that fails its checks ends the run failed with the reason and leaves the lesson alone
 - a runtime repair runs in its own thread, saves a new code version and leaves the lesson ready
 - a repair that cannot be made safely ends the run failed with the reason and leaves the lesson's code alone
+- a test grading run saves the score card on its submission; a grading that cannot finish fails the run and marks the
+  submission failed, so the learner can submit again
 - a thread paused by one runner is resumed by another with a fresh Postgres checkpointer (a restarted worker)
 - failure messages: model failures name the step, unexpected errors do not leak details
 - the recorder and lock behave: begin is conditional, finish only from running, the lock is exclusive
@@ -33,7 +35,7 @@ from django.db import connection
 from langgraph.checkpoint.memory import InMemorySaver
 from support.fakes import FakeSandbox
 from support.fixtures import budget_snapshot
-from support.lesson_data import make_state
+from support.lesson_data import make_final_test, make_state
 from support.quiz_data import make_questions
 from support.study_data import CONCEPTS, make_practice_sheet, make_revision_sheet
 
@@ -45,7 +47,7 @@ from graph.registry import GraphRegistry
 from graph.sandbox import RenderReport
 from lessons.checkpoints import CheckpointerFactory
 from lessons.events import RunEvent
-from lessons.models import GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt, Stage, StudyMaterial
+from lessons.models import GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt, Stage, StudyMaterial, TestSubmission
 from lessons.runner import FailureMessage, FlowRunner, GraphRunRecorder, RunLock
 from llm_registry.gateway import AllModelsFailed, NodeDisabled
 
@@ -431,6 +433,49 @@ def test_a_repair_that_cannot_be_made_safely_fails_the_run_and_leaves_the_code_a
     stored = Lesson.objects.get(pk=prepared.pk)
     assert (stored.code, stored.code_version, stored.stage) == ("OLD", 1, Stage.READY)
     assert not LessonVersion.objects.exists()
+
+
+def grading_run(lesson, flow_settings, answers):
+    final_test = make_final_test()
+    Lesson.objects.filter(pk=lesson.pk).update(
+        stage=Stage.READY, final_test=final_test, config_snapshot=budget_snapshot(), settings_snapshot=flow_settings
+    )
+    submission = TestSubmission.objects.create(lesson=lesson, answers=answers)
+    payload = {"input": {"submission_id": str(submission.id)}}
+    return submission, new_run(lesson, GraphRun.Trigger.GRADE, payload, graph="grade_test"), final_test
+
+
+def test_a_grading_run_saves_the_score_card_on_its_submission(make_runner, gateway, publisher, prepared, flow_settings):
+    ids = {q["type"]: q["id"] for q in make_final_test()["questions"]}
+    submission, run, _ = grading_run(prepared, flow_settings, {ids["mcq"]: 1, ids["short_answer"]: "Halve it."})
+    gateway.script("test.grade", {"grades": [{"question_id": ids["short_answer"], "awarded": 2, "feedback": "Good."}]})
+    sandbox = FakeSandbox()
+
+    make_runner(context_factory=lambda run_id: FlowContext(gateway=gateway, sandbox=sandbox)).execute(run.id)
+
+    run.refresh_from_db()
+    submission.refresh_from_db()
+    assert run.status == GraphRun.Status.SUCCEEDED and submission.status == "graded"
+    assert submission.result["score"]["awarded"] == 4 and submission.result["complete"] is True
+    assert publisher.of("done") == [{"lesson_id": str(prepared.id), "stage": "ready"}]
+    assert FlowRunner.thread_id(run) == f"{prepared.id}:{run.id}"
+
+
+def test_a_grading_that_cannot_finish_fails_the_run_and_the_submission_but_not_the_lesson(
+    make_runner, gateway, publisher, prepared, flow_settings
+):
+    ids = {q["type"]: q["id"] for q in make_final_test()["questions"]}
+    submission, run, _ = grading_run(prepared, flow_settings, {ids["short_answer"]: "Halve it."})
+    gateway.scripts["test.grade"] = [AllModelsFailed("test.grade", ["gemini: 429"])]
+
+    make_runner(context_factory=lambda run_id: FlowContext(gateway=gateway, sandbox=FakeSandbox())).execute(run.id)
+
+    run.refresh_from_db()
+    submission.refresh_from_db()
+    assert run.status == GraphRun.Status.FAILED and "test.grade" in run.error
+    assert submission.status == "failed" and submission.error == run.error
+    assert Lesson.objects.get(pk=prepared.pk).stage == Stage.READY
+    assert publisher.of("error")[-1]["message"] == run.error
 
 
 class TestFailureMessage:

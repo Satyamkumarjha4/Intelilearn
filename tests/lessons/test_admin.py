@@ -6,6 +6,7 @@ singleton that `FlowSettings.load()` relies on.
 
 Use cases:
 - each lessons changelist renders, and the lesson page shows its runs
+- the test submissions changelist shows each score as marks earned over marks available, and is blank before grading
 - the lesson changelist shows the error of a failed lesson
 - there can be only one FlowSettings row, and it cannot be deleted
 - editing the flow settings changes what the next lesson snapshots
@@ -14,14 +15,24 @@ Use cases:
 import pytest
 from django.urls import reverse
 
-from lessons.models import FlowSettings, GraphRun, Lesson, Quiz, QuizAttempt, Stage, StudyMaterial
+from lessons.models import FlowSettings, GraphRun, Lesson, Quiz, QuizAttempt, Stage, StudyMaterial, TestSubmission
 
 pytestmark = pytest.mark.django_db
 
 
 @pytest.mark.parametrize(
     "model",
-    ["lesson", "graphrun", "quiz", "quizattempt", "studymaterial", "mediaasset", "lessonversion", "flowsettings"],
+    [
+        "lesson",
+        "graphrun",
+        "quiz",
+        "quizattempt",
+        "studymaterial",
+        "mediaasset",
+        "lessonversion",
+        "testsubmission",
+        "flowsettings",
+    ],
 )
 def test_changelists_render(admin_client, lesson, model):
     quiz = Quiz.objects.create(lesson=lesson, kind="diagnostic", questions=[])
@@ -71,3 +82,12 @@ def test_editing_the_flow_settings_changes_the_next_snapshot(admin_client):
 
     assert response.status_code == 302
     assert FlowSettings.load().snapshot()["prereq_trigger_max_correct"] == 1
+
+
+def test_the_submissions_changelist_shows_the_score(admin_client, lesson):
+    TestSubmission.objects.create(lesson=lesson, result={"score": {"awarded": 14, "available": 20}}, status="graded")
+    TestSubmission.objects.create(lesson=lesson)
+
+    response = admin_client.get(reverse("admin:lessons_testsubmission_changelist"))
+
+    assert response.status_code == 200 and "14/20" in response.content.decode()

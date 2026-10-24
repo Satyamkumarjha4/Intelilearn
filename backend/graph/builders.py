@@ -52,6 +52,14 @@ from .nodes.diagnose import (
     ValidateDiagnosticNode,
 )
 from .nodes.failure import AwaitRetryNode, MarkFailedNode
+from .nodes.grading import (
+    FailGradeNode,
+    GradeOpenNode,
+    LoadSubmissionNode,
+    OpenItemsRouter,
+    PersistGradeNode,
+    ValidateGradeNode,
+)
 from .nodes.mastery import (
     AwaitChoiceNode,
     FailStudyMaterialNode,
@@ -328,3 +336,26 @@ class RuntimeRepairGraphBuilder(GraphBuilder):
         for before, after in zip(names, names[1:], strict=False):
             graph.add_edge(before, after)
         graph.add_edge(names[-1], END)
+
+
+class GradeTestGraphBuilder(GraphBuilder):
+    """A submitted lesson test: the open-ended answers are graded by `test.grade`, the rest were marked at once.
+
+    Input: `{"lesson_id", "submission_id"}`, in its own thread. There is no Retry: a failed run ends with its reason
+    and the learner submits again.
+    """
+
+    def add_nodes(self, graph: StateGraph) -> None:
+        for node in (LoadSubmissionNode(), GradeOpenNode(), ValidateGradeNode(), PersistGradeNode(), FailGradeNode()):
+            graph.add_node(node.name, node)
+
+    def add_edges(self, graph: StateGraph) -> None:
+        graph.add_edge(START, "load_submission")
+        graph.add_conditional_edges("load_submission", OpenItemsRouter(), ["grade_open", "persist_grade"])
+        graph.add_edge("grade_open", "validate_grade")
+        graph.add_conditional_edges(
+            "validate_grade",
+            CheckRouter("grading", ok="persist_grade", retry="grade_open", fail="fail_grade"),
+            ["persist_grade", "grade_open", "fail_grade"],
+        )
+        graph.add_edge("persist_grade", END)

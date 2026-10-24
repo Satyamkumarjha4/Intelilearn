@@ -90,3 +90,9 @@ class VersionNotFound(LessonError):
     status_code = status.HTTP_404_NOT_FOUND
     default_code = "not_found"
     default_detail = "That version of the lesson does not exist."
+
+
+class SubmissionNotFound(LessonError):
+    status_code = status.HTTP_404_NOT_FOUND
+    default_code = "not_found"
+    default_detail = "That test submission does not exist."

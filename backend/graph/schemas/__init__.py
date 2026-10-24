@@ -11,6 +11,7 @@ from .diagnostic import (
     PrerequisiteQuestion,
     QuizReview,
 )
+from .grading import GradedAnswer, GradeReport
 from .interactive import (
     MEDIA_KINDS,
     InteractiveComponent,
@@ -34,7 +35,8 @@ from .study import MATERIAL_SCHEMAS, CheatSheet, PracticeSheet, RevisionSheet
 
 __all__ = [
     "BANDS", "MATERIAL_SCHEMAS", "MEDIA_KINDS", "PAGE_KEYS", "AlignmentIssue", "AlignmentReport", "CheatSheet",
-    "DiagnosticBundle", "DiagnosticQuestion", "FinalTest", "FinalTestSpec", "InteractiveComponent",
+    "DiagnosticBundle", "DiagnosticQuestion", "FinalTest", "FinalTestSpec", "GradeReport", "GradedAnswer",
+    "InteractiveComponent",
     "InteractivePlan", "InteractiveSpec", "LearnerAssessment", "LessonPlan", "MediaCandidate", "MediaSelection",
     "MediaVerdict", "PageContent", "PracticeSheet", "Prerequisite", "PrerequisiteQuestion", "QuizReview",
     "RevisionSheet", "TestQuestion", "component_name", "public_question",

@@ -20,6 +20,7 @@ from graph.sandbox import SandboxError
 from llm_registry.gateway import AllModelsFailed, NodeDisabled
 
 from .checkpoints import CheckpointerFactory
+from .effects import RunEffects
 from .events import EventPublisher, RedisEventPublisher, RunEvent, RunEventTranslator
 from .models import GraphRun, Lesson
 
@@ -106,6 +107,7 @@ class FlowRunner:
         lock: RunLock | None = None,
         failures: FailureMessage | None = None,
         translator: RunEventTranslator | None = None,
+        effects: RunEffects | None = None,
     ):
         self.graphs = graphs or GraphRegistry()
         self.checkpointers = checkpointers or CheckpointerFactory()
@@ -115,6 +117,7 @@ class FlowRunner:
         self.lock = lock or RunLock()
         self.failures = failures or FailureMessage()
         self.translator = translator or RunEventTranslator()
+        self.effects = effects or RunEffects()
 
     def execute(self, run_id) -> GraphRun:
         run = GraphRun.objects.select_related("lesson").get(pk=run_id)
@@ -135,6 +138,7 @@ class FlowRunner:
             self._fail(run, self.failures.of(exc))
             return
         if self.recorder.is_cancelled(run):
+            self.effects.on_stopped(run, "Cancelled before it finished.")
             self._publish(run, RunEvent("cancelled", {}))
             return
         lesson = Lesson.objects.get(pk=run.lesson_id)
@@ -188,6 +192,7 @@ class FlowRunner:
     def _fail(self, run: GraphRun, message: str, *, lesson_already_failed: bool = False) -> None:
         if run.graph == GraphRun.Graph.FLOW and not lesson_already_failed:
             Lesson.objects.get(pk=run.lesson_id).fail(message)
+        self.effects.on_stopped(run, message)
         self.recorder.finish(run, GraphRun.Status.FAILED, message)
         self._publish(run, RunEvent("error", {"message": message, "code": "failed"}))
 

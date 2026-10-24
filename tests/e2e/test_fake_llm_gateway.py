@@ -14,6 +14,7 @@ Use cases:
   downloader, the fake's Wikimedia API and image
 - a page compiled through the text path (no schema) keeps every section and places the widgets, and passes the real
   sandbox check
+- a grading prompt is answered with one valid grade per question, within its marks, which the real validator accepts
 - a crashed interactive is answered with a replacement that passes the real sandbox check
 - a text prompt the fake does not know is refused
 - a schema the fake does not know is refused, and the gateway reports every model failed
@@ -35,6 +36,7 @@ from graph.prompts import (
     CompilePagePrompt,
     DiagnosticPrompt,
     GenerateInteractivePrompt,
+    GradeTestPrompt,
     PlanInteractivesPrompt,
     PlanLessonPrompt,
     RuntimeRepairPrompt,
@@ -48,6 +50,7 @@ from graph.schemas import (
     AlignmentReport,
     DiagnosticBundle,
     FinalTest,
+    GradeReport,
     InteractiveComponent,
     InteractivePlan,
     LearnerAssessment,
@@ -56,6 +59,7 @@ from graph.schemas import (
 )
 from graph.validators import (
     FinalTestValidator,
+    GradeReportValidator,
     InteractivePlanValidator,
     PageValidator,
     PlanValidator,
@@ -240,6 +244,26 @@ def test_a_crashed_interactive_is_replaced_by_code_that_passes_the_real_check(se
 
     assert "boom" not in code
     assert SandboxRunner().check_code(code, required=["Interactive_demo"]).errors == []
+
+
+def test_a_grading_prompt_gets_one_valid_grade_per_question(server, monkeypatch):
+    snapshot = bind_fake(server, "json_schema", monkeypatch)
+    items = [
+        {"id": "t7", "type": "short_answer", "marks": 2, "question": "Why?", "answer": "Because."},
+        {
+            "id": "t9",
+            "type": "code",
+            "marks": 4,
+            "question": "Write it",
+            "answer": "def search(items, t):\n    return 0",
+        },
+    ]
+    messages = GradeTestPrompt().messages({"topic": "Binary search", "items": items, "profile": {}})
+
+    report = call(snapshot, "test.grade", GradeReport, messages)
+
+    assert [(g["question_id"], g["awarded"]) for g in report["grades"]] == [("t7", 1), ("t9", 4)]
+    assert GradeReportValidator().validate(report, questions=items) == []
 
 
 def test_a_text_prompt_the_fake_does_not_know_fails_every_model(server, monkeypatch):

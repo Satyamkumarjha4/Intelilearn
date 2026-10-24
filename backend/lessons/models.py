@@ -197,6 +197,36 @@ class LessonVersion(models.Model):
         return f"{self.lesson.topic} v{self.code_version}"
 
 
+class TestSubmission(models.Model):
+    """One go at the lesson's final test. Several are allowed, so the learner can retake it.
+
+    `result` is the `ScoreCard` (graph/grading.py): at first only what could be marked at once, complete when the
+    `grade_test` graph has graded the open-ended answers.
+    """
+
+    __test__ = False  # not a pytest test class, whatever its name looks like
+
+    class Status(models.TextChoices):
+        GRADING = "grading", "Grading"
+        GRADED = "graded", "Graded"
+        FAILED = "failed", "Grading failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name="submissions")
+    answers = models.JSONField(default=dict)  # {question_id: answer}
+    result = models.JSONField(null=True, blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.GRADING)
+    error = models.TextField(blank=True)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    graded_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-submitted_at"]
+
+    def __str__(self):
+        return f"Test of {self.lesson.topic} ({self.get_status_display()})"
+
+
 class GraphRun(models.Model):
     """One Celery execution segment of a graph: start, each resume, a retry, a repair… Drives progress streaming."""
 
@@ -204,6 +234,7 @@ class GraphRun(models.Model):
         FLOW = "flow", "Lesson flow"
         STUDY_MATERIAL = "study_material", "Extra study sheet"
         RUNTIME_REPAIR = "runtime_repair", "Runtime repair"
+        GRADE_TEST = "grade_test", "Test grading"
 
     class Trigger(models.TextChoices):
         START = "start", "Start"
@@ -212,6 +243,7 @@ class GraphRun(models.Model):
         RESUME_CHOICE = "resume_choice", "Sheet chosen"
         RETRY = "retry", "Retry"
         REPAIR = "repair", "Runtime repair"
+        GRADE = "grade", "Test submitted"
         EXTRA_MATERIAL = "extra_material", "Extra sheet"
 
     class Status(models.TextChoices):

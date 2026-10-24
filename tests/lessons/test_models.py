@@ -15,13 +15,14 @@ Use cases:
 - public_questions strips the correct answer, explanation and concept from every question
 - a lesson has at most one quiz of each kind, and a quiz at most one attempt
 - GraphRun.is_active is true only while queued or running
+- a test submission starts as grading, is listed newest first, and goes with its lesson
 - FlowSettings is a singleton with the documented defaults, and snapshots to plain JSON
 """
 
 import pytest
 from django.db import IntegrityError, transaction
 
-from lessons.models import FlowSettings, GraphRun, Lesson, Quiz, QuizAttempt, Stage
+from lessons.models import FlowSettings, GraphRun, Lesson, Quiz, QuizAttempt, Stage, TestSubmission
 from lessons.stages import IllegalTransition
 
 
@@ -201,3 +202,13 @@ class TestFlowSettings:
         assert snapshot["alignment_min_score"] == 3
         assert "id" not in snapshot
         assert snapshot["allowed_media_licenses"] == ["cc0", "pdm", "cc-by", "cc-by-sa"]
+
+
+def test_a_test_submission_starts_as_grading_newest_first_and_goes_with_its_lesson(lesson):
+    first = TestSubmission.objects.create(lesson=lesson, answers={"t1": 1})
+    second = TestSubmission.objects.create(lesson=lesson)
+
+    assert first.status == TestSubmission.Status.GRADING and first.result is None and first.graded_at is None
+    assert list(lesson.submissions.all()) == [second, first] and str(first) == "Test of Binary search (Grading)"
+    lesson.delete()
+    assert not TestSubmission.objects.exists()
