@@ -2,13 +2,17 @@ import json
 
 from django import forms
 from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied
 from django.db import models
 from django.http import HttpResponse
+from django.template.response import TemplateResponse
+from django.urls import path
 from django.utils.html import format_html, format_html_join
 
 from .models import LLMModel, ModelCall, NodeConfig, NodeModelBinding, Provider
 from .probes import ModelProber
 from .serialization import RegistrySerializer
+from .usage import UsageReport
 
 # JSON fields hold small parameter objects; the default textarea is far too large, especially inline.
 COMPACT_JSON = {models.JSONField: {"widget": forms.Textarea(attrs={"rows": 2, "cols": 36})}}
@@ -185,11 +189,33 @@ class NodeConfigAdmin(RegistryExportActions, StatusMarks, admin.ModelAdmin):
 
 @admin.register(ModelCall)
 class ModelCallAdmin(admin.ModelAdmin):
+    change_list_template = "admin/llm_registry/modelcall/change_list.html"
+
     list_display = ["created_at", "node_key", "provider_key", "model_name", "status", "attempt", "fallback_index",
                     "latency_ms", "input_tokens", "output_tokens", "cost"]  # fmt: skip
     list_filter = ["status", "node_key", "provider_key", "model_name"]
     date_hierarchy = "created_at"
     search_fields = ["error", "lesson_id", "run_id"]
+
+    def get_urls(self):
+        custom = [path("usage/", self.admin_site.admin_view(self.usage_view), name="llm_registry_modelcall_usage")]
+        return custom + super().get_urls()
+
+    def usage_view(self, request):
+        """Cost and latency per node and per model over a recent window (`UsageReport`)."""
+        if not self.has_view_permission(request):
+            raise PermissionDenied
+        window = request.GET.get("window", "7")
+        window = window if window in UsageReport.WINDOWS else "7"
+        report = UsageReport().within(window)
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Model call usage",
+            "window": window,
+            "windows": [("1", "Last day"), ("7", "Last 7 days"), ("30", "Last 30 days"), ("all", "Everything")],
+            "tables": [("Node", [report.total(), *report.per_node()]), ("Model", report.per_model())],
+        }
+        return TemplateResponse(request, "admin/llm_registry/modelcall/usage.html", context)
 
     def has_add_permission(self, request):
         return False
