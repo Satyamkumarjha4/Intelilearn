@@ -285,6 +285,7 @@ classDiagram
 
 - `bootstrap` and `sync_to_supabase` commands call `DatabaseSyncer().sync()`.
 - `DatabaseConfig` is used from `settings.py`, which stays a module.
+- Framework hooks stay thin: the DRF `EXCEPTION_HANDLER` (`api_exception_handler`) runs DRF's handler and then `ApiErrorFormatter().format(...)` for the `{detail, code, fields?}` shape; the `check --deploy` hook returns `DeploySecurityChecks().errors()`.
 
 ### 4.3 `llm_registry`: registry and resolution
 
