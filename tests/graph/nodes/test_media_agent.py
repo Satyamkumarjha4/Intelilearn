@@ -10,7 +10,8 @@ Use cases:
 - search, submit, download and store: a MediaRef with the file stored, licence, attribution and the source page kept
 - the optional vision check approves (alt text and caption from the verdict, verified) or rejects (file removed, the
   agent searches again with the reason, and the next candidate can be approved)
-- the vision check is skipped when the node has no model
+- the vision check is skipped when the node has no model, and a picture it cannot judge because every vision model
+  failed is kept unverified with a warning instead of failing the lesson
 - a candidate whose URL no tool returned, or that fails the download guards, is reported back and the agent tries again
 - out of rounds it gives up, and so does an agent that keeps searching past the tool-step cap
 - a reply with no tool call is nudged to use the tools
@@ -28,6 +29,7 @@ from support.media import make_library, png, result
 from graph.media import MediaError
 from graph.nodes.media_agent import MediaFinder, MediaGraphBuilder
 from graph.schemas import InteractiveSpec
+from llm_registry.gateway import AllModelsFailed
 
 SPEC = InteractiveSpec(
     id="amoeba", page="introduction", anchor_section="s1", kind="image", purpose="Shows binary fission clearly.",
@@ -122,6 +124,20 @@ def test_a_rejected_picture_is_removed_and_the_agent_searches_again(
     assert len(list(tmp_path.rglob("*.png"))) == 1  # the rejected file was discarded
     second_round = gateway.called("media.search")[2].messages
     assert any("rejected: Amoeba 1: it is a cartoon" in str(m.content) for m in second_round)
+
+
+def test_a_picture_the_vision_models_could_not_judge_is_kept_unverified(
+    finder, ctx, branch, gateway, tmp_path, make_snapshot_for_nodes, events
+):
+    branch = branch | {"snapshot": make_snapshot_for_nodes(disabled=())}
+    gateway.script("media.search", search(), submit(result(1)))
+    gateway.scripts["media.verify"] = [AllModelsFailed("media.verify", ["gemini: 503"])]
+
+    ref = run(finder, ctx, branch, make_library(tmp_path, [result(1)]))
+
+    assert ref["title"] == "Amoeba 1" and ref["verified"] is False
+    assert len(list(tmp_path.rglob("*.png"))) == 1  # the file was kept
+    assert "could not be checked by the vision model" in events.of_type("warning")[0]["message"]
 
 
 def test_the_vision_check_is_skipped_when_the_node_has_no_model(finder, ctx, branch, gateway, tmp_path):

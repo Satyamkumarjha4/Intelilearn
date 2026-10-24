@@ -13,6 +13,8 @@ Use cases:
 - validate_diagnostic accepts a good bundle and clears the feedback
 - validate_diagnostic keeps the problems and announces another attempt while attempts remain
 - validate_diagnostic sets the error, the node to resume at and the counters to reset when attempts run out
+- the optional reviewer never fails a lesson: when none of its models answer it is skipped with a warning, and when
+  the attempts are spent while every rule passes and only the reviewer objects, the quiz is kept with a warning
 - validate_diagnostic asks the optional reviewer only after the deterministic rules pass, and only if it is enabled
 - publish_diagnostic stores the quiz and moves the lesson to awaiting_diagnostic (and is safe to run twice)
 - publish_prerequisite stores the prerequisite quiz with its prerequisites
@@ -38,6 +40,7 @@ from graph.nodes.diagnose import (
 )
 from graph.schemas import DiagnosticBundle, LearnerAssessment, QuizReview
 from lessons.models import Lesson, Quiz, QuizAttempt, Stage
+from llm_registry.gateway import AllModelsFailed
 
 
 def answers_for(questions, right: int) -> dict:
@@ -218,6 +221,46 @@ class TestValidateDiagnostic:
     def test_skips_the_reviewer_when_it_has_no_model(self, lesson_state, runtime, gateway, valid_bundle):
         ValidateDiagnosticNode()(self.state(lesson_state, valid_bundle), runtime)
 
+        assert gateway.called("diagnostic.review") == []
+
+    def test_skips_a_reviewer_whose_models_all_failed_and_says_so(
+        self, lesson_state, runtime, gateway, valid_bundle, make_snapshot_for_nodes, events
+    ):
+        gateway.scripts["diagnostic.review"] = [AllModelsFailed("diagnostic.review", ["gemini: 429"])]
+        state = self.state(lesson_state, valid_bundle, snapshot=make_snapshot_for_nodes(disabled=()))
+
+        update = ValidateDiagnosticNode()(state, runtime)
+
+        assert update == {
+            "feedback": {"diagnostic": []},
+            "warnings": ["The quiz review was skipped: none of its models answered."],
+        }
+        assert events.of_type("warning")[0]["message"].startswith("The quiz review was skipped")
+
+    def test_keeps_the_quiz_when_only_the_reviewer_objects_after_the_last_attempt(
+        self, lesson_state, runtime, gateway, valid_bundle, make_snapshot_for_nodes
+    ):
+        gateway.script("diagnostic.review", {"issues": [{"question_id": "q10", "problem": "Answerable from wording."}]})
+        state = self.state(
+            lesson_state, valid_bundle, snapshot=make_snapshot_for_nodes(disabled=()), attempts={"diagnostic": 2}
+        )
+
+        update = ValidateDiagnosticNode()(state, runtime)
+
+        assert update["feedback"] == {"diagnostic": []} and "error" not in update
+        assert update["warnings"] == ["The quiz reviewer still had concerns: Question q10: Answerable from wording."]
+
+    def test_a_rule_that_fails_on_the_last_attempt_still_fails_the_run_even_with_a_reviewer(
+        self, lesson_state, runtime, gateway, valid_bundle, make_snapshot_for_nodes
+    ):
+        valid_bundle["diagnostic"].pop()
+        state = self.state(
+            lesson_state, valid_bundle, snapshot=make_snapshot_for_nodes(disabled=()), attempts={"diagnostic": 2}
+        )
+
+        update = ValidateDiagnosticNode()(state, runtime)
+
+        assert update["error"].startswith("The diagnostic quiz still failed its checks")
         assert gateway.called("diagnostic.review") == []
 
     def test_accepts_when_the_enabled_reviewer_finds_nothing(

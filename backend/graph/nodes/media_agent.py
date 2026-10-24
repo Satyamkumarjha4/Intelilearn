@@ -16,6 +16,8 @@ from typing import Annotated, Any, TypedDict
 from langchain_core.messages import HumanMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
 
+from llm_registry.gateway import AllModelsFailed
+
 from ..builder_base import GraphBuilder
 from ..context import FlowContext, NodeBudget
 from ..media import MediaError, MediaSession
@@ -152,7 +154,8 @@ class DownloadRouter(Router):
 
 
 class VerifyMediaNode(Node):
-    """The optional `media.verify` vision check: does the picture show what the spec needs, and write its alt text."""
+    """The optional `media.verify` vision check: does the picture show what the spec needs, and write its alt text.
+    A picture the check cannot judge (every vision model failed) is kept unverified rather than failing the lesson."""
 
     name = "verify_media"
 
@@ -166,9 +169,14 @@ class VerifyMediaNode(Node):
             "spec": spec, "candidate": {"title": ref["title"], "source": ref["source"]}, "image_b64": encoded,
             "mime": ref["mime_type"],
         }  # fmt: skip
-        verdict: MediaVerdict = ctx.invoke(
-            branch, "media.verify", VerifyMediaPrompt().messages(subject), schema=MediaVerdict
-        ).output
+        try:
+            verdict: MediaVerdict = ctx.invoke(
+                branch, "media.verify", VerifyMediaPrompt().messages(subject), schema=MediaVerdict
+            ).output
+        except AllModelsFailed:
+            # The check is a bonus: the picture already passed the download rules, so it is kept, unverified.
+            ctx.warn(f'The picture "{ref["title"]}" could not be checked by the vision model and is shown unchecked.')
+            return {"ref": ref, "outcome": "found"}
         if verdict.approved:
             return {
                 "ref": ref | {"alt_text": verdict.alt_text, "caption": verdict.caption, "verified": True},

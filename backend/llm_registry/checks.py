@@ -1,7 +1,7 @@
 """`manage.py check` warnings for registry problems that would only surface mid-lesson otherwise.
 Grouped into one warning per kind of problem, since they usually share a cause (e.g. one missing key)."""
 
-from django.core.checks import Tags, Warning, register
+from django.core.checks import Info, Tags, Warning, register
 from django.db import DatabaseError
 
 
@@ -15,11 +15,13 @@ class RegistryHealth:
         except DatabaseError:
             return []  # not migrated yet
 
-        missing_config, no_model, no_key, env_names = [], [], [], set()
+        missing_config, no_model, no_key, env_names, switched_off = [], [], [], set(), []
         for key, spec in NODE_SPECS.items():
             node = nodes.get(key)
             if node is None or not node.is_enabled:
-                if not spec.optional:
+                if spec.optional:
+                    switched_off.append(key)
+                else:
                     missing_config.append(key)
                 continue
             usable = self._usable_bindings(node)
@@ -50,6 +52,14 @@ class RegistryHealth:
                     f"{len(no_key)} node(s) can't call any model because API keys are missing: {', '.join(no_key)}.",
                     hint=f"Set {' or '.join(sorted(env_names))} in .env.",
                     id="llm_registry.W003",
+                )
+            )
+        if switched_off:
+            warnings.append(
+                Info(
+                    f"Optional quality checks are switched off: {', '.join(switched_off)}.",
+                    hint="Enable them and bind models in the admin (manage.py seed_registry does both).",
+                    id="llm_registry.I001",
                 )
             )
         return warnings

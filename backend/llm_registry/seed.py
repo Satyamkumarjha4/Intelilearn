@@ -42,7 +42,8 @@ FLASH, PRO, LITE, LLAMA = (
 # node_key: (chain, node settings)
 _NODES = {
     "diagnostic.generate": ([FLASH, LLAMA], {"params_override": {"temperature": 0.5}}),
-    "diagnostic.review": ([LLAMA], {"is_enabled": False, "params_override": {"temperature": 0}}),
+    # An optional judge of the diagnostic quiz (independence, band calibration): on, with a model that can judge.
+    "diagnostic.review": ([FLASH, LLAMA], {"params_override": {"temperature": 0}}),
     "learner.assess": ([FLASH, LLAMA], {}),
     "study.generate": ([FLASH, PRO], {}),
     "lesson.plan": ([PRO, FLASH], {}),
@@ -50,7 +51,8 @@ _NODES = {
     "test.generate": ([FLASH, LLAMA], {"params_override": {"temperature": 0.3}}),
     "interactive.plan": ([FLASH, LLAMA], {}),
     "media.search": ([FLASH, LLAMA], {}),
-    "media.verify": ([FLASH], {"is_enabled": False}),
+    # The vision check of a found picture (needs a vision model, so no Llama): on, with a cheap fallback.
+    "media.verify": ([FLASH, LITE], {"params_override": {"temperature": 0}}),
     "interactive.generate": ([FLASH, PRO], {"params_override": {"temperature": 0.6}}),
     "alignment.judge": ([PRO, FLASH], {"params_override": {"temperature": 0}}),
     "page.compile": ([FLASH, PRO], {"params_override": {"temperature": 0.4}}),

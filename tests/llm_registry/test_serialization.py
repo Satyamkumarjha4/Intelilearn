@@ -5,7 +5,8 @@ Why: this is how a tuned registry moves between machines and how a fresh install
 or unvalidated import would leave nodes bound to models that can't serve them.
 
 Use cases:
-- the default seed is valid and binds every required node
+- the default seed is valid, binds every required node, and switches the optional quality checks on with models that
+  can do them (the quiz reviewer, and a vision model for the picture check)
 - export then import round-trips to the same JSON
 - an invalid import rolls back everything
 - seed_registry leaves an existing registry alone unless forced
@@ -33,7 +34,14 @@ def test_default_seed_is_valid_and_covers_every_required_node():
     for node in NodeConfig.objects.all():
         if node.is_enabled:
             assert resolved[node.node_key].chain, f"{node.node_key} has no usable model"
-    assert not NodeConfig.objects.get(node_key="diagnostic.review").is_enabled
+    for key, chain in {
+        "diagnostic.review": ["gemini-2.5-flash", "llama-3.3-70b-versatile"],
+        "media.verify": ["gemini-2.5-flash", "gemini-2.5-flash-lite"],
+    }.items():
+        assert NodeConfig.objects.get(node_key=key).is_enabled
+        assert [m.model_name for m in resolved[key].chain] == chain
+    chain_names = [m.model_name for m in resolved["media.verify"].chain]
+    assert all(m.supports_vision for m in LLMModel.objects.filter(name__in=chain_names))  # it reads the picture
     assert [m.model_name for m in resolved["lesson.plan"].chain] == ["gemini-2.5-pro", "gemini-2.5-flash"]
 
 
@@ -77,4 +85,4 @@ def test_seed_command_loads_a_file(tmp_path):
 
     call_command("seed_registry", file=tmp_path / "registry.json")
 
-    assert NodeModelBinding.objects.count() == 30
+    assert NodeModelBinding.objects.count() == 32

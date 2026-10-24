@@ -8,6 +8,7 @@ Use cases:
 - an empty registry warns that nodes have no usable model
 - missing API keys are reported once, naming the variables to set
 - a healthy registry has no warnings
+- optional quality checks that are switched off are mentioned once as information, and enabling them removes it
 - tracing that is off warns of nothing; one that cannot work says what is missing, naming settings and never values
 """
 
@@ -40,6 +41,20 @@ def test_missing_api_keys_are_reported_once(monkeypatch):
 
     assert ids(warnings) == {"llm_registry.W003"}
     assert "GEMINI_API_KEY" in warnings[0].hint
+
+
+def test_optional_checks_that_are_off_are_mentioned_once_as_information(monkeypatch):
+    from llm_registry.models import NodeConfig
+
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    monkeypatch.setenv("GROQ_API_KEY", "k")
+    RegistrySerializer().load(DefaultRegistry().build())
+    NodeConfig.objects.filter(node_key__in=["diagnostic.review", "media.verify"]).update(is_enabled=False)
+
+    messages = registry_check()
+
+    assert ids(messages) == {"llm_registry.I001"} and messages[0].level < 30  # information, not a warning
+    assert "diagnostic.review, media.verify" in messages[0].msg
 
 
 def test_healthy_registry_has_no_warnings(monkeypatch):
