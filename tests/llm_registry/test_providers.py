@@ -46,7 +46,8 @@ def test_anthropic_effort_and_thinking(resolved_model):
     )  # fmt: skip
     budget = build_chat_model(
         resolved_model(provider_kind="anthropic", model_name="claude-x", api_key_env="TEST_LLM_KEY",
-                       params={"max_tokens": 30000}, reasoning={"thinking": {"type": "enabled", "budget_tokens": 24576}}),
+                       params={"max_tokens": 30000},
+                       reasoning={"thinking": {"type": "enabled", "budget_tokens": 24576}}),
         45,
     )  # fmt: skip
 

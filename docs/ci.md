@@ -6,7 +6,7 @@ The workflow is `.github/workflows/ci.yml`, and it runs on **every push to every
 
 | Job | What it runs | Same as locally |
 |---|---|---|
-| `lint` | `ruff check`, `ruff format --check` (uv); `eslint`, `next typegen`, `tsc --noEmit` (bun) | `make lint` |
+| `lint` | `ruff check`, `ruff format --check` over `backend/` and `tests/`, OpenAPI schema validation (uv); `eslint`, `next typegen`, `tsc --noEmit`, `bun test` (bun) | `make lint` |
 | `test` | `docker compose run --rm backend pytest`, using the docker Postgres and Redis | `make test` |
 
 CI has **no `.env`**. Every setting falls back to the defaults in `.env.example`, which is why every new variable must have a default (see `CLAUDE.md`).

@@ -34,8 +34,6 @@ class ProbeChat:
         return AIMessage(content="pong")
 
     def with_structured_output(self, schema, method=None, include_raw=False):
-        parent = self
-
         class Runnable:
             def invoke(self, messages):
                 return {"raw": AIMessage(content=""), "parsed": schema(ok=True, word="pong"), "parsing_error": None}

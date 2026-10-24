@@ -18,7 +18,9 @@ def rates(monkeypatch):
 
 
 def login(client, email, password="wrong", ip="10.0.0.1"):
-    return client.post("/api/auth/login", {"email": email, "password": password}, format="json", HTTP_X_FORWARDED_FOR=ip)
+    return client.post(
+        "/api/auth/login", {"email": email, "password": password}, format="json", HTTP_X_FORWARDED_FOR=ip
+    )
 
 
 def test_login_is_limited_per_account_across_addresses(api_client, user, rates):

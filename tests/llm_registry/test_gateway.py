@@ -148,7 +148,7 @@ def test_building_the_model_can_fail_and_fall_back(resolved_model, make_snapshot
         return fallback
 
     snapshot = make_snapshot("learner.assess", "structured", [resolved_model("keyless"), resolved_model("fallback")])
-    result = Gateway(factory, sleep=lambda s: None, limiter=lambda l: 0).invoke(
+    result = Gateway(factory, sleep=lambda s: None, limiter=lambda limits: 0).invoke(
         "learner.assess", MESSAGES, snapshot=snapshot, schema=Answer
     )
 
@@ -157,7 +157,9 @@ def test_building_the_model_can_fail_and_fall_back(resolved_model, make_snapshot
 
 
 def test_text_output_returns_the_text(run, FakeChat):
-    result, _, _ = run({"primary": FakeChat(AIMessage(content="function LessonComponent() {}"))}, output="text", schema=None)
+    result, _, _ = run(
+        {"primary": FakeChat(AIMessage(content="function LessonComponent() {}"))}, output="text", schema=None
+    )
 
     assert result.output == "function LessonComponent() {}"
 
@@ -195,7 +197,7 @@ def test_rate_limiter_is_asked_before_each_call(resolved_model, make_snapshot, F
 def test_cost_is_computed_from_model_prices(resolved_model, make_snapshot, FakeChat):
     model = resolved_model("m", input_cost_per_mtok=1.0, output_cost_per_mtok=4.0)
     snapshot = make_snapshot("learner.assess", "structured", [model])
-    Gateway(lambda m, t: FakeChat(ok()), sleep=lambda s: None, limiter=lambda l: 0).invoke(
+    Gateway(lambda m, t: FakeChat(ok()), sleep=lambda s: None, limiter=lambda limits: 0).invoke(
         "learner.assess", MESSAGES, snapshot=snapshot, schema=Answer
     )
     assert float(ModelCall.objects.get().cost) == pytest.approx((10 * 1 + 5 * 4) / 1e6)

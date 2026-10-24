@@ -39,7 +39,9 @@ def test_login_after_onboarding_sets_onboarded_marker(signed_in_client, user):
     signed_in_client.put("/api/profile", ONBOARDING, format="json")
     signed_in_client.post("/api/auth/logout")
 
-    response = signed_in_client.post("/api/auth/login", {"email": user.email, "password": "correct-horse-battery-staple"})
+    response = signed_in_client.post(
+        "/api/auth/login", {"email": user.email, "password": "correct-horse-battery-staple"}
+    )
 
     assert response.cookies["lc_onboarded"].value == "1"
 

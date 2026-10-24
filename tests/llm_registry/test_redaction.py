@@ -51,7 +51,7 @@ def test_fallback_event_reason_is_redacted(resolved_model, make_snapshot, FakeCh
     fakes = {"a": FakeChat(Unauthorized("bad key my-real-gemini-key-123")), "b": FakeChat(ok)}
     events = []
     snapshot = make_snapshot("learner.assess", "structured", [resolved_model("a"), resolved_model("b")])
-    Gateway(lambda m, t: fakes[m.model_name], sleep=lambda s: None, limiter=lambda l: 0).invoke(
+    Gateway(lambda m, t: fakes[m.model_name], sleep=lambda s: None, limiter=lambda limits: 0).invoke(
         "learner.assess", [HumanMessage("hi")], snapshot=snapshot, schema=Answer, on_event=events.append
     )
 
