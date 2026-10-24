@@ -60,6 +60,14 @@ from .nodes.mastery import (
     PublishMasteryOptionsNode,
     ValidateStudyMaterialNode,
 )
+from .nodes.repair import (
+    AssembleRepairedNode,
+    LoadRepairNode,
+    RegressionCheckNode,
+    RepairRuntimeNode,
+    SaveRepairNode,
+    VerifyRepairNode,
+)
 from .nodes.routers import CheckRouter, LevelRouter
 
 
@@ -291,3 +299,32 @@ class StudyMaterialGraphBuilder(GraphBuilder):
             ["persist_study_material", "generate_study_material", "fail_study_material"],
         )
         graph.add_edge("persist_study_material", END)
+
+
+class RuntimeRepairGraphBuilder(GraphBuilder):
+    """A ready lesson that crashed in the browser: repair the one page or interactive, check it, save a new version.
+
+    Input: `{"lesson_id", "repair_error", "expected_code_version"}`. Every step either goes on or raises `RepairFailed`,
+    so the graph is a line: there is no Retry, and a failed run leaves the lesson as it was.
+    """
+
+    STEPS = (
+        LoadRepairNode,
+        RepairRuntimeNode,
+        AssembleRepairedNode,
+        RegressionCheckNode,
+        VerifyRepairNode,
+        SaveRepairNode,
+    )
+
+    def add_nodes(self, graph: StateGraph) -> None:
+        for step in self.STEPS:
+            node = step()
+            graph.add_node(node.name, node)
+
+    def add_edges(self, graph: StateGraph) -> None:
+        names = [step.name for step in self.STEPS]
+        graph.add_edge(START, names[0])
+        for before, after in zip(names, names[1:], strict=False):
+            graph.add_edge(before, after)
+        graph.add_edge(names[-1], END)

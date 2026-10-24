@@ -67,8 +67,7 @@ class RenderPolicy:
         data = report.as_dict() | {"round": round_number}
         if report.ok:
             return RenderVerdict("pass", data | {"decision": "pass"})
-        failures = {**report.pages, **report.components}
-        problems = [f"{name}: {errors[0]}" for name, errors in failures.items() if errors] + list(report.security)
+        problems = report.problems()
         names = set(PageParts.component_names(state))
         repairable = any(report.pages.get(key) for key in PAGE_KEYS) or any(
             errors for name, errors in report.components.items() if name in names

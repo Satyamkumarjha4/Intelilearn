@@ -108,6 +108,21 @@ class InteractivesSection(ReportSection):
         return lines
 
 
+class CodeSection(ReportSection):
+    def lines(self, lesson: Lesson) -> list[str]:
+        if not lesson.code:
+            return []
+        parts = lesson.code_parts or {}
+        lines = [
+            f"  code: version {lesson.code_version}, {len(lesson.code):,} characters, "
+            f"{len(parts.get('pages', {}))} pages, {len(parts.get('interactives', {}))} interactives"
+        ]
+        if lesson.runtime_repairs:
+            lines.append(f"    runtime repairs requested: {lesson.runtime_repairs}")
+        lines += [f"    kept v{v.code_version}: {v.reason or 'no reason'}" for v in lesson.versions.all()]
+        return lines
+
+
 class MaterialsSection(ReportSection):
     @staticmethod
     def size(kind: str, content: dict) -> str:
@@ -155,6 +170,7 @@ class LessonReport:
             PlanSection(),
             PagesSection(),
             InteractivesSection(),
+            CodeSection(),
             MaterialsSection(),
             WarningsSection(),
             RunsSection(),

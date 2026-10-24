@@ -15,6 +15,7 @@ from graph.grading import AnswerError, AnswerGrader, QuizGrader, RoutingPolicy
 from graph.schemas import public_question
 from llm_registry.resolver import RegistryResolver
 
+from .document import LessonDocumentBuilder
 from .errors import (
     AlreadyAttempted,
     AlreadyExists,
@@ -24,12 +25,25 @@ from .errors import (
     NotAttempted,
     QueueUnavailable,
     QuizNotFound,
+    RepairLimitReached,
     RunEnded,
     RunInProgress,
+    StaleCodeVersion,
+    VersionNotFound,
     WrongStage,
 )
 from .events import EventPublisher, RedisEventPublisher, RunEvent
-from .models import FlowSettings, GraphRun, Lesson, MaterialKind, Quiz, QuizAttempt, Stage, StudyMaterial
+from .models import (
+    FlowSettings,
+    GraphRun,
+    Lesson,
+    LessonVersion,
+    MaterialKind,
+    Quiz,
+    QuizAttempt,
+    Stage,
+    StudyMaterial,
+)
 
 
 class TaskQueue(Protocol):
@@ -297,3 +311,70 @@ class MaterialService:
         if material is None:
             raise MaterialNotFound()
         return material
+
+
+class CodeService:
+    """The code of a ready lesson: serving the document, repairing it after a crash, and going back to a version."""
+
+    #: used when a lesson's settings snapshot predates the setting
+    DEFAULT_REPAIR_LIMIT = 2
+
+    def __init__(self, queue: TaskQueue | None = None, documents: LessonDocumentBuilder | None = None):
+        self.dispatcher = RunDispatcher(queue)
+        self.documents = documents or LessonDocumentBuilder()
+
+    def document(self, lesson: Lesson) -> dict:
+        if lesson.stage != Stage.READY or not lesson.code:
+            raise WrongStage("The lesson document is available once the lesson is ready.")
+        return self.documents.build(lesson)
+
+    def request_repair(self, lesson: Lesson, error: dict, code_version: int) -> GraphRun:
+        """Queue a `runtime_repair` for a crash the browser reported. Each request counts against the lesson's cap
+        (`max_auto_runtime_repairs`) whether or not the repair succeeds, so a crash the model cannot fix cannot loop."""
+        with transaction.atomic():
+            lesson = Lesson.objects.select_for_update().get(pk=lesson.pk)
+            if lesson.stage != Stage.READY or not lesson.code:
+                raise WrongStage("Only a ready lesson can be repaired.")
+            if code_version != lesson.code_version:
+                raise StaleCodeVersion()
+            limit = lesson.settings_snapshot.get("max_auto_runtime_repairs", self.DEFAULT_REPAIR_LIMIT)
+            if lesson.runtime_repairs >= limit:
+                raise RepairLimitReached()
+            if has_active_run(lesson):
+                raise RunInProgress()
+            Lesson.objects.filter(pk=lesson.pk).update(runtime_repairs=lesson.runtime_repairs + 1)
+            run = GraphRun.objects.create(
+                lesson=lesson,
+                graph=GraphRun.Graph.RUNTIME_REPAIR,
+                trigger=GraphRun.Trigger.REPAIR,
+                payload={"input": {"repair_error": error, "expected_code_version": code_version}},
+            )
+        self.dispatcher.dispatch(run)
+        return run
+
+    def versions(self, lesson: Lesson):
+        return lesson.versions.all()
+
+    def restore(self, lesson: Lesson, number: int) -> Lesson:
+        """Make an earlier version current again. The code being replaced is kept as a version, and the restored code
+        gets a new `code_version`, so a browser still showing the old one is told it is stale."""
+        with transaction.atomic():
+            lesson = Lesson.objects.select_for_update().get(pk=lesson.pk)
+            if lesson.stage != Stage.READY:
+                raise WrongStage("Only a ready lesson can go back to an earlier version.")
+            version = LessonVersion.objects.filter(lesson=lesson, code_version=number).first()
+            if version is None:
+                raise VersionNotFound()
+            if has_active_run(lesson):
+                raise RunInProgress()
+            LessonVersion.objects.create(
+                lesson=lesson,
+                code_version=lesson.code_version,
+                code=lesson.code,
+                code_parts=lesson.code_parts,
+                reason=f"Before going back to version {number}",
+            )
+            lesson.code, lesson.code_parts = version.code, version.code_parts
+            lesson.code_version += 1
+            lesson.save(update_fields=["code", "code_parts", "code_version", "updated_at"])
+        return lesson

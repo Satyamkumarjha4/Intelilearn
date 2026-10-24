@@ -1,6 +1,6 @@
 """GraphRegistry: `GraphRun.graph` name → the builder that assembles that graph."""
 
-from .builders import FlowGraphBuilder, GraphBuilder, StudyMaterialGraphBuilder
+from .builders import FlowGraphBuilder, GraphBuilder, RuntimeRepairGraphBuilder, StudyMaterialGraphBuilder
 
 
 class UnknownGraph(KeyError):
@@ -12,7 +12,11 @@ class GraphRegistry:
         self.builders = (
             builders
             if builders is not None
-            else {"flow": FlowGraphBuilder(), "study_material": StudyMaterialGraphBuilder()}
+            else {
+                "flow": FlowGraphBuilder(),
+                "study_material": StudyMaterialGraphBuilder(),
+                "runtime_repair": RuntimeRepairGraphBuilder(),
+            }
         )
 
     def builder(self, name: str) -> GraphBuilder:

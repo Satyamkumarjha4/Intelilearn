@@ -38,6 +38,11 @@ class RenderReport:
     def as_dict(self) -> dict:
         return {"ok": self.ok, "pages": self.pages, "components": self.components, "security": self.security}
 
+    def problems(self) -> list[str]:
+        """One line per broken page or interactive (its first error), then the blocked requests."""
+        failures = {**self.pages, **self.components}
+        return [f"{name}: {errors[0]}" for name, errors in failures.items() if errors] + list(self.security)
+
 
 def _format(error: dict) -> str:
     where = f"line {error['line']}:{error.get('column', 0)} " if error.get("line") else ""

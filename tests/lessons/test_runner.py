@@ -19,6 +19,8 @@ Use cases:
 - an unknown graph fails the run with a clear message
 - an extra study sheet runs in its own thread, ends succeeded and leaves the lesson ready
 - an extra sheet that fails its checks ends the run failed with the reason and leaves the lesson alone
+- a runtime repair runs in its own thread, saves a new code version and leaves the lesson ready
+- a repair that cannot be made safely ends the run failed with the reason and leaves the lesson's code alone
 - a thread paused by one runner is resumed by another with a fresh Postgres checkpointer (a restarted worker)
 - failure messages: model failures name the step, unexpected errors do not leak details
 - the recorder and lock behave: begin is conditional, finish only from running, the lock is exclusive
@@ -30,16 +32,20 @@ import pytest
 from django.db import connection
 from langgraph.checkpoint.memory import InMemorySaver
 from support.fakes import FakeSandbox
+from support.fixtures import budget_snapshot
+from support.lesson_data import make_state
 from support.quiz_data import make_questions
 from support.study_data import CONCEPTS, make_practice_sheet, make_revision_sheet
 
+from graph.builders import FlowGraphBuilder
 from graph.context import FlowContext
 from graph.errors import RunFailed
 from graph.grading import QuizGrader
 from graph.registry import GraphRegistry
+from graph.sandbox import RenderReport
 from lessons.checkpoints import CheckpointerFactory
 from lessons.events import RunEvent
-from lessons.models import GraphRun, Lesson, Quiz, QuizAttempt, Stage, StudyMaterial
+from lessons.models import GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt, Stage, StudyMaterial
 from lessons.runner import FailureMessage, FlowRunner, GraphRunRecorder, RunLock
 from llm_registry.gateway import AllModelsFailed, NodeDisabled
 
@@ -310,7 +316,7 @@ def test_a_cancelled_run_stops_after_the_current_node(make_runner, prepared, gat
 def test_an_unknown_graph_fails_the_run_with_a_clear_message(make_runner, prepared):
     run = new_run(prepared, graph="runtime_repair")
 
-    make_runner(graphs=GraphRegistry()).execute(run.id)
+    make_runner(graphs=GraphRegistry({"flow": FlowGraphBuilder(segments=[])})).execute(run.id)
 
     run.refresh_from_db()
     assert run.status == GraphRun.Status.FAILED
@@ -375,6 +381,56 @@ def test_an_extra_sheet_that_fails_its_checks_fails_the_run_but_not_the_lesson(
     assert run.status == GraphRun.Status.FAILED and "The practice sheet still failed its checks" in run.error
     assert publisher.of("error")[-1]["message"] == run.error
     assert Lesson.objects.get(pk=prepared.pk).stage == Stage.READY and not StudyMaterial.objects.exists()
+
+
+REPAIR_PARTS = {
+    "pages": {k: f"function Page_{k}() {{ return <Interactive_w />; }}" for k in ("introduction", "core", "advanced")},
+    "interactives": {"Interactive_w": "function Interactive_w() { return null.x; }"},
+}  # fmt: skip
+
+
+def broken_ready_lesson(lesson, flow_settings):
+    full = make_state()
+    Lesson.objects.filter(pk=lesson.pk).update(
+        stage=Stage.READY, code="OLD", code_parts=REPAIR_PARTS, code_version=1, plan=full["plan"], pages=full["pages"],
+        final_test=full["final_test"], config_snapshot=budget_snapshot(), settings_snapshot=flow_settings,
+    )  # fmt: skip
+    payload = {"input": {"repair_error": {"message": "Interactive_w crashed"}, "expected_code_version": 1}}
+    return new_run(lesson, GraphRun.Trigger.REPAIR, payload, graph="runtime_repair")
+
+
+def test_a_runtime_repair_runs_in_its_own_thread_and_leaves_the_lesson_ready(
+    make_runner, gateway, publisher, prepared, flow_settings
+):
+    run = broken_ready_lesson(prepared, flow_settings)
+    gateway.script("runtime.repair", "function Interactive_w() { return <b>ok</b>; }")
+    sandbox = FakeSandbox(render_reports=[RenderReport(ok=True)])
+
+    make_runner(context_factory=lambda run_id: FlowContext(gateway=gateway, sandbox=sandbox)).execute(run.id)
+
+    run.refresh_from_db()
+    assert run.status == GraphRun.Status.SUCCEEDED and publisher.of("done") == [
+        {"lesson_id": str(prepared.id), "stage": "ready"}
+    ]
+    stored = Lesson.objects.get(pk=prepared.pk)
+    assert (stored.code_version, stored.stage) == (2, Stage.READY) and "<b>ok</b>" in stored.code
+    assert LessonVersion.objects.get(lesson=prepared).code == "OLD"
+
+
+def test_a_repair_that_cannot_be_made_safely_fails_the_run_and_leaves_the_code_alone(
+    make_runner, gateway, publisher, prepared, flow_settings
+):
+    run = broken_ready_lesson(prepared, flow_settings)
+    gateway.script("runtime.repair", REPAIR_PARTS["interactives"]["Interactive_w"])
+
+    make_runner(context_factory=lambda run_id: FlowContext(gateway=gateway, sandbox=FakeSandbox())).execute(run.id)
+
+    run.refresh_from_db()
+    assert run.status == GraphRun.Status.FAILED and "same code" in run.error
+    assert publisher.of("error")[-1]["message"] == run.error
+    stored = Lesson.objects.get(pk=prepared.pk)
+    assert (stored.code, stored.code_version, stored.stage) == ("OLD", 1, Stage.READY)
+    assert not LessonVersion.objects.exists()
 
 
 class TestFailureMessage:

@@ -213,9 +213,23 @@ class LessonCanned:
     PLACEMENT = re.compile(r'^- (<(?:Interactive_\w+|Figure asset="[^"]+") />) after section "([^"]+)"', re.M)
 
     def for_text(self) -> str:
-        """A page compiled the safe way: the standard layout with each interactive and figure after its anchor."""
-        if not self.messages[0].get("content", "").startswith("You compile one page of a lesson"):
+        """A text answer chosen by the system prompt: a compiled page, or a replacement for a crashed interactive."""
+        system = self.messages[0].get("content", "")
+        if system.startswith("A lesson page crashed"):
+            return self.repaired_interactive(system)
+        if not system.startswith("You compile one page of a lesson"):
             raise KeyError("text")
+        return self.compiled_page()
+
+    def repaired_interactive(self, system: str) -> str:
+        """A crashed interactive is replaced by the plain diagram widget; the fake cannot repair a page."""
+        match = re.search(r"function (Interactive_\w+)\(\)", system)
+        if match is None:
+            raise KeyError("text")
+        return SVG_TSX.format(name=match.group(1))
+
+    def compiled_page(self) -> str:
+        """A page compiled the safe way: the standard layout with each interactive and figure after its anchor."""
         key = re.search(r"Page key: (\w+)", self._user()).group(1)
         placements: dict[str, list[str]] = {}
         for snippet, anchor in self.PLACEMENT.findall(self._user()):

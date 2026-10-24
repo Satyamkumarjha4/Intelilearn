@@ -20,6 +20,8 @@ Use cases:
 - a sheet is served without practice solutions, which a reveal adds
 - practice answers are graded on submit; another user's sheets are a 404
 - the lesson detail lists its sheets
+- the document is served for a ready lesson with signed media and no answers; a repair report is queued, validated and
+  refused when stale, capped or early; versions are listed and one can be restored; another user's lesson is a 404
 - the OpenAPI schema documents these endpoints
 """
 
@@ -31,7 +33,7 @@ from rest_framework.throttling import SimpleRateThrottle
 from support.quiz_data import make_questions
 from support.study_data import make_cheat_sheet, make_practice_sheet
 
-from lessons.models import GraphRun, Lesson, Quiz, QuizAttempt, Stage, StudyMaterial
+from lessons.models import GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt, Stage, StudyMaterial
 
 pytestmark = pytest.mark.django_db
 
@@ -51,6 +53,10 @@ PATHS = [
     ("post", "/api/lessons/{lesson}/materials"),
     ("get", "/api/lessons/{lesson}/materials/cheat_sheet"),
     ("post", "/api/lessons/{lesson}/materials/practice_sheet/grade"),
+    ("get", "/api/lessons/{lesson}/document"),
+    ("post", "/api/lessons/{lesson}/repair"),
+    ("get", "/api/lessons/{lesson}/versions"),
+    ("post", "/api/lessons/{lesson}/versions/1/restore"),
 ]
 
 
@@ -484,3 +490,89 @@ def test_the_openapi_schema_documents_the_lessons_api(api_client):
                  "/api/lessons/{lesson_id}/materials/{kind}",
                  "/api/lessons/{lesson_id}/materials/practice_sheet/grade"]:  # fmt: skip
         assert path in paths
+
+
+class TestLessonCode:
+    @pytest.fixture
+    def ready(self, make_lesson):
+        return make_lesson(
+            stage=Stage.READY, code="CODE v2", code_parts={"pages": {}}, code_version=2,
+            settings_snapshot={"max_auto_runtime_repairs": 2}, final_test={"title": "T", "questions": [
+                {"id": "t1", "type": "mcq", "concept": "c", "difficulty": "easy", "marks": 1, "question": "q",
+                 "options": ["a", "b", "c", "d"], "correct_index": 2, "explanation": "because"}]},
+        )  # fmt: skip
+
+    def test_the_document_has_the_code_its_version_and_data_without_answers(self, signed_in_client, ready):
+        body = signed_in_client.get(f"/api/lessons/{ready.id}/document").json()
+
+        assert (body["code"], body["code_version"]) == ("CODE v2", 2)
+        assert body["data"]["final_test"]["questions"][0]["id"] == "t1"
+        assert "correct_index" not in json.dumps(body) and "because" not in json.dumps(body)
+
+    def test_a_lesson_that_is_not_ready_has_no_document(self, signed_in_client, lesson):
+        response = signed_in_client.get(f"/api/lessons/{lesson.id}/document")
+
+        assert response.status_code == 409 and response.json()["code"] == "wrong_stage"
+
+    def test_a_crash_report_queues_a_repair(self, signed_in_client, ready, queue):
+        body = {"error": {"message": "Interactive_x crashed", "stack": "at x", "page": "core"}, "code_version": 2}
+
+        response = signed_in_client.post(f"/api/lessons/{ready.id}/repair", body, format="json")
+
+        assert response.status_code == 202
+        run = GraphRun.objects.get(pk=response.json()["run_id"])
+        assert run.graph == "runtime_repair" and queue.runs == [run]
+        assert run.payload["input"] == {"repair_error": body["error"], "expected_code_version": 2}
+
+    @pytest.mark.parametrize(
+        "body",
+        [{}, {"code_version": 2}, {"error": {"message": ""}, "code_version": 2}, {"error": {"message": "x"}},
+         {"error": {"message": "x" * 2001}, "code_version": 2}, {"error": {"message": "x"}, "code_version": -1}],
+    )  # fmt: skip
+    def test_a_bad_report_is_a_400_and_queues_nothing(self, signed_in_client, ready, queue, body):
+        response = signed_in_client.post(f"/api/lessons/{ready.id}/repair", body, format="json")
+
+        assert response.status_code == 400 and queue.runs == []
+
+    def test_a_stale_version_and_the_cap_are_conflicts(self, signed_in_client, ready, queue):
+        report = {"error": {"message": "boom"}, "code_version": 2}
+        stale = signed_in_client.post(f"/api/lessons/{ready.id}/repair", report | {"code_version": 1}, format="json")
+        Lesson.objects.filter(pk=ready.pk).update(runtime_repairs=2)
+        capped = signed_in_client.post(f"/api/lessons/{ready.id}/repair", report, format="json")
+
+        assert (stale.status_code, stale.json()["code"]) == (409, "stale_code_version")
+        assert (capped.status_code, capped.json()["code"]) == (409, "repair_limit_reached") and queue.runs == []
+
+    def test_versions_are_listed_newest_first_without_code(self, signed_in_client, ready):
+        for number in (1, 2):
+            LessonVersion.objects.create(lesson=ready, code_version=number, code=f"c{number}", reason=f"r{number}")
+
+        body = signed_in_client.get(f"/api/lessons/{ready.id}/versions").json()
+
+        assert [v["code_version"] for v in body] == [2, 1] and body[0]["reason"] == "r2"
+        assert "code" not in body[0] and "created_at" in body[0]
+
+    def test_a_version_can_be_restored(self, signed_in_client, ready):
+        LessonVersion.objects.create(lesson=ready, code_version=1, code="CODE v1", reason="r")
+
+        response = signed_in_client.post(f"/api/lessons/{ready.id}/versions/1/restore")
+
+        assert response.status_code == 200 and response.json() == {"code_version": 3}
+        assert Lesson.objects.get(pk=ready.pk).code == "CODE v1"
+
+    def test_restoring_a_version_that_does_not_exist_is_a_404(self, signed_in_client, ready):
+        assert signed_in_client.post(f"/api/lessons/{ready.id}/versions/7/restore").status_code == 404
+
+    def test_another_users_lesson_is_a_404_everywhere(self, signed_in_client, other_user, make_lesson):
+        theirs = make_lesson(owner=other_user, stage=Stage.READY, code="x", code_version=1)
+        base = f"/api/lessons/{theirs.id}"
+        report = {"error": {"message": "x"}, "code_version": 1}
+
+        statuses = [
+            signed_in_client.get(f"{base}/document").status_code,
+            signed_in_client.post(f"{base}/repair", report, format="json").status_code,
+            signed_in_client.get(f"{base}/versions").status_code,
+            signed_in_client.post(f"{base}/versions/1/restore").status_code,
+        ]  # fmt: skip
+
+        assert statuses == [404, 404, 404, 404]
