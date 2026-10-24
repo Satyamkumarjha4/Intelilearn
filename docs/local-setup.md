@@ -21,10 +21,10 @@ The root `.env` is the **single source of configuration**. Django reads it, `doc
 | Group | Variables | Default |
 |---|---|---|
 | Host ports | `BIND_ADDRESS`, `BACKEND_PORT`, `FRONTEND_PORT`, `POSTGRES_PORT`, `REDIS_PORT` | 127.0.0.1 (not reachable from your LAN), 8000, 3000, 5432, 6379 |
-| Django | `DJANGO_SECRET_KEY`, `DJANGO_DEBUG`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`, `LOG_LEVEL` | dev key, false, localhost…, derived from ports, INFO |
+| Django | `DJANGO_SECRET_KEY`, `DJANGO_DEBUG`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`, `LOG_LEVEL`, `MEDIA_ROOT` | dev key, false, localhost…, derived from ports, INFO, `backend/media` |
 | Auth | `JWT_ACCESS_MINUTES`, `JWT_REFRESH_DAYS`, `AUTH_COOKIE_SECURE` (also makes Django's session and CSRF cookies secure) | 30, 7, false |
 | Rate limits | `AUTH_THROTTLE_RATE`, `AUTH_ACCOUNT_THROTTLE_RATE`, `AUTH_REFRESH_THROTTLE_RATE`, `TRUSTED_PROXY_COUNT` | 20/min, 10/min, 60/min, 1 |
-| Local Postgres | `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | localhost, lessoncrafter ×3 |
+| Local Postgres | `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `DB_CONN_MAX_AGE` | localhost, lessoncrafter ×3, 60 |
 | Supabase | `SUPABASE_DATABASE_URL`, `SYNC_LOCAL_TO_SUPABASE` | empty, true |
 | Redis | `REDIS_HOST`, `REDIS_PASSWORD` | localhost, none |
 | Frontend | `DJANGO_API_ORIGIN`, `NEXT_PUBLIC_BACKEND_URL` | `http://localhost:${BACKEND_PORT}` |
