@@ -144,6 +144,17 @@ CACHES = {
     )
 }
 
+# How long one worker may hold a run without a sign of life, and how long Redis waits before redelivering an
+# unacknowledged task. After a hard kill, the run is picked up again once both have passed. Must exceed the
+# longest single step of a graph (a model call with its retries and fallbacks).
+FLOW_RUN_LOCK_TTL_S = env.int("FLOW_RUN_LOCK_TTL_S", default=600)
+CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": FLOW_RUN_LOCK_TTL_S}
+
+# Where a started run is queued (the TaskQueue port, lessons/services.py). Tests swap it for an in-memory queue.
+LESSON_TASK_QUEUE = "lessons.tasks.CeleryTaskQueue"
+# Seconds between keep-alive comments on a run's event stream, so proxies don't close an idle connection.
+SSE_HEARTBEAT_S = env.int("SSE_HEARTBEAT_S", default=15)
+
 # --- LLM registry ---
 # Thinking-token budgets for models whose reasoning is controlled by a budget (see llm_registry/profiles.py).
 LLM_REASONING_BUDGETS = {
@@ -175,6 +186,7 @@ REST_FRAMEWORK = {
         "auth": env("AUTH_THROTTLE_RATE", default="20/min"),  # register/login, per client address
         "auth_account": env("AUTH_ACCOUNT_THROTTLE_RATE", default="10/min"),  # login attempts per email
         "auth_refresh": env("AUTH_REFRESH_THROTTLE_RATE", default="60/min"),
+        "lesson_create": env("LESSON_CREATE_THROTTLE_RATE", default="30/hour"),  # each lesson costs model calls
     },
     # Requests arrive through the Next.js proxy; the client address is the X-Forwarded-For entry it appends.
     # Keep the API port bound to localhost (BIND_ADDRESS) so nobody can reach Django directly with a forged header.
@@ -209,6 +221,8 @@ SPECTACULAR_SETTINGS = {
     "SWAGGER_UI_SETTINGS": {"persistAuthorization": True, "displayRequestDuration": True, "withCredentials": True},
     # Separate request/response components, so read-only fields don't appear in request bodies.
     "COMPONENT_SPLIT_REQUEST": True,
+    # One name per choice set that appears in several components.
+    "ENUM_NAME_OVERRIDES": {"RouteEnum": "lessons.stages.Route", "StageEnum": "lessons.stages.Stage"},
 }
 
 LOGGING = {
