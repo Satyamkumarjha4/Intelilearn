@@ -8,7 +8,7 @@ import { transform } from "sucrase";
 
 import { SCOPE_NAMES, STANDARD_NAMES } from "./scope-names.mjs";
 import { SCOPE } from "./scope";
-import { describeError, post } from "./scope/host";
+import { describeError, post, setCodeVersion } from "./scope/host";
 import { Boundary } from "./scope/shell";
 
 const STANDARD = new Set<string>(STANDARD_NAMES);
@@ -64,6 +64,7 @@ window.addEventListener("message", (event: MessageEvent) => {
   if (!message || typeof message !== "object") return;
   if (message.type === "render") {
     currentVersion = Number(message.codeVersion ?? 0);
+    setCodeVersion(currentVersion);
     applyTheme(message.theme);
     run(String(message.code ?? ""), message.data);
   } else if (message.type === "theme") {

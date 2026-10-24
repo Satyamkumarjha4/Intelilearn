@@ -17,10 +17,11 @@ Use cases:
 - LaTeX that KaTeX can parse passes, and what it cannot is reported with the expression; no expressions need no run
 - a missing sandbox, a script that hangs, one that crashes and one that prints garbage are SandboxErrors
 - LaTeX checking is skipped (with a log line) when the sandbox is not installed, so content validation still works
-- the render check: a good lesson renders all four pages; a throwing interactive is reported by name while its page
-  still renders; a throwing page is reported for that page only; an endless loop hits the time budget; a network
-  request is blocked and reported as a security violation; a blank page and an error in a click handler are found; an
-  unreadable document is reported; a runtime that is not built is a SandboxError
+- the render check: a good lesson renders all four pages; a throwing interactive is reported by name, carrying the
+  code version it belongs to (the page ignores errors without it, so a repair would never start), while its page still
+  renders; a throwing page is reported for that page only; an endless loop hits the time budget; a network request is
+  blocked and reported as a security violation; a blank page and an error in a click handler are found; an unreadable
+  document is reported; a runtime that is not built is a SandboxError
 """
 
 import re

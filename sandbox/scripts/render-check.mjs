@@ -128,6 +128,9 @@ async function checkPage(browser, key, report) {
   }
   for (const event of events) {
     if (event.type !== "error") continue;
+    // The page that embeds the runtime ignores an error from a version it has moved past, so every error must say
+    // which version it belongs to (this render was started as version 1).
+    if (event.codeVersion !== 1) note("Runtime bug: an error message did not carry the code version it belongs to.");
     const message = `${event.phase === "transform" ? "Syntax" : "Runtime"} error: ${event.message}`;
     if (event.component && event.component.startsWith("Interactive_")) {
       (report.components[event.component] ??= []).push(message);
