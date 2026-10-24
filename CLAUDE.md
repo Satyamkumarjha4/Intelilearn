@@ -22,6 +22,12 @@ An AI tutor that diagnoses what a learner knows, then generates a lesson or stud
 - Schema changes go through Django migrations only (`make makemigrations`). Never edit tables in the Supabase dashboard.
 - Tests always run against the docker Postgres, never Supabase (`TESTING` in settings).
 
+## LLM calls
+
+- Never hard-code a model, provider, or parameter. Every LLM call goes through `llm_registry.gateway.Gateway().invoke(node_key, ..., snapshot=...)`, with a node key from `llm_registry/node_specs.py`.
+- A new LLM step means a new `NodeSpec`, then `migrate` creates its config. Bind models in the admin or in `llm_registry/seed.py`.
+- Tests use fake chat models, never real APIs (see `tests/llm_registry/conftest.py`).
+
 ## API conventions
 
 - API paths have **no trailing slash** (`/api/lessons`). The Next.js `/api` proxy depends on it.
