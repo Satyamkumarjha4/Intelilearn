@@ -115,7 +115,7 @@ flowchart TB
 | | probes | `CapabilityProbe` per capability | Each capability has its own check; `ModelProber` runs the declared ones | ✅ |
 | | graph | `Validator` per artefact | Deterministic rules per output type, fed back as retry feedback | ✅ Stage A and study material · ◐ plan, page, test and interactive-plan validators are classes but not wired until Phase 5 |
 | | graph | `RoutingPolicy` | Diagnostic score → route uses admin thresholds | ✅ |
-| | media | `MediaSource` (`Wikimedia…`, `Openverse…`, `Giphy…`) | Sources are added or disabled by settings | ◐ (methods on `MediaLibrary`) |
+| | media | `MediaSource` (`Wikimedia…`, `Openverse…`, `Giphy…`) | Sources are added or disabled by settings | ✅ |
 | | health | `HealthCheck` (`Database…`, `Redis…`, `Celery…`) | Each dependency checked the same way | ✅ |
 | **Composite** | health | `HealthService` aggregates `HealthCheck`s | Overall status = worst child status | ✅ |
 | | graph | `CompositeValidator` | Deterministic validator + optional LLM reviewer (`diagnostic.review`) behave as one validator | ✅ |
@@ -1147,11 +1147,11 @@ Every phase 0–2 item is done. The rows still open describe the work-in-progres
 | ~~`graph/grading.py`~~ | ~~functions~~ | `QuizGrader`, `RoutingPolicy` | ✅ Done |
 | ~~`graph/validators.py`~~ | ~~`validate_*` functions~~ | `Validator` classes, `AssessmentGuard` (`graph/validators/`) | ✅ Done (tests for the study, plan, page, test and interactive-plan validators come with Phases 4–5) |
 | ~~`graph/prompts.py`~~ | ~~functions in one 470-line module~~ | `graph/prompts/` package, one `Prompt` subclass per node | ✅ Done |
-| `graph/nodes/*.py` | Stage A done (`diagnose.py`, `failure.py`, `routers.py`, `base.py`); the draft author, build, media and repair nodes were removed and return as classes | `Node` subclasses, `Router` subclasses | Phases 4–6 |
-| `graph/builders.py`, `graph/registry.py` | `FlowGraphBuilder` with the diagnose and failure segments, `GraphRegistry` with `flow`; the draft study, media, code-fix and repair graphs were removed | `GraphBuilder` subclasses | Phases 4–6 |
+| `graph/nodes/*.py` | Stage A, the mastery path, Stage B and the media agent are classes (`diagnose.py`, `mastery.py`, `author.py`, `media_agent.py`, `routers.py`, `author_routers.py`); the build and repair nodes were removed and return as classes | `Node` subclasses, `Router` subclasses | Phase 6 |
+| `graph/builders.py`, `graph/registry.py` | `FlowGraphBuilder` with the diagnose, mastery, author and failure segments, `StudyMaterialGraphBuilder`, `MediaGraphBuilder`; the code-fix and repair graphs were removed | `GraphBuilder` subclasses | Phase 6 |
 | ~~`graph/context.py`~~ | ~~`Any`-typed fields, `emit`/`warn`/`llm` functions~~ | Protocol-typed `FlowContext`, `EventSink` | ✅ Done |
-| `graph/codegen.py` | functions | `DocumentAssembler`, `CodeSanitizer` | Phase 6 |
-| `graph/media.py` | search methods on `MediaLibrary` | `MediaSource` classes, `MediaDownloader`, `LicensePolicy` | Phase 5 |
+| `graph/codegen.py` | `CodeSanitizer` done (`graph/sanitizer.py`); the page/test templates and `assemble` are still functions | `DocumentAssembler` | Phase 6 |
+| ~~`graph/media.py`~~ | ~~search methods on `MediaLibrary`~~ | `graph/media/`: `MediaSource` classes, `MediaDownloader` behind a `UrlGuard`, `LicensePolicy`, `MediaStorage`, `MediaLibrary` facade | ✅ Done |
 | `lessons/document.py` | functions | `LessonDocumentBuilder`, `MediaUrlSigner` | Phase 6 |
 | ~~`frontend/lib/api.ts`~~ | ~~module functions + `ApiError`~~ | `ApiClient` + the shared `apiClient` instance | ✅ Done |
 | ~~`frontend/lib/safe-redirect.ts`~~ | ~~`safeNext()`~~ | `RedirectPolicy.safeNext` | ✅ Done |

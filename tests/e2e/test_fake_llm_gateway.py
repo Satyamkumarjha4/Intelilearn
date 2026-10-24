@@ -8,16 +8,52 @@ Use cases:
 - a structured-output call (json_schema) returns a valid DiagnosticBundle, and the call is logged with tokens
 - a function-calling model gets the same bundle through a tool call
 - the three study sheets come back valid and pass the study validator for the concepts in the prompt
+- every Stage B output (plan, page, test, interactive plan, alignment report) passes the real validators, and each kind
+  of widget code passes the real sandbox check
+- the media agent finds, downloads and stores a picture end to end: real gateway and client, real library and
+  downloader, the fake's Wikimedia API and image
 - a schema the fake does not know is refused, and the gateway reports every model failed
 """
+
+import re
 
 import pytest
 from e2e.fake_llm_server import FakeLLMServer
 from pydantic import BaseModel
+from support.lesson_data import make_state
 
-from graph.prompts import DiagnosticPrompt, StudyMaterialPrompt
-from graph.schemas import MATERIAL_SCHEMAS, DiagnosticBundle, LearnerAssessment
-from graph.validators import StudyMaterialValidator
+from graph.context import FlowContext
+from graph.media import MediaLibrary
+from graph.nodes.media_agent import MediaFinder
+from graph.prompts import (
+    AlignmentPrompt,
+    DiagnosticPrompt,
+    GenerateInteractivePrompt,
+    PlanInteractivesPrompt,
+    PlanLessonPrompt,
+    StudyMaterialPrompt,
+    WritePagePrompt,
+    WriteTestPrompt,
+)
+from graph.sandbox import SandboxRunner
+from graph.schemas import (
+    MATERIAL_SCHEMAS,
+    AlignmentReport,
+    DiagnosticBundle,
+    FinalTest,
+    InteractiveComponent,
+    InteractivePlan,
+    LearnerAssessment,
+    LessonPlan,
+    PageContent,
+)
+from graph.validators import (
+    FinalTestValidator,
+    InteractivePlanValidator,
+    PageValidator,
+    PlanValidator,
+    StudyMaterialValidator,
+)
 from llm_registry.gateway import AllModelsFailed, Gateway
 from llm_registry.models import LLMModel, ModelCall, NodeConfig, NodeModelBinding, Provider
 from llm_registry.node_configs import NodeConfigSync
@@ -98,3 +134,91 @@ def test_a_study_sheet_is_valid_and_covers_the_concepts_in_the_prompt(server, mo
 
     content = result.output.model_dump(mode="json")
     assert StudyMaterialValidator().validate(content, kind=kind, concepts=concepts) == []
+
+
+# --- Stage B -----------------------------------------------------------------------------------------------------
+
+
+def stage_b_state(topic="Binary search"):
+    required = [{"name": "Arrays", "why_needed": "x"}]
+    return make_state(topic=topic, prerequisites_to_cover=required)
+
+
+def call(snapshot, node, schema, prompt):
+    return Gateway().invoke(node, prompt, snapshot=snapshot, schema=schema).output.model_dump(mode="json")
+
+
+def test_the_plan_the_page_and_the_test_pass_the_real_validators(server, monkeypatch):
+    snapshot = bind_fake(server, "json_schema", monkeypatch)
+    state = stage_b_state()
+
+    plan = call(snapshot, "lesson.plan", LessonPlan, PlanLessonPrompt().messages(state))
+    assert PlanValidator().validate(plan, settings=state["settings"], prerequisites_to_cover=[{"name": "Arrays"}]) == []
+
+    state = state | {"plan": plan}
+    page_plan = plan["pages"][1]
+    page = call(snapshot, "page.generate", PageContent, WritePagePrompt().messages(state | {"page_plan": page_plan}))
+    assert PageValidator().validate(page, plan_page=page_plan) == [] and page["key"] == "core"
+
+    test = call(snapshot, "test.generate", FinalTest, WriteTestPrompt().messages(state))
+    assert FinalTestValidator().validate(test, spec=plan["final_test"]) == []
+
+
+@pytest.mark.parametrize(("topic", "first_kind"), [("Binary search", "svg_diagram"), ("Asexual reproduction", "image")])
+def test_the_interactive_plan_passes_the_validator_and_follows_the_topic(server, monkeypatch, topic, first_kind):
+    snapshot = bind_fake(server, "json_schema", monkeypatch)
+    state = stage_b_state(topic)
+
+    plan = call(snapshot, "interactive.plan", InteractivePlan, PlanInteractivesPrompt().messages(state))
+
+    assert InteractivePlanValidator().validate(plan, pages=state["pages"], settings=state["settings"]) == []
+    assert plan["specs"][0]["kind"] == first_kind
+
+
+@pytest.mark.skipif(not SandboxRunner().available(), reason="the sandbox package is not installed")
+@pytest.mark.parametrize("kind", ["simulation", "interactive_graph", "svg_diagram"])
+def test_each_kind_of_widget_code_passes_the_real_sandbox_check(server, monkeypatch, kind):
+    snapshot = bind_fake(server, "json_schema", monkeypatch)
+    state = stage_b_state()
+    spec = state["interactive_plan"]["specs"][0] | {"kind": kind, "id": "demo"}
+    subject = state | {
+        "spec": spec,
+        "component_name": "Interactive_demo",
+        "section": state["pages"]["introduction"]["sections"][0],
+    }
+
+    component = call(
+        snapshot, "interactive.generate", InteractiveComponent, GenerateInteractivePrompt().messages(subject)
+    )
+    check = SandboxRunner().check_code(component["tsx"], required=["Interactive_demo"])
+
+    assert check.errors == [] and component["component_name"] == "Interactive_demo"
+
+
+def test_the_alignment_report_is_valid_and_passes(server, monkeypatch):
+    snapshot = bind_fake(server, "json_schema", monkeypatch)
+
+    report = call(snapshot, "alignment.judge", AlignmentReport, AlignmentPrompt().messages(stage_b_state()))
+
+    assert AlignmentReport(**report).recompute_passed(3) is True
+
+
+def test_the_media_agent_finds_downloads_and_stores_a_picture_end_to_end(server, monkeypatch, settings, tmp_path):
+    base = server.base_url.removesuffix("/v1")
+    settings.WIKIMEDIA_API_URL = f"{base}/w/api.php"
+    settings.MEDIA_ALLOW_PRIVATE_HOSTS = True
+    settings.MEDIA_ROOT = tmp_path
+    snapshot = bind_fake(server, "json_schema", monkeypatch)
+    state = stage_b_state("Asexual reproduction") | {
+        "snapshot": snapshot,
+        "settings": {"media_sources": ["wikimedia"], "allowed_media_licenses": ["cc0", "cc-by-sa"]},
+    }
+    spec = {"id": "amoeba", "page": "introduction", "anchor_section": "s1", "kind": "image", "purpose": "p" * 20,
+            "description": "An amoeba dividing", "media_query": "amoeba"}  # fmt: skip
+    ctx = FlowContext(gateway=Gateway(), media=MediaLibrary.default(), events=lambda event: None)
+
+    ref = MediaFinder().find(ctx, state, spec)
+
+    assert ref["kind"] == "image" and ref["license"] == "cc-by-sa" and ref["attribution"] == "Fake Photographer"
+    assert (tmp_path / ref["file"]).read_bytes()[:4] == b"\x89PNG" and re.fullmatch(r"[0-9a-f-]{36}", ref["asset_id"])
+    assert ModelCall.objects.filter(node_key="media.search", status="ok").count() == 2  # the search, then the submit

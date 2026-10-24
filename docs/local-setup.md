@@ -30,6 +30,7 @@ The root `.env` is the **single source of configuration**. Django reads it, `doc
 | Frontend | `DJANGO_API_ORIGIN`, `NEXT_PUBLIC_BACKEND_URL` | `http://localhost:${BACKEND_PORT}` |
 | LLM keys | `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | empty. The default registry uses Gemini and Groq. |
 | Reasoning budgets | `LLM_REASONING_BUDGET_LOW/MEDIUM/HIGH` | 2048 / 8192 / 24576 |
+| Media sources | `WIKIMEDIA_API_URL`, `OPENVERSE_API_URL`, `GIPHY_API_URL`, `MEDIA_ALLOW_PRIVATE_HOSTS` | the public services, false |
 | Lesson flow | `FLOW_RUN_LOCK_TTL_S`, `LESSON_CREATE_THROTTLE_RATE`, `SSE_HEARTBEAT_S`, `SANDBOX_DIR`, `NODE_BINARY`, `SANDBOX_CHECK_TIMEOUT_S`, `SANDBOX_RENDER_TIMEOUT_S`, `SANDBOX_PAGE_TIMEOUT_MS`, `GIPHY_API_KEY`, `MEDIA_URL_TTL_S` | 600, 30/hour, 15, `<repo>/sandbox`, node, 30, 180, 8000, empty, 21600 (6 h) |
 | Offline walk-through | `FAKE_LLM_API_KEY` | empty (any value; not a secret) |
 
@@ -119,7 +120,7 @@ BACKEND_PORT=7110 FRONTEND_PORT=7100 POSTGRES_PORT=7130 REDIS_PORT=7120 FAKE_LLM
   docker compose -p lcfake --profile e2e up -d --build
 ```
 
-If `.env` sets `DJANGO_CSRF_TRUSTED_ORIGINS`, that stack also needs it to list its own two ports. The fake is reached at `http://fake-llm.lan:9000/v1` (the registry insists on a domain-like host name, so the compose service has that alias). Add a builder to the fake whenever a phase adds an LLM output schema.
+If `.env` sets `DJANGO_CSRF_TRUSTED_ORIGINS`, that stack also needs it to list its own two ports. The fake is reached at `http://fake-llm.lan:9000/v1` (the registry insists on a domain-like host name, so the compose service has that alias). The fake also serves the media services the lesson flow searches (a Wikimedia-style API and generated PNGs), so run the stack with `WIKIMEDIA_API_URL=http://fake-llm.lan:9000/w/api.php` and `MEDIA_ALLOW_PRIVATE_HOSTS=true` for the media agent to find a picture. Add a builder to the fake whenever a phase adds an LLM output schema.
 
 ## Everyday commands
 
@@ -141,6 +142,10 @@ make down            # stop; volumes are kept
 - Graph and runner tests run nodes on LangGraph's worker threads, which have their own database connection and see only committed rows, so those tests use `pytest.mark.django_db(transaction=True)` (slower: the tables are flushed after each). Shared doubles live in `tests/support/`.
 - Under pytest, settings ignore `SUPABASE_DATABASE_URL`. Two test databases are created on the docker Postgres: `default` and `local`. The second one exists so the sync can be tested between two real databases.
 - **CI:** `docker compose run --rm backend pytest` needs no `.env`. Everything falls back to defaults.
+
+## The sandbox package
+
+`sandbox/` is a small Node package (managed with bun) that the backend runs in a subprocess to check generated lesson code (`scripts/check.mjs`: syntax, security scan, scope contract, KaTeX). The **backend image has Node and installs its packages** (the `sandbox` build context in `docker-compose.yml`), and compose bind-mounts `./sandbox` with the image's `node_modules` kept visible. After pulling a change to `sandbox/package.json`, rebuild with `docker compose up --build`. Fixtures of known-malicious and known-good code are in `sandbox/fixtures/` and run by `tests/graph/test_sandbox.py`. To run a check by hand: `echo '{"mode":"latex","items":["x^2"]}' | docker compose run --rm -T backend node /sandbox/scripts/check.mjs`.
 
 ## Adding dependencies
 
@@ -165,4 +170,4 @@ The backend image installs into `/opt/venv`, outside the bind-mounted `/app`. Th
 
 ## Later phases add
 
-- `sandbox/` package: Node and Playwright Chromium in the backend image.
+- Playwright Chromium in the backend image, for the headless render check (Phase 6).

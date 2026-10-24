@@ -54,12 +54,13 @@ class Silent:
 
 
 @pytest.fixture
-def inline(monkeypatch, gateway, bound_registry):
-    """Inline runs use a runner with a scripted gateway and an in-memory checkpointer."""
+def inline(monkeypatch, gateway, bound_registry, stage_a_graphs):
+    """Inline runs: a scripted gateway, an in-memory checkpointer and a flow that stops after Stage A."""
     checkpoints = Memory()
 
     def runner():
         return FlowRunner(
+            graphs=stage_a_graphs,
             checkpointers=checkpoints,
             events=Silent(),
             context_factory=lambda run_id: FlowContext(gateway=gateway, run_id=run_id),

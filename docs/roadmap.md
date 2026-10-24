@@ -60,12 +60,12 @@ Each phase ends with something runnable and checkable.
 
 ## Phase 5: Stage B (author)
 
-- [ ] `lesson.plan` and validator; parallel `page.generate` ×3 and `test.generate` with targeted retries
-- [ ] `interactive.plan`; `interactive.generate` and `check_interactive` (needs `sandbox/scripts/check.mjs`)
-- [ ] Media subgraph: tools (Wikimedia, Openverse, optional Giphy), `submit_media`, download and store, `media.verify`, SVG fallback; `MediaAsset` and signed URLs
-- [ ] `alignment.judge` and targeted fixes routed with `Send`
+- [x] `lesson.plan` and validator; parallel `page.generate` ×3 and `test.generate` with targeted retries
+- [x] `interactive.plan`; `interactive.generate` and `check_interactive` (needs `sandbox/scripts/check.mjs`)
+- [x] Media subgraph: tools (Wikimedia, Openverse, optional Giphy), `submit_media`, download and store, `media.verify`, SVG fallback; `MediaAsset` and signed URLs
+- [x] `alignment.judge` and targeted fixes routed with `Send`
 
-**Done when:** `flow show` for "Binary search" and for "Asexual reproduction" shows 3 aligned pages, a mixed-type test, a stepping simulation for the first, and a real amoeba image or GIF (or an SVG fallback) for the second.
+**Done when:** `flow show` for "Binary search" and for "Asexual reproduction" shows 3 aligned pages, a mixed-type test, a stepping simulation for the first, and a real amoeba image or GIF (or an SVG fallback) for the second. ✅ Verified with the fake LLM and its fake media service (`flow start` → `flow answer --correct 5` → `flow show`): both lessons show three pages of three sections, a ten-question test with five types, and the alignment passed; Binary search has a stepping `simulation` for the core page, Asexual reproduction has a downloaded, stored, attributed image (a `MediaAsset`, served through a signed URL that a tampered signature cannot open). The generated widget code passes the real `check.mjs`. Not verified: content quality from real models, the real Wikimedia, Openverse and GIPHY services, and the vision check (`media.verify` stays optional and unbound until Phase 7). The lesson stops after the alignment judge (its stage stays `generating_lesson`) until Phase 6 builds the document.
 
 ## Phase 6: Stage C (build and verify) and the lesson viewer
 

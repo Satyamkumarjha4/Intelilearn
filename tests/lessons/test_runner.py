@@ -88,12 +88,17 @@ def checkpoints():
 
 
 @pytest.fixture
-def make_runner(gateway, publisher, checkpoints):
+def make_runner(gateway, publisher, checkpoints, stage_a_graphs):
     def _make(**overrides):
         def context(run_id):
             return FlowContext(gateway=gateway, sandbox=FakeSandbox(), run_id=run_id)
 
-        options = {"checkpointers": checkpoints, "events": publisher, "context_factory": context} | overrides
+        options = {
+            "graphs": stage_a_graphs,
+            "checkpointers": checkpoints,
+            "events": publisher,
+            "context_factory": context,
+        } | overrides
         return FlowRunner(**options)
 
     return _make

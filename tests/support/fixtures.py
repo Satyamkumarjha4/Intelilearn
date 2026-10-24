@@ -141,3 +141,14 @@ def bound_registry(db):
     for node in NodeConfig.objects.exclude(node_key__in=["diagnostic.review", "media.verify"]):
         NodeModelBinding.objects.create(node=node, model=model, priority=0)
     return model
+
+
+@pytest.fixture
+def stage_a_graphs():
+    """A graph registry whose lesson flow stops after the assessment (and the mastery path), so runner and command
+    tests don't have to script the whole of Stage B."""
+    from graph.builders import DiagnoseSegment, FlowGraphBuilder, MasterySegment, StudyMaterialGraphBuilder
+    from graph.registry import GraphRegistry
+
+    flow = FlowGraphBuilder(segments=[DiagnoseSegment(), MasterySegment()])
+    return GraphRegistry({"flow": flow, "study_material": StudyMaterialGraphBuilder()})

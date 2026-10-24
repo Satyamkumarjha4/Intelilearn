@@ -365,6 +365,15 @@ This writes pages, the test, media links, the assembled code, `code_version = 1`
 | `grade_test` | The learner submits page 4 | MCQ and numerical graded deterministically. Short, long, and code answers graded by `test.grade` against the model answer or rubric. Produces a `TestResult` with feedback per question and recommended topics to revisit. |
 | `study_material` | The learner requests another sheet type | `generate_study_material` → validate → persist |
 
+## How Stage B is built
+
+- **Segments.** The flow graph is assembled from segments (diagnose, mastery, author); the author segment provides the `lesson` exit and leads, for now, to `END` (Stage C plugs in at its `build` exit).
+- **Parallel items and joins.** `Send` branches carry the shared context (`BranchBuilder`) and write under keys with reducers (`pages`, `final_test`, `interactives`, `media`, `feedback`, `attempts`). `authored_join` and `widgets_join` read each item's problems and attempts: items under their attempt budget are sent again *alone* (the router builds the `Send`s), items out of attempts are kept with a warning (pages, test) or dropped with a warning (widgets).
+- **One writer for first drafts and fixes.** `ContentWriter` asks for a page, the test or a component and checks it (`PageValidator`, `FinalTestValidator`, the sandbox's `check.mjs`), so a fix after the alignment judge is held to the same rules.
+- **Alignment is decided in code** (`AlignmentPolicy`): pass, fix (only flagged items that exist, one issue per item), accept with a warning (rounds spent, nothing major) or fail (rounds spent, a major issue). A fix that fails its own checks keeps the old version.
+- **The media agent** is a subgraph run inside `find_media` (`MediaFinder`): search tools per allowed source, bounded by `max_tool_steps`; `submit_media` is a tool whose arguments are the structured result; only URLs a tool returned in this session are downloaded (`UrlGuard`: https only, never a private address, redirects re-checked; size, type and dimensions read from the bytes); the optional `media.verify` vision check writes the alt text and can reject; out of rounds, the spec is drawn as an SVG diagram.
+- **Media is served** by `GET /api/media/{asset_id}?exp=&sig=` ([api.md](api.md)); generated code never sees a URL.
+
 ## State
 
 ```python
