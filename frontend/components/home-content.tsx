@@ -26,14 +26,19 @@ export function HomeContent() {
         </h1>
         <p className="text-muted-foreground">
           {user
-            ? "Lesson generation arrives in the next phase. For now, keep your profile up to date so lessons fit you."
+            ? "Start with a quick quiz. We'll find out what you already know and build the rest."
             : "Lesson Crafter finds out what you already know about a topic, then builds a lesson for the rest."}
         </p>
         <div className="flex gap-2">
           {user ? (
-            <Link href="/profile" className={buttonVariants({ variant: "outline" })}>
-              Edit your profile
-            </Link>
+            <>
+              <Link href="/lessons/new" className={buttonVariants()}>
+                New lesson
+              </Link>
+              <Link href="/lessons" className={buttonVariants({ variant: "outline" })}>
+                Your lessons
+              </Link>
+            </>
           ) : (
             <>
               <Link href="/auth?mode=register" className={buttonVariants()}>

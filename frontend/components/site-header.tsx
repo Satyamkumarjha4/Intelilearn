@@ -1,6 +1,6 @@
 "use client";
 
-import { GraduationCapIcon, LogOutIcon, UserIcon } from "lucide-react";
+import { BookOpenIcon, GraduationCapIcon, LogOutIcon, UserIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -63,6 +63,9 @@ export function SiteHeader() {
                 <DropdownMenuLabel className="truncate font-normal text-muted-foreground">{user.email}</DropdownMenuLabel>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => router.push("/lessons")}>
+                <BookOpenIcon /> Your lessons
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => router.push("/profile")}>
                 <UserIcon /> Profile
               </DropdownMenuItem>
