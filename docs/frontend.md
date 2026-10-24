@@ -12,6 +12,8 @@ Swagger UI and the admin are opened on the Django origin directly (`NEXT_PUBLIC_
 
 This gives same-origin cookies and needs no CORS configuration. `EventSource` works as-is.
 
+After sign-in, `/auth?next=…` only redirects to a path on this site (`lib/safe-redirect.ts`). Anything else, such as `//evil.com` or `/\evil.com`, falls back to `/`.
+
 ## Pages
 
 | Route | Purpose |

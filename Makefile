@@ -38,9 +38,9 @@ sync-supabase: ## Copy local Postgres rows that Supabase lacks (needs SUPABASE_D
 test: ## Run the test suite (always against the local docker Postgres, never Supabase)
 	$(RUN_BACKEND) pytest
 
-lint: ## Lint backend (ruff, OpenAPI schema) and frontend (eslint + tsc)
+lint: ## Lint backend (ruff, OpenAPI schema) and frontend (eslint, tsc, bun test)
 	$(COMPOSE) run --rm --no-deps backend sh -c "ruff check . && ruff format --check . && python manage.py spectacular --validate --fail-on-warn --file /dev/null"
-	$(COMPOSE) run --rm --no-deps frontend sh -c "bun run lint && bunx next typegen && bunx tsc --noEmit"
+	$(COMPOSE) run --rm --no-deps frontend sh -c "bun run lint && bunx next typegen && bunx tsc --noEmit && bun test"
 
 check: lint test ## Lint + tests: run before finishing any change
 

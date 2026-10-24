@@ -48,6 +48,7 @@ jobs:
           check bun run lint
           check bunx next typegen
           check bunx tsc --noEmit
+          check bun test
           exit $status
 
       - name: Keep the log for the failure report
