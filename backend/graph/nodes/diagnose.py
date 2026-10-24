@@ -27,6 +27,7 @@ class LoadContextNode(Node):
     """Read what the graph needs from the database once, so later nodes work from the state."""
 
     name = "load_context"
+    stage = Stage.PREPARING_DIAGNOSTIC
 
     def run(self, state: dict, ctx: FlowContext) -> dict:
         lesson = Lesson.objects.select_related("owner__profile").get(pk=state["lesson_id"])
@@ -41,13 +42,11 @@ class LoadContextNode(Node):
 
 class GenerateDiagnosticNode(LLMNode):
     name = "generate_diagnostic"
+    stage = Stage.PREPARING_DIAGNOSTIC
     node_key = "diagnostic.generate"
     prompt = DiagnosticPrompt()
     schema = DiagnosticBundle
     feedback_key = "diagnostic"
-
-    def before(self, state: dict) -> None:
-        self.lesson(state).advance_to(Stage.PREPARING_DIAGNOSTIC)
 
     def to_state(self, output: DiagnosticBundle, state: dict) -> dict:
         return {"bundle": output.model_dump(mode="json"), "attempts": {"diagnostic": 1}}
@@ -55,6 +54,7 @@ class GenerateDiagnosticNode(LLMNode):
 
 class ValidateDiagnosticNode(ValidateNode):
     name = "validate_diagnostic"
+    stage = Stage.PREPARING_DIAGNOSTIC
     node_key = "diagnostic.generate"
     feedback_key = "diagnostic"
     retry_node = "generate_diagnostic"
@@ -165,15 +165,13 @@ class GradePrerequisiteNode(Node):
 
 class AssessLearnerNode(LLMNode):
     name = "assess_learner"
+    stage = Stage.GENERATING_LESSON
     node_key = "learner.assess"
     prompt = AssessLearnerPrompt()
     schema = LearnerAssessment
 
     def __init__(self, guard: AssessmentGuard | None = None):
         self.guard = guard or AssessmentGuard()
-
-    def before(self, state: dict) -> None:
-        self.lesson(state).advance_to(Stage.GENERATING_LESSON)
 
     def subject(self, state: dict) -> dict:
         bundle = state["bundle"]

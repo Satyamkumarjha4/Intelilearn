@@ -7,7 +7,8 @@ lesson; one that spends its retries badly either loops or gives up early.
 
 Use cases:
 - load_context reads the topic, the profile (without name or email) and the snapshots from the lesson
-- generate_diagnostic asks the model for a DiagnosticBundle, sets the stage, and counts the attempt
+- generate_diagnostic asks the model for a DiagnosticBundle and counts the attempt
+- a node that runs while the lesson is failed (a retry) moves it back to the node's working stage, and only then
 - generate_diagnostic passes the validator's problems to the model as feedback on a retry
 - validate_diagnostic accepts a good bundle and clears the feedback
 - validate_diagnostic keeps the problems and announces another attempt while attempts remain
@@ -97,7 +98,6 @@ class TestGenerateDiagnostic:
         assert call.schema is DiagnosticBundle
         assert call.snapshot is lesson_state["snapshot"]
         assert call.run_id == "run-1"
-        assert Lesson.objects.get(pk=lesson.pk).stage == Stage.PREPARING_DIAGNOSTIC
 
     def test_passes_the_validators_problems_to_the_model_on_a_retry(self, lesson_state, gateway, runtime, valid_bundle):
         gateway.script("diagnostic.generate", valid_bundle)
@@ -125,6 +125,16 @@ class TestGenerateDiagnostic:
 
         stored = Lesson.objects.get(pk=lesson.pk)
         assert (stored.stage, stored.error) == (Stage.PREPARING_DIAGNOSTIC, "")
+
+    def test_leaves_the_stage_alone_unless_the_lesson_failed(
+        self, lesson, lesson_state, gateway, runtime, valid_bundle
+    ):
+        Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.AWAITING_DIAGNOSTIC)
+        gateway.script("diagnostic.generate", valid_bundle)
+
+        GenerateDiagnosticNode()(lesson_state, runtime)
+
+        assert Lesson.objects.get(pk=lesson.pk).stage == Stage.AWAITING_DIAGNOSTIC
 
 
 class TestValidateDiagnostic:

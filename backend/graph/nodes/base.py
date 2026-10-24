@@ -7,13 +7,15 @@ Side effects and `interrupt()` never mix: LangGraph re-runs an interrupted node 
 resumes, so everything with side effects goes in a `PublishNode` *before* the `AwaitNode` that only waits.
 """
 
+import threading
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar
 
+from django.db import connections
 from langgraph.types import interrupt
 from pydantic import BaseModel
 
-from lessons.models import Lesson
+from lessons.models import Lesson, Stage
 
 from ..context import FlowContext, NodeBudget
 from ..prompts import Prompt
@@ -22,11 +24,26 @@ from ..validators import Validator
 
 class Node(ABC):
     name: ClassVar[str]
+    #: The stage the lesson is in while this node works. A node that runs while the lesson is `failed` means a
+    #: retry resumed here, so the lesson goes back to this stage without the node having to know about retries.
+    stage: ClassVar[Stage | None] = None
 
     def __call__(self, state: dict, runtime) -> Any:
         ctx: FlowContext = runtime.context
+        if self.stage:
+            Lesson.objects.filter(pk=state["lesson_id"], stage=Stage.FAILED).update(stage=self.stage, error="")
         ctx.events({"type": "node", "node": self.name, "status": "running"})
-        return self.run(state, ctx)
+        try:
+            return self.run(state, ctx)
+        finally:
+            self.release_connection()
+
+    @staticmethod
+    def release_connection() -> None:
+        """LangGraph runs nodes on pool threads. A thread's database connection belongs to no request, so nothing
+        else would close it, and every run would leave connections behind."""
+        if threading.current_thread() is not threading.main_thread():
+            connections.close_all()
 
     @abstractmethod
     def run(self, state: dict, ctx: FlowContext) -> Any:
