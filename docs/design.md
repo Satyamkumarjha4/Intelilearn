@@ -265,7 +265,10 @@ classDiagram
         +int skipped
     }
     class DatabaseConfig {
-        +build(env, local_url, supabase_url, testing) dict
+        -env
+        -int conn_max_age
+        +local_url(host, port, name, user, password)$ str
+        +build(local_url, supabase_url, testing) dict
     }
 
     HealthCheck <|-- DatabaseHealthCheck
@@ -1116,7 +1119,7 @@ Code written before this document that doesn't follow it yet. Behaviour must not
 | ~~`llm_registry/redaction.py`~~ | ~~`redact()`~~ | `Redactor` + the stateless `REDACTOR` default | ✅ Done |
 | ~~`core/views.py`~~ | ~~`_database`, `_redis`, `_celery`~~ | `HealthCheck`s + `HealthService` (`core/health.py`) | ✅ Done |
 | ~~`core/sync.py`~~ | ~~`sync_databases()`~~ | `DatabaseSyncer(source, target).sync()` | ✅ Done |
-| `config/databases.py` | functions | `DatabaseConfig` | Low priority |
+| ~~`config/databases.py`~~ | ~~functions~~ | `DatabaseConfig(env).build(...)`, `DatabaseConfig.local_url(...)` | ✅ Done |
 | `accounts/cookies.py` | functions | `AuthCookies` | Next auth change |
 | `graph/grading.py` | functions | `QuizGrader`, `RoutingPolicy` | Phase 3 |
 | `graph/validators.py` | `validate_*` functions | `Validator` classes, `AssessmentGuard` | Phase 3 |
