@@ -17,7 +17,7 @@ The complete flow is in [lesson-graph.md](lesson-graph.md).
 ```
                     ┌──────────────────────────────┐
   Browser ───────▶  │ Next.js (localhost:3000)     │   lesson renders in a sandboxed iframe
-                    │  /api/* rewritten to Django  │   (sandbox/ runtime)
+                    │  /api/* proxied to Django    │   (sandbox/ runtime)
                     └──────────────┬───────────────┘
                                    │ HTTP + SSE (JWT in httpOnly cookie)
                     ┌──────────────▼───────────────┐

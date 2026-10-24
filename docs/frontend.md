@@ -4,12 +4,7 @@ Next.js 16 (App Router, Turbopack) with TypeScript, Tailwind v4, and shadcn/ui, 
 
 ## Backend proxy
 
-```ts
-// next.config.ts
-async rewrites() {
-  return [{ source: "/api/:path*", destination: `${process.env.DJANGO_API_ORIGIN}/api/:path*` }];
-}
-```
+`app/api/[...path]/route.ts` forwards every `/api/*` request to `${DJANGO_API_ORIGIN}/api/*`. It is a route handler, not a `next.config` rewrite, so it controls the forwarded headers: it passes the visitor's address in `X-Forwarded-For`, which the API's rate limits key on. (A rewrite forwards the Next.js server's own address, which put every visitor in one rate-limit bucket.) Request bodies are buffered, because a streamed body arrives at Django empty. Response bodies are streamed, so Server-Sent Events work.
 
 Django API routes have **no trailing slash** (`/api/lessons`, not `/api/lessons/`). Next.js normalises trailing slashes with a redirect, and Django's `APPEND_SLASH` would redirect back, which would create a loop through the proxy.
 

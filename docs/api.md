@@ -1,6 +1,6 @@
 # API reference
 
-Base path: `/api` (Django, port 8000). Next.js rewrites `/api/:path*` to Django, so the browser only calls same-origin `/api/...`.
+Base path: `/api` (Django, port 8000). A Next.js route handler proxies `/api/*` to Django, so the browser only calls same-origin `/api/...`.
 
 ## Conventions
 
