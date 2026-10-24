@@ -9,29 +9,20 @@ import uuid
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.utils import timezone
+
+from .stages import IllegalTransition, MaterialKind, Route, Stage, StageTransitions  # noqa: F401  (re-exported)
 
 
-class Stage(models.TextChoices):
-    PREPARING_DIAGNOSTIC = "preparing_diagnostic", "Preparing the diagnostic"
-    AWAITING_DIAGNOSTIC = "awaiting_diagnostic", "Waiting for diagnostic answers"
-    AWAITING_PREREQUISITE = "awaiting_prerequisite", "Waiting for prerequisite answers"
-    AWAITING_CHOICE = "awaiting_choice", "Waiting for a study-sheet choice"
-    GENERATING_MATERIAL = "generating_material", "Writing the study sheet"
-    GENERATING_LESSON = "generating_lesson", "Building the lesson"
-    READY = "ready", "Ready"
-    FAILED = "failed", "Failed"
+class LessonQuerySet(models.QuerySet):
+    """Ownership lives here, so a view that forgets to filter cannot start from `Lesson.objects.all()` by habit."""
 
+    def owned_by(self, user) -> "LessonQuerySet":
+        return self.filter(owner=user)
 
-class Route(models.TextChoices):
-    PREREQUISITE = "prerequisite", "Prerequisites first"
-    LESSON = "lesson", "Lesson"
-    MASTERY = "mastery", "Mastery"
-
-
-class MaterialKind(models.TextChoices):
-    CHEAT_SHEET = "cheat_sheet", "Cheat sheet"
-    REVISION_SHEET = "revision_sheet", "Revision sheet"
-    PRACTICE_SHEET = "practice_sheet", "Practice sheet"
+    def active(self) -> "LessonQuerySet":
+        """Lessons still being worked on (not ready, not failed)."""
+        return self.exclude(stage__in=[Stage.READY, Stage.FAILED])
 
 
 class Lesson(models.Model):
@@ -65,12 +56,37 @@ class Lesson(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    objects = LessonQuerySet.as_manager()
+
     class Meta:
         ordering = ["-created_at"]
         indexes = [models.Index(fields=["owner", "-created_at"])]
 
     def __str__(self):
         return f"{self.topic} ({self.get_stage_display()})"
+
+    def advance_to(self, stage: Stage, **fields) -> None:
+        """Move to `stage` (and set `fields`) if that is a legal move from the *stored* stage.
+
+        Judged against the database, not this instance, because graph nodes and API calls run in different
+        processes. Clears any earlier error.
+        """
+        current = Lesson.objects.values_list("stage", flat=True).get(pk=self.pk)
+        if not StageTransitions().allowed(current, stage):
+            raise IllegalTransition(f"A lesson cannot go from {current} to {stage}.")
+        self.record(stage=stage, error="", **fields)
+
+    def fail(self, error: str) -> None:
+        """Mark the lesson failed with a readable reason. A lesson that is already ready stays usable."""
+        current = Lesson.objects.values_list("stage", flat=True).get(pk=self.pk)
+        if StageTransitions().allowed(current, Stage.FAILED):
+            self.record(stage=Stage.FAILED, error=error)
+
+    def record(self, **fields) -> None:
+        """Write only these fields (never the whole row, so a concurrent update elsewhere is not overwritten)."""
+        Lesson.objects.filter(pk=self.pk).update(updated_at=timezone.now(), **fields)
+        for name, value in fields.items():
+            setattr(self, name, value)
 
 
 class Quiz(models.Model):
@@ -92,6 +108,12 @@ class Quiz(models.Model):
 
     def __str__(self):
         return f"{self.get_kind_display()} quiz for {self.lesson.topic}"
+
+    PUBLIC_FIELDS = ("id", "band", "question", "options")
+
+    def public_questions(self) -> list[dict]:
+        """The only way questions leave the server before the attempt: no answer, explanation or concept."""
+        return [{key: q[key] for key in self.PUBLIC_FIELDS if key in q} for q in self.questions]
 
 
 class QuizAttempt(models.Model):
