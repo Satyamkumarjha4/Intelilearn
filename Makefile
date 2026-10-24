@@ -9,7 +9,10 @@ env: ## Create .env from .env.example (keeps an existing one)
 	@test -f .env && echo ".env already exists" || (cp .env.example .env && echo "created .env")
 
 up: ## Build and start the stack (db, redis, backend, worker, frontend)
-	$(COMPOSE) up --build --renew-anon-volumes
+	@# Remove the frontend container *with* its anonymous node_modules/.next volumes, so new packages are picked up.
+	@# (--renew-anon-volumes would leave every old copy behind as a dangling volume.)
+	$(COMPOSE) rm --force --stop --volumes frontend
+	$(COMPOSE) up --build
 
 down: ## Stop the stack (data volumes are kept)
 	$(COMPOSE) down

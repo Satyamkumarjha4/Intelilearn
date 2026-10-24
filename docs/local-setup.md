@@ -38,7 +38,7 @@ The root `.env` is the **single source of configuration**. Django reads it, `doc
 make up            # = docker compose up --build
 ```
 
-On start, `make up` also renews the frontend's anonymous `node_modules` and `.next` volumes, so new packages are picked up. On start, `backend` runs `manage.py bootstrap`: it migrates the active database, first syncing to Supabase when that's configured (see below). Code changes reload automatically: uvicorn `--reload` for the API, `watchfiles` for the Celery worker, and Turbopack for Next.js. Postgres and Redis data persist in the `postgres-data` and `redis-data` volumes.
+On start, `make up` also recreates the frontend's anonymous `node_modules` and `.next` volumes (removing the old ones), so new packages are picked up. On start, `backend` runs `manage.py bootstrap`: it migrates the active database, first syncing to Supabase when that's configured (see below). Code changes reload automatically: uvicorn `--reload` for the API, `watchfiles` for the Celery worker, and Turbopack for Next.js. Postgres and Redis data persist in the `postgres-data` and `redis-data` volumes.
 
 | URL | What |
 |---|---|
@@ -108,6 +108,7 @@ The backend image installs into `/opt/venv`, outside the bind-mounted `/app`. Th
 | `password authentication failed` after editing `POSTGRES_*` | The volume keeps its original credentials. See section 1. |
 | Health: `celery: no workers responded` | `docker compose logs worker`. It restarts on file changes, so check for a Python error. |
 | New dependency not found | `docker compose up --build`. |
+| `no space left on device` from Docker while `df` shows free space (btrfs) | Metadata is full and there's no unallocated space for more. Run `sudo btrfs balance start -dusage=20 /` (then `-dusage=50`) to give empty data chunks back, and `docker volume prune` for old anonymous `node_modules` volumes. |
 
 ## Later phases add
 
