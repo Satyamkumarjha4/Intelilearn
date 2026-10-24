@@ -12,6 +12,9 @@ Use cases:
   of widget code passes the real sandbox check
 - the media agent finds, downloads and stores a picture end to end: real gateway and client, real library and
   downloader, the fake's Wikimedia API and image
+- a page compiled through the text path (no schema) keeps every section and places the widgets, and passes the real
+  sandbox check
+- a text prompt the fake does not know is refused
 - a schema the fake does not know is refused, and the gateway reports every model failed
 """
 
@@ -27,6 +30,7 @@ from graph.media import MediaLibrary
 from graph.nodes.media_agent import MediaFinder
 from graph.prompts import (
     AlignmentPrompt,
+    CompilePagePrompt,
     DiagnosticPrompt,
     GenerateInteractivePrompt,
     PlanInteractivesPrompt,
@@ -201,6 +205,30 @@ def test_the_alignment_report_is_valid_and_passes(server, monkeypatch):
     report = call(snapshot, "alignment.judge", AlignmentReport, AlignmentPrompt().messages(stage_b_state()))
 
     assert AlignmentReport(**report).recompute_passed(3) is True
+
+
+def compile_subject():
+    state = stage_b_state()
+    components = [{"name": "Interactive_demo", "anchor": "s1", "purpose": "shows halving"}]
+    return state | {"key": "core", "components": components, "figures": []}
+
+
+@pytest.mark.skipif(not SandboxRunner().available(), reason="the sandbox package is not installed")
+def test_a_compiled_page_comes_back_as_text_with_the_widget_placed_and_passes_the_real_check(server, monkeypatch):
+    snapshot = bind_fake(server, "json_schema", monkeypatch)
+    messages = CompilePagePrompt().messages(compile_subject())
+
+    code = Gateway().invoke("page.compile", messages, snapshot=snapshot).output
+
+    assert 'section.id === "s1" ? (<><Interactive_demo /></>)' in code and "LESSON.pages.core" in code
+    assert SandboxRunner().check_code(code, required=["Page_core"], components=["Interactive_demo"]).errors == []
+
+
+def test_a_text_prompt_the_fake_does_not_know_fails_every_model(server, monkeypatch):
+    snapshot = bind_fake(server, "json_schema", monkeypatch)
+
+    with pytest.raises(AllModelsFailed, match="no canned text output"):
+        Gateway(sleep=lambda s: None).invoke("code.repair", [{"role": "user", "content": "x"}], snapshot=snapshot)
 
 
 def test_the_media_agent_finds_downloads_and_stores_a_picture_end_to_end(server, monkeypatch, settings, tmp_path):

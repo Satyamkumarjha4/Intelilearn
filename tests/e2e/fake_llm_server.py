@@ -214,6 +214,8 @@ class Handler(BaseHTTPRequestHandler):
         if self._is_agent_request(request):
             return self._complete(request, self._agent_reply(request))
         schema = self._schema_name(request)
+        if schema is None and not request.get("tools"):
+            return self._complete_text(request)
         try:
             payload = Canned(request).for_schema(schema) if schema else None
         except KeyError:
@@ -272,6 +274,18 @@ class Handler(BaseHTTPRequestHandler):
             for r in found[:1]
         ]  # fmt: skip
         return {"name": "submit_media", "args": {"candidates": keep}}
+
+    def _complete_text(self, request: dict) -> None:
+        try:
+            text = Canned(request).for_text()
+        except KeyError:
+            return self._send(400, {"error": {"message": "The fake LLM has no canned text output for this prompt."}})
+        self._send(200, {
+            "id": f"chatcmpl-{uuid.uuid4().hex[:8]}", "object": "chat.completion", "created": 0,
+            "model": request.get("model", "fake-model"),
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 100, "completion_tokens": len(text) // 4, "total_tokens": 100 + len(text) // 4},
+        })  # fmt: skip
 
     def _complete(self, request: dict, call: dict) -> None:
         tool_call = {"id": f"call_{uuid.uuid4().hex[:8]}", "type": "function",
