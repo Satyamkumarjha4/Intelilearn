@@ -9,7 +9,10 @@
 # and first copies local rows up to it on every start (see docs/local-setup.md).
 
 x-backend: &backend
-  build: ./backend
+  build:
+    context: ./backend
+    additional_contexts:
+      sandbox: ./sandbox # the Node package for the lesson-code checks
   env_file:
     - path: ./.env
       required: false
@@ -27,6 +30,8 @@ x-backend: &backend
   volumes:
     - ./backend:/app:z # :z relabels for SELinux (Fedora) so containers can read the bind mount
     - ./tests:/tests:z # repo-root tests, mirroring backend/
+    - ./sandbox:/sandbox:z # check.mjs and, later, render-check.mjs
+    - /sandbox/node_modules # the image's packages stay visible under the bind mount
   depends_on:
     db:
       condition: service_healthy
@@ -83,7 +88,10 @@ services:
   # Dev-only stand-in for an LLM provider (profile `e2e`; see `make fake-llm` and docs/local-setup.md).
   fake-llm:
     profiles: ["e2e"]
-    build: ./backend
+    build:
+      context: ./backend
+      additional_contexts:
+        sandbox: ./sandbox
     command: python /tests/e2e/fake_llm_server.py
     networks:
       default:

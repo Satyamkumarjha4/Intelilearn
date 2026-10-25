@@ -19,10 +19,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from support.quiz_data import make_prerequisites, make_questions
 
+try:
+    from .canned_lesson import LessonCanned
+except ImportError:  # run as a script (python /tests/e2e/fake_llm_server.py)
+    from canned_lesson import LessonCanned
 from graph.schemas.diagnostic import BANDS
 
 
-class Canned:
+class Canned(LessonCanned):
     """Builds the payload for each schema the fake knows."""
 
     def __init__(self, request: dict):
@@ -155,12 +159,60 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        self._send(200, {"status": "ok"} if self.path == "/health" else {"data": []})
+        path = self.path.split("?")[0]
+        if path == "/health":
+            return self._send(200, {"status": "ok"})
+        if path.endswith("api.php"):
+            return self._send(200, self._wikimedia())
+        if path.startswith("/media/"):
+            return self._image(path.removeprefix("/media/"))
+        self._send(200, {"data": []})
+
+    def _wikimedia(self) -> dict:
+        """What Wikimedia Commons' search API returns, with two openly licensed 'files' served by this server."""
+        host = self.headers.get("Host", "fake-llm.lan:9000")
+        pages = {
+            str(n): {
+                "title": f"File:Amoeba {n}.png",
+                "imageinfo": [{
+                    "url": f"http://{host}/media/amoeba{n}.png", "thumburl": f"http://{host}/media/amoeba{n}.png",
+                    "descriptionurl": f"https://commons.example.org/wiki/File:Amoeba_{n}.png",
+                    "thumbwidth": 400, "thumbheight": 300,
+                    "extmetadata": {
+                        "LicenseShortName": {"value": "CC BY-SA 4.0"},
+                        "Artist": {"value": "Fake Photographer"},
+                        "ImageDescription": {"value": "An amoeba dividing (generated test image)"},
+                    },
+                }],
+            }
+            for n in (1, 2)
+        }  # fmt: skip
+        return {"query": {"pages": pages}}
+
+    def _image(self, name: str) -> None:
+        from io import BytesIO
+
+        from PIL import Image, ImageDraw
+
+        image = Image.new("RGB", (400, 300), (200, 230, 210))
+        draw = ImageDraw.Draw(image)
+        draw.ellipse((100, 70, 300, 230), fill=(120, 180, 140), outline=(40, 90, 60), width=4)
+        draw.ellipse((170, 120, 230, 180), fill=(60, 110, 80))
+        buffer = BytesIO()
+        image.save(buffer, "PNG")
+        data = buffer.getvalue()
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def do_POST(self):
         request = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
         if not self.path.endswith("/chat/completions"):
             return self._send(404, {"error": {"message": f"unknown path {self.path}"}})
+        if self._is_agent_request(request):
+            return self._complete(request, self._agent_reply(request))
         schema = self._schema_name(request)
         try:
             payload = Canned(request).for_schema(schema) if schema else None
@@ -190,8 +242,47 @@ class Handler(BaseHTTPRequestHandler):
         schema = (request.get("response_format") or {}).get("json_schema", {}).get("name")
         if schema:
             return schema
+        choice = request.get("tool_choice")
+        if isinstance(choice, dict):
+            return choice["function"]["name"]
         tools = request.get("tools") or []
-        return tools[0]["function"]["name"] if tools else None
+        return tools[0]["function"]["name"] if len(tools) == 1 else None
+
+    @staticmethod
+    def _is_agent_request(request: dict) -> bool:
+        """The media agent: tools offered with no forced choice (a structured call forces one function)."""
+        return bool(request.get("tools")) and not isinstance(request.get("tool_choice"), dict)
+
+    @staticmethod
+    def _agent_reply(request: dict) -> dict:
+        """Search once, then submit the first result the search returned (or nothing if it found nothing)."""
+        names = [t["function"]["name"] for t in request["tools"]]
+        messages = request["messages"]
+        last = messages[-1]
+        if last.get("role") != "tool":
+            search = next(n for n in names if n.startswith("search_"))
+            return {"name": search, "args": {"query": "amoeba binary fission"}}
+        try:
+            found = json.loads(last["content"])
+        except ValueError:
+            found = []
+        keep = [
+            {"source": r["source"], "file_url": r["file_url"], "page_url": r["page_url"], "title": r["title"],
+             "license": r["license"], "attribution": r["attribution"], "why": "It shows the process clearly."}
+            for r in found[:1]
+        ]  # fmt: skip
+        return {"name": "submit_media", "args": {"candidates": keep}}
+
+    def _complete(self, request: dict, call: dict) -> None:
+        tool_call = {"id": f"call_{uuid.uuid4().hex[:8]}", "type": "function",
+                     "function": {"name": call["name"], "arguments": json.dumps(call["args"])}}  # fmt: skip
+        self._send(200, {
+            "id": f"chatcmpl-{uuid.uuid4().hex[:8]}", "object": "chat.completion", "created": 0,
+            "model": request.get("model", "fake-model"),
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": None, "tool_calls": [tool_call]},
+                         "finish_reason": "tool_calls"}],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
+        })  # fmt: skip
 
     def _send(self, status: int, body: dict) -> None:
         data = json.dumps(body).encode()

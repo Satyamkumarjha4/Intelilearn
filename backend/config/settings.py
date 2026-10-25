@@ -170,6 +170,13 @@ NODE_BINARY = env("NODE_BINARY", default="node")
 SANDBOX_CHECK_TIMEOUT_S = env.int("SANDBOX_CHECK_TIMEOUT_S", default=30)
 SANDBOX_RENDER_TIMEOUT_S = env.int("SANDBOX_RENDER_TIMEOUT_S", default=180)
 SANDBOX_PAGE_TIMEOUT_MS = env.int("SANDBOX_PAGE_TIMEOUT_MS", default=8000)
+# Where lesson media is searched. The defaults are the public services; they are settings so tests and the offline
+# walk-through can point them at a fake.
+WIKIMEDIA_API_URL = env("WIKIMEDIA_API_URL", default="https://commons.wikimedia.org/w/api.php")
+OPENVERSE_API_URL = env("OPENVERSE_API_URL", default="https://api.openverse.org/v1/images/")
+GIPHY_API_URL = env("GIPHY_API_URL", default="https://api.giphy.com/v1/gifs/search")
+# Downloads are https-only and never to a private address. Set true only for the offline walk-through's fake media host.
+MEDIA_ALLOW_PRIVATE_HOSTS = env.bool("MEDIA_ALLOW_PRIVATE_HOSTS", default=False)
 # Optional GIF search for the media agent (also add "giphy" to FlowSettings.media_sources and licences).
 GIPHY_API_KEY = env("GIPHY_API_KEY", default="")
 # Signed media URLs (/api/media/{id}?exp=&sig=) stay valid this long.

@@ -5,11 +5,30 @@ A segment adds its own nodes and edges and is told where its exits lead, so a se
 graph yet (the author stage, before it lands) simply leaves its exit at END.
 """
 
-from abc import ABC, abstractmethod
-
 from langgraph.graph import END, START, StateGraph
 
-from .context import FlowContext
+from .builder_base import GraphBuilder, Segment
+from .nodes.author import (
+    AlignmentJudgeNode,
+    AuthoredJoinNode,
+    BuildInteractiveNode,
+    FindMediaNode,
+    FixItemNode,
+    PlanInteractivesNode,
+    PlanLessonNode,
+    ValidateInteractivePlanNode,
+    ValidatePlanNode,
+    WidgetsJoinNode,
+    WritePageNode,
+    WriteTestNode,
+)
+from .nodes.author_routers import (
+    AlignmentRouter,
+    AuthoringRouter,
+    InteractivePlanRouter,
+    PlanRouter,
+    WidgetRouter,
+)
 from .nodes.diagnose import (
     AssessLearnerNode,
     AwaitDiagnosticNode,
@@ -32,39 +51,6 @@ from .nodes.mastery import (
     ValidateStudyMaterialNode,
 )
 from .nodes.routers import CheckRouter, LevelRouter
-from .state import FlowState
-
-
-class GraphBuilder(ABC):
-    state_schema: type = FlowState
-
-    def build(self, checkpointer=None):
-        graph = StateGraph(self.state_schema, context_schema=FlowContext)
-        self.add_nodes(graph)
-        self.add_edges(graph)
-        return graph.compile(checkpointer=checkpointer)
-
-    @abstractmethod
-    def add_nodes(self, graph: StateGraph) -> None: ...
-
-    @abstractmethod
-    def add_edges(self, graph: StateGraph) -> None: ...
-
-
-class Segment(ABC):
-    """One slice of the flow graph."""
-
-    #: Nodes a retry may resume at (the ones that give up with `failed_node` set).
-    retry_targets: tuple[str, ...] = ()
-    #: Entry points this segment offers to the others: exit name → node. The author segment provides `lesson`.
-    provides: dict[str, str] = {}
-
-    @abstractmethod
-    def add_nodes(self, graph: StateGraph) -> None: ...
-
-    @abstractmethod
-    def add_edges(self, graph: StateGraph, exits: dict[str, str]) -> None:
-        """`exits` maps exit names (`lesson`, `mastery`, `failed`) to the node each leads to."""
 
 
 class DiagnoseSegment(Segment):
@@ -134,6 +120,58 @@ class MasterySegment(Segment):
         graph.add_edge("persist_study_material", END)
 
 
+class AuthorSegment(Segment):
+    """Stage B: plan, write the pages and the test in parallel, plan and build the interactives and media in parallel,
+    then the alignment judge. Provides the `lesson` exit; its own exit, `build`, leads on to Stage C."""
+
+    retry_targets = ("plan_lesson", "alignment_judge")
+    provides = {"lesson": "plan_lesson"}
+
+    def add_nodes(self, graph: StateGraph) -> None:
+        for node in (
+            PlanLessonNode(),
+            ValidatePlanNode(),
+            WritePageNode(),
+            WriteTestNode(),
+            AuthoredJoinNode(),
+            PlanInteractivesNode(),
+            ValidateInteractivePlanNode(),
+            FindMediaNode(),
+            BuildInteractiveNode(),
+            WidgetsJoinNode(),
+            AlignmentJudgeNode(),
+            FixItemNode(),
+        ):
+            graph.add_node(node.name, node)
+
+    def add_edges(self, graph: StateGraph, exits: dict[str, str]) -> None:
+        failed = exits["failed"]
+        graph.add_edge("plan_lesson", "validate_plan")
+        graph.add_conditional_edges("validate_plan", PlanRouter(), ["write_page", "write_test", "plan_lesson", failed])
+        graph.add_edge("write_page", "authored_join")
+        graph.add_edge("write_test", "authored_join")
+        graph.add_conditional_edges(
+            "authored_join", AuthoringRouter(), ["write_page", "write_test", "plan_interactives"]
+        )
+        graph.add_edge("plan_interactives", "validate_interactive_plan")
+        graph.add_conditional_edges(
+            "validate_interactive_plan",
+            InteractivePlanRouter(),
+            ["find_media", "build_interactive", "widgets_join", "plan_interactives"],
+        )
+        graph.add_edge("find_media", "widgets_join")
+        graph.add_edge("build_interactive", "widgets_join")
+        graph.add_conditional_edges(
+            "widgets_join", WidgetRouter(), ["find_media", "build_interactive", "alignment_judge"]
+        )
+        graph.add_conditional_edges(
+            "alignment_judge",
+            AlignmentRouter(on_pass=exits["build"], on_fail=failed),
+            ["fix_item", exits["build"], failed],
+        )
+        graph.add_edge("fix_item", "alignment_judge")
+
+
 class FailureSegment(Segment):
     """`mark_failed` records why; `await_retry` pauses until the learner presses Retry."""
 
@@ -156,11 +194,11 @@ class FlowGraphBuilder(GraphBuilder):
 
     @staticmethod
     def default_segments() -> list[Segment]:
-        return [DiagnoseSegment(), MasterySegment()]
+        return [DiagnoseSegment(), MasterySegment(), AuthorSegment()]
 
     def _exits(self) -> dict[str, str]:
         # Exits that no segment provides lead to END.
-        exits = {"failed": "mark_failed", "lesson": END, "mastery": END}
+        exits = {"failed": "mark_failed", "lesson": END, "mastery": END, "build": END}
         for segment in self.segments:
             exits |= segment.provides
         return exits

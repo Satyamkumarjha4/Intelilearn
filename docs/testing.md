@@ -34,7 +34,7 @@ By kind of change:
 - Backend tests live in the repo-root `tests/`, mirroring `backend/` one file per module: `backend/core/sync.py` → `tests/core/test_sync.py`, `backend/llm_registry/management/commands/probe_models.py` → `tests/llm_registry/management/commands/test_probe_models.py`.
 - A module with a lot of behaviour may split into several files named by area: `tests/accounts/test_views.py` and `test_views_profile.py`.
 - Frontend unit tests sit beside the file they test as `*.test.ts` and run with `bun test`.
-- Sandbox scripts (`sandbox/scripts/*.mjs`) have fixture-driven tests in `sandbox/` (Phase 5–6).
+- Sandbox scripts (`sandbox/scripts/*.mjs`) are tested through `SandboxRunner` in `tests/graph/test_sandbox.py`, against fixtures in `sandbox/fixtures/` (`good/` must pass; each `bad/` file names the rules it must trigger in an `// expect:` header). The Node package is part of the backend image, so these run in `make test`.
 - Shared builders and doubles live in `tests/support/` (importable as `support.…`; `tests/` is on the test python path) and its fixtures are registered for every test from `tests/conftest.py`. A graph run executes nodes on LangGraph's worker threads, whose database connection only sees committed rows, so tests that run a whole graph or the runner are marked `django_db(transaction=True)`.
 - Fixtures: shared ones in `tests/conftest.py`; ones used by one package in that package's `conftest.py` (for example the registry rows and fake chat models in `tests/llm_registry/conftest.py`). Every fixture has a docstring when its purpose isn't obvious from its name.
 

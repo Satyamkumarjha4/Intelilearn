@@ -5,35 +5,12 @@ from sandbox/src/scope. Content is data (`LESSON.pages.<key>`), so pages render 
 """
 
 import json
-import re
 
 PAGE_ORDER = ("introduction", "core", "advanced", "test")
-HOOKS = ("useState", "useEffect", "useRef", "useMemo", "useCallback", "useReducer", "useLayoutEffect", "useId")
-
-_FENCE = re.compile(r"```[a-zA-Z]*\n(.*?)```", re.S)
 
 
 def page_component(key: str) -> str:
     return f"Page_{key}"
-
-
-def sanitize(code: str) -> str:
-    """Strip what LLMs add around a component: code fences, imports/exports, React.-prefixed hooks, render()."""
-    if match := _FENCE.search(code):
-        code = match.group(1)
-    lines = []
-    for line in code.strip().splitlines():
-        stripped = line.strip()
-        if stripped.startswith("import ") or stripped in ('"use client";', "'use client';", '"use client"'):
-            continue
-        if re.match(r"^\s*render\(.*\);?\s*$", line):
-            continue
-        if re.match(r"^\s*export\s+default\s+[A-Za-z_]\w*\s*;?\s*$", line):
-            continue  # export default Foo;
-        line = re.sub(r"^(\s*)export\s+(default\s+)?", r"\1", line)
-        lines.append(line)
-    code = "\n".join(lines)
-    return re.sub(r"\bReact\.(" + "|".join(HOOKS) + r")\b", r"\1", code).strip() + "\n"
 
 
 def _jsx_string(value: str) -> str:

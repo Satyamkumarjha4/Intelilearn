@@ -25,7 +25,14 @@ class GatewayCall:
 class FakeGateway:
     def __init__(self, scripts: dict[str, list] | None = None):
         self.scripts = {key: list(items) for key, items in (scripts or {}).items()}
+        self.responders: dict[str, Any] = {}
         self.calls: list[GatewayCall] = []
+
+    def respond(self, node_key: str, responder) -> "FakeGateway":
+        """Answer every call to `node_key` with `responder(messages)` (for nodes that run in parallel, where the order
+        of calls is not fixed). Scripted items for the same key are used first."""
+        self.responders[node_key] = responder
+        return self
 
     def script(self, node_key: str, *items) -> "FakeGateway":
         self.scripts.setdefault(node_key, []).extend(items)
@@ -38,9 +45,12 @@ class FakeGateway:
                on_event=None):  # fmt: skip
         self.calls.append(GatewayCall(node_key, list(messages), schema, tools, snapshot, lesson_id, run_id))
         queue = self.scripts.get(node_key)
-        if not queue:
+        if queue:
+            item = queue.pop(0)
+        elif node_key in self.responders:
+            item = self.responders[node_key]
+        else:
             raise AssertionError(f"FakeGateway has no scripted output left for {node_key}")
-        item = queue.pop(0)
         if isinstance(item, Exception):
             raise item
         if callable(item):
@@ -54,6 +64,7 @@ class FakeGateway:
 class FakeSandbox:
     latex_errors: list[str] = field(default_factory=list)
     code_errors: list[str] = field(default_factory=list)
+    failing_components: set[str] = field(default_factory=set)  # required names whose check always fails
     latex_calls: list[list[str]] = field(default_factory=list)
 
     def latex(self, expressions):
@@ -61,7 +72,10 @@ class FakeSandbox:
         return list(self.latex_errors)
 
     def check_code(self, code, *, required=(), components=(), asset_ids=()):
-        return SimpleNamespace(ok=not self.code_errors, errors=list(self.code_errors))
+        errors = list(self.code_errors)
+        if self.failing_components & set(required):
+            errors.append("line 1:0 [forbidden-global] `fetch` is not allowed in lesson code")
+        return SimpleNamespace(ok=not errors, errors=errors)
 
     def render_check(self, code, data, *, pages, media_files):
         raise NotImplementedError

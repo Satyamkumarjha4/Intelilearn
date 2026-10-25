@@ -7,6 +7,8 @@ Use cases:
 - the header names the topic, owner, stage, route, level, the learner's context and any error
 - quiz scores are listed with the per-band breakdown, and an inconsistent result is flagged
 - the assessment lists the level, start point, knowledge, gaps and the prerequisites to cover
+- the plan, the pages and the test are summarised, with the prerequisites the introduction covers
+- the interactives are listed as built, media or dropped, with the media's source, licence and attribution
 - the study sheets are listed with their title and size
 - warnings and recent runs are listed
 - a brand-new lesson reports without error and without empty sections
@@ -15,7 +17,7 @@ Use cases:
 import pytest
 
 from graph.grading import QuizGrader
-from lessons.models import GraphRun, Lesson, Quiz, QuizAttempt, Stage
+from lessons.models import GraphRun, Lesson, MediaAsset, Quiz, QuizAttempt, Stage
 from lessons.reports import LessonReport
 
 pytestmark = pytest.mark.django_db
@@ -97,3 +99,40 @@ def test_study_sheets_are_listed_with_their_size(lesson):
     assert "cheat_sheet: Binary search cheat sheet (7 items in 2 sections)" in report
     assert "revision_sheet: Binary search revision (4 subtopics)" in report
     assert "practice_sheet: Binary search practice (15 questions)" in report
+
+
+def test_the_plan_the_pages_and_the_test_are_summarised(lesson):
+    from support.lesson_data import make_final_test, make_pages, make_plan
+
+    Lesson.objects.filter(pk=lesson.pk).update(
+        plan=make_plan(prerequisites=["Arrays"]), pages=make_pages(), final_test=make_final_test()
+    )
+
+    report = text(lesson)
+
+    assert "plan: Binary search (beginner)" in report
+    assert "introduction: Searching a list, Sorted data, Why halving helps [prerequisites: Arrays]" in report
+    assert "test: 10 questions (4 mcq, 2 numerical, 2 short_answer, 1 long_answer, 1 code)" in report
+    assert "page core: Core page: 3 sections," in report and "(Halving the range; The loop invariant;" in report
+
+
+def test_interactives_are_listed_as_built_media_or_dropped_with_the_medias_credit(lesson):
+    from support.lesson_data import make_interactive_plan
+
+    plan = make_interactive_plan()
+    plan["specs"][0]["kind"] = "image"
+    plan["specs"][2]["dropped"] = True
+    Lesson.objects.filter(pk=lesson.pk).update(interactive_plan=plan)
+    MediaAsset.objects.create(
+        lesson=lesson, spec_id="widget_introduction", kind="image", file="x.png", mime_type="image/png", width=400,
+        height=300, source="wikimedia", license="cc-by-sa", attribution="Jane Doe", verified=True,
+    )  # fmt: skip
+
+    report = text(lesson)
+
+    assert "widget_introduction (introduction, image, media)" in report
+    assert (
+        "widget_core (core, simulation, built)" in report
+        and "widget_advanced (advanced, svg_diagram, dropped)" in report
+    )
+    assert "media widget_introduction: image 400x300 from wikimedia, cc-by-sa, by Jane Doe, verified" in report
