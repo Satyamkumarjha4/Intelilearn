@@ -1,16 +1,16 @@
-# Lesson Crafter
+# Socra
 
 An AI tutor that first finds out what you already know, then teaches you the rest.
 
-Ask for a topic ("binary search"). Lesson Crafter gives you a 10-question diagnostic quiz across five difficulty bands. What happens next depends on how you did:
+Ask for a topic ("binary search"). Socra gives you a 10-question diagnostic quiz across five difficulty bands. What happens next depends on how you did:
 
 - **Little or nothing correct:** a short prerequisite check, then a lesson that teaches the missing foundations first.
-- **Some correct:** a four-page lesson (Introduction · Core · Advanced · Test) pitched at your level, with interactive graphs, simulations, animations, and real images or GIFs.
+- **Some correct:** a three-page lesson (Introduction · Core · Advanced, then a one-attempt final test) pitched at your level, with interactive graphs, simulations, animations, and real images or GIFs.
 - **Everything correct:** you already know it, so you choose a **cheat sheet**, **revision sheet**, or **practice sheet**.
 
 Every lesson is validated against your level, compiled to TypeScript, security-scanned, and test-rendered in a headless sandbox before you see it.
 
-This project is a re-architecture of [girishkhanna1105/lessonCrafter](https://github.com/girishkhanna1105/lessonCrafter).
+Socra (formerly Lesson Crafter) is a re-architecture of [girishkhanna1105/lessonCrafter](https://github.com/girishkhanna1105/lessonCrafter).
 
 ## Stack
 
@@ -38,6 +38,8 @@ This project is a re-architecture of [girishkhanna1105/lessonCrafter](https://gi
 7. [Frontend](docs/frontend.md): stage-driven UI, quiz runner, study sheets, sandboxed lesson viewer
 8. [Roadmap](docs/roadmap.md): build phases
 9. [CI](docs/ci.md): checks on every push, auto-revert on main, failure issues for branches
+10. [Testing](docs/testing.md): how tests are written, and the browser tests (`make e2e`)
+11. [UI audit](docs/audit/ui-audit-2026-10-25.md): the final screen-by-screen review against the mockups
 
 ## Repository layout (target)
 
@@ -45,6 +47,7 @@ This project is a re-architecture of [girishkhanna1105/lessonCrafter](https://gi
 Lesson Crafter/
 ├─ docs/
 ├─ docker-compose.yml     # local stack
+├─ docker-compose.e2e.yml # the throwaway fake-LLM stack for make e2e
 ├─ Makefile               # make up / check / test / lint / migrate …
 ├─ .env.example           # the single configuration template
 ├─ CLAUDE.md              # development rules (git, tests, config)
@@ -53,11 +56,15 @@ Lesson Crafter/
 ├─ backend/                # Django (uv)
 │  ├─ config/              # settings, urls, asgi, celery
 │  ├─ core/                # health check, local → Supabase sync, bootstrap command
-│  ├─ accounts/            # User, Profile, auth
+│  ├─ accounts/            # User, Profile, auth, consent
+│  ├─ marketing/           # the landing page's try-it questions
+│  ├─ onboarding/          # first-topic suggestions for the setup
+│  ├─ console/             # the staff console API (usage, runs, routing, learners, audit)
 │  ├─ llm_registry/        # registry models, node specs, resolver, gateway, reasoning
 │  ├─ lessons/             # Lesson, Quiz, StudyMaterial, MediaAsset, GraphRun, API, SSE, tasks
 │  └─ graph/               # state, schemas/, prompts/, nodes/, validators/, grading, media tools, graphs
 ├─ sandbox/                # lesson runtime + check.mjs + render-check.mjs (shared by frontend & backend)
+├─ e2e/                    # Playwright smoke tests (make e2e), against a fake LLM
 └─ frontend/               # Next.js (bun)
 ```
 
@@ -67,6 +74,7 @@ Lesson Crafter/
 make env      # creates the single root .env from .env.example (optional: everything has defaults)
 make up       # docker compose: db (Postgres), redis, backend, worker, frontend
 make check    # lint + tests
+make e2e      # browser tests on a throwaway stack with a fake LLM (docs/testing.md)
 ```
 
 The app runs at http://localhost:3000 and Swagger at http://localhost:8000/api/docs (ports come from `.env`). It uses the docker Postgres until you set `SUPABASE_DATABASE_URL`. From then on, the backend copies local data up to Supabase on start. Details are in [docs/local-setup.md](docs/local-setup.md). Development rules are in [CLAUDE.md](CLAUDE.md).

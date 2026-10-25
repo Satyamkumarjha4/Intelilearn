@@ -1,6 +1,6 @@
 # Object design
 
-This document is the **binding object model** for Lesson Crafter: the rules every module follows, the classes each module is made of, and the design patterns used where. It covers the code that exists today and the target for every roadmap phase.
+This document is the **binding object model** for Socra: the rules every module follows, the classes each module is made of, and the design patterns used where. It covers the code that exists today and the target for every roadmap phase.
 
 - New code follows this document. If a change needs a class, collaborator, or pattern that isn't here, update this document **in the same change**.
 - Where today's code differs from the target, the gap is listed in the [refactor backlog](#refactor-backlog). Close it when you next touch that module, or in a dedicated `refactor/<topic>` branch.
@@ -230,7 +230,9 @@ classDiagram
     }
     class DatabaseHealthCheck
     class RedisHealthCheck
-    class CeleryHealthCheck
+    class CeleryHealthCheck {
+        +worker_count() int
+    }
     class HealthService {
         -list~HealthCheck~ checks
         +report() HealthReport
@@ -412,12 +414,14 @@ classDiagram
         +load(data, replace_bindings) dict
     }
     class DefaultRegistry {
+        +label
+        +description
         +nodes
         +build() dict
     }
-    class CheapRegistry {
-        +nodes
-    }
+    class CheapRegistry
+    class BalancedRegistry
+    class QualityRegistry
 
     Provider "1" *-- "many" LLMModel
     NodeConfig "1" *-- "many" NodeModelBinding
@@ -438,6 +442,8 @@ classDiagram
     ProviderProfiles o-- ProviderProfile
     DefaultRegistry ..> RegistrySerializer : same JSON format
     DefaultRegistry <|-- CheapRegistry
+    DefaultRegistry <|-- BalancedRegistry
+    DefaultRegistry <|-- QualityRegistry
 ```
 
 - `ProviderProfile` (`profiles.py`) holds everything that differs per vendor: allowed params and renames, whether a base URL or API key is needed, whether the client takes `timeout`, and reasoning translation. `OpenAICompatibleProfile` and `GroqProfile` subclass `OpenAIProfile`. `Provider.profile` returns the row's profile.
@@ -519,7 +525,7 @@ classDiagram
     }
     class ModelCallRecorder {
         -Redactor redactor
-        +record(node_key, model, attempt, status, latency_ms, error, message)
+        +record(node_key, model, attempt, status, latency_ms, rate_limit_wait_ms, error, message)
         +cost(model, input_tokens, output_tokens)$ float
     }
     class Redactor {
@@ -706,7 +712,12 @@ classDiagram
         -RegistryResolver resolver
         +create(user, topic, user_context) tuple
         +retry(lesson) GraphRun
+        +cancel(run)
         +delete(lesson)
+    }
+    class StopPoint {
+        +remember(run)
+        +of(lesson) tuple
     }
     class QuizService {
         -QuizGrader grader
@@ -717,7 +728,15 @@ classDiagram
     }
     class LessonDocumentBuilder {
         -MediaUrlSigner signer
+        -EmbeddedTest embedded
         +build(lesson) dict
+    }
+    class EmbeddedTest {
+        +in_code(code) bool
+    }
+    class SubmissionDeduplicator {
+        +plan(model) int
+        +run(model) int
     }
     class MediaUrlSigner {
         +sign(asset_id, expires_at) str
@@ -737,6 +756,7 @@ classDiagram
     QuizService ..> Quiz
     QuizService ..> QuizAttempt
     LessonDocumentBuilder --> MediaUrlSigner
+    LessonDocumentBuilder o-- EmbeddedTest
     LessonDocumentBuilder ..> Lesson
 ```
 
@@ -870,6 +890,7 @@ classDiagram
     }
     class RoutingPolicy {
         +route_for(result, settings) Route
+        +thresholds(settings) RoutingThresholds
         +prerequisites_to_cover(prerequisites, questions, result) list
     }
     class Validator {
@@ -907,7 +928,6 @@ classDiagram
     class RepairCodePrompt
     class DocumentAssembler {
         +template_page(key, placements) str
-        +test_page() str
         +assemble(components, pages) str
     }
     class CodeSanitizer {
@@ -1020,6 +1040,7 @@ classDiagram
         +execute(run_id) GraphRun
         -stream(run) dict
         -input(graph, run, config)
+        -stopped(run)
     }
     class EventPublisher {
         <<interface>>
@@ -1033,7 +1054,7 @@ classDiagram
         +get(request, run_id) StreamingHttpResponse
     }
     class GraphRunRecorder {
-        +node_status(run, node, status)
+        +record(run, event) : node_status and node_timings
         +finish(run, status, error)
     }
     class CheckpointerFactory {
@@ -1100,6 +1121,35 @@ classDiagram
         +constructor(runId, onEvent)
         +close()
     }
+    class RunFollower {
+        +int TICK_MS
+        +int POLL_MS
+        +int MIN_GAP_MS
+        +start()
+        +stop()
+    }
+    class RunTimeline {
+        +float MIN_WIDTH
+        +layout(steps, runDurationS)$ TimelineView
+    }
+    class RunFilters {
+        +parse(params)$ RunFilterState
+        +href(path, filters)$ str
+        +query(filters)$ RunQuery
+        +runIdIn(text)$ str
+        +tabLabel(tab, failedCount, more)$ str
+    }
+    class RunText {
+        +duration(seconds)$ str
+        +cost(money)$ str
+        +status(status)$ StatusTone
+        +callResult(call)$ StatusTone
+        +ago(iso, now)$ str
+    }
+    class RunActions {
+        +retry(id) Promise~ActionResult~
+        +cancel(id) Promise~ActionResult~
+    }
     class SandboxMessages {
         +parse(data)$ SandboxMessage
         +from(event, frame)$ SandboxMessage
@@ -1115,10 +1165,107 @@ classDiagram
     class RedirectPolicy {
         +safeNext(value)$ str
     }
+    class SheetCatalog {
+        +all()$ SheetInfo[]
+        +of(kind)$ SheetInfo
+        +makeLabel(kind)$ str
+        +addLabel(kind)$ str
+    }
+    class SheetTabs {
+        +of(have, building)$ SheetTab[]
+        +pick(tabs, wanted)$ MaterialKind
+    }
+    class MasteryBanner {
+        +of(result)$ Banner
+    }
+    class CheatGroups {
+        +of(items)$ CheatGroup
+    }
+    class RouteGuard {
+        +redirectFor(pathname, search, visitor)$ str
+    }
+    class SetupMarker {
+        +begin()
+        +end()
+    }
+    class SessionProbe {
+        +signedIn(cookies)$ bool
+        +ask(fetcher)$ bool
+    }
+    class StopControl {
+        +of(canStop, open)$ StopView
+    }
+    class ChartPalette {
+        +family(color)$ str
+    }
+    class Initials {
+        +of(person)$ str
+    }
+    class QuizNames {
+        +of(kind)$ str
+        +done(kind)$ str
+        +resultLabel(kind)$ str
+    }
+    class PlainVersion {
+        +of(reason)$ str
+    }
+    class HeroDemo {
+        +isAnswer(value)$ bool
+        +isRight(answer)$ bool
+        +resultFor(answer)$ HeroResultCopy
+    }
+    class Walkthrough {
+        +int index
+        +bool autoplay
+        +start(count, autoplay)$ Walkthrough
+        +advance() Walkthrough
+        +choose(index) Walkthrough
+        +step(direction) Walkthrough
+    }
+    class ScorePaths {
+        +pathFor(score)$ PathId
+        +dots(score)$ bool[]
+    }
+    class SlideCycle {
+        +next(index, count)$ int
+        +previous(index, count)$ int
+        +byKey(key, index, count)$ int
+        +fromScroll(left, width, gap, count)$ int
+    }
+    class PendingTopic {
+        +save(raw)
+        +peek() str
+        +take() str
+    }
+    class RevealPolicy {
+        +startsHidden(top, viewportHeight)$ bool
+        +delay(index)$ str
+    }
+    class DeckMotion {
+        +fly(card)$
+        +rise(card)$
+        +prefersLessMotion()$ bool
+    }
+    SheetTabs ..> SheetCatalog : orders by
+    RouteGuard ..> SetupMarker : reads its cookie (via proxy.ts)
+    AuthProvider ..> SessionProbe : asks before /auth/me
+    PipelineProgress ..> StopControl : asks what to show
+    ProviderSeries ..> ChartPalette : is a provider colour
+    RunFollower ..> RunEventStream : opens (injected)
+    RunFollower ..> RunText : asks isActive
+    RunActions ..> ConsoleApi : calls (injected)
     ApiClient ..> ApiError : throws
+    ScorePaths ..> PathSlide : reads the ranges of
+    HeroDemo ..> HeroResultCopy : picks
 ```
 
+- **Stop, Retry and the session.** `StopPoint` (`lessons/services.py`) is what `LessonService.cancel` leaves for `retry`: the stage the lesson was in and the answer the stopped run was about to give. `SessionProbe` asks the site's own `/api/session` whether the (httpOnly) session marker is there, so a signed-out page makes no `/auth/me` call to fail; `SetupMarker` is the one cookie the page itself sets, for the last onboarding step. `StopControl` keeps the stop dialog tied to the learner's action, not to the run. `ChartPalette` keeps provider and status colours in separate charts, enforced by `lib/console-charts.test.ts`.
 - Components call the shared `apiClient` instance (`apiClient.request<T>(path, options)`), so concurrent 401s share one refresh. `fetch` and the cookie reader are constructor parameters, so `lib/api.test.ts` drives the client with a scripted fake `fetch`.
+- The landing page (see [frontend.md](frontend.md#the-landing-page)) keeps every rule in a static class: `RouteGuard` is what the thin `proxy.ts` hook calls; `HeroDemo`, `Walkthrough` (an immutable value: each move returns the next state), `ScorePaths`, `SlideCycle`, `PendingTopic` (storage is a constructor parameter) and `RevealPolicy` are used by thin components in `components/landing/`. `DeckMotion` holds the fly-off and rise constants that `FlashcardDeck` and the try-it card share.
+- The console's Lesson runs page (`components/console/runs/`) follows the same split. `RunFilters` is the address (`?status=&job=&q=&run=`) as a value, and the only way a run id from the address reaches an API path (it must be a whole UUID). `RunText` writes every time, cost, status and stage; `RunTimeline.layout` turns timeline steps into phase groups, lanes and bar percentages (minimum width, waiting steps open-ended); `RunActions` runs Retry and Stop and explains each refusal. `RunFollower` keeps the open run current: events say *when* something changed and the console's detail says *what*, so it reloads on events and on a slow beat, falls back to polling when the stream is refused (the stream is open only to the learner who owns the run), spaces its loads for the console's throttle, and stops once the run is over. Its timers, stream and loader are constructor parameters, so `run-follower.test.ts` drives it with a fake clock.
+- The console's shell, Overview and Usage pages (`components/console/`, `components/console/overview/`, `components/console/usage/`) keep every decision in static classes, and the components only draw. `ConsoleGate` (not the backend's `ConsoleAccess`) decides what the layout does with a session (wait, sign in, not-found, show); `ConsoleQueryClient` and `ConsoleQueries` are the only TanStack Query setup (a factory for the client and a set of `queryOptions` with an injectable `ConsoleApi` and clock); `ConsoleUrl` is the address as a value (forgiving reads, defaults left out when writing); `ConsoleNav` is the sidebar as data; `ConsoleFormat` is the one place that writes numbers. `lib/console-charts.ts` has one class per chart (`SpendChart`, `LatencyChart`, `OutcomeChart`, `FunnelChart`, `SlowestSteps`, `StepTable`) with the same three methods where they apply: shape the reply into rows, say what a hover shows (`tooltip`, a `TooltipData` value), and give the table form (`table`); `ProviderSeries` is the only mapping from a provider to a colour, so a series never changes colour with its rank. `UsageFilterOptions` builds the drop-down choices and keeps a chosen model consistent with its provider. Variants are added to a class, not branched in a component (a new chart is a new class and a thin card).
+- The Learners and Change log pages (`components/console/people/`) are thin views over `lib/console-people.ts` and `lib/console-audit.ts`. `LearnerText`, `LearnerStats`, `PeopleUrl` and `AdminLinks` (the only place a link out of the console is built, from an allow-listed scheme) are static classes; `AuditText` turns an `AuditEntry` into `Segment`s (a variant is a new `case` in one `switch` over the API's own action names, with a generic sentence as the fallback, so an action the frontend has not heard of still reads), `AuditAreas` maps a target to its area, and `AuditDiff` formats the changed fields. `PeopleQueries` holds the paged `infiniteQueryOptions` with an injectable `ConsoleApi`; it sits beside `ConsoleQueries` rather than in it so that each page's queries and shaping stay together. `useDebouncedText` (search to address) and `notFoundIfRefused` (the 404 rule for a paged list) are the only hooks.
+- The console's Models, Model routing and Lesson settings pages (`components/console/models/`, `routing/`, `settings/`) are views over small classes in `lib/`. **Value objects with static methods** (`ModelCatalog`, `RoutingDraft`, `RoutingProfile`, `RoutingView`, `FlowBands`, `FlowSettingsForm`, `ModelForm`, `ProviderForm`, `UnsavedGuard`, `ConsoleFailure`) hold every rule and never mutate what they are given: each edit returns a new step, so the page keeps the saved copy beside the edited one and the diff (`RoutingDraft.changed`) says exactly what Save sends. **`RoutingSaver`** and **`ProbeQueue`** are the classes with collaborators, injected through the constructor (`Pick<ConsoleApi, "saveNode">`, a probe function), so their tests use fakes: the saver sends one `PUT` per step and keeps each outcome apart (the API replaces one step atomically, so some can succeed while others are refused), and the queue is a worker pool of two over the probe endpoint. `FlowBands` mirrors `RoutingPolicy.thresholds` on the server and is tested against the values the API reports. Edits live in component state (`useRoutingEdits`, the settings form) and never in the query cache, which only holds what the server has; the two queries a page edits are not refetched on focus, so the saved copy does not move under the edits.
 - `useRunEvents`, `useProfile` and the `LessonSandbox` component are hooks/components that own one instance of these classes.
 - `SandboxMessages.from` accepts only messages whose `event.source` is the embedded iframe and gives every field a safe type; `HarnessBuilder` fills the harness with absolute addresses (the iframe's origin is opaque); `RepairGate` asks for a repair once per code version and stops when the server refuses; `HarnessSource` fetches the harness once; `RenderMessage` and `RepairReport` shape what is posted to the iframe and to `/repair`; `LessonPdf` prints the reading pages.
 
@@ -1226,8 +1373,11 @@ classDiagram
     }
     class GradeTestPrompt
     class SubmissionService {
+        +for_learner(lesson) dict
         +submit(lesson, answers) tuple
+        +regrade(lesson, submission_id) GraphRun
         +get(lesson, submission_id) TestSubmission
+        +current(lesson) TestSubmission
     }
     class RunEffects {
         +on_stopped(run, message)
@@ -1286,16 +1436,250 @@ classDiagram
 - `UsageReport` is a read model over the `ModelCall` log, with no side effects, behind the admin's usage page.
 - The optional judges (`diagnostic.review`, `media.verify`) degrade instead of failing: see [lesson-graph.md](lesson-graph.md).
 
+### 4.14 `onboarding`: first-topic suggestions
+
+```mermaid
+classDiagram
+    direction LR
+    class TopicSuggester {
+        +suggest(request) Suggestions
+        +default()$ TopicSuggester
+    }
+    class TopicRouter {
+        +route(request) Route
+    }
+    class RouteRule {
+        <<abstract>>
+        +route(request, catalogue) Route
+    }
+    class Catalogue {
+        +FieldFamilies families
+        +school(grade) CatalogueItem[]
+        +general(level) CatalogueItem[]
+        +family(slug, level) CatalogueItem[]
+        +default()$ Catalogue
+    }
+    class FieldFamilies {
+        +match(field) str
+    }
+    class ReasonBuilder {
+        +reason(request) str
+    }
+    class ReasonRule {
+        <<abstract>>
+        +applies(request) bool
+        +text(request) str
+    }
+    class Pager {
+        +page(items, page)$ list
+        +has_more(items)$ bool
+    }
+    class TopicModel {
+        <<Protocol>>
+        +suggest(request) Topic[]
+        +translate(language, topics) Topic[]
+    }
+    class GatewayTopicModel {
+        +RATE_WAIT_S
+    }
+    class TopicTranslator {
+        +translate(language, topics) Topic[]
+    }
+    class SuggestionCache {
+        +get_response() put_response()
+        +get_topics() put_topics()
+        +get_translation() put_translation()
+    }
+    class SuggestionRequest {
+        <<frozen>>
+    }
+    class Suggestions {
+        <<frozen>>
+    }
+    class TopicSuggestionsView
+    TopicSuggestionsView ..> TopicSuggester : suggester_factory
+    TopicSuggester o-- TopicRouter
+    TopicSuggester o-- ReasonBuilder
+    TopicSuggester o-- TopicModel
+    TopicSuggester o-- SuggestionCache
+    TopicSuggester o-- TopicTranslator
+    TopicSuggester ..> Pager
+    TopicRouter o-- RouteRule
+    TopicRouter ..> Catalogue
+    Catalogue o-- FieldFamilies
+    ReasonBuilder o-- ReasonRule
+    TopicTranslator o-- TopicModel
+    TopicTranslator o-- SuggestionCache
+    TopicModel <|.. GatewayTopicModel
+    GatewayTopicModel ..> Gateway : onboarding.suggest_topics
+```
+
+- **Facade**: `TopicSuggester` is the one entry point; the view only validates and formats. `default()` is the composition root (shipped catalogue, gateway-backed model, Redis cache); the view's `suggester_factory` is the seam tests replace.
+- **Chain of responsibility / Strategy**: `RouteRule`s (school, interview, higher education, professional, self-learner) and `ReasonRule`s are lists the router and the builder walk, first match wins, so a new variant is a new class, never a new `if`. `FieldFamilies` is data-driven from the catalogue file.
+- **Port**: `TopicModel` is the only thing onboarding needs from a model, and it raises only `TopicModelError`, which is what the service turns into the catalogue. `GatewayTopicModel` calls `Gateway().invoke("onboarding.suggest_topics", ...)` with a snapshot taken at the moment of the call and a limiter that does not wait out a rate limit. The prompts are `Prompt` subclasses (Template Method, as in `graph/prompts`).
+- **Cache-aside**: `SuggestionCache` keeps pages, a model's list and translations, never fails a request, and builds normalised, short, plain keys.
+- Results are frozen dataclasses (`SuggestionRequest`, `Topic`, `Suggestions`); the model's output is the Pydantic `TopicSuggestions`. [onboarding.md](onboarding.md) has the behaviour.
+
+### 4.15 `marketing`: the landing page's question bank
+
+```mermaid
+classDiagram
+    direction LR
+    class DemoQuestion {
+        +subject +level_label +band
+        +question +options +correct_index
+        +outcome_right +outcome_wrong
+        +is_active
+        +clean()
+    }
+    class Outcome {
+        <<Pydantic>>
+        +level +level_label +lesson_start
+    }
+    class DemoQuestionPicker {
+        +pick(exclude) DemoQuestion
+        +invalidate()
+    }
+    class DemoQuestionView
+    DemoQuestion ..> Outcome : validates its outcomes with
+    DemoQuestionPicker ..> DemoQuestion : chooses
+    DemoQuestionView o-- DemoQuestionPicker : picker_factory
+```
+
+- `DemoQuestionPicker` is the only logic: random among the active ids, never the excluded one (unless it is all there is), ids cached with the cache injected, and a cached id that has gone is skipped for a fresh list. A signal receiver (`signals.py`, a thin hook) clears the cache when a question is saved or deleted. The view validates `exclude`, throttles per client address (scope `landing_demo`) and formats; an empty bank is a `NotFound`.
+- `DemoQuestion.clean()` is the contract of a row (three different options, an answer among them, a band, outcomes validated by the Pydantic `Outcome`), so what the admin saves is what the card can show.
+- The frontend side is in [frontend.md](frontend.md#the-landing-page): `DemoQuestions`, `DemoQuestionFetcher`, `HeroDemo` and `Autoplay`, all `lib/` classes with `bun test`.
+
+### 4.16 `console`: the staff API
+
+`console` is its own app, not part of `core`: it reads across `llm_registry`, `lessons` and `accounts` and owns one model (`AuditEntry`), while `core` is infrastructure that no domain app should depend on. The dependency runs one way: `console` imports the others, none of them imports `console`. It adds no behaviour of its own to the lesson flow: every action calls the service the learner's button calls (`LessonService.retry` and `cancel`) or the model's own `full_clean`.
+
+```mermaid
+classDiagram
+    direction LR
+    class ConsolePermission {
+        +has_permission(request, view) bool
+    }
+    class ConsoleAccess {
+        <<mixin>>
+        +permission_classes
+        +throttle_classes
+        +audit AuditTrail
+    }
+    class OverviewReport {
+        +build(range, now) dict
+    }
+    class AttentionRule {
+        <<abstract>>
+        +evaluate(context) Attention[]
+    }
+    class ConsoleHealth {
+        +report() dict
+    }
+    class CallOutcomes {
+        +condition(name)$ Q
+        +counts()$ dict
+        +name_of(status, attempt)$ str
+    }
+    class PercentileCont
+    class Periods {
+        +of(key, now) Period
+    }
+    class UsageFilters
+    class UsageReport {
+        +build(filters) dict
+    }
+    class UsageCsv {
+        +rows(filters) Iterator
+    }
+    class RunQuery {
+        +queryset(statuses, graphs, search)
+    }
+    class RunTimeline {
+        +of(run) dict[]
+    }
+    class NodePhases {
+        +of(node) str
+    }
+    class RunActions {
+        +retry(run) GraphRun
+        +cancel(run) GraphRun
+    }
+    class ProviderService
+    class ModelService
+    class ModelProbeService {
+        +probe(model) ProbeOutcome
+    }
+    class NodeRoutingValidator {
+        +problems(node, proposed) dict
+    }
+    class NodeRoutingWriter {
+        +replace(node, proposed) NodeConfig
+    }
+    class ProfilePreview {
+        +listing() dict[]
+        +preview(name) dict
+    }
+    class FlowSettingsService
+    class AuditTrail {
+        +record(action, target_type, target_id, before, after)
+    }
+    class AuditEntry {
+        <<model>>
+    }
+    ConsoleAccess ..> ConsolePermission
+    OverviewReport o-- ConsoleHealth
+    OverviewReport o-- AttentionRule
+    OverviewReport ..> Periods
+    OverviewReport ..> CallOutcomes
+    AttentionRule <|-- FailedLessonsRule
+    AttentionRule <|-- FailingModelRule
+    AttentionRule <|-- RateLimitWaitRule
+    AttentionRule <|-- MissingKeyRule
+    UsageReport ..> UsageFilters
+    UsageReport ..> CallOutcomes
+    UsageReport ..> PercentileCont
+    UsageCsv ..> UsageFilters
+    RunTimeline o-- NodePhases
+    RunActions ..> LessonService : retry, cancel
+    RunActions o-- AuditTrail
+    ProviderService o-- AuditTrail
+    ModelService o-- AuditTrail
+    ModelService ..> ModelProbeService : stores its result
+    ModelProbeService ..> ModelProber : one probe at a time
+    NodeRoutingWriter o-- AuditTrail
+    NodeRoutingWriter ..> NodeRoutingValidator
+    ProfilePreview o-- NodeRoutingValidator
+    ProfilePreview ..> SEED_PROFILES
+    FlowSettingsService o-- AuditTrail
+    FlowSettingsService ..> RoutingPolicy : thresholds
+    AuditTrail ..> AuditEntry
+```
+
+- **Facade + composition**: `OverviewReport` asks one small collaborator per card (`LessonCounts`, `SpendSummary`, `CallSummary`, `DailySpend`, `Funnel`, `SlowestSteps`, `ConsoleHealth`, `AttentionRules`), each injected with a production default, so a card changes without touching the others and the page costs a fixed number of queries. `OverviewView.health` is the seam tests replace so they never reach Redis or Celery.
+- **Strategy / Chain**: `AttentionRule`s are a list the overview walks; a new warning is a new class added to `AttentionRules.DEFAULT`. The seed profiles are `DefaultRegistry` subclasses in `SEED_PROFILES` and `ProfilePreview` reads them as they are, so a new profile is a class there with a `label` and a `description`.
+- **Specification**: `CallOutcomes` is the one definition of ok, retried, failed, fallback and retry attempt, as `Q` conditions for SQL and `name_of` for a row in hand; the overview, usage page, CSV and attention rules all use it, and a test proves the two agree.
+- **Validate, then write**: `NodeRoutingValidator` returns every problem of a proposed routing by field (the node's own `clean()`, the binding's capability and size `problems()`, the provider key being set, duplicates); `NodeRoutingWriter` runs only after it passes, in one transaction with the audit entry. `ProfilePreview` reuses the validator on what a profile would propose, so the preview says what a save would refuse.
+- **Template of every write**: a service method checks, then `transaction.atomic()` around the change and `AuditTrail.record`; a refused request raises before the transaction. Retry is the exception (the run it creates is queued for a worker as soon as it exists, and the worker must find it, so the entry is written after, not inside a transaction).
+- **Adapter**: `ModelProbeService` runs the same `CapabilityProbe`s as `probe_models`, one at a time under one 20-second deadline (each client gets the time left), because `ModelProber` gives every probe the whole timeout. `UsageCsv` streams rows through a `csv.writer` over an `Echo` buffer.
+- **Views** are thin: `ConsoleAccess` gives them staff-only access (404, never 403), the `console` throttle, `Cache-Control: no-store` and the audit trail; serializers (`console/serializers.py`) describe the shapes for Swagger and reject fields that cannot be set (`RejectUnknownFields`). A guard test fails when an endpoint that changes something is added without an audit test.
+- The timeline is derived from `GraphRun.node_timings`, which `GraphRunRecorder.record` fills as node events arrive (first start, latest finish, retry count); `NodePhases` places a node in a phase by the module that defines it. [api.md](api.md#console-staff-only) has the derivation and every endpoint.
+
 ## 5. How to extend
 
 | You are adding | Do this |
 |---|---|
+| A hero question | A row in the Django admin (Marketing → Demo questions): it is live as soon as it is saved and active, because saving clears the cached list of ids. |
+| A first-topic list, field family, routing rule or reason | A JSON edit in `onboarding/catalogue.json`, or a `RouteRule` / `ReasonRule` class in the router or the reason builder; see [onboarding.md](onboarding.md#extending). |
 | An LLM step | `NodeSpec` in `node_specs.py` → `Prompt` subclass → `LLMNode` subclass (+ `Validator` and `ValidateNode` if its output has rules) → register in the graph builder → `migrate` → bind models. Tests first for the validator and the node with `FakeGateway`. |
 | A provider kind | `ProviderProfile` subclass, registered in `ProviderProfiles`; a test that builds the real client offline (`tests/llm_registry/test_providers.py`). |
 | A media source | `MediaSource` implementation, a `FlowSettings.media_sources` value, tests with `httpx.MockTransport`. |
 | A health dependency | `HealthCheck` subclass, added to `HealthService`'s default list. |
 | A lesson stage | `Stage` value, `StageTransitions` entries, a frontend view for it, and the stage table in [data-model.md](data-model.md). |
 | An endpoint | Thin view with `@extend_schema` → service method → domain objects. |
+| A console endpoint | A view on `ConsoleView` / `ConsoleListView` (tag `console`), a service that validates, then writes and `AuditTrail.record`s in one transaction if it changes something, a serializer for the shape, a route in `console/urls.py`, and tests in `tests/console/` (the guard in `test_audit.py` fails until the change has an audit test). |
+| A console warning | An `AttentionRule` subclass in `console/services/attention.py`, added to `AttentionRules.DEFAULT`, with a test that it fires and stays quiet. |
+| A routing profile | A `DefaultRegistry` subclass with `label`, `description` and `nodes`, registered in `SEED_PROFILES`; `tests/llm_registry/test_seed.py` checks it loads and gives every step a fallback. |
 
 ## Refactor backlog
 

@@ -1,6 +1,6 @@
 # Testing
 
-Lesson Crafter is built **test-first**. Every behaviour change starts with a failing test, and every test file says what it tests, why, and which use cases it covers. This document is the contract for both. The object design that makes code testable is in [design.md](design.md).
+Socra is built **test-first**. Every behaviour change starts with a failing test, and every test file says what it tests, why, and which use cases it covers. This document is the contract for both. The object design that makes code testable is in [design.md](design.md).
 
 ## 1. Workflow: red → green → refactor
 
@@ -33,6 +33,7 @@ By kind of change:
 
 - Backend tests live in the repo-root `tests/`, mirroring `backend/` one file per module: `backend/core/sync.py` → `tests/core/test_sync.py`, `backend/llm_registry/management/commands/probe_models.py` → `tests/llm_registry/management/commands/test_probe_models.py`.
 - A module with a lot of behaviour may split into several files named by area: `tests/accounts/test_views.py` and `test_views_profile.py`.
+- The staff console (`backend/console/`) is tested by area in `tests/console/` (`test_overview.py`, `test_usage.py`, `test_runs.py`, `test_registry.py`, `test_routing.py`, `test_flow_settings.py`, `test_learners.py`, `test_audit.py`, `test_access.py`). Its fixtures are in `tests/console/conftest.py`: a frozen clock (`now`), `make_call` for `ModelCall` rows at known times, `registry` for providers and models, and `count_queries`. A list endpoint gets a test that its query count is the same for few and many rows, and `test_audit.py` has a guard that fails when a console endpoint that changes something is added without an audit test.
 - Frontend unit tests sit beside the file they test as `*.test.ts` and run with `bun test`.
 - Sandbox scripts (`sandbox/scripts/*.mjs`) are tested through `SandboxRunner` in `tests/graph/test_sandbox.py`, against fixtures in `sandbox/fixtures/` (`good/` must pass; each `bad/` file names the rules it must trigger in an `// expect:` header). The Node package is part of the backend image, so these run in `make test`.
 - Shared builders and doubles live in `tests/support/` (importable as `support.…`; `tests/` is on the test python path) and its fixtures are registered for every test from `tests/conftest.py`. A graph run executes nodes on LangGraph's worker threads, whose database connection only sees committed rows, so tests that run a whole graph or the runner are marked `django_db(transaction=True)`.
@@ -135,7 +136,14 @@ A new public method without a test is incomplete, as is a branch nobody exercise
 | `make test` | All backend tests except `live`, against the docker Postgres |
 | `make lint` | ruff and ruff format (backend and tests), OpenAPI validation, eslint, `tsc`, and `bun test` |
 | `make check` | `lint` + `test`; required before finishing any task, and run by CI on every push ([ci.md](ci.md)) |
+| `make e2e` | The Playwright smoke tests in `e2e/` against a throwaway stack on the fake LLM (see below). Needs a browser, so it is **not** part of `make check` or CI yet |
 | `pytest -m live` | The golden-topic suite in `tests/live/`: three topics from a first question to a ready lesson and a graded test with the real models, sandbox and media services, held to structural checks and a cost budget (`LIVE_MAX_COST_USD`, default 2.00). **It spends money with the keys in `.env`** and is deselected by default (`addopts = -m 'not live'`); run it by hand. The checks it applies (`tests/live/golden.py`) are tested offline in `make check` |
+
+### 6.1 Browser tests (`make e2e`)
+
+`e2e/` is its own bun package (`@playwright/test`), apart from `sandbox/`, which is the lesson runtime. `make fake-llm` starts a separate compose project, `socra-e2e` (`docker-compose.e2e.yml`): its own containers and database volume, ports `E2E_FRONTEND_PORT` / `E2E_BACKEND_PORT` (7100 / 7110), **no Supabase URL and no provider key**, throttles raised so a run can sign up many learners, and the registry from `tests/e2e/fake_registry.json`, whose only model is `tests/e2e/fake_llm_server.py`. It also creates the staff user (`E2E_STAFF_EMAIL` / `E2E_STAFF_PASSWORD`). `make e2e` runs that and then the specs; `make e2e-down` deletes the stack. The first time: `cd e2e && bun install && bunx playwright install chromium`.
+
+Each spec has a header with what it covers and why, like a unit test. They cover the seams the unit tests cannot: the learner's whole path from sign-up to a test that can be submitted once (a second submit is `409`, and the questions never carry the answers), the landing page's question, who may open the console, a refresh on the last onboarding step, and Stop then Retry at four different moments of a build. Because every model answer is canned, a lesson builds in seconds and nothing here proves the lessons are good: that is `pytest -m live`.
 
 ## 7. Definition of done
 

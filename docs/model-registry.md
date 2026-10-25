@@ -58,6 +58,9 @@ Provider ──< LLMModel ──< NodeModelBinding >── NodeConfig ── Nod
 | rpm_limit | int, null | Per-model requests per minute, on top of the provider's |
 | input_cost_per_mtok / output_cost_per_mtok | decimal, null | Used to cost each `ModelCall` |
 | is_enabled | bool | |
+| **Last test** | | Written by the console's test button (`POST /console/models/{id}/probe`), never read by routing |
+| last_probe_at / last_probe_ok | datetime, bool; null | When the model was last tested and whether every check passed |
+| last_probe_latency_s / last_probe_error | float, null; text | Seconds the plain text call took; the first failure as `capability: detail` (redacted), empty if it worked |
 
 `unique_together = (provider, name)`
 
@@ -93,7 +96,9 @@ Provider ──< LLMModel ──< NodeModelBinding >── NodeConfig ── Nod
 
 ### `ModelCall`
 
-`lesson_id`, `run_id` (plain UUIDs, so the registry doesn't depend on the lessons app), `node_key`, `provider_key`, `model_name`, `attempt`, `fallback_index`, `status` (`ok` \| `retryable_error` \| `fatal_error` \| `invalid_output`), `error`, `latency_ms`, `input_tokens`, `output_tokens`, `reasoning_tokens`, `tool_calls`, `cost`, `created_at`
+`lesson_id`, `run_id` (plain UUIDs, so the registry doesn't depend on the lessons app), `node_key`, `provider_key`, `model_name`, `attempt`, `fallback_index`, `status` (`ok` \| `retryable_error` \| `fatal_error` \| `invalid_output`), `error`, `latency_ms` (includes any wait for a rate-limit window), `rate_limit_wait_ms` (the part of it spent waiting), `input_tokens`, `output_tokens`, `reasoning_tokens`, `tool_calls`, `cost`, `created_at`
+
+A row is one *attempt*. The console counts a row as `ok` (status ok on attempt 1), `retried` (status ok on attempt above 1) or `failed` (any other status), so the three add up to the calls made; a *fallback* is a row with `fallback_index` above 0 and a *retry attempt* one with `attempt` above 1, whatever came of them (`console/outcomes.py`). Indexed on `created_at`, `(model_name, created_at)` and `(node_key, created_at)`, for the usage page's filters.
 
 ## Node specs
 
@@ -132,6 +137,7 @@ class NodeSpec:
 | `code.repair` | build | text (TSX) | n/a | 32k | medium | |
 | `runtime.repair` | post | text (TSX) | n/a | 32k | medium | |
 | `test.grade` | post | structured → `GradeReport` | structured_output | 4k | medium | |
+| `onboarding.suggest_topics` | onboarding | structured → `TopicSuggestions` | structured_output, context ≥ 8k | 2k | **low** | ✓ |
 
 Adding a node takes three steps: add a `NodeSpec`, write the node, and run `migrate`, which creates its `NodeConfig`. Then bind models in the admin or add them to `llm_registry/seed.py`.
 
@@ -283,6 +289,7 @@ There is no Gemini Pro model: it has no free quota. The Groq free tier allows ab
 |---|---|
 | diagnostic.generate, test.grade | gpt-oss-120b, gemini-3.5-flash |
 | diagnostic.review, learner.assess, interactive.plan, media.search | gpt-oss-20b, gemini-3.5-flash |
+| onboarding.suggest_topics | gpt-oss-20b, gemini-3.5-flash-lite (low effort, one attempt, `timeout_s` 4, `max_retries` 0 on both: the next model is the retry) |
 | lesson.plan | gemini-3.5-flash, gpt-oss-120b, gemini-3.5-flash-lite |
 | study.generate, page.generate, test.generate, interactive.generate, alignment.judge, page.compile, code.repair, runtime.repair, media.verify | gemini-3.5-flash, gemini-3.5-flash-lite |
 
@@ -290,6 +297,13 @@ The seeded `rpm_limit` values are free-tier figures: raise or clear them on a pa
 
 ### The cheap profile (`seed_registry --profile cheap --force`)
 
-For trying the lesson flow end to end (look and feel, wiring) without hitting rate or billing limits, before tuning for quality. Every node runs at `reasoning_effort=low` on the cheapest models only: the nodes the default leads with Groq use gpt-oss-20b, then gemini-3.5-flash-lite, then gemini-3.1-flash-lite; every other node uses the two Flash-Lite models, which have separate quotas. Output quality and schema adherence are weaker, so expect the odd failed step. When the flow works, `seed_registry --force` (the default profile) restores the quality chains. Profiles are classes in `seed.py` registered in `SEED_PROFILES`.
+For trying the lesson flow end to end (look and feel, wiring) without hitting rate or billing limits, before tuning for quality. Every node runs at `reasoning_effort=low` on the cheapest models only: the nodes the default leads with Groq use gpt-oss-20b, then gemini-3.5-flash-lite, then gemini-3.1-flash-lite; every other node uses the two Flash-Lite models, which have separate quotas. Output quality and schema adherence are weaker, so expect the odd failed step. When the flow works, `seed_registry --force` (the default profile) restores the quality chains. Profiles are classes in `seed.py` registered in `SEED_PROFILES`, each with a `label` and a `description` that the console lists.
+
+Two more profiles sit between the free-tier default and the cheap one:
+
+- **balanced** (`--profile balanced`): Gemini Flash (then Flash-Lite) leads the steps where a lesson's quality is decided (`diagnostic.generate`, `learner.assess`, `study.generate`, `lesson.plan`, `page.generate`, `test.generate`, `interactive.generate`, `alignment.judge`, `test.grade`, `media.verify`); the mechanical steps (compiling, repairing, planning interactives, media search, the quiz reviewer) use the cheap chains. Every step runs at its own spec's reasoning effort.
+- **quality** (`--profile quality`): Gemini Flash first on every step, with the big Groq model behind it where Groq can take the reply (the steps the default also gives a Groq model) and Flash-Lite last; every step thinks one level harder than its spec asks (none stays none). The slowest and most expensive.
+
+Neither changes `onboarding.suggest_topics`: the learner is waiting for it, so all four profiles leave it as the default seeds it. The console previews any profile against the live registry (`POST /console/profiles/{name}/preview`) before anything is saved.
 
 A full lesson makes roughly 20–35 LLM calls. The rate limiter queues calls over a model's `rpm_limit` instead of failing them.

@@ -28,9 +28,11 @@ The root `.env` is the **single source of configuration**. Django reads it, `doc
 | Supabase | `SUPABASE_DATABASE_URL`, `SYNC_LOCAL_TO_SUPABASE` | empty, true |
 | Redis | `REDIS_HOST`, `REDIS_PASSWORD` | localhost, none |
 | Frontend | `DJANGO_API_ORIGIN`, `NEXT_PUBLIC_BACKEND_URL` | `http://localhost:${BACKEND_PORT}` |
+| Frontend | `NEXT_PUBLIC_DJANGO_ADMIN_URL` (the console's "Open in Django admin" links) | `http://localhost:${BACKEND_PORT}/admin` |
 | LLM keys | `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | empty. The default registry uses Gemini and Groq. |
 | Reasoning budgets | `LLM_REASONING_BUDGET_LOW/MEDIUM/HIGH` | 2048 / 8192 / 24576 |
 | Media sources | `WIKIMEDIA_API_URL`, `OPENVERSE_API_URL`, `GIPHY_API_URL`, `MEDIA_ALLOW_PRIVATE_HOSTS` | the public services, false |
+| Console (staff API) | `CONSOLE_MONTHLY_BUDGET_USD`, `CONSOLE_THROTTLE_RATE` | 25, 120/min |
 | Lesson flow | `FLOW_RUN_LOCK_TTL_S`, `LESSON_CREATE_THROTTLE_RATE`, `SSE_HEARTBEAT_S`, `SANDBOX_DIR`, `NODE_BINARY`, `SANDBOX_CHECK_TIMEOUT_S`, `SANDBOX_RENDER_TIMEOUT_S`, `SANDBOX_PAGE_TIMEOUT_MS`, `GIPHY_API_KEY`, `MEDIA_URL_TTL_S` | 600, 30/hour, 15, `<repo>/sandbox`, node, 30, 180, 8000, empty, 21600 (6 h) |
 | Offline walk-through | `FAKE_LLM_API_KEY` | empty (any value; not a secret) |
 
@@ -47,7 +49,7 @@ On start, `make up` also recreates the frontend's anonymous `node_modules` and `
 
 | URL | What |
 |---|---|
-| `http://localhost:${FRONTEND_PORT}` | App. The home page shows live status for database, Redis, and worker, fetched through the `/api` proxy. |
+| `http://localhost:${FRONTEND_PORT}` | App. `/` is the public landing page; health is only at `/api/health`. |
 | `http://localhost:${BACKEND_PORT}/api/docs` | **Swagger UI** |
 | `http://localhost:${BACKEND_PORT}/api/redoc` | ReDoc |
 | `http://localhost:${BACKEND_PORT}/api/schema` | OpenAPI 3 schema (YAML; add `Accept: application/json` for JSON) |
@@ -114,14 +116,14 @@ docker compose --profile e2e up -d fake-llm
 docker compose exec backend python manage.py seed_registry --file /tests/e2e/fake_registry.json
 ```
 
-**That replaces the bindings of every node in the registry of the database you run it against**, so do it on a throwaway stack. To keep your own stack untouched, start a second one under another project name and ports:
+**That replaces the bindings of every node in the registry of the database you run it against**, so do it on a throwaway stack. `make fake-llm` does exactly that for you:
 
 ```bash
-BACKEND_PORT=7110 FRONTEND_PORT=7100 POSTGRES_PORT=7130 REDIS_PORT=7120 FAKE_LLM_API_KEY=fake \
-  docker compose -p lcfake --profile e2e up -d --build
+make fake-llm      # a separate compose project (socra-e2e): http://localhost:7100, staff@example.com, no Supabase, no keys
+make e2e-down      # when you are done: stops it and deletes its database
 ```
 
-If `.env` sets `DJANGO_CSRF_TRUSTED_ORIGINS`, that stack also needs it to list its own two ports. The fake is reached at `http://fake-llm.lan:9000/v1` (the registry insists on a domain-like host name, so the compose service has that alias). The fake also serves the media services the lesson flow searches (a Wikimedia-style API and generated PNGs), so run the stack with `WIKIMEDIA_API_URL=http://fake-llm.lan:9000/w/api.php` and `MEDIA_ALLOW_PRIVATE_HOSTS=true` for the media agent to find a picture. Add a builder to the fake whenever a phase adds an LLM output schema.
+It is `docker-compose.e2e.yml` on top of the normal file (own ports, `SUPABASE_DATABASE_URL` and the provider keys blanked, trusted origins for its own two ports), with the registry loaded and a staff user made. `make e2e` runs the browser tests on it ([testing.md](testing.md)). The fake is reached at `http://fake-llm.lan:9000/v1` (the registry insists on a domain-like host name, so the compose service has that alias). The fake also serves the media services the lesson flow searches (a Wikimedia-style API and generated PNGs), so run the stack with `WIKIMEDIA_API_URL=http://fake-llm.lan:9000/w/api.php` and `MEDIA_ALLOW_PRIVATE_HOSTS=true` for the media agent to find a picture. Add a builder to the fake whenever a phase adds an LLM output schema.
 
 ## Tracing and usage (optional)
 
@@ -171,7 +173,7 @@ The backend image installs into `/opt/venv`, outside the bind-mounted `/app`. Th
 | `port is already allocated` | Change the port in `.env`. |
 | `password authentication failed` after editing `POSTGRES_*` | The volume keeps its original credentials. See section 1. |
 | Health: `celery: no workers responded` | `docker compose logs worker`. It restarts on file changes, so check for a Python error. |
-| New dependency not found | `docker compose up --build`. |
+| New dependency not found | `docker compose up --build --renew-anon-volumes`. Without the last flag compose keeps the old container's `node_modules` volume, which hides the new image's packages (the frontend then fails with `Module not found`). |
 | `no space left on device` from Docker while `df` shows free space (btrfs) | Metadata is full and there's no unallocated space for more. Run `sudo btrfs balance start -dusage=20 /` (then `-dusage=50`) to give empty data chunks back, and `docker volume prune` for old anonymous `node_modules` volumes. |
 
 ## Later phases add
