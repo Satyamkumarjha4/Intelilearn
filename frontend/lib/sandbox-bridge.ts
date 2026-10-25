@@ -17,6 +17,10 @@ export type SandboxMessage =
   | { type: "rendered"; codeVersion: number; height: number }
   | { type: "height"; height: number }
   | { type: "error"; error: SandboxError }
+  /** The pages the document shows (the app draws the book around them), sent when the document starts. */
+  | { type: "pages"; count: number; titles: string[] }
+  | { type: "page_changed"; index: number }
+  /** Only lessons made before the test had its own screen send this, and the viewer no longer shows that page. */
   | { type: "test_submit"; answers: Record<string, unknown> };
 
 const text = (value: unknown): string => (typeof value === "string" ? value : "");
@@ -46,6 +50,12 @@ export class SandboxMessages {
             ...(typeof message.page === "string" ? { page: message.page } : {}),
           },
         };
+      case "pages": {
+        const titles = Array.isArray(message.titles) ? message.titles.filter((t): t is string => typeof t === "string") : [];
+        return { type: "pages", count: count(message.count), titles };
+      }
+      case "page_changed":
+        return { type: "page_changed", index: count(message.index) };
       case "test_submit": {
         const answers = message.answers;
         if (!answers || typeof answers !== "object" || Array.isArray(answers)) return null;
@@ -114,7 +124,22 @@ export const harnessSource = new HarnessSource();
 /** The message that starts (or restarts) the runtime on a document. */
 export class RenderMessage {
   static of(document: LessonDocument, theme: "light" | "dark") {
-    return { type: "render", code: document.code, data: document.data, codeVersion: document.code_version, theme };
+    return {
+      type: "render",
+      code: document.code,
+      data: document.data,
+      codeVersion: document.code_version,
+      theme,
+      // An older lesson still declares its test as a page of the document; the test has its own screen now.
+      hide: document.has_embedded_test ? ["test"] : [],
+    };
+  }
+}
+
+/** The message that opens a page of the document (the document has no navigation of its own). */
+export class SetPageMessage {
+  static of(index: number) {
+    return { type: "set_page", index };
   }
 }
 

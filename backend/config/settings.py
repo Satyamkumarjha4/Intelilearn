@@ -1,4 +1,4 @@
-"""Django settings for Lesson Crafter.
+"""Django settings for Socra.
 
 All configuration comes from the environment: the root .env file, which docker compose also
 injects. Every value has a development default, so CI and tests run with no .env at all.
@@ -223,7 +223,7 @@ SESSION_COOKIE_SECURE = AUTH_COOKIE_SECURE
 CSRF_COOKIE_SECURE = AUTH_COOKIE_SECURE
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Lesson Crafter API",
+    "TITLE": "Socra API",
     "DESCRIPTION": "Diagnose what a learner knows, then generate a lesson or study sheet for the rest.",
     "VERSION": "0.1.0",
     "SERVE_INCLUDE_SCHEMA": False,

@@ -13,7 +13,7 @@ from .session import MediaSession
 from .sources import GiphySource, MediaSource, OpenverseSource, WikimediaSource
 from .storage import MediaStorage, StoredFile
 
-USER_AGENT = "LessonCrafter/0.1 (local educational app)"
+USER_AGENT = "Socra/0.1 (local educational app)"
 
 
 class SearchArgs(BaseModel):

@@ -1,4 +1,4 @@
-# Lesson Crafter: frontend
+# Socra: frontend
 
 Next.js (App Router), managed with **bun**. Normally run through docker compose from the repo root. See [../docs/local-setup.md](../docs/local-setup.md) and [../docs/frontend.md](../docs/frontend.md).
 

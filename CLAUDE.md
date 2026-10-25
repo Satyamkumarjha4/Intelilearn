@@ -1,4 +1,4 @@
-# Lesson Crafter: development instructions
+# Socra: development instructions
 
 An AI tutor that diagnoses what a learner knows, then generates a lesson or study sheet. The specification lives in `docs/`. Read the relevant doc before changing behaviour, and update it in the same change when behaviour changes. `docs/roadmap.md` tracks progress by phase: tick items off as they land. How code is structured is in `docs/design.md`; how it is tested is in `docs/testing.md`.
 
@@ -66,3 +66,19 @@ An AI tutor that diagnoses what a learner knows, then generates a lesson or stud
 
 - Python: ruff, line length 120, over `backend/` and `tests/` (`make lint`). Frontend: eslint and `tsc` (run with `next typegen` first).
 - Match the surrounding code's naming, structure, and comment density. Comments explain *why*, not *what*.
+
+## UI design system
+
+The approved mockup, `docs/design/mockups/socra-mockup.html`, is the visual source of truth for every screen. Ignore its dashed "Mockup controls" bar (palette, theme and screen chips): that is not product UI.
+
+- **Token mapping** (mockup → app, defined in `frontend/app/globals.css`): `--brand`→`primary`, `--brand-deep`→`primary-deep`, `--brand-soft`→`primary-soft`, `--brand-text`→`primary-text`, `--on-brand`→`primary-foreground`, `--alt`→`marigold`, `--alt-deep`→`marigold-deep`, `--alt-soft`→`marigold-soft`, `--alt-text`→`marigold-text`, `--tri`→`insight`, `--tri-soft`→`insight-soft`, `--tri-text`→`insight-text`, `--ok*`→`success*`, `--bad*`→`destructive*`, `--surface`→`card`, `--surface-2`→`muted`, `--line`→`border`, `--muted`→`muted-foreground`, `--fg`→`foreground`, `--bg`→`background`, `--paper`→`paper`. Use tokens, never raw colours.
+- **Colour roles**: `primary` (teal) is the main action, progress and the current step. `marigold` is secondary calls to action, "waiting for you" and things to learn. `insight` (grape) is anything the AI says about the learner: assessment, level, key ideas, AI feedback. `success` / `destructive` mean right / wrong.
+- **Brand**: the product is **Socra**. Use `components/brand/logo.tsx` (`variant` full or mark, `size` sm, md or lg) wherever the name or mark appears; the favicon is `app/icon.svg`. Never hard-code the old name "Lesson Crafter" in anything a person can see.
+- **Fonts**: headings use the heading font (Fredoka), body text Nunito, and mono for counts and labels.
+- **Buttons**: use the chunky pressable variants in `components/ui/button.tsx`. Never hand-roll button styles.
+- **Icons**: `lucide-react` only. The mockup's inline SVGs are placeholders for lucide icons.
+- **Copy**: plain, warm and encouraging, written for school and college students. Never show internal terms (node, run, graph, pipeline, stage, LLM, model) to learners. "Quick check" is the diagnostic quiz; "Test" is the final test.
+- **Layout**: desktop-first, and it must work at 400px wide with no horizontal scroll.
+- **Accessibility**: visible focus, `aria-label` on icon buttons, keyboard support, and respect `prefers-reduced-motion`.
+- **Engineering**: keep logic in pure `lib/` domain classes, unit-tested with `bun test`; components stay thin. Don't change API contracts unless the task says so.
+- **Every UI task ends with** type check, lint and `bun test`, then a short summary of the files changed and any open questions.

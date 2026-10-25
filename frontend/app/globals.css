@@ -6,10 +6,11 @@
 
 @theme inline {
   --color-background: var(--background);
+  --color-paper: var(--paper);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-sans: var(--font-nunito);
+  --font-mono: var(--font-jetbrains);
+  --font-heading: var(--font-fredoka);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -23,10 +24,16 @@
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
+  --color-chart-cat-1: var(--chart-cat-1);
+  --color-chart-cat-2: var(--chart-cat-2);
+  --color-chart-cat-3: var(--chart-cat-3);
+  --color-chart-cat-other: var(--chart-cat-other);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-destructive-text: var(--destructive-text);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -35,10 +42,25 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-primary-deep: var(--primary-deep);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-text: var(--primary-text);
+  --color-marigold: var(--marigold);
+  --color-marigold-foreground: var(--marigold-foreground);
+  --color-marigold-deep: var(--marigold-deep);
+  --color-marigold-soft: var(--marigold-soft);
+  --color-marigold-text: var(--marigold-text);
+  --color-insight: var(--insight);
+  --color-insight-soft: var(--insight-soft);
+  --color-insight-text: var(--insight-text);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-success-text: var(--success-text);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --shadow-card: var(--card-shadow);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -48,73 +70,129 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/*
+ * Brand roles: primary (Lagoon teal) is the main action, progress and current step; marigold is the warm partner
+ * ("waiting for you", gaps to learn); insight (grape) marks AI moments; success is green, destructive is coral.
+ * Each colour has a -soft tint for backgrounds and a -text shade that reads on light surfaces. Light neutrals are
+ * teal-tinted (hue 190), dark neutrals are grape-tinted (hue 295). The lesson sandbox keeps a copy of these values in
+ * sandbox/src/harness.html; frontend/lib/theme-tokens.test.ts fails when the two drift apart.
+ */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: oklch(0.985 0.008 190);
+  --paper: oklch(0.995 0.006 85);
+  --foreground: oklch(0.26 0.025 190);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.26 0.025 190);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --popover-foreground: oklch(0.26 0.025 190);
+  --primary: oklch(0.64 0.12 190);
+  --primary-foreground: oklch(0.99 0.01 190);
+  --primary-deep: oklch(0.52 0.11 190);
+  --primary-soft: oklch(0.95 0.035 190);
+  --primary-text: oklch(0.48 0.1 190);
+  --secondary: oklch(0.965 0.013 190);
+  --secondary-foreground: oklch(0.26 0.025 190);
+  --muted: oklch(0.965 0.013 190);
+  --muted-foreground: oklch(0.52 0.025 190);
+  --accent: oklch(0.965 0.013 190);
+  --accent-foreground: oklch(0.26 0.025 190);
+  --marigold: oklch(0.8 0.15 70);
+  --marigold-foreground: oklch(0.25 0.05 70);
+  --marigold-deep: oklch(0.66 0.14 70);
+  --marigold-soft: oklch(0.96 0.05 70);
+  --marigold-text: oklch(0.5 0.11 70);
+  --insight: oklch(0.6 0.16 295);
+  --insight-soft: oklch(0.955 0.03 295);
+  --insight-text: oklch(0.48 0.16 295);
+  --success: oklch(0.64 0.15 150);
+  --success-soft: oklch(0.95 0.05 150);
+  --success-text: oklch(0.45 0.13 150);
+  --destructive: oklch(0.63 0.19 25);
+  --destructive-soft: oklch(0.96 0.03 25);
+  --destructive-text: oklch(0.5 0.17 25);
+  --border: oklch(0.9 0.018 190);
+  --input: oklch(0.9 0.018 190);
+  --ring: oklch(0.64 0.12 190);
+  --chart-1: oklch(0.64 0.12 190);
+  --chart-2: oklch(0.8 0.15 70);
+  --chart-3: oklch(0.6 0.16 295);
+  --chart-4: oklch(0.64 0.15 150);
+  --chart-5: oklch(0.63 0.19 25);
+  /* The console's charts colour a provider the same way everywhere, never by rank: Groq, Google, OpenAI, and a grey
+     for every other. Checked for colour-blind separation and for contrast on the card. These provider (categorical)
+     colours and the status colours (success, marigold, destructive: worked, retried, failed) are two families that
+     must never appear in the same chart, because amber that means "Google" in one chart cannot mean "retried" in the
+     next to the eye. lib/console-charts.test.ts enforces it. */
+  --chart-cat-1: #009690;
+  --chart-cat-2: #c27a0e;
+  --chart-cat-3: #8362cd;
+  --chart-cat-other: oklch(0.72 0.01 190);
+  --radius: 1rem;
+  --card-shadow: 0 1px 2px oklch(0.26 0.025 190 / 6%), 0 8px 24px oklch(0.26 0.025 190 / 6%);
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.26 0.025 190);
+  --sidebar-primary: oklch(0.64 0.12 190);
+  --sidebar-primary-foreground: oklch(0.99 0.01 190);
+  --sidebar-accent: oklch(0.965 0.013 190);
+  --sidebar-accent-foreground: oklch(0.26 0.025 190);
+  --sidebar-border: oklch(0.9 0.018 190);
+  --sidebar-ring: oklch(0.64 0.12 190);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: oklch(0.2 0.025 295);
+  --paper: oklch(0.26 0.03 295);
+  --foreground: oklch(0.95 0.012 295);
+  --card: oklch(0.245 0.03 295);
+  --card-foreground: oklch(0.95 0.012 295);
+  --popover: oklch(0.245 0.03 295);
+  --popover-foreground: oklch(0.95 0.012 295);
+  --primary: oklch(0.76 0.12 190);
+  --primary-foreground: oklch(0.2 0.03 190);
+  --primary-deep: oklch(0.58 0.1 190);
+  --primary-soft: oklch(0.33 0.05 190);
+  --primary-text: oklch(0.82 0.11 190);
+  --secondary: oklch(0.29 0.032 295);
+  --secondary-foreground: oklch(0.95 0.012 295);
+  --muted: oklch(0.29 0.032 295);
+  --muted-foreground: oklch(0.74 0.025 295);
+  --accent: oklch(0.29 0.032 295);
+  --accent-foreground: oklch(0.95 0.012 295);
+  --marigold: oklch(0.82 0.14 70);
+  --marigold-foreground: oklch(0.25 0.05 70);
+  --marigold-deep: oklch(0.64 0.13 70);
+  --marigold-soft: oklch(0.33 0.05 70);
+  --marigold-text: oklch(0.86 0.12 70);
+  --insight: oklch(0.72 0.14 295);
+  --insight-soft: oklch(0.34 0.07 295);
+  --insight-text: oklch(0.84 0.1 295);
+  --success: oklch(0.72 0.15 150);
+  --success-soft: oklch(0.32 0.06 150);
+  --success-text: oklch(0.82 0.13 150);
+  --destructive: oklch(0.7 0.17 25);
+  --destructive-soft: oklch(0.33 0.06 25);
+  --destructive-text: oklch(0.82 0.12 25);
+  --border: oklch(0.35 0.035 295);
+  --input: oklch(0.35 0.035 295);
+  --ring: oklch(0.76 0.12 190);
+  --chart-1: oklch(0.76 0.12 190);
+  --chart-2: oklch(0.82 0.14 70);
+  --chart-3: oklch(0.72 0.14 295);
+  --chart-4: oklch(0.72 0.15 150);
+  --chart-5: oklch(0.7 0.17 25);
+  --chart-cat-1: #00a39c;
+  --chart-cat-2: #cb8315;
+  --chart-cat-3: #9477dd;
+  --chart-cat-other: oklch(0.55 0.015 295);
+  --card-shadow: 0 1px 2px oklch(0 0 0 / 30%), 0 8px 24px oklch(0 0 0 / 35%);
+  --sidebar: oklch(0.245 0.03 295);
+  --sidebar-foreground: oklch(0.95 0.012 295);
+  --sidebar-primary: oklch(0.76 0.12 190);
+  --sidebar-primary-foreground: oklch(0.2 0.03 190);
+  --sidebar-accent: oklch(0.29 0.032 295);
+  --sidebar-accent-foreground: oklch(0.95 0.012 295);
+  --sidebar-border: oklch(0.35 0.035 295);
+  --sidebar-ring: oklch(0.76 0.12 190);
 }
 
 @layer base {
@@ -127,10 +205,27 @@
   html {
     @apply font-sans;
   }
+  h1, h2, h3 {
+    font-family: var(--font-heading);
+    font-weight: 600;
+    line-height: 1.2;
+    text-wrap: balance;
+  }
 }
 @media print {
   /* Study sheets print on their own: no site chrome, no controls. */
   header, nav[aria-label="Contents"], [data-slot="tabs-list"] { display: none !important; }
   main { max-width: none !important; padding: 0 !important; }
   details > summary { list-style: none; }
+}
+
+/* The bar of a build whose progress cannot be measured yet: a short segment sweeps along it. Not for reduced motion. */
+@keyframes socra-indeterminate {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(260%); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .progress-indeterminate {
+    animation: socra-indeterminate 1.4s ease-in-out infinite;
+  }
 }

@@ -1,5 +1,6 @@
 /**
- * Unit under test: `TestResultView` and `TestSubmitFlow`, how a submitted lesson test is followed and shown.
+ * Unit under test: `TestResultView`, `AlreadySubmitted` and `TestSubmitFlow`, how a submitted lesson test is followed
+ * and shown.
  *
  * Why: the score is what a learner takes from the test. A card that says "70%" while answers are still being graded
  * misleads them; a flow that never ends when the grading run fails leaves a spinner for ever; and one that keeps
@@ -9,6 +10,7 @@
  * - the summary says marks and percent, and "so far" while grading is incomplete
  * - each question is full, partial, none or pending, with a label that says so, and who marked it
  * - topics to revisit are listed
+ * - a second try at the test is recognised from its 409, with the id of the submission already there
  * - a test marked at once is reported once and never follows a run
  * - a test with open-ended answers is reported at once, followed to the end of its run, then read again
  * - a failed grading is reported as failed with its reason
@@ -17,7 +19,8 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import { TestResultView, TestSubmitFlow } from "./test-session";
+import { ApiError } from "./api";
+import { AlreadySubmitted, TestResultView, TestSubmitFlow } from "./test-session";
 import type { QuestionResult, ScoreCard, TestSubmission } from "./types";
 
 const row = (over: Partial<QuestionResult> = {}): QuestionResult => ({
@@ -27,7 +30,7 @@ const card = (over: Partial<ScoreCard> = {}): ScoreCard => ({
   complete: true, score: { awarded: 14, available: 20, percent: 70 }, questions: [row()], topics_to_revisit: ["Halving", "Cost"], ...over,
 });
 const submission = (over: Partial<TestSubmission> = {}): TestSubmission => ({
-  id: "S1", status: "graded", error: "", result: card(), submitted_at: "2026-01-01T00:00:00Z", graded_at: "2026-01-01T00:00:05Z", ...over,
+  id: "S1", status: "graded", error: "", answers: {}, result: card(), submitted_at: "2026-01-01T00:00:00Z", graded_at: "2026-01-01T00:00:05Z", ...over,
 });
 
 describe("TestResultView", () => {
@@ -81,6 +84,26 @@ function fakes(reads: TestSubmission[], created = { submission_id: "S1", run_id:
   };
   return { api, follow, followed, calls };
 }
+
+describe("AlreadySubmitted", () => {
+  test("names the submission that is already there", () => {
+    const error = new ApiError(409, "already_submitted", "Already submitted.", {}, { submission_id: "S1" });
+
+    expect(AlreadySubmitted.idOf(error)).toBe("S1");
+  });
+
+  test.each([
+    ["another conflict", new ApiError(409, "wrong_stage", "No.", {}, { submission_id: "S1" })],
+    ["another status", new ApiError(400, "already_submitted", "No.", {}, { submission_id: "S1" })],
+    ["no id", new ApiError(409, "already_submitted", "No.")],
+    ["an id that is not text", new ApiError(409, "already_submitted", "No.", {}, { submission_id: 7 })],
+    ["an empty id", new ApiError(409, "already_submitted", "No.", {}, { submission_id: "" })],
+    ["not an API error", new Error("boom")],
+    ["nothing", undefined],
+  ])("is null for %s", (_, error) => {
+    expect(AlreadySubmitted.idOf(error)).toBeNull();
+  });
+});
 
 describe("TestSubmitFlow", () => {
   test("a test marked at once is reported once and no run is followed", async () => {

@@ -10,8 +10,11 @@
  * - adds the CSRF header to unsafe methods only, fetching the csrftoken cookie first when it is missing
  * - on a 401, refreshes the session once and retries the request
  * - never refreshes for the auth endpoints themselves
+ * - the method may be written in any case (a lower-case "post" still gets the CSRF header)
  * - shares one refresh between concurrent 401s
  * - turns an error reply into an ApiError with status, code, message and field errors
+ * - reads how long to wait from the `Retry-After` header of a refusal
+ * - keeps any other field of the error body as `extra` (for example the `submission_id` of an `already_submitted`)
  * - falls back to a generic ApiError when the error body is not JSON
  */
 import { describe, expect, test } from "bun:test";
@@ -51,6 +54,17 @@ async function rejection(promise: Promise<unknown>): Promise<ApiError> {
 function header(call: Call, name: string): string | undefined {
   return (call.init?.headers as Record<string, string> | undefined)?.[name];
 }
+
+describe("ApiClient methods", () => {
+  test("the method may be written in any case: a lower-case post still carries the CSRF header", async () => {
+    const { fetcher, calls } = fakeFetch(json(200, {}));
+
+    await new ApiClient(fetcher, withToken).request("/x", { method: "post", body: {} });
+
+    expect(header(calls[0]!, "X-CSRFToken")).toBe("token-123");
+    expect(calls[0]!.init?.method).toBe("POST");
+  });
+});
 
 describe("ApiClient", () => {
   test("sends JSON with same-origin credentials and parses the reply", async () => {
@@ -136,6 +150,25 @@ describe("ApiClient", () => {
 
     expect([error.status, error.code, error.message]).toEqual([400, "invalid", body.detail]);
     expect(error.fields).toEqual({ email: ["Taken."] });
+  });
+
+  test("keeps the other fields of an error body as extra", async () => {
+    const body = { detail: "Already submitted.", code: "already_submitted", submission_id: "S1" };
+    const { fetcher } = fakeFetch(json(409, body));
+
+    const error = await rejection(new ApiClient(fetcher, withToken).request("/lessons/L1/test/submissions", { method: "POST", body: {} }));
+
+    expect([error.status, error.code, error.message]).toEqual([409, "already_submitted", "Already submitted."]);
+    expect(error.extra).toEqual({ submission_id: "S1" });
+    expect(error.fields).toEqual({});
+  });
+
+  test("reads how long to wait from Retry-After", async () => {
+    const throttled = new Response(JSON.stringify({ detail: "Slow down.", code: "throttled" }), { status: 429, headers: { "Retry-After": "42.2" } });
+    const plain = new Response(JSON.stringify({ detail: "No.", code: "throttled" }), { status: 429 });
+
+    expect((await rejection(new ApiClient(fakeFetch(throttled).fetcher, withToken).request("/auth/login", { method: "POST", body: {} }))).retryAfter).toBe(43);
+    expect((await rejection(new ApiClient(fakeFetch(plain).fetcher, withToken).request("/auth/login", { method: "POST", body: {} }))).retryAfter).toBeNull();
   });
 
   test("falls back to a generic ApiError when the body is not JSON", async () => {

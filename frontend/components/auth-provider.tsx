@@ -4,13 +4,14 @@ import { useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 import { apiClient, ApiError } from "@/lib/api";
+import { SessionProbe } from "@/lib/session-probe";
 import type { User } from "@/lib/types";
 
 type AuthState = {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<User>;
-  register: (name: string, email: string, password: string) => Promise<User>;
+  register: (name: string, email: string, password: string, acceptTerms: boolean) => Promise<User>;
   logout: () => Promise<void>;
   setUser: (user: User) => void;
 };
@@ -18,6 +19,7 @@ type AuthState = {
 const AuthContext = createContext<AuthState | null>(null);
 
 async function fetchMe(): Promise<User | null> {
+  if (!(await SessionProbe.ask())) return null; // no session: asking would only print a 401 (and a failed refresh)
   try {
     return await apiClient.request<User>("/auth/me");
   } catch (error) {
@@ -54,10 +56,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return user;
   }, []);
 
-  const register = useCallback(async (name: string, email: string, password: string) => {
+  const register = useCallback(async (name: string, email: string, password: string, acceptTerms: boolean) => {
     const { user } = await apiClient.request<{ user: User }>("/auth/register", {
       method: "POST",
-      body: { name, email, password },
+      body: { name, email, password, accept_terms: acceptTerms },
     });
     setUser(user);
     return user;
@@ -66,7 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     await apiClient.request("/auth/logout", { method: "POST" });
     setUser(null);
-    router.push("/auth");
+    router.push("/");
     router.refresh();
   }, [router]);
 

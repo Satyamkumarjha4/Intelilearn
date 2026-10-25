@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Fredoka, JetBrains_Mono, Nunito } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 
 import { AuthProvider } from "@/components/auth-provider";
@@ -7,24 +7,34 @@ import { SiteHeader } from "@/components/site-header";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-sans",
+// Fredoka for headings, Nunito for body text and controls, JetBrains Mono for code. Each gets its own variable
+// (mapped to --font-heading / --font-sans / --font-mono in globals.css).
+const fredoka = Fredoka({
+  variable: "--font-fredoka",
   subsets: ["latin"],
+  weight: ["500", "600"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const nunito = Nunito({
+  variable: "--font-nunito",
   subsets: ["latin"],
+  weight: ["400", "600", "700", "800"],
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains",
+  subsets: ["latin"],
+  weight: ["500"],
 });
 
 export const metadata: Metadata = {
-  title: "Lesson Crafter",
-  description: "Diagnose what you know, then learn the rest.",
+  title: { template: "%s · Socra", default: "Socra" },
+  description: "Learn only what you don't know yet. Socra asks before it teaches.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+    <html lang="en" suppressHydrationWarning data-scroll-behavior="smooth" className={`${fredoka.variable} ${nunito.variable} ${jetbrainsMono.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col bg-background font-sans text-foreground">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <AuthProvider>

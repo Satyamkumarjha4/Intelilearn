@@ -1,7 +1,7 @@
 [project]
 name = "lessoncrafter-backend"
 version = "0.1.0"
-description = "Lesson Crafter API: Django, DRF, Celery, LangGraph"
+description = "Socra API: Django, DRF, Celery, LangGraph"
 requires-python = ">=3.12"
 dependencies = [
     "celery[redis]>=5.6.3",
