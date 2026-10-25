@@ -12,6 +12,7 @@
  * - reads the review and cancels a run
  * - chooses a sheet, asks for another, reads one (with revealed solutions) and grades practice answers
  * - reads the lesson document, reports a crash for repair, lists versions and restores one
+ * - submits the lesson test and reads a submission
  * - extracts the cursor from a `next` link, and handles no link
  */
 import { describe, expect, test } from "bun:test";
@@ -129,6 +130,19 @@ describe("LessonsApi", () => {
       ["/lessons/L1/versions/2/restore", "POST"],
     ]);
     expect(calls[1].options?.body).toEqual({ error: { message: "boom", page: "core" }, code_version: 3 });
+  });
+
+  test("submits the lesson test and reads a submission", async () => {
+    const { api, calls } = fakeClient();
+
+    await api.submitTest("L1", { t1: 2, t2: "text" });
+    await api.submission("L1", "S1");
+
+    expect(calls.map((c) => [c.path, c.options?.method])).toEqual([
+      ["/lessons/L1/test/submissions", "POST"],
+      ["/lessons/L1/test/submissions/S1", undefined],
+    ]);
+    expect(calls[0].options?.body).toEqual({ answers: { t1: 2, t2: "text" } });
   });
 
   test("extracts the cursor from a next link", () => {

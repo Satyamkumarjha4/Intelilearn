@@ -40,7 +40,10 @@ DJANGO_SETTINGS_MODULE = "config.settings"
 testpaths = ["../tests"]
 pythonpath = [".", "../tests"]
 python_files = ["test_*.py"]
-addopts = "-q --import-mode=importlib"
+addopts = "-q --import-mode=importlib -m 'not live'"
+markers = [
+    "live: calls the real model providers and media services; needs API keys; run by hand with `pytest -m live`",
+]
 
 [tool.ruff]
 line-length = 120

@@ -37,13 +37,17 @@ from .serializers import (
     RunSerializer,
     RunStartedSerializer,
     StudyMaterialSerializer,
+    TestSubmissionCreatedSerializer,
+    TestSubmissionSerializer,
+    TestSubmitSerializer,
 )
-from .services import CodeService, LessonService, MaterialService, QuizService
+from .services import CodeService, LessonService, MaterialService, QuizService, SubmissionService
 
 LESSONS_TAG = ["lessons"]
 QUIZZES_TAG = ["quizzes"]
 MATERIALS_TAG = ["study sheets"]
 DOCUMENT_TAG = ["lesson document"]
+TEST_TAG = ["lesson test"]
 RUNS_TAG = ["runs"]
 LESSON_ID = OpenApiParameter("lesson_id", str, OpenApiParameter.PATH)
 KIND = OpenApiParameter("kind", str, OpenApiParameter.PATH, enum=["diagnostic", "prerequisite"])
@@ -339,6 +343,54 @@ class LessonVersionRestoreView(OwnedLessons, APIView):
     def post(self, request, lesson_id, number):
         lesson = CodeService().restore(self.lesson_of(request, lesson_id), number)
         return Response({"code_version": lesson.code_version})
+
+
+class TestSubmissionsView(OwnedLessons, APIView):
+    __test__ = False
+
+    def get_throttles(self):
+        self.throttle_scope = "test_submit"
+        return [ScopedRateThrottle()]
+
+    @extend_schema(
+        tags=TEST_TAG,
+        summary="Submit the lesson test",
+        description=(
+            "Multiple-choice and numerical answers are marked at once and blank answers score 0; the other answers "
+            "are graded by a model in a `grade_test` run. Follow `run_id` (or poll the submission) until `status` "
+            "is `graded`. A test can be taken more than once."
+        ),
+        parameters=[LESSON_ID],
+        request=TestSubmitSerializer,
+        responses={
+            202: TestSubmissionCreatedSerializer,
+            400: OpenApiResponse(description="Unknown question ids, or an answer that is not a number or text."),
+            409: OpenApiResponse(description="The lesson is not ready, or the last submission is still being graded."),
+        },
+    )
+    def post(self, request, lesson_id):
+        serializer = TestSubmitSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        submission, run = SubmissionService().submit(
+            self.lesson_of(request, lesson_id), serializer.validated_data["answers"]
+        )
+        body = {"submission_id": submission.id, "run_id": run.id if run else None, "status": submission.status}
+        return Response(TestSubmissionCreatedSerializer(body).data, status=status.HTTP_202_ACCEPTED)
+
+
+class TestSubmissionView(OwnedLessons, APIView):
+    __test__ = False
+
+    @extend_schema(
+        tags=TEST_TAG,
+        summary="Get a test submission",
+        description="`result` holds what has been marked so far; it is `complete` once every answer is graded.",
+        parameters=[LESSON_ID, OpenApiParameter("submission_id", str, OpenApiParameter.PATH)],
+        responses={200: TestSubmissionSerializer, 404: OpenApiResponse(description="No such submission.")},
+    )
+    def get(self, request, lesson_id, submission_id):
+        submission = SubmissionService().get(self.lesson_of(request, lesson_id), submission_id)
+        return Response(TestSubmissionSerializer(submission).data)
 
 
 class OwnedRuns:

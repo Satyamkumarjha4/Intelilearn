@@ -100,6 +100,7 @@ class FakeChat:
     def __init__(self, *script):
         self.script = list(script)
         self.calls: list[list] = []
+        self.configs: list[dict | None] = []  # the RunnableConfig of each invoke (None when none was passed)
         self.structured = None
         self.tools = None
 
@@ -111,8 +112,9 @@ class FakeChat:
         self.tools = tools
         return self
 
-    def invoke(self, messages):
+    def invoke(self, messages, config=None):
         self.calls.append(list(messages))
+        self.configs.append(config)
         item = self.script.pop(0)
         if isinstance(item, Exception):
             raise item

@@ -1,5 +1,5 @@
 # ruff: noqa: E501  (the widget templates are code samples; long lines read better there)
-"""Canned Stage B and C output for the fake LLM: a plan, pages, a test, an interactive plan, widget code and an
+"""Canned Stage B, Stage C and test-grading output for the fake LLM: a plan, pages, a test, an interactive plan, widget code and an
 alignment report that pass the real validators and the real sandbox check, and compiled pages in the standard layout.
 Content is built from what the prompt contains (the topic, the page plan, the lesson plan), so the lesson the
 walk-through shows is about what the learner asked for."""
@@ -207,6 +207,18 @@ class LessonCanned:
             "topic_relevance": 5, "level_fit": 4, "prerequisite_coverage": 5, "factual_accuracy": 5,
             "interactive_relevance": 4, "issues": [], "passed": True,
         }  # fmt: skip
+
+    # --- test grading ---
+
+    def build_GradeReport(self) -> dict:
+        """Marks in proportion to the length of each answer (a stand-in for a judgement), with short feedback."""
+        grades = []
+        for item in self._json_after("Questions to grade:"):
+            full = len(str(item["learner_answer"]).strip()) >= 25
+            awarded = item["marks"] if full else item["marks"] // 2
+            feedback = "A complete answer." if full else "Right direction; say more about how and why."
+            grades.append({"question_id": item["id"], "awarded": awarded, "feedback": feedback})
+        return {"grades": grades}
 
     # --- Stage C (text output: no schema, so chosen by the prompt) ---
 

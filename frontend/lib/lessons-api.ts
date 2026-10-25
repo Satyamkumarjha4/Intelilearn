@@ -15,6 +15,8 @@ import type {
   RepairError,
   Stage,
   StudyMaterial,
+  TestSubmission,
+  TestSubmissionCreated,
 } from "@/lib/types";
 
 export type LessonQuery = { q?: string; stage?: Stage | ""; cursor?: string | null; pageSize?: number };
@@ -88,6 +90,14 @@ export class LessonsApi {
 
   requestRepair(id: string, error: RepairError, codeVersion: number): Promise<{ run_id: string }> {
     return this.client.request(`/lessons/${id}/repair`, { method: "POST", body: { error, code_version: codeVersion } });
+  }
+
+  submitTest(id: string, answers: Record<string, unknown>): Promise<TestSubmissionCreated> {
+    return this.client.request(`/lessons/${id}/test/submissions`, { method: "POST", body: { answers } });
+  }
+
+  submission(id: string, submissionId: string): Promise<TestSubmission> {
+    return this.client.request(`/lessons/${id}/test/submissions/${submissionId}`);
   }
 
   versions(id: string): Promise<LessonVersion[]> {

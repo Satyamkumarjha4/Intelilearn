@@ -56,11 +56,11 @@ def seeded():
 def test_probes_the_given_model_and_runs_a_node(seeded, monkeypatch, capsys):
     monkeypatch.setattr("llm_registry.providers.CHAT_MODEL_FACTORY", lambda model, timeout: Chat())
 
-    call_command("probe_models", model=["groq/llama-3.3-70b-versatile"], node=["learner.assess"])
+    call_command("probe_models", model=["groq/openai/gpt-oss-20b"], node=["learner.assess"])
 
     out = capsys.readouterr().out
     assert "✔ tool_calling" in out
-    assert "answered by gemini/gemini-2.5-flash (fallback #0" in out
+    assert "answered by groq/openai/gpt-oss-20b (fallback #0" in out
     assert "All checks passed" in out
     assert ModelCall.objects.filter(node_key="learner.assess", status="ok").exists()
 
@@ -69,7 +69,7 @@ def test_failures_exit_non_zero_with_keys_redacted(seeded, monkeypatch, capsys):
     monkeypatch.setattr("llm_registry.providers.CHAT_MODEL_FACTORY", lambda model, timeout: Chat(fail=True))
 
     with pytest.raises(CommandError, match="failed"):
-        call_command("probe_models", model=["groq/llama-3.3-70b-versatile"])
+        call_command("probe_models", model=["groq/openai/gpt-oss-20b"])
 
     out = capsys.readouterr().out
     assert "✘ text" in out

@@ -1,6 +1,12 @@
 """GraphRegistry: `GraphRun.graph` name → the builder that assembles that graph."""
 
-from .builders import FlowGraphBuilder, GraphBuilder, RuntimeRepairGraphBuilder, StudyMaterialGraphBuilder
+from .builders import (
+    FlowGraphBuilder,
+    GradeTestGraphBuilder,
+    GraphBuilder,
+    RuntimeRepairGraphBuilder,
+    StudyMaterialGraphBuilder,
+)
 
 
 class UnknownGraph(KeyError):
@@ -16,6 +22,7 @@ class GraphRegistry:
                 "flow": FlowGraphBuilder(),
                 "study_material": StudyMaterialGraphBuilder(),
                 "runtime_repair": RuntimeRepairGraphBuilder(),
+                "grade_test": GradeTestGraphBuilder(),
             }
         )
 

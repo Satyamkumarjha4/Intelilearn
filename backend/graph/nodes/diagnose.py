@@ -7,19 +7,14 @@ grade_diagnostic → (prerequisite: publish → await → grade) → assess_lear
 from typing import Any
 
 from lessons.models import Lesson, Quiz, QuizAttempt, Stage
+from llm_registry.gateway import AllModelsFailed
 
 from ..context import FlowContext, NodeBudget
 from ..grading import QuizResult, RoutingPolicy
 from ..profile import LearnerProfile
 from ..prompts import AssessLearnerPrompt, DiagnosticPrompt, DiagnosticReviewPrompt
 from ..schemas import DiagnosticBundle, LearnerAssessment, QuizReview
-from ..validators import (
-    AssessmentGuard,
-    CompositeValidator,
-    DiagnosticReviewValidator,
-    DiagnosticValidator,
-    Validator,
-)
+from ..validators import AssessmentGuard, DiagnosticReviewValidator, DiagnosticValidator, Validator
 from .base import AwaitNode, LLMNode, Node, PublishNode, ValidateNode
 
 
@@ -61,21 +56,36 @@ class ValidateDiagnosticNode(ValidateNode):
     label = "The diagnostic quiz"
 
     def validator(self, state: dict, ctx: FlowContext) -> Validator:
-        # Deterministic rules first; the optional LLM reviewer only runs once those pass.
-        return CompositeValidator(
-            [
-                DiagnosticValidator(ctx.sandbox),
-                DiagnosticReviewValidator(lambda bundle: self.review(state, ctx, bundle)),
-            ]
-        )
+        return DiagnosticValidator(ctx.sandbox)  # the deterministic rules; the optional reviewer comes after them
 
-    @staticmethod
-    def review(state: dict, ctx: FlowContext, bundle: dict) -> list[tuple[str, str]]:
+    def run(self, state: dict, ctx: FlowContext) -> dict:
+        update = super().run(state, ctx)
+        if update["feedback"][
+            self.feedback_key
+        ]:  # a rule failed: the reviewer is not asked about a quiz that will go back
+            return update
+        return self.review(state, ctx)
+
+    def review(self, state: dict, ctx: FlowContext) -> dict:
+        """The optional `diagnostic.review` judge. It can send the quiz back, but a lesson never fails because of it:
+        when every reviewer model fails it is skipped, and when the attempts are spent while all the rules pass and only
+        the judge still objects, the quiz is kept and the concern is shown as a warning."""
+        done = {"feedback": {self.feedback_key: []}}
         if not NodeBudget.of(state, "diagnostic.review").enabled:
-            return []
-        messages = DiagnosticReviewPrompt().messages(state | {"bundle": bundle})
-        report: QuizReview = ctx.invoke(state, "diagnostic.review", messages, schema=QuizReview).output
-        return [(issue.question_id, issue.problem) for issue in report.issues]
+            return done
+        messages = DiagnosticReviewPrompt().messages(state)
+        try:
+            report: QuizReview = ctx.invoke(state, "diagnostic.review", messages, schema=QuizReview).output
+        except AllModelsFailed:
+            return done | {"warnings": ctx.warn("The quiz review was skipped: none of its models answered.")}
+        issues = [(issue.question_id, issue.problem) for issue in report.issues]
+        problems = DiagnosticReviewValidator(lambda bundle: issues).validate(state["bundle"])
+        if not problems:
+            return done
+        update = self.outcome(state, problems, ctx)
+        if "error" not in update:
+            return update
+        return done | {"warnings": ctx.warn("The quiz reviewer still had concerns: " + "; ".join(problems[:3]))}
 
     def subject(self, state: dict) -> dict:
         return state["bundle"]

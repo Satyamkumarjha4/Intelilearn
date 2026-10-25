@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from .models import GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt
+from .models import GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt, TestSubmission
 from .stages import MaterialKind, Route
 
 
@@ -208,3 +208,58 @@ class LessonVersionSerializer(serializers.ModelSerializer):
 
 class RestoredSerializer(serializers.Serializer):
     code_version = serializers.IntegerField(help_text="The new current version.")
+
+
+class TestSubmitSerializer(serializers.Serializer):
+    __test__ = False
+
+    answers = serializers.DictField(
+        child=serializers.JSONField(allow_null=True),
+        help_text="{question_id: option index | number | text}. Unanswered questions may be left out.",
+    )
+
+
+class TestSubmissionCreatedSerializer(serializers.Serializer):
+    __test__ = False
+
+    submission_id = serializers.UUIDField()
+    run_id = serializers.UUIDField(
+        allow_null=True, help_text="The grading run to follow; null when everything could be marked at once."
+    )
+    status = serializers.ChoiceField(choices=TestSubmission.Status.choices)
+
+
+class ScoreSerializer(serializers.Serializer):
+    awarded = serializers.IntegerField(help_text="Marks earned so far (open-ended answers count once graded).")
+    available = serializers.IntegerField(help_text="Marks the whole test is worth.")
+    percent = serializers.IntegerField()
+
+
+class QuestionResultSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    type = serializers.CharField()
+    concept = serializers.CharField()
+    marks = serializers.IntegerField()
+    awarded = serializers.IntegerField(allow_null=True, help_text="null while a model is still grading it.")
+    correct = serializers.BooleanField(allow_null=True)
+    graded_by = serializers.ChoiceField(choices=["auto", "model", "none"])
+    feedback = serializers.CharField(allow_blank=True)
+    solution = serializers.DictField(help_text="The answer, for review after submitting.")
+
+
+class ScoreCardSerializer(serializers.Serializer):
+    complete = serializers.BooleanField(help_text="False while open-ended answers are still being graded.")
+    score = ScoreSerializer()
+    questions = QuestionResultSerializer(many=True)
+    topics_to_revisit = serializers.ListField(child=serializers.CharField())
+
+
+class TestSubmissionSerializer(serializers.ModelSerializer):
+    __test__ = False
+
+    result = ScoreCardSerializer(allow_null=True, read_only=True)
+
+    class Meta:
+        model = TestSubmission
+        fields = ["id", "status", "error", "result", "submitted_at", "graded_at"]
+        read_only_fields = fields

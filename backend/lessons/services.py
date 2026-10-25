@@ -7,15 +7,17 @@
 from typing import Protocol
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 from django.utils.module_loading import import_string
 
-from graph.grading import AnswerError, AnswerGrader, QuizGrader, RoutingPolicy
+from graph.grading import AnswerError, AnswerGrader, QuizGrader, RoutingPolicy, ScoreCard, Solution
 from graph.schemas import public_question
 from llm_registry.resolver import RegistryResolver
 
 from .document import LessonDocumentBuilder
+from .effects import RunEffects
 from .errors import (
     AlreadyAttempted,
     AlreadyExists,
@@ -29,6 +31,7 @@ from .errors import (
     RunEnded,
     RunInProgress,
     StaleCodeVersion,
+    SubmissionNotFound,
     VersionNotFound,
     WrongStage,
 )
@@ -43,6 +46,7 @@ from .models import (
     QuizAttempt,
     Stage,
     StudyMaterial,
+    TestSubmission,
 )
 
 
@@ -53,8 +57,9 @@ class TaskQueue(Protocol):
 class RunDispatcher:
     """Queues a run. If the queue is unreachable the run is failed (and so the lesson), so Retry works later."""
 
-    def __init__(self, queue: TaskQueue | None = None):
+    def __init__(self, queue: TaskQueue | None = None, effects: RunEffects | None = None):
         self.queue = queue or import_string(settings.LESSON_TASK_QUEUE)()
+        self.effects = effects or RunEffects()
 
     def dispatch(self, run: GraphRun) -> None:
         try:
@@ -62,6 +67,7 @@ class RunDispatcher:
         except QueueUnavailable as exc:
             GraphRun.objects.filter(pk=run.pk).update(status=GraphRun.Status.FAILED, error=str(exc.detail))
             run.lesson.fail(str(exc.detail))
+            self.effects.on_stopped(run, str(exc.detail))
             raise
 
 
@@ -118,6 +124,7 @@ class LessonService:
         if not stopped.update(status=GraphRun.Status.CANCELLED, finished_at=timezone.now()):
             raise RunEnded()
         run.lesson.fail("Cancelled. Press Retry to continue where it stopped.")
+        RunEffects().on_stopped(run, "Cancelled before it finished.")
         self.events.publish(run.id, RunEvent("cancelled", {}))
 
     def delete(self, lesson: Lesson) -> list:
@@ -216,12 +223,6 @@ class QuizService:
 class MaterialService:
     """Study sheets: choosing the first one (resumes the flow), asking for more, serving them, grading practice."""
 
-    #: what a practice question's solution is made of (never sent before it is revealed)
-    SOLUTION_FIELDS = (
-        "correct_index", "answer", "tolerance", "unit", "model_answer", "key_points", "rubric", "reference_solution",
-        "test_cases",
-    )  # fmt: skip
-
     def __init__(self, queue: TaskQueue | None = None, grader: AnswerGrader | None = None):
         self.dispatcher = RunDispatcher(queue)
         self.grader = grader or AnswerGrader()
@@ -272,7 +273,7 @@ class MaterialService:
         if kind != MaterialKind.PRACTICE_SHEET:
             return {"kind": kind, "content": content, "solutions": {}}
         wanted = {q["id"] for q in content["questions"]} if "all" in (reveal or []) else set(reveal or [])
-        solutions = {q["id"]: self._solution(q) for q in content["questions"] if q["id"] in wanted}
+        solutions = {q["id"]: Solution.of(q) for q in content["questions"] if q["id"] in wanted}
         public = {**content, "questions": [public_question(q) | {"id": q["id"]} for q in content["questions"]]}
         return {"kind": kind, "content": public, "solutions": solutions}
 
@@ -290,7 +291,7 @@ class MaterialService:
                 "correct": g.correct,
                 "marks": g.marks,
                 "awarded": g.awarded,
-                "solution": self._solution(by_id[g.question_id]),
+                "solution": Solution.of(by_id[g.question_id]),
             }
             for g in sheet.grades
         ]
@@ -299,9 +300,6 @@ class MaterialService:
             "correct": sheet.correct, "marked": sheet.marked,
         }  # fmt: skip
         return {"score": score, "results": results}
-
-    def _solution(self, question: dict) -> dict:
-        return {key: question[key] for key in self.SOLUTION_FIELDS if question.get(key) is not None}
 
     @staticmethod
     def _material(lesson: Lesson, kind: str) -> StudyMaterial:
@@ -378,3 +376,77 @@ class CodeService:
             lesson.code_version += 1
             lesson.save(update_fields=["code", "code_parts", "code_version", "updated_at"])
         return lesson
+
+
+class SubmissionService:
+    """The lesson's final test: marking a submission at once, and queueing the open-ended answers for grading."""
+
+    MAX_ANSWER_CHARS = 10_000
+
+    def __init__(
+        self, queue: TaskQueue | None = None, grader: AnswerGrader | None = None, cards: ScoreCard | None = None
+    ):
+        self.dispatcher = RunDispatcher(queue)
+        self.grader = grader or AnswerGrader()
+        self.cards = cards or ScoreCard()
+
+    def submit(self, lesson: Lesson, answers) -> tuple[TestSubmission, GraphRun | None]:
+        """Mark what can be marked now. Open-ended answers get a `grade_test` run; with none, the result is final."""
+        questions = self._questions(lesson)
+        clean = self._clean(questions, answers)
+        pending = bool(self.cards.open_items(questions, clean))
+        sheet = self.grader.grade_all(questions, clean)
+        with transaction.atomic():
+            lesson = Lesson.objects.select_for_update().get(pk=lesson.pk)
+            if self._grading(lesson):
+                raise RunInProgress("Your last submission is still being graded.")
+            card = self.cards.build(questions, clean, sheet, None if pending else {})
+            submission = TestSubmission.objects.create(
+                lesson=lesson,
+                answers=clean,
+                result=card,
+                status=TestSubmission.Status.GRADING if pending else TestSubmission.Status.GRADED,
+                graded_at=None if pending else timezone.now(),
+            )
+            run = None
+            if pending:
+                run = GraphRun.objects.create(
+                    lesson=lesson,
+                    graph=GraphRun.Graph.GRADE_TEST,
+                    trigger=GraphRun.Trigger.GRADE,
+                    payload={"input": {"submission_id": str(submission.id)}},
+                )
+        if run:
+            self.dispatcher.dispatch(run)
+        return submission, run
+
+    def get(self, lesson: Lesson, submission_id) -> TestSubmission:
+        try:
+            return TestSubmission.objects.get(pk=submission_id, lesson=lesson)
+        except (TestSubmission.DoesNotExist, ValueError, ValidationError):
+            raise SubmissionNotFound() from None
+
+    @staticmethod
+    def _grading(lesson: Lesson) -> bool:
+        active = [GraphRun.Status.QUEUED, GraphRun.Status.RUNNING]
+        return GraphRun.objects.filter(lesson=lesson, graph=GraphRun.Graph.GRADE_TEST, status__in=active).exists()
+
+    @staticmethod
+    def _questions(lesson: Lesson) -> list[dict]:
+        questions = (lesson.final_test or {}).get("questions")
+        if lesson.stage != Stage.READY or not questions:
+            raise WrongStage("The test can be taken once the lesson is ready.")
+        return questions
+
+    def _clean(self, questions: list[dict], answers) -> dict:
+        if not isinstance(answers, dict):
+            raise InvalidAnswers("Send the answers as an object of question id → answer.")
+        unknown = sorted(set(answers) - {q["id"] for q in questions})
+        if unknown:
+            raise InvalidAnswers(f"Unknown question ids: {', '.join(unknown)}.")
+        for qid, value in answers.items():
+            if isinstance(value, bool) or not (value is None or isinstance(value, (int, float, str))):
+                raise InvalidAnswers(f"The answer to {qid} must be a number or text.")
+            if isinstance(value, str) and len(value) > self.MAX_ANSWER_CHARS:
+                raise InvalidAnswers(f"The answer to {qid} is longer than {self.MAX_ANSWER_CHARS} characters.")
+        return dict(answers)

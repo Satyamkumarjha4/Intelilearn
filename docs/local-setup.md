@@ -78,6 +78,7 @@ Getting the Supabase URL: in the dashboard, go to **Connect** and copy the **Ses
 
 ```bash
 docker compose exec backend python manage.py seed_registry   # Gemini + Groq defaults; a no-op if already seeded
+docker compose exec backend python manage.py seed_registry --profile cheap --force   # cheapest models only, to try the flow
 docker compose exec backend python manage.py check           # warns about nodes without a usable model or API key
 docker compose exec backend python manage.py probe_models    # real calls: every bound model, each declared capability
 docker compose exec backend python manage.py probe_models --node learner.assess   # plus one call through a node's chain
@@ -121,6 +122,11 @@ BACKEND_PORT=7110 FRONTEND_PORT=7100 POSTGRES_PORT=7130 REDIS_PORT=7120 FAKE_LLM
 ```
 
 If `.env` sets `DJANGO_CSRF_TRUSTED_ORIGINS`, that stack also needs it to list its own two ports. The fake is reached at `http://fake-llm.lan:9000/v1` (the registry insists on a domain-like host name, so the compose service has that alias). The fake also serves the media services the lesson flow searches (a Wikimedia-style API and generated PNGs), so run the stack with `WIKIMEDIA_API_URL=http://fake-llm.lan:9000/w/api.php` and `MEDIA_ALLOW_PRIVATE_HOSTS=true` for the media agent to find a picture. Add a builder to the fake whenever a phase adds an LLM output schema.
+
+## Tracing and usage (optional)
+
+- **Usage:** the admin's *Model calls* page has a *Cost and latency by node* page: calls, success rate, fallbacks, average and p95 latency, tokens and cost per node and per model over the last day, week, month or everything.
+- **Tracing:** set `LLM_TRACING=langsmith` (with `LANGSMITH_API_KEY`, optionally `LANGSMITH_PROJECT`) or `LLM_TRACING=langfuse` (with `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, optionally `LANGFUSE_HOST`, and `uv add langfuse` plus a rebuild) in `.env`. It is off by default. **A trace contains the prompts and replies, which hold what the learner wrote**, so it goes to the service you choose. `manage.py check` warns when the setting cannot work (it names missing variables, never their values); a tracing problem never fails a model call.
 
 ## Everyday commands
 

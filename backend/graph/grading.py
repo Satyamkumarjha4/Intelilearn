@@ -200,3 +200,94 @@ class AnswerGrader:
         if isinstance(answer, str) and (match := self.NUMBER.match(answer)):
             return float(match.group(1))
         return None
+
+
+class Solution:
+    """What a question's answer is made of, for showing after the learner has answered (never before)."""
+
+    FIELDS = (
+        "correct_index", "answer", "tolerance", "unit", "model_answer", "key_points", "rubric", "reference_solution",
+        "test_cases",
+    )  # fmt: skip
+
+    @classmethod
+    def of(cls, question: dict) -> dict:
+        return {key: question[key] for key in cls.FIELDS if question.get(key) is not None}
+
+
+class ScoreCard:
+    """The result of a submitted lesson test, as the learner sees it (`TestSubmission.result`).
+
+    Questions with one right answer are marked by `AnswerGrader`; the others carry the marks a model gave them, or are
+    still waiting for them (`awarded` is None and the card is not `complete`). A blank answer is 0 without asking
+    anyone. Topics to revisit are the concepts of the questions that lost marks, the biggest loss first.
+    """
+
+    NO_ANSWER = "No answer given."
+
+    def build(self, questions: list[dict], answers: dict, sheet: SheetGrade, model: dict[str, dict] | None) -> dict:
+        rows = [
+            self._row(q, answers.get(q["id"]), grade, model) for q, grade in zip(questions, sheet.grades, strict=True)
+        ]
+        awarded = sum(row["awarded"] or 0 for row in rows)
+        available = sum(row["marks"] for row in rows)
+        return {
+            "complete": all(row["awarded"] is not None for row in rows),
+            "score": {
+                "awarded": awarded,
+                "available": available,
+                "percent": round(100 * awarded / available) if available else 0,
+            },  # fmt: skip
+            "questions": rows,
+            "topics_to_revisit": self._topics(rows),
+        }
+
+    def open_items(self, questions: list[dict], answers: dict) -> list[dict]:
+        """The open-ended questions that have an answer to grade, with that answer, for `test.grade`."""
+        return [
+            q | {"answer": answers[q["id"]]}
+            for q in questions
+            if q["type"] not in ("mcq", "numerical") and not self._blank(answers.get(q["id"]))
+        ]
+
+    def _row(self, question: dict, answer, grade: QuestionGrade, model: dict[str, dict] | None) -> dict:
+        row = {"id": question["id"], "type": question["type"], "concept": question["concept"], "marks": grade.marks}
+        row["solution"] = Solution.of(question)
+        if self._blank(answer):
+            return row | {"awarded": 0, "correct": False, "graded_by": "auto", "feedback": self.NO_ANSWER}
+        if grade.correct is not None:
+            return row | {
+                "awarded": grade.awarded, "correct": grade.correct, "graded_by": "auto",
+                "feedback": "Correct." if grade.correct else self._expected(question),
+            }  # fmt: skip
+        given = (model or {}).get(question["id"])
+        if given is None:
+            return row | {"awarded": None, "correct": None, "graded_by": "none", "feedback": ""}
+        awarded = min(given["awarded"], grade.marks)
+        return row | {
+            "awarded": awarded, "correct": awarded == grade.marks, "graded_by": "model", "feedback": given["feedback"],
+        }  # fmt: skip
+
+    @staticmethod
+    def _blank(answer) -> bool:
+        return answer is None or (isinstance(answer, str) and not answer.strip())
+
+    @staticmethod
+    def _expected(question: dict) -> str:
+        if question["type"] == "mcq":
+            return f'The correct answer is "{question["options"][question["correct_index"]]}".'
+        unit = f" {question['unit']}" if question.get("unit") else ""
+        return f"The expected answer is {question['answer']:g}{unit} (accepted within ±{question['tolerance']:g})."
+
+    @staticmethod
+    def _topics(rows: list[dict]) -> list[str]:
+        lost = [
+            (row["marks"] - row["awarded"], n, row["concept"])
+            for n, row in enumerate(rows)
+            if row["awarded"] is not None and row["awarded"] < row["marks"]
+        ]
+        topics: list[str] = []
+        for _, _, concept in sorted(lost, key=lambda item: (-item[0], item[1])):
+            if concept not in topics:
+                topics.append(concept)
+        return topics

@@ -135,7 +135,7 @@ A new public method without a test is incomplete, as is a branch nobody exercise
 | `make test` | All backend tests except `live`, against the docker Postgres |
 | `make lint` | ruff and ruff format (backend and tests), OpenAPI validation, eslint, `tsc`, and `bun test` |
 | `make check` | `lint` + `test`; required before finishing any task, and run by CI on every push ([ci.md](ci.md)) |
-| `pytest -m live` | Golden topics and real provider calls; needs API keys; run by hand only |
+| `pytest -m live` | The golden-topic suite in `tests/live/`: three topics from a first question to a ready lesson and a graded test with the real models, sandbox and media services, held to structural checks and a cost budget (`LIVE_MAX_COST_USD`, default 2.00). **It spends money with the keys in `.env`** and is deselected by default (`addopts = -m 'not live'`); run it by hand. The checks it applies (`tests/live/golden.py`) are tested offline in `make check` |
 
 ## 7. Definition of done
 

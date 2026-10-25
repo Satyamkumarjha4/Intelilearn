@@ -109,7 +109,7 @@ flowchart TB
 | | flow execution | `FlowRunner` | Celery tasks and services run a graph segment without knowing LangGraph | ✅ |
 | **Chain of Responsibility** | gateway | `ResolvedNode.chain` walked by `Gateway` | Each model in priority order handles the call or passes it on to the next fallback | ✅ |
 | **Strategy** | gateway | `OutputAdapter` (`Structured…`, `Tools…`, `Text…`) | Output mode varies per node; the retry loop must not branch on it | ✅ |
-| | gateway | `RetryPolicy` (`ExponentialBackoffPolicy`) | Which errors are retryable and how long to wait, swappable and testable | ✅ |
+| | gateway | `RetryPolicy` (`ExponentialBackoffPolicy`) | Which errors are retryable and how long to wait (a spent daily quota is not), swappable and testable | ✅ |
 | | providers | `ProviderProfile` per provider kind | Allowed params, renames and reasoning kwargs differ per vendor | ✅ |
 | | rate limits | `RateLimiter` (`CacheWindowRateLimiter`) | Gateway depends on "wait for room", not on Redis | ✅ |
 | | probes | `CapabilityProbe` per capability | Each capability has its own check; `ModelProber` runs the declared ones | ✅ |
@@ -412,7 +412,11 @@ classDiagram
         +load(data, replace_bindings) dict
     }
     class DefaultRegistry {
+        +nodes
         +build() dict
+    }
+    class CheapRegistry {
+        +nodes
     }
 
     Provider "1" *-- "many" LLMModel
@@ -433,6 +437,7 @@ classDiagram
     ProviderProfile <|-- OllamaProfile
     ProviderProfiles o-- ProviderProfile
     DefaultRegistry ..> RegistrySerializer : same JSON format
+    DefaultRegistry <|-- CheapRegistry
 ```
 
 - `ProviderProfile` (`profiles.py`) holds everything that differs per vendor: allowed params and renames, whether a base URL or API key is needed, whether the client takes `timeout`, and reasoning translation. `OpenAICompatibleProfile` and `GroqProfile` subclass `OpenAIProfile`. `Provider.profile` returns the row's profile.
@@ -1200,6 +1205,87 @@ classDiagram
 - `RepairTargetLocator`, `RegressionCheck` and `CodeSignature` are pure: no ORM, no network, no sandbox.
 - `CodeService` owns the lesson's code use cases (serve, request a repair, list versions, restore); views stay thin.
 
+### 4.13 Test grading, tracing and usage (Phase 7)
+
+```mermaid
+classDiagram
+    direction LR
+    class AnswerGrader {
+        +grade(question, answer) QuestionGrade
+        +grade_all(questions, answers) SheetGrade
+    }
+    class ScoreCard {
+        +build(questions, answers, sheet, model) dict
+        +open_items(questions, answers) list
+    }
+    class Solution {
+        +of(question)$ dict
+    }
+    class GradeReportValidator {
+        +validate(report, questions) list~str~
+    }
+    class GradeTestPrompt
+    class SubmissionService {
+        +submit(lesson, answers) tuple
+        +get(lesson, submission_id) TestSubmission
+    }
+    class RunEffects {
+        +on_stopped(run, message)
+    }
+    class RunEffect {
+        <<interface>>
+        +apply(run, message)
+    }
+    class SubmissionEffect
+    class GradeTestGraphBuilder
+    class LoadSubmissionNode
+    class GradeOpenNode
+    class ValidateGradeNode
+    class PersistGradeNode
+    class CallbackProvider {
+        <<interface>>
+        +config(node_key, model, lesson_id, run_id) dict
+    }
+    class NoTracing
+    class LangSmithTracing
+    class LangfuseTracing
+    class SafeTracing
+    class TracingProviders {
+        +for_name(name)$ CallbackProvider
+        +from_settings()$ CallbackProvider
+    }
+    class UsageReport {
+        +within(window) UsageReport
+        +per_node() list~Usage~
+        +per_model() list~Usage~
+        +total() Usage
+    }
+
+    SubmissionService o-- AnswerGrader
+    SubmissionService o-- ScoreCard
+    ScoreCard ..> Solution
+    GradeTestGraphBuilder o-- LoadSubmissionNode
+    GradeTestGraphBuilder o-- GradeOpenNode
+    GradeTestGraphBuilder o-- ValidateGradeNode
+    GradeTestGraphBuilder o-- PersistGradeNode
+    GradeOpenNode ..> GradeTestPrompt
+    ValidateGradeNode ..> GradeReportValidator
+    PersistGradeNode o-- ScoreCard
+    RunEffects o-- RunEffect
+    RunEffect <|.. SubmissionEffect
+    CallbackProvider <|.. NoTracing
+    CallbackProvider <|.. LangSmithTracing
+    CallbackProvider <|.. LangfuseTracing
+    CallbackProvider <|.. SafeTracing
+    SafeTracing o-- CallbackProvider
+    TracingProviders ..> CallbackProvider
+```
+
+- **One grader for every score.** `AnswerGrader` marks practice sheets and the lesson test; `ScoreCard` adds blank answers, the model's capped marks, topics to revisit and each question's solution.
+- **Strategy**: `CallbackProvider` (tracing; none, LangSmith, Langfuse, chosen by `LLM_TRACING` through `TracingProviders`) and `RunEffect` (what a run that did not finish leaves behind, per graph). `SafeTracing` is a Decorator that makes tracing unable to fail a model call.
+- `UsageReport` is a read model over the `ModelCall` log, with no side effects, behind the admin's usage page.
+- The optional judges (`diagnostic.review`, `media.verify`) degrade instead of failing: see [lesson-graph.md](lesson-graph.md).
+
 ## 5. How to extend
 
 | You are adding | Do this |
@@ -1224,7 +1310,7 @@ Every phase 0–2 item is done. The rows still open describe the work-in-progres
 | ~~`llm_registry/ratelimit.py`~~ | ~~`acquire()` function~~ | `RateLimiter` Protocol + `CacheWindowRateLimiter` | ✅ Done |
 | ~~`llm_registry/resolver.py`~~ | ~~module functions~~ | `RegistryResolver`, `RegistrySnapshot` | ✅ Done |
 | ~~`llm_registry/probes.py`~~ | ~~`probe_model()`~~ | `ModelProber` + `CapabilityProbe`s | ✅ Done |
-| ~~`llm_registry/serialization.py`, `seed.py`~~ | ~~functions~~ | `RegistrySerializer` (`export` / `load`), `DefaultRegistry` | ✅ Done |
+| ~~`llm_registry/serialization.py`, `seed.py`~~ | ~~functions~~ | `RegistrySerializer` (`export` / `load`), `DefaultRegistry`; seed profiles (`DefaultRegistry`, `CheapRegistry`) picked by name from `SEED_PROFILES` | ✅ Done |
 | ~~`llm_registry/node_specs.py`~~ | ~~dict + `get_spec()`~~ | `NodeSpecCatalog` (`NODE_SPECS[key]`) | ✅ Done |
 | ~~`llm_registry/redaction.py`~~ | ~~`redact()`~~ | `Redactor` + the stateless `REDACTOR` default | ✅ Done |
 | ~~`core/views.py`~~ | ~~`_database`, `_redis`, `_celery`~~ | `HealthCheck`s + `HealthService` (`core/health.py`) | ✅ Done |

@@ -22,6 +22,9 @@ Use cases:
 - the lesson detail lists its sheets
 - the document is served for a ready lesson with signed media and no answers; a repair report is queued, validated and
   refused when stale, capped or early; versions are listed and one can be restored; another user's lesson is a 404
+- the lesson test: a submission is marked at once and queued for grading, bad answers are a 400, a lesson that is not
+  ready or a grading in progress is a 409, the submission can be read with its score card, submissions are rate limited,
+  and another user's lesson or submission is a 404
 - the OpenAPI schema documents these endpoints
 """
 
@@ -30,10 +33,11 @@ import json
 import pytest
 from asgiref.sync import async_to_sync
 from rest_framework.throttling import SimpleRateThrottle
+from support.lesson_data import make_final_test
 from support.quiz_data import make_questions
 from support.study_data import make_cheat_sheet, make_practice_sheet
 
-from lessons.models import GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt, Stage, StudyMaterial
+from lessons.models import GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt, Stage, StudyMaterial, TestSubmission
 
 pytestmark = pytest.mark.django_db
 
@@ -55,6 +59,8 @@ PATHS = [
     ("post", "/api/lessons/{lesson}/materials/practice_sheet/grade"),
     ("get", "/api/lessons/{lesson}/document"),
     ("post", "/api/lessons/{lesson}/repair"),
+    ("post", "/api/lessons/{lesson}/test/submissions"),
+    ("get", "/api/lessons/{lesson}/test/submissions/{run}"),
     ("get", "/api/lessons/{lesson}/versions"),
     ("post", "/api/lessons/{lesson}/versions/1/restore"),
 ]
@@ -576,3 +582,74 @@ class TestLessonCode:
         ]  # fmt: skip
 
         assert statuses == [404, 404, 404, 404]
+
+
+class TestLessonTest:
+    FINAL = make_final_test()
+    IDS = {q["type"]: q["id"] for q in FINAL["questions"]}
+
+    @pytest.fixture
+    def ready(self, make_lesson):
+        return make_lesson(stage=Stage.READY, code="x", code_version=1, final_test=self.FINAL)
+
+    def url(self, lesson, suffix=""):
+        return f"/api/lessons/{lesson.id}/test/submissions{suffix}"
+
+    def test_a_submission_is_marked_at_once_and_queued_for_grading(self, signed_in_client, ready, queue):
+        answers = {self.IDS["mcq"]: 1, self.IDS["short_answer"]: "Halve it."}
+
+        response = signed_in_client.post(self.url(ready), {"answers": answers}, format="json")
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "grading" and queue.runs[0].graph == "grade_test"
+        assert body["run_id"] == str(queue.runs[0].id)
+        submission = signed_in_client.get(self.url(ready, f"/{body['submission_id']}")).json()
+        assert submission["status"] == "grading" and submission["result"]["complete"] is False
+        assert submission["result"]["score"]["awarded"] == 2 and submission["graded_at"] is None
+
+    def test_a_test_with_nothing_to_grade_is_final_and_has_no_run(self, signed_in_client, ready, queue):
+        response = signed_in_client.post(self.url(ready), {"answers": {self.IDS["mcq"]: 1}}, format="json")
+
+        body = response.json()
+        assert response.status_code == 202 and body["run_id"] is None and body["status"] == "graded"
+        assert queue.runs == []
+        result = signed_in_client.get(self.url(ready, f"/{body['submission_id']}")).json()["result"]
+        assert result["complete"] is True and result["questions"][0]["solution"] == {"correct_index": 1}
+
+    @pytest.mark.parametrize("body", [{}, {"answers": []}, {"answers": {"nope": 1}}, {"answers": {"t1": True}}])
+    def test_bad_answers_are_a_400(self, signed_in_client, ready, queue, body):
+        response = signed_in_client.post(self.url(ready), body, format="json")
+
+        assert response.status_code == 400 and queue.runs == [] and not TestSubmission.objects.exists()
+
+    def test_a_lesson_that_is_not_ready_and_a_grading_in_progress_are_conflicts(
+        self, signed_in_client, ready, lesson, queue
+    ):
+        early = signed_in_client.post(self.url(lesson), {"answers": {}}, format="json")
+        first = signed_in_client.post(self.url(ready), {"answers": {self.IDS["short_answer"]: "x"}}, format="json")
+        second = signed_in_client.post(self.url(ready), {"answers": {self.IDS["short_answer"]: "y"}}, format="json")
+
+        assert (early.status_code, early.json()["code"]) == (409, "wrong_stage")
+        assert first.status_code == 202 and (second.status_code, second.json()["code"]) == (409, "run_in_progress")
+
+    def test_submissions_are_rate_limited(self, signed_in_client, ready, queue, monkeypatch):
+        monkeypatch.setitem(SimpleRateThrottle.THROTTLE_RATES, "test_submit", "2/hour")
+        body = {"answers": {self.IDS["mcq"]: 1}}
+
+        codes = [signed_in_client.post(self.url(ready), body, format="json").status_code for _ in range(3)]
+
+        assert codes == [202, 202, 429]
+
+    def test_an_unknown_submission_is_a_404(self, signed_in_client, ready):
+        for wrong in ("not-a-uuid", "00000000-0000-0000-0000-000000000000"):
+            assert signed_in_client.get(self.url(ready, f"/{wrong}")).status_code == 404
+
+    def test_another_users_lesson_and_submission_are_a_404(self, signed_in_client, other_user, make_lesson):
+        theirs = make_lesson(owner=other_user, stage=Stage.READY, code="x", final_test=self.FINAL)
+        submission = TestSubmission.objects.create(lesson=theirs)
+
+        post = signed_in_client.post(self.url(theirs), {"answers": {}}, format="json")
+        get = signed_in_client.get(self.url(theirs, f"/{submission.id}"))
+
+        assert (post.status_code, get.status_code) == (404, 404)

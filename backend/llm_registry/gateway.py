@@ -7,7 +7,7 @@ For a node it walks the resolved chain (primary, then fallbacks: Chain of Respon
 Every attempt is logged as a ModelCall. Whether an answer is *good* is the graph's job, not the gateway's.
 
 The collaborators are injected, with production defaults: the chat-model factory, the rate limiter, the retry
-policy, the call recorder and the output adapters (one per output mode).
+policy, the call recorder, the output adapters (one per output mode) and the tracing provider.
 """
 
 import time
@@ -26,6 +26,7 @@ from .recorder import ModelCallRecorder
 from .redaction import REDACTOR
 from .resolver import RegistrySnapshot, ResolvedModel, ResolvedNode
 from .retry import ExponentialBackoffPolicy, RetryPolicy
+from .tracing import CallbackProvider, TracingProviders
 
 EventSink = Callable[[dict], None]
 
@@ -80,6 +81,7 @@ class Gateway:
         retry_policy: RetryPolicy | None = None,
         recorder: ModelCallRecorder | None = None,
         adapters: OutputAdapters = OUTPUT_ADAPTERS,
+        tracing: CallbackProvider | None = None,
     ):
         self.chat_factory = chat_factory if chat_factory is not None else CHAT_MODEL_FACTORY
         self.sleep = sleep
@@ -87,6 +89,7 @@ class Gateway:
         self.retry_policy = retry_policy if retry_policy is not None else ExponentialBackoffPolicy()
         self.recorder = recorder if recorder is not None else ModelCallRecorder()
         self.adapters = adapters
+        self.tracing = tracing if tracing is not None else TracingProviders.from_settings()
 
     def invoke(
         self,
@@ -141,7 +144,10 @@ class Gateway:
                 self.limiter.acquire(
                     {f"provider:{model.provider_key}": model.provider_rpm, f"model:{model.label}": model.model_rpm}
                 )
-                reply = runnable.invoke(messages)
+                trace = self.tracing.config(
+                    node_key=call.node.node_key, model=model.label, lesson_id=call.lesson_id, run_id=call.run_id
+                )
+                reply = runnable.invoke(messages, config=trace) if trace else runnable.invoke(messages)
             except Exception as exc:
                 retryable = self.retry_policy.is_retryable(exc)
                 status = ModelCall.Status.RETRYABLE_ERROR if retryable else ModelCall.Status.FATAL_ERROR

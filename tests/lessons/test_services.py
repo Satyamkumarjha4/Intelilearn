@@ -25,11 +25,16 @@ Use cases:
 - the document is served for a ready lesson only
 - a crash report queues a runtime repair and counts against the cap; a stale version, the cap, a lesson that is not
   ready and a run in progress are refused, and nothing is queued
+- a test submission marks the automatic answers at once and queues the open-ended ones for grading; with none to grade
+  it is final at once; blank answers are never sent; unknown ids, odd values and long answers are refused; a lesson that
+  is not ready and a grading still running are refused; a submission can be read, only by its own lesson
+- a grading run that cannot be queued or is cancelled fails its submission
 - an earlier version can be restored: the code being replaced is kept, the restored code gets a new code_version, and
   an unknown version, a lesson that is not ready or a run in progress are refused
 """
 
 import pytest
+from support.lesson_data import make_final_test
 from support.quiz_data import make_prerequisites, make_questions
 from support.study_data import make_cheat_sheet, make_practice_sheet, make_revision_sheet
 
@@ -45,11 +50,29 @@ from lessons.errors import (
     RepairLimitReached,
     RunInProgress,
     StaleCodeVersion,
+    SubmissionNotFound,
     VersionNotFound,
     WrongStage,
 )
-from lessons.models import FlowSettings, GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt, Stage, StudyMaterial
-from lessons.services import CodeService, LessonService, MaterialService, QuizService, RunDispatcher
+from lessons.models import (
+    FlowSettings,
+    GraphRun,
+    Lesson,
+    LessonVersion,
+    Quiz,
+    QuizAttempt,
+    Stage,
+    StudyMaterial,
+    TestSubmission,
+)
+from lessons.services import (
+    CodeService,
+    LessonService,
+    MaterialService,
+    QuizService,
+    RunDispatcher,
+    SubmissionService,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -556,3 +579,125 @@ class TestRestore:
         GraphRun.objects.create(lesson=lesson, graph="runtime_repair", trigger="repair", status="running")
         with pytest.raises(RunInProgress):
             CodeService().restore(lesson, 1)
+
+
+FINAL_TEST = make_final_test()
+TEST_IDS = {q["type"]: q["id"] for q in FINAL_TEST["questions"]}
+MCQ, NUM, SHORT, CODE = TEST_IDS["mcq"], TEST_IDS["numerical"], TEST_IDS["short_answer"], TEST_IDS["code"]
+
+
+def lesson_with_test(make_lesson, **fields):
+    return ready_lesson(make_lesson, final_test=FINAL_TEST, **fields)
+
+
+class TestSubmitLessonTest:
+    def test_the_automatic_answers_are_marked_at_once_and_the_open_ones_queued_for_grading(self, make_lesson, queue):
+        lesson = lesson_with_test(make_lesson)
+
+        submission, run = SubmissionService(queue=queue).submit(
+            lesson, {MCQ: 1, NUM: "4", SHORT: "Halve it.", CODE: "def f(): pass"}
+        )
+
+        assert submission.status == TestSubmission.Status.GRADING and submission.graded_at is None
+        assert submission.result["complete"] is False and submission.result["score"]["awarded"] == 4
+        assert (run.graph, run.trigger) == (GraphRun.Graph.GRADE_TEST, GraphRun.Trigger.GRADE)
+        assert run.payload == {"input": {"submission_id": str(submission.id)}} and queue.runs == [run]
+
+    def test_with_nothing_to_grade_the_result_is_final_and_nothing_is_queued(self, make_lesson, queue):
+        lesson = lesson_with_test(make_lesson)
+
+        submission, run = SubmissionService(queue=queue).submit(lesson, {MCQ: 1, NUM: "9", SHORT: "  "})
+
+        assert run is None and queue.runs == []
+        assert submission.status == TestSubmission.Status.GRADED and submission.graded_at is not None
+        assert submission.result["complete"] is True and submission.result["score"]["awarded"] == 2
+
+    def test_an_empty_submission_is_a_zero_not_an_error(self, make_lesson, queue):
+        submission, run = SubmissionService(queue=queue).submit(lesson_with_test(make_lesson), {})
+
+        assert run is None and submission.result["score"]["awarded"] == 0
+
+    @pytest.mark.parametrize(
+        ("answers", "message"),
+        [
+            (["x"], "object of question id"),
+            ({"nope": 1}, "Unknown question ids: nope"),
+            ({MCQ: True}, "must be a number or text"),
+            ({SHORT: ["a"]}, "must be a number or text"),
+            ({SHORT: {"a": 1}}, "must be a number or text"),
+            ({SHORT: "x" * 10_001}, "longer than 10000"),
+        ],
+    )
+    def test_answers_that_do_not_fit_are_refused_and_nothing_is_stored(self, make_lesson, queue, answers, message):
+        with pytest.raises(InvalidAnswers, match=message):
+            SubmissionService(queue=queue).submit(lesson_with_test(make_lesson), answers)
+
+        assert not TestSubmission.objects.exists() and queue.runs == []
+
+    @pytest.mark.parametrize("fields", [{"stage": Stage.GENERATING_LESSON}, {"final_test": {}}, {"final_test": None}])
+    def test_a_lesson_without_a_test_to_take_is_refused(self, make_lesson, queue, fields):
+        lesson = ready_lesson(make_lesson, **({"final_test": FINAL_TEST} | fields))
+
+        with pytest.raises(WrongStage):
+            SubmissionService(queue=queue).submit(lesson, {MCQ: 1})
+
+    def test_a_second_submission_waits_for_the_first_to_be_graded_and_then_works(self, make_lesson, queue):
+        lesson = lesson_with_test(make_lesson)
+        service = SubmissionService(queue=queue)
+        _, run = service.submit(lesson, {SHORT: "Halve it."})
+
+        with pytest.raises(RunInProgress, match="still being graded"):
+            service.submit(lesson, {SHORT: "Again."})
+
+        GraphRun.objects.filter(pk=run.pk).update(status=GraphRun.Status.SUCCEEDED)
+        second, _ = service.submit(lesson, {SHORT: "Again."})
+        assert TestSubmission.objects.filter(lesson=lesson).count() == 2 and second.status == "grading"
+
+    def test_a_repair_in_progress_does_not_block_a_submission(self, make_lesson, queue):
+        lesson = lesson_with_test(make_lesson)
+        GraphRun.objects.create(lesson=lesson, graph="runtime_repair", trigger="repair", status="running")
+
+        submission, _ = SubmissionService(queue=queue).submit(lesson, {MCQ: 1})
+
+        assert submission.result["score"]["awarded"] == 2
+
+
+class TestGetSubmission:
+    def test_it_returns_the_lessons_own_submission(self, make_lesson):
+        lesson = lesson_with_test(make_lesson)
+        submission = TestSubmission.objects.create(lesson=lesson)
+
+        assert SubmissionService().get(lesson, submission.id) == submission
+
+    @pytest.mark.parametrize("wrong", ["not-a-uuid", "00000000-0000-0000-0000-000000000000"])
+    def test_an_unknown_id_is_not_found(self, make_lesson, wrong):
+        with pytest.raises(SubmissionNotFound):
+            SubmissionService().get(lesson_with_test(make_lesson), wrong)
+
+    def test_another_lessons_submission_is_not_found(self, make_lesson):
+        theirs = TestSubmission.objects.create(lesson=lesson_with_test(make_lesson))
+
+        with pytest.raises(SubmissionNotFound):
+            SubmissionService().get(lesson_with_test(make_lesson), theirs.id)
+
+
+class TestGradingStops:
+    def test_a_grading_run_that_cannot_be_queued_fails_its_submission(self, make_lesson):
+        lesson = lesson_with_test(make_lesson)
+
+        with pytest.raises(QueueUnavailable):
+            SubmissionService(queue=TestDispatcher.BrokenQueue()).submit(lesson, {SHORT: "Halve it."})
+
+        submission = TestSubmission.objects.get(lesson=lesson)
+        assert submission.status == "failed" and "queue" in submission.error
+        assert Lesson.objects.get(pk=lesson.pk).stage == Stage.READY  # a ready lesson stays usable
+
+    def test_cancelling_a_grading_run_fails_its_submission_and_not_the_lesson(self, make_lesson, queue):
+        lesson = lesson_with_test(make_lesson)
+        submission, run = SubmissionService(queue=queue).submit(lesson, {SHORT: "Halve it."})
+
+        LessonService(queue=queue).cancel(run)
+
+        submission.refresh_from_db()
+        assert submission.status == "failed" and "Cancelled" in submission.error
+        assert Lesson.objects.get(pk=lesson.pk).stage == Stage.READY

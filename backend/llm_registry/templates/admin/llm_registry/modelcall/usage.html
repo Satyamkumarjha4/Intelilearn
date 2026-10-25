@@ -1,0 +1,42 @@
+{% extends "admin/base_site.html" %}
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a> &rsaquo;
+  <a href="{% url 'admin:llm_registry_modelcall_changelist' %}">Model calls</a> &rsaquo; Usage
+</div>
+{% endblock %}
+{% block content %}
+<div id="content-main">
+  <p>
+    {% for value, label in windows %}
+      {% if value == window %}<strong>{{ label }}</strong>{% else %}<a href="?window={{ value }}">{{ label }}</a>{% endif %}{% if not forloop.last %} · {% endif %}
+    {% endfor %}
+  </p>
+  <p>
+    Every attempt is one call: a retry or a fallback is another. Latency is of the attempts that succeeded;
+    <em>fallbacks</em> counts attempts made on a fallback model.
+  </p>
+  {% for title, rows in tables %}
+  <h2>{{ title }}</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>{{ title }}</th><th>Calls</th><th>Succeeded</th><th>Failed</th><th>Fallbacks</th>
+        <th>Avg ms</th><th>p95 ms</th><th>Tokens in</th><th>Tokens out</th><th>Cost</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.label }}</td><td>{{ row.calls }}</td><td>{{ row.success_rate }}%</td><td>{{ row.failed }}</td>
+        <td>{{ row.fallbacks }}</td><td>{{ row.avg_ms }}</td><td>{{ row.p95_ms }}</td>
+        <td>{{ row.input_tokens }}</td><td>{{ row.output_tokens }}</td><td>{{ row.cost|floatformat:4 }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="10">No calls in this period.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endfor %}
+</div>
+{% endblock %}

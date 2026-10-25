@@ -1,7 +1,17 @@
 from django.contrib import admin
 from django.utils.html import format_html
 
-from .models import FlowSettings, GraphRun, Lesson, LessonVersion, MediaAsset, Quiz, QuizAttempt, StudyMaterial
+from .models import (
+    FlowSettings,
+    GraphRun,
+    Lesson,
+    LessonVersion,
+    MediaAsset,
+    Quiz,
+    QuizAttempt,
+    StudyMaterial,
+    TestSubmission,
+)
 
 
 class RunInline(admin.TabularInline):
@@ -64,6 +74,19 @@ class StudyMaterialAdmin(admin.ModelAdmin):
 class MediaAssetAdmin(admin.ModelAdmin):
     list_display = ["lesson", "spec_id", "kind", "source", "license", "verified"]
     list_filter = ["kind", "source", "verified"]
+
+
+@admin.register(TestSubmission)
+class TestSubmissionAdmin(admin.ModelAdmin):
+    list_display = ["lesson", "status", "score", "submitted_at", "graded_at"]
+    list_filter = ["status"]
+    search_fields = ["lesson__topic", "lesson__owner__email"]
+    readonly_fields = ["id", "submitted_at", "graded_at", "answers", "result", "error"]
+
+    @admin.display(description="Score")
+    def score(self, obj):
+        card = (obj.result or {}).get("score")
+        return f"{card['awarded']}/{card['available']}" if card else ""
 
 
 @admin.register(LessonVersion)

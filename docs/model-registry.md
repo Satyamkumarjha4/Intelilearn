@@ -147,7 +147,7 @@ Adding a node takes three steps: add a `NodeSpec`, write the node, and run `migr
 
 ## Tool calling (`media.search`)
 
-- The gateway exposes `invoke_tools(node_key, messages, tools)`. It returns an `AIMessage` with tool calls, and the graph's `ToolNode` runs them.
+- The gateway's `invoke(node_key, messages, tools=[...])` returns an `AIMessage` with tool calls, and the graph's `ToolNode` runs them.
 - The tools are `search_wikimedia(query, media_type)`, `search_openverse(query, media_type)`, `search_gifs(query)` (only if the Giphy key is set), and the final `submit_media(selection: MediaSelection)`.
 - Loop control lives in the graph. It stops at `submit_media` or at `NodeConfig.max_tool_steps`, and the latter triggers the SVG fallback.
 - If the model supports parallel tool calls, several searches run in one turn.
@@ -248,6 +248,7 @@ for index, model in enumerate(node.chain):
                 else: log(invalid_output); break          → next model
             log(ok); if index > 0: emit fallback_model event; return result
         except retryable (timeout, 429, 5xx, connection): log; backoff with jitter (honour Retry-After)
+                 (a 429 saying a daily quota is spent, or asking for a wait over the cap, is fatal instead)
         except fatal (401/403, model not found, 400 bad request): log; break   → next model
 raise AllModelsFailed(node_key, errors)
 ```
@@ -267,25 +268,28 @@ Provider SDK errors sometimes echo request details. Before any error text is sto
 
 ## Default seed (`manage.py seed_registry`)
 
-This is a starting point that you tune in the admin afterwards. **Verify model IDs and capability flags against each provider's current catalogue before seeding.**
+This is a starting point for the free tiers of Gemini and Groq that you tune in the admin afterwards. **Providers retire model ids often** (the Gemini 2.5 family is closed to new accounts, and Groq no longer serves Llama): list what your keys can call, check capability flags and rpm limits against the provider consoles, and run `manage.py probe_models` after seeding. Groq answers the light nodes first and Gemini the big-output ones, so a spent quota on one falls over to the other.
 
-| Node | Primary | Fallback |
-|---|---|---|
-| diagnostic.generate | gemini / gemini-2.5-flash | groq / llama-3.3-70b-versatile |
-| diagnostic.review *(off)* | groq / llama-3.3-70b-versatile | n/a |
-| learner.assess | gemini / gemini-2.5-flash | groq / llama-3.3-70b-versatile |
-| study.generate | gemini / gemini-2.5-flash | groq / llama-3.3-70b-versatile |
-| lesson.plan | gemini / gemini-2.5-pro | gemini / gemini-2.5-flash |
-| page.generate | gemini / gemini-2.5-flash | groq / llama-3.3-70b-versatile |
-| test.generate | gemini / gemini-2.5-flash | groq / llama-3.3-70b-versatile |
-| interactive.plan | gemini / gemini-2.5-flash | groq / llama-3.3-70b-versatile |
-| media.search | gemini / gemini-2.5-flash | groq / llama-3.3-70b-versatile |
-| media.verify *(off until tuned)* | gemini / gemini-2.5-flash | n/a |
-| interactive.generate | gemini / gemini-2.5-flash | gemini / gemini-2.5-pro |
-| alignment.judge | gemini / gemini-2.5-pro | gemini / gemini-2.5-flash |
-| page.compile | gemini / gemini-2.5-flash | gemini / gemini-2.5-pro |
-| code.repair | gemini / gemini-2.5-flash | gemini / gemini-2.5-pro |
-| runtime.repair | gemini / gemini-2.5-flash | gemini / gemini-2.5-pro |
-| test.grade | gemini / gemini-2.5-flash | groq / llama-3.3-70b-versatile |
+| Model | Provider | Notes | `rpm_limit` |
+|---|---|---|---|
+| gemini-3.5-flash | gemini | all capabilities, the main Gemini model | 10 |
+| gemini-3.5-flash-lite | gemini | cheaper, its own quota, the vision fallback | 15 |
+| openai/gpt-oss-120b | groq | reasoning (effort) and `json_schema` output | 30 |
+| openai/gpt-oss-20b | groq | the same, smaller and faster | 30 |
 
-A full lesson makes roughly 20–35 LLM calls. Set provider `rpm_limit` to match your plan, and the rate limiter will queue calls instead of failing them.
+There is no Gemini Pro model: it has no free quota. The Groq free tier allows about 8,000 tokens a minute per model, and a single request over that is rejected, so a Groq model only leads a node whose prompt and reply are small.
+
+| Node | Chain (priority order) |
+|---|---|
+| diagnostic.generate, test.grade | gpt-oss-120b, gemini-3.5-flash |
+| diagnostic.review, learner.assess, interactive.plan, media.search | gpt-oss-20b, gemini-3.5-flash |
+| lesson.plan | gemini-3.5-flash, gpt-oss-120b, gemini-3.5-flash-lite |
+| study.generate, page.generate, test.generate, interactive.generate, alignment.judge, page.compile, code.repair, runtime.repair, media.verify | gemini-3.5-flash, gemini-3.5-flash-lite |
+
+The seeded `rpm_limit` values are free-tier figures: raise or clear them on a paid plan.
+
+### The cheap profile (`seed_registry --profile cheap --force`)
+
+For trying the lesson flow end to end (look and feel, wiring) without hitting rate or billing limits, before tuning for quality. Every node runs at `reasoning_effort=low` on the cheapest models only: the nodes the default leads with Groq use gpt-oss-20b, then gemini-3.5-flash-lite, then gemini-3.1-flash-lite; every other node uses the two Flash-Lite models, which have separate quotas. Output quality and schema adherence are weaker, so expect the odd failed step. When the flow works, `seed_registry --force` (the default profile) restores the quality chains. Profiles are classes in `seed.py` registered in `SEED_PROFILES`.
+
+A full lesson makes roughly 20–35 LLM calls. The rate limiter queues calls over a model's `rpm_limit` instead of failing them.

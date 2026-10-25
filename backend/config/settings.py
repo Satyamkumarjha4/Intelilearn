@@ -182,6 +182,11 @@ GIPHY_API_KEY = env("GIPHY_API_KEY", default="")
 # Signed media URLs (/api/media/{id}?exp=&sig=) stay valid this long.
 MEDIA_URL_TTL_S = env.int("MEDIA_URL_TTL_S", default=6 * 3600)
 
+# Tracing of the model calls (llm_registry/tracing.py): none, langsmith or langfuse. Off by default, because a trace
+# holds the prompts and replies, which contain what the learner wrote. The services' own keys are read from the
+# environment by their SDKs (LANGSMITH_API_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST).
+LLM_TRACING = env("LLM_TRACING", default="none")
+
 # --- DRF / OpenAPI ---
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
@@ -194,6 +199,7 @@ REST_FRAMEWORK = {
         "auth_account": env("AUTH_ACCOUNT_THROTTLE_RATE", default="10/min"),  # login attempts per email
         "auth_refresh": env("AUTH_REFRESH_THROTTLE_RATE", default="60/min"),
         "lesson_create": env("LESSON_CREATE_THROTTLE_RATE", default="30/hour"),  # each lesson costs model calls
+        "test_submit": env("TEST_SUBMIT_THROTTLE_RATE", default="30/hour"),  # open-ended answers cost model calls
     },
     # Requests arrive through the Next.js proxy; the client address is the X-Forwarded-For entry it appends.
     # Keep the API port bound to localhost (BIND_ADDRESS) so nobody can reach Django directly with a forged header.
@@ -234,6 +240,8 @@ SPECTACULAR_SETTINGS = {
         "StageEnum": "lessons.stages.Stage",
         "MaterialKindEnum": "lessons.stages.MaterialKind",
         "QuizKindEnum": "lessons.models.Quiz.Kind",
+        "RunStatusEnum": "lessons.models.GraphRun.Status",
+        "TestSubmissionStatusEnum": "lessons.models.TestSubmission.Status",
     },
 }
 
