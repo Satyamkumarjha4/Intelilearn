@@ -23,6 +23,7 @@ x-backend: &backend
     REDIS_HOST: redis
     REDIS_PORT: 6379
     REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    FAKE_LLM_API_KEY: ${FAKE_LLM_API_KEY:-}
   volumes:
     - ./backend:/app:z # :z relabels for SELinux (Fedora) so containers can read the bind mount
     - ./tests:/tests:z # repo-root tests, mirroring backend/
@@ -78,6 +79,21 @@ services:
     <<: *backend
     # watchfiles restarts the worker when Python files change
     command: watchfiles --filter python "celery -A config worker -l info --concurrency 4" /app
+
+  # Dev-only stand-in for an LLM provider (profile `e2e`; see `make fake-llm` and docs/local-setup.md).
+  fake-llm:
+    profiles: ["e2e"]
+    build: ./backend
+    command: python /tests/e2e/fake_llm_server.py
+    networks:
+      default:
+        aliases: [fake-llm.lan] # the registry's base_url must look like a domain name
+    environment:
+      PYTHONPATH: /app:/tests
+      FAKE_LLM_PORT: 9000
+    volumes:
+      - ./backend:/app:z
+      - ./tests:/tests:z
 
   frontend:
     build: ./frontend

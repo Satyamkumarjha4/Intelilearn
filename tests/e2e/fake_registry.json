@@ -1,0 +1,357 @@
+{
+  "format_version": 1,
+  "providers": [
+    {
+      "key": "fake",
+      "kind": "openai_compatible",
+      "api_key_env": "FAKE_LLM_API_KEY",
+      "base_url": "http://fake-llm.lan:9000/v1",
+      "rpm_limit": null,
+      "is_enabled": true
+    }
+  ],
+  "models": [
+    {
+      "provider": "fake",
+      "name": "fake-model",
+      "label": "Fake model (e2e)",
+      "default_params": {},
+      "supports_structured_output": true,
+      "structured_output_method": "json_schema",
+      "supports_tool_calling": true,
+      "supports_parallel_tool_calls": false,
+      "supports_vision": true,
+      "supports_reasoning": false,
+      "reasoning_control": "none",
+      "reasoning_disables_sampling": false,
+      "context_window": 1000000,
+      "max_output_tokens": 65536,
+      "rpm_limit": null,
+      "input_cost_per_mtok": null,
+      "output_cost_per_mtok": null,
+      "is_enabled": true
+    }
+  ],
+  "nodes": [
+    {
+      "node_key": "diagnostic.generate",
+      "is_enabled": true,
+      "reasoning_effort": "none",
+      "params_override": {},
+      "max_attempts": 2,
+      "max_tool_steps": null,
+      "timeout_s": 60,
+      "bindings": [
+        {
+          "provider": "fake",
+          "model": "fake-model",
+          "priority": 0,
+          "params_override": {},
+          "reasoning_effort": "",
+          "max_retries": 1,
+          "is_enabled": true
+        }
+      ]
+    },
+    {
+      "node_key": "learner.assess",
+      "is_enabled": true,
+      "reasoning_effort": "none",
+      "params_override": {},
+      "max_attempts": 2,
+      "max_tool_steps": null,
+      "timeout_s": 60,
+      "bindings": [
+        {
+          "provider": "fake",
+          "model": "fake-model",
+          "priority": 0,
+          "params_override": {},
+          "reasoning_effort": "",
+          "max_retries": 1,
+          "is_enabled": true
+        }
+      ]
+    },
+    {
+      "node_key": "study.generate",
+      "is_enabled": true,
+      "reasoning_effort": "none",
+      "params_override": {},
+      "max_attempts": 2,
+      "max_tool_steps": null,
+      "timeout_s": 60,
+      "bindings": [
+        {
+          "provider": "fake",
+          "model": "fake-model",
+          "priority": 0,
+          "params_override": {},
+          "reasoning_effort": "",
+          "max_retries": 1,
+          "is_enabled": true
+        }
+      ]
+    },
+    {
+      "node_key": "lesson.plan",
+      "is_enabled": true,
+      "reasoning_effort": "none",
+      "params_override": {},
+      "max_attempts": 2,
+      "max_tool_steps": null,
+      "timeout_s": 60,
+      "bindings": [
+        {
+          "provider": "fake",
+          "model": "fake-model",
+          "priority": 0,
+          "params_override": {},
+          "reasoning_effort": "",
+          "max_retries": 1,
+          "is_enabled": true
+        }
+      ]
+    },
+    {
+      "node_key": "page.generate",
+      "is_enabled": true,
+      "reasoning_effort": "none",
+      "params_override": {},
+      "max_attempts": 2,
+      "max_tool_steps": null,
+      "timeout_s": 60,
+      "bindings": [
+        {
+          "provider": "fake",
+          "model": "fake-model",
+          "priority": 0,
+          "params_override": {},
+          "reasoning_effort": "",
+          "max_retries": 1,
+          "is_enabled": true
+        }
+      ]
+    },
+    {
+      "node_key": "test.generate",
+      "is_enabled": true,
+      "reasoning_effort": "none",
+      "params_override": {},
+      "max_attempts": 2,
+      "max_tool_steps": null,
+      "timeout_s": 60,
+      "bindings": [
+        {
+          "provider": "fake",
+          "model": "fake-model",
+          "priority": 0,
+          "params_override": {},
+          "reasoning_effort": "",
+          "max_retries": 1,
+          "is_enabled": true
+        }
+      ]
+    },
+    {
+      "node_key": "interactive.plan",
+      "is_enabled": true,
+      "reasoning_effort": "none",
+      "params_override": {},
+      "max_attempts": 2,
+      "max_tool_steps": null,
+      "timeout_s": 60,
+      "bindings": [
+        {
+          "provider": "fake",
+          "model": "fake-model",
+          "priority": 0,
+          "params_override": {},
+          "reasoning_effort": "",
+          "max_retries": 1,
+          "is_enabled": true
+        }
+      ]
+    },
+    {
+      "node_key": "media.search",
+      "is_enabled": true,
+      "reasoning_effort": "none",
+      "params_override": {},
+      "max_attempts": 2,
+      "max_tool_steps": 6,
+      "timeout_s": 60,
+      "bindings": [
+        {
+          "provider": "fake",
+          "model": "fake-model",
+          "priority": 0,
+          "params_override": {},
+          "reasoning_effort": "",
+          "max_retries": 1,
+          "is_enabled": true
+        }
+      ]
+    },
+    {
+      "node_key": "interactive.generate",
+      "is_enabled": true,
+      "reasoning_effort": "none",
+      "params_override": {},
+      "max_attempts": 2,
+      "max_tool_steps": null,
+      "timeout_s": 60,
+      "bindings": [
+        {
+          "provider": "fake",
+          "model": "fake-model",
+          "priority": 0,
+          "params_override": {},
+          "reasoning_effort": "",
+          "max_retries": 1,
+          "is_enabled": true
+        }
+      ]
+    },
+    {
+      "node_key": "alignment.judge",
+      "is_enabled": true,
+      "reasoning_effort": "none",
+      "params_override": {},
+      "max_attempts": 2,
+      "max_tool_steps": null,
+      "timeout_s": 60,
+      "bindings": [
+        {
+          "provider": "fake",
+          "model": "fake-model",
+          "priority": 0,
+          "params_override": {},
+          "reasoning_effort": "",
+          "max_retries": 1,
+          "is_enabled": true
+        }
+      ]
+    },
+    {
+      "node_key": "page.compile",
+      "is_enabled": true,
+      "reasoning_effort": "none",
+      "params_override": {},
+      "max_attempts": 2,
+      "max_tool_steps": null,
+      "timeout_s": 60,
+      "bindings": [
+        {
+          "provider": "fake",
+          "model": "fake-model",
+          "priority": 0,
+          "params_override": {},
+          "reasoning_effort": "",
+          "max_retries": 1,
+          "is_enabled": true
+        }
+      ]
+    },
+    {
+      "node_key": "code.repair",
+      "is_enabled": true,
+      "reasoning_effort": "none",
+      "params_override": {},
+      "max_attempts": 2,
+      "max_tool_steps": null,
+      "timeout_s": 60,
+      "bindings": [
+        {
+          "provider": "fake",
+          "model": "fake-model",
+          "priority": 0,
+          "params_override": {},
+          "reasoning_effort": "",
+          "max_retries": 1,
+          "is_enabled": true
+        }
+      ]
+    },
+    {
+      "node_key": "runtime.repair",
+      "is_enabled": true,
+      "reasoning_effort": "none",
+      "params_override": {},
+      "max_attempts": 2,
+      "max_tool_steps": null,
+      "timeout_s": 60,
+      "bindings": [
+        {
+          "provider": "fake",
+          "model": "fake-model",
+          "priority": 0,
+          "params_override": {},
+          "reasoning_effort": "",
+          "max_retries": 1,
+          "is_enabled": true
+        }
+      ]
+    },
+    {
+      "node_key": "test.grade",
+      "is_enabled": true,
+      "reasoning_effort": "none",
+      "params_override": {},
+      "max_attempts": 2,
+      "max_tool_steps": null,
+      "timeout_s": 60,
+      "bindings": [
+        {
+          "provider": "fake",
+          "model": "fake-model",
+          "priority": 0,
+          "params_override": {},
+          "reasoning_effort": "",
+          "max_retries": 1,
+          "is_enabled": true
+        }
+      ]
+    },
+    {
+      "node_key": "diagnostic.review",
+      "is_enabled": false,
+      "reasoning_effort": "none",
+      "params_override": {},
+      "max_attempts": 2,
+      "max_tool_steps": null,
+      "timeout_s": 60,
+      "bindings": [
+        {
+          "provider": "fake",
+          "model": "fake-model",
+          "priority": 0,
+          "params_override": {},
+          "reasoning_effort": "",
+          "max_retries": 1,
+          "is_enabled": true
+        }
+      ]
+    },
+    {
+      "node_key": "media.verify",
+      "is_enabled": false,
+      "reasoning_effort": "none",
+      "params_override": {},
+      "max_attempts": 2,
+      "max_tool_steps": null,
+      "timeout_s": 60,
+      "bindings": [
+        {
+          "provider": "fake",
+          "model": "fake-model",
+          "priority": 0,
+          "params_override": {},
+          "reasoning_effort": "",
+          "max_retries": 1,
+          "is_enabled": true
+        }
+      ]
+    }
+  ]
+}

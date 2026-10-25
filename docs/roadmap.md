@@ -41,14 +41,14 @@ Each phase ends with something runnable and checkable.
 
 ## Phase 3: Async flow infrastructure and Stage A (diagnose)
 
-- [ ] `Lesson`, `Quiz`, `QuizAttempt`, `GraphRun`, `FlowSettings`
-- [ ] Celery (`start_flow`, `resume_flow`), Postgres checkpointer and `setup_checkpointer`, event publishing, SSE view
-- [ ] Graph: `load_context` → `generate_diagnostic` → `validate_diagnostic` → publish/await (interrupt) → grade → route → prerequisite publish/await/grade → `assess_learner`
-- [ ] Shared `graph/grading.py`; quiz endpoints (strip answers, synchronous grading, resume)
-- [ ] `manage.py flow ...` commands
-- [ ] Frontend: `/lessons`, `/lessons/new`, stage-driven page, `PipelineProgress`, `QuizRunner`, result card, review
+- [x] `Lesson`, `Quiz`, `QuizAttempt`, `GraphRun`, `FlowSettings` (with `StageTransitions` and the owner-scoped queryset)
+- [x] Celery (`start_flow`, `resume_flow`), Postgres checkpointer and `setup_checkpointer`, event publishing, SSE view
+- [x] Graph: `load_context` → `generate_diagnostic` → `validate_diagnostic` → publish/await (interrupt) → grade → route → prerequisite publish/await/grade → `assess_learner`
+- [x] Shared `graph/grading.py`; quiz endpoints (strip answers, synchronous grading, resume)
+- [x] `manage.py flow ...` commands
+- [x] Frontend: `/lessons`, `/lessons/new`, stage-driven page, `PipelineProgress`, `QuizRunner`, result card, review
 
-**Done when:** you can take the diagnostic in the browser and be routed correctly for 0, 5, and 10 correct answers, the prerequisite quiz works, and a `LearnerAssessment` is saved. Restarting the worker while a lesson waits at a quiz loses nothing.
+**Done when:** you can take the diagnostic in the browser and be routed correctly for 0, 5, and 10 correct answers, the prerequisite quiz works, and a `LearnerAssessment` is saved. Restarting the worker while a lesson waits at a quiz loses nothing. ✅ Verified on a second stack with the fake LLM ([local-setup.md](local-setup.md#6-walk-through-the-app-without-api-keys)): in a real browser, quiz → score by band → review → model outage → Retry; over the API, 0, 5 and 10 correct each routed to prerequisite, lesson and mastery, the prerequisite quiz covering only the missed foundations; a worker restart while a quiz waited lost nothing. Until phases 4 and 5 land, a lesson that reaches `mastery` or `lesson` stops after the diagnostic (its exit is `END`), and live models are untested.
 
 ## Phase 4: Mastery path
 
@@ -86,7 +86,7 @@ Each phase ends with something runnable and checkable.
 ## Across phases: design alignment
 
 - [x] Close the [refactor backlog](design.md#refactor-backlog) for phases 0–2: code brought in line with the object design (OOP, SOLID, the named patterns), each item behaviour-neutral with tests green before and after.
-- [ ] The backlog items for the lesson-flow code (`graph/`, `lessons/`) land with Phases 3–6.
+- [ ] The backlog items for the lesson-flow code (`graph/`, `lessons/`) land with Phases 3–6 (grading, validators, prompts, Stage A nodes and the flow builder done in Phase 3).
 - [x] Every existing test file has the header from [testing.md](testing.md#31-the-file-header-required) (unit under test, why, use cases), and `tests/` is linted like the backend.
 
 ## Later (not now)

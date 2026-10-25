@@ -2,7 +2,7 @@
 
 There is **one kind of user**. Each user has a login (email and password), a profile, and their own lessons. There are no roles, no sharing, and no public lessons. Every lesson-related row is owned through `Lesson.owner`, and every query is filtered by the requesting user.
 
-All tables live in the Supabase Postgres `public` schema and are created by Django migrations. LangGraph checkpoint tables are created by `manage.py setup_checkpointer`. Primary keys are UUIDs.
+All tables live in the Supabase Postgres `public` schema and are created by Django migrations. LangGraph checkpoint tables are created by `manage.py setup_checkpointer` (also run by `bootstrap` on every backend start). Primary keys are UUIDs.
 
 ## `accounts`
 
@@ -54,7 +54,9 @@ A lesson is a learner's request to learn one topic, from the diagnostic quiz thr
 | final_test | JSON, null | `FinalTest` (answers kept server-side, see below) |
 | interactive_plan | JSON, null | |
 | code | text, null | Assembled TSX document |
+| code_parts | JSON | The pages' and interactives' TSX the document was assembled from, for targeted runtime repairs |
 | code_version | int | Incremented on each runtime repair |
+| runtime_repairs | int | Automatic runtime repairs so far (capped by `max_auto_runtime_repairs`) |
 | warnings | JSON list | Degraded widgets, media fallbacks, minor alignment issues |
 | error | text, null | Readable failure reason |
 | config_snapshot | JSON | Resolved model registry used by this lesson's flow |
@@ -149,6 +151,7 @@ There is one row per Celery execution segment of any graph, for example start, e
 | trigger | enum `start` \| `resume_diagnostic` \| `resume_prerequisite` \| `resume_choice` \| `retry` \| `repair` \| `grade` \| `extra_material` | |
 | status | enum `queued` \| `running` \| `paused` \| `succeeded` \| `failed` \| `cancelled` | `paused` = ended at an `interrupt()` |
 | node_status | JSON | `{node: pending \| running \| done \| retrying \| degraded \| failed}` |
+| payload | JSON | The resume value (`{"resume": attempt_id}`) or the requested sheet kind |
 | celery_task_id | char | |
 | error | text, null | |
 | started_at / finished_at | datetime | |

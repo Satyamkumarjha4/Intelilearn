@@ -5,11 +5,15 @@
 - `api_client`: a DRF APIClient with no credentials.
 - `user`: ada@example.com, with the shared test PASSWORD.
 - `signed_in_client`: an APIClient signed in as `user` through the real login endpoint, so it carries the auth cookies.
+- `other_user`: a second learner (grace@example.com), to prove ownership checks.
+- `make_lesson(**fields)`: creates lessons, by default owned by `user`; `lesson` is one at the first stage.
 """
 
 import pytest
 from django.core.cache import cache
 from rest_framework.test import APIClient
+
+pytest_plugins = ["support.fixtures"]  # graph and flow fixtures, shared by tests/graph and tests/lessons
 
 PASSWORD = "correct-horse-battery-staple"
 
@@ -39,3 +43,27 @@ def signed_in_client(api_client, user):
     response = api_client.post("/api/auth/login", {"email": user.email, "password": PASSWORD}, format="json")
     assert response.status_code == 200
     return api_client
+
+
+@pytest.fixture
+def other_user(db):
+    from accounts.models import User
+
+    return User.objects.create_user("grace@example.com", password=PASSWORD, name="Grace Hopper")
+
+
+@pytest.fixture
+def make_lesson(user):
+    from lessons.models import Lesson
+
+    def _make(**fields):
+        fields.setdefault("owner", user)
+        fields.setdefault("topic", "Binary search")
+        return Lesson.objects.create(**fields)
+
+    return _make
+
+
+@pytest.fixture
+def lesson(make_lesson):
+    return make_lesson()
