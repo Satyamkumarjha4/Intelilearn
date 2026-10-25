@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     "llm_registry",
     "lessons",
     "onboarding",
+    "marketing",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -168,6 +169,10 @@ LLM_REASONING_BUDGETS = {
 # How long a suggested-topics page, a model's topic list and a translation stay in the cache (30 days).
 ONBOARDING_SUGGESTION_TTL_S = env.int("ONBOARDING_SUGGESTION_TTL_S", default=30 * 24 * 3600)
 
+# --- Landing page ---
+# How long the hero card's list of active question ids is cached (it is also cleared when a question is saved).
+LANDING_DEMO_IDS_TTL_S = env.int("LANDING_DEMO_IDS_TTL_S", default=600)
+
 # --- Lesson flow ---
 # The sandbox/ package (Node): check.mjs and render-check.mjs run in a subprocess (see graph/sandbox.py).
 SANDBOX_DIR = env.path("SANDBOX_DIR", default=BASE_DIR.parent / "sandbox")
@@ -205,6 +210,7 @@ REST_FRAMEWORK = {
         "auth_refresh": env("AUTH_REFRESH_THROTTLE_RATE", default="60/min"),
         "lesson_create": env("LESSON_CREATE_THROTTLE_RATE", default="30/hour"),  # each lesson costs model calls
         "test_submit": env("TEST_SUBMIT_THROTTLE_RATE", default="30/hour"),  # open-ended answers cost model calls
+        "landing_demo": env("LANDING_DEMO_THROTTLE_RATE", default="60/min"),  # public, per client address
         "topic_suggestions": env(
             "TOPIC_SUGGESTIONS_THROTTLE_RATE", default="30/min"
         ),  # per user; may cost a model call
