@@ -1,0 +1,39 @@
+# The throwaway stack the browser tests run against: `make fake-llm` / `make e2e` (docs/testing.md).
+#   docker compose -p socra-e2e -f docker-compose.yml -f docker-compose.e2e.yml --profile e2e up -d --build
+# It is its own compose project (its own containers and database volume), on its own ports, with no Supabase URL and no
+# provider key: the only model is the fake one in tests/e2e/fake_llm_server.py, so nothing here can reach your data or
+# cost anything. The registry is loaded from tests/e2e/fake_registry.json, which replaces all routing: never run that
+# against the dev stack.
+x-e2e-env: &e2e-env
+  SUPABASE_DATABASE_URL: ""
+  GEMINI_API_KEY: ""
+  GROQ_API_KEY: ""
+  OPENAI_API_KEY: ""
+  ANTHROPIC_API_KEY: ""
+  FAKE_LLM_API_KEY: fake
+  DJANGO_CSRF_TRUSTED_ORIGINS: http://localhost:${E2E_FRONTEND_PORT:-7100},http://localhost:${E2E_BACKEND_PORT:-7110}
+  # The fake server also answers the media search the lesson build makes, so no test calls the internet.
+  WIKIMEDIA_API_URL: http://fake-llm.lan:9000/w/api.php
+  MEDIA_ALLOW_PRIVATE_HOSTS: "true"
+  # Tests sign up and start lessons in bursts: the production limits would turn a green run red.
+  LANDING_DEMO_THROTTLE_RATE: 10000/min
+  AUTH_THROTTLE_RATE: 10000/min
+  AUTH_ACCOUNT_THROTTLE_RATE: 10000/min
+  LESSON_CREATE_THROTTLE_RATE: 10000/hour
+  TEST_SUBMIT_THROTTLE_RATE: 10000/hour
+
+services:
+  # Nothing but the app and its API is published: the dev stack owns the usual database and Redis ports.
+  db:
+    ports: !reset []
+  redis:
+    ports: !reset []
+  backend:
+    environment: *e2e-env
+    ports: !override
+      - "127.0.0.1:${E2E_BACKEND_PORT:-7110}:8000"
+  worker:
+    environment: *e2e-env
+  frontend:
+    ports: !override
+      - "127.0.0.1:${E2E_FRONTEND_PORT:-7100}:3000"
