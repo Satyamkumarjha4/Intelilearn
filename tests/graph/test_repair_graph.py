@@ -42,7 +42,7 @@ def ready(lesson, lesson_state):
     placements = {"core": {full["pages"]["core"]["sections"][0]["id"]: ["<Interactive_widget_core />"]}}
     pages = {k: assembler.template_page(k, placements.get(k, {})) for k in ("introduction", "core", "advanced")}
     parts = {"pages": pages, "interactives": {"Interactive_widget_core": BROKEN}}
-    code = assembler.assemble(parts["interactives"], pages | {"test": assembler.test_page()})
+    code = assembler.assemble(parts["interactives"], pages)
     Lesson.objects.filter(pk=lesson.pk).update(
         stage=Stage.READY, code=code, code_parts=parts, code_version=1, plan=full["plan"], pages=full["pages"],
         final_test=full["final_test"], config_snapshot=budget_snapshot(), settings_snapshot=lesson_state["settings"],

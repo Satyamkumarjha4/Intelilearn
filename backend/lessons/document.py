@@ -4,6 +4,7 @@
 serves: the code, its version and that data, with the media as signed URLs.
 """
 
+import re
 from collections.abc import Callable
 
 from graph.schemas import public_question
@@ -85,10 +86,27 @@ class LessonData:
         }
 
 
+class EmbeddedTest:
+    """Lessons made before the final test became its own screen still declare it as a fourth page of their code
+    (`{ key: "test", … render: Page_test }`). The viewer hides that page, so the test can only be taken on the
+    test screen, once. A repair rebuilds the document from the three content pages, which drops it for good."""
+
+    PAGE = re.compile(r'\{\s*key:\s*"test"\s*,[^}]*\brender:\s*Page_test\b')
+
+    def in_code(self, code: str) -> bool:
+        return bool(self.PAGE.search(code))
+
+
 class LessonDocumentBuilder:
-    def __init__(self, signer: MediaUrlSigner | None = None):
+    def __init__(self, signer: MediaUrlSigner | None = None, embedded: EmbeddedTest | None = None):
         self.signer = signer or MediaUrlSigner()
+        self.embedded = embedded or EmbeddedTest()
 
     def build(self, lesson: Lesson) -> dict:
         data = LessonData.build(LessonSource.of(lesson), self.signer.sign)
-        return {"code": lesson.code, "code_version": lesson.code_version, "data": data}
+        return {
+            "code": lesson.code,
+            "code_version": lesson.code_version,
+            "has_embedded_test": self.embedded.in_code(lesson.code),
+            "data": data,
+        }

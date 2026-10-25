@@ -198,7 +198,8 @@ class LessonVersion(models.Model):
 
 
 class TestSubmission(models.Model):
-    """One go at the lesson's final test. Several are allowed, so the learner can retake it.
+    """The learner's one go at the lesson's final test: a lesson has at most one, and its answers, score and
+    recommendations are read-only once it exists. A failed grading is run again on the same answers, never on new ones.
 
     `result` is the `ScoreCard` (graph/grading.py): at first only what could be marked at once, complete when the
     `grade_test` graph has graded the open-ended answers.
@@ -222,6 +223,7 @@ class TestSubmission(models.Model):
 
     class Meta:
         ordering = ["-submitted_at"]
+        constraints = [models.UniqueConstraint(fields=["lesson"], name="unique_test_submission_per_lesson")]
 
     def __str__(self):
         return f"Test of {self.lesson.topic} ({self.get_status_display()})"

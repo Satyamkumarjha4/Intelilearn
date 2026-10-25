@@ -163,7 +163,7 @@ class AssembleDocumentNode(Node):
     stage = Stage.GENERATING_LESSON
 
     def run(self, state: dict, ctx: FlowContext) -> dict:
-        pages = dict(state.get("page_code") or {}) | {"test": assembler.test_page()}
+        pages = dict(state.get("page_code") or {})
         components = PageParts.component_code(state)
         assets = PageParts.asset_ids(state)
         document = assembler.assemble(components, pages)
@@ -199,7 +199,7 @@ class RenderCheckNode(Node):
     def run(self, state: dict, ctx: FlowContext) -> dict:
         data = LessonData.build(state, media_url=lambda asset_id: f"https://media.invalid/{asset_id}")
         report = ctx.sandbox.render_check(
-            state["document_code"], data, pages=[*PAGE_KEYS, "test"], media_files=self.media_files(state)
+            state["document_code"], data, pages=list(PAGE_KEYS), media_files=self.media_files(state)
         )
         rounds = self.attempts(state, "render") + 1
         verdict = self.policy.decide(report, state=state, round_number=rounds)

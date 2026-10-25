@@ -134,13 +134,13 @@ class TestAssemble:
     def pages(self):
         return {k: assembler.template_page(k, {}) for k in ("introduction", "core", "advanced")}
 
-    def test_a_clean_document_is_assembled_with_the_test_page_and_the_wrapped_widgets(
+    def test_a_clean_document_is_assembled_from_the_three_pages_and_the_wrapped_widgets(
         self, runtime, lesson_state, sandbox
     ):
         update = AssembleDocumentNode()(built(lesson_state, page_code=self.pages()), runtime)
 
         document = update["document_code"]
-        assert "function Page_test()" in document and 'withBoundary("Interactive_widget_core"' in document
+        assert "Page_test" not in document and 'withBoundary("Interactive_widget_core"' in document
         assert sandbox.check_calls[0]["required"] == ["LessonDocument"] and set(update) == {"document_code"}
 
     def test_a_clash_between_parts_falls_back_to_template_pages_once(self, runtime, lesson_state, sandbox):
@@ -165,7 +165,7 @@ class TestAssemble:
 
 
 def clean_report():
-    return RenderReport(ok=True, pages={k: [] for k in ("introduction", "core", "advanced", "test")})
+    return RenderReport(ok=True, pages={k: [] for k in ("introduction", "core", "advanced")})
 
 
 class TestRenderCheck:
@@ -181,7 +181,7 @@ class TestRenderCheck:
         update = RenderCheckNode()(self.state(lesson_state, media={"widget_introduction": ref}), runtime)
 
         call = sandbox.render_calls[0]
-        assert call["pages"] == ["introduction", "core", "advanced", "test"] and call["code"] == "doc"
+        assert call["pages"] == ["introduction", "core", "advanced"] and call["code"] == "doc"
         assert call["media_files"]["a-1"].endswith("lesson-media/x/a-1.png")
         assert call["data"]["media"]["a-1"]["url"] == "https://media.invalid/a-1"
         assert "correct_index" not in str(call["data"]["final_test"])

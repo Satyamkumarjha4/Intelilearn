@@ -92,6 +92,22 @@ class VersionNotFound(LessonError):
     default_detail = "That version of the lesson does not exist."
 
 
+class AlreadySubmitted(LessonError):
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "already_submitted"
+    default_detail = "The test has already been submitted. Its answers and score cannot be changed."
+
+    def __init__(self, submission_id):
+        super().__init__()
+        self.extra = {"submission_id": str(submission_id)}
+
+
+class NotFailed(LessonError):
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "not_failed"
+    default_detail = "Only a test whose grading failed can be graded again."
+
+
 class SubmissionNotFound(LessonError):
     status_code = status.HTTP_404_NOT_FOUND
     default_code = "not_found"

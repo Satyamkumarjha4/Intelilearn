@@ -15,7 +15,8 @@ Use cases:
 - public_questions strips the correct answer, explanation and concept from every question
 - a lesson has at most one quiz of each kind, and a quiz at most one attempt
 - GraphRun.is_active is true only while queued or running
-- a test submission starts as grading, is listed newest first, and goes with its lesson
+- a test submission starts as grading and goes with its lesson
+- a lesson has at most one test submission
 - FlowSettings is a singleton with the documented defaults, and snapshots to plain JSON
 """
 
@@ -204,11 +205,21 @@ class TestFlowSettings:
         assert snapshot["allowed_media_licenses"] == ["cc0", "pdm", "cc-by", "cc-by-sa"]
 
 
-def test_a_test_submission_starts_as_grading_newest_first_and_goes_with_its_lesson(lesson):
-    first = TestSubmission.objects.create(lesson=lesson, answers={"t1": 1})
-    second = TestSubmission.objects.create(lesson=lesson)
+def test_a_test_submission_starts_as_grading_and_goes_with_its_lesson(lesson):
+    submission = TestSubmission.objects.create(lesson=lesson, answers={"t1": 1})
 
-    assert first.status == TestSubmission.Status.GRADING and first.result is None and first.graded_at is None
-    assert list(lesson.submissions.all()) == [second, first] and str(first) == "Test of Binary search (Grading)"
+    assert submission.status == TestSubmission.Status.GRADING and submission.result is None
+    assert submission.graded_at is None and str(submission) == "Test of Binary search (Grading)"
+    assert list(lesson.submissions.all()) == [submission]
     lesson.delete()
     assert not TestSubmission.objects.exists()
+
+
+def test_a_lesson_has_at_most_one_test_submission(lesson, make_lesson):
+    TestSubmission.objects.create(lesson=lesson)
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        TestSubmission.objects.create(lesson=lesson)
+
+    TestSubmission.objects.create(lesson=make_lesson())  # another lesson is not affected
+    assert TestSubmission.objects.count() == 2

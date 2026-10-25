@@ -1,7 +1,8 @@
-"""The lesson document: template pages, the test page and the assembly of everything into one TSX document.
+"""The lesson document: template pages and the assembly of everything into one TSX document.
 
 The assembled document is plain TSX evaluated by the sandbox runtime (sandbox/src/runtime.tsx) with the scope from
-sandbox/src/scope. Content is data (`LESSON.pages.<key>`), so pages render it rather than retype it.
+sandbox/src/scope. Content is data (`LESSON.pages.<key>`), so pages render it rather than retype it. The final test is
+not in the document: it is a separate screen of the app, so it can be taken once.
 """
 
 import json
@@ -10,7 +11,7 @@ from .schemas.interactive import component_name
 
 
 class DocumentAssembler:
-    PAGE_ORDER = ("introduction", "core", "advanced", "test")
+    PAGE_ORDER = ("introduction", "core", "advanced")
 
     @staticmethod
     def page_component(key: str) -> str:
@@ -42,18 +43,6 @@ class DocumentAssembler:
 }}
 """
 
-    @staticmethod
-    def test_page() -> str:
-        """Page 4 is never left to the model: answer capture must be reliable."""
-        return """function Page_test() {
-  return (
-    <PageFrame title={LESSON.final_test.title} subtitle="Answer every question, then submit to see your score.">
-      <Assessment test={LESSON.final_test} />
-    </PageFrame>
-  );
-}
-"""
-
     def placements_for(
         self, key: str, specs: list[dict], built: set[str], media: dict[str, dict]
     ) -> dict[str, list[str]]:
@@ -72,10 +61,10 @@ class DocumentAssembler:
         return placed
 
     def assemble(self, components: dict[str, str], pages: dict[str, str]) -> str:
-        """One TSX document: the interactives (each behind an error boundary), the four pages, `LessonDocument`, and
+        """One TSX document: the interactives (each behind an error boundary), the three pages, `LessonDocument`, and
         `render()`. Each component's code runs inside its own function scope, so its declaration keeps the plain name
         while the outer binding is the wrapped version the pages use."""
-        parts = ["// Lesson document assembled by Lesson Crafter. Content comes from LESSON (injected data).\n"]
+        parts = ["// Lesson document assembled by Socra. Content comes from LESSON (injected data).\n"]
         for name, code in sorted(components.items()):
             body = "\n".join("  " + line if line else line for line in code.strip().splitlines())
             wrapper = (
@@ -84,9 +73,8 @@ class DocumentAssembler:
             parts.append(wrapper)
         for key in self.PAGE_ORDER:
             parts.append(pages[key].strip() + "\n")
-        titles = {k: "LESSON.final_test.title" if k == "test" else f"LESSON.pages.{k}.title" for k in self.PAGE_ORDER}
         entries = ",\n".join(
-            f"  {{ key: {self.jsx_string(k)}, title: {titles[k]}, render: {self.page_component(k)} }}"
+            f"  {{ key: {self.jsx_string(k)}, title: LESSON.pages.{k}.title, render: {self.page_component(k)} }}"
             for k in self.PAGE_ORDER
         )
         parts.append(f"const PAGES = [\n{entries},\n];\n")

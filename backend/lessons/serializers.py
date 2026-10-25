@@ -1,5 +1,6 @@
 """Request and response shapes of the lessons API (docs/api.md). Responses are built from the services' output."""
 
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from .models import GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt, TestSubmission
@@ -20,11 +21,48 @@ class RunStartedSerializer(serializers.Serializer):
     run_id = serializers.UUIDField()
 
 
+class TestScoreSerializer(serializers.Serializer):
+    __test__ = False
+
+    awarded = serializers.IntegerField()
+    available = serializers.IntegerField()
+
+
 class LessonSummarySerializer(serializers.ModelSerializer):
+    test_status = serializers.SerializerMethodField()
+    test_score = serializers.SerializerMethodField()
+    material_count = serializers.SerializerMethodField()
+
     class Meta:
         model = Lesson
-        fields = ["id", "topic", "stage", "route", "title", "level", "created_at", "updated_at"]
+        fields = [
+            "id", "topic", "stage", "route", "title", "level", "created_at", "updated_at",
+            "test_status", "test_score", "material_count",
+        ]  # fmt: skip
         read_only_fields = fields
+
+    @staticmethod
+    def _submission(lesson: Lesson) -> TestSubmission | None:
+        # `.all()` rather than `.first()`: a list prefetches the submissions, and a lesson has at most one.
+        submissions = list(lesson.submissions.all())
+        return submissions[0] if submissions else None
+
+    @extend_schema_field(serializers.ChoiceField(choices=["not_started", *TestSubmission.Status.values]))
+    def get_test_status(self, lesson: Lesson) -> str:
+        submission = self._submission(lesson)
+        return "not_started" if submission is None else submission.status
+
+    @extend_schema_field(TestScoreSerializer(allow_null=True))
+    def get_test_score(self, lesson: Lesson) -> dict | None:
+        """Only a finished grading has a score: while it runs, the marks so far are not the result."""
+        submission = self._submission(lesson)
+        if submission is None or submission.status != TestSubmission.Status.GRADED or not submission.result:
+            return None
+        score = submission.result["score"]
+        return {"awarded": score["awarded"], "available": score["available"]}
+
+    def get_material_count(self, lesson: Lesson) -> int:
+        return len(lesson.materials.all())
 
 
 class QuizResultSummarySerializer(serializers.Serializer):
@@ -132,6 +170,7 @@ class QuizReviewSerializer(serializers.Serializer):
     kind = serializers.ChoiceField(choices=Quiz.Kind.choices)
     questions = ReviewQuestionSerializer(many=True)
     result = serializers.DictField()
+    submitted_at = serializers.DateTimeField(help_text="When the quiz was answered.")
 
 
 class RunSerializer(serializers.ModelSerializer):
@@ -185,6 +224,9 @@ class PracticeGradeSerializer(serializers.Serializer):
 class LessonDocumentSerializer(serializers.Serializer):
     code = serializers.CharField(help_text="The TSX document the sandbox runs.")
     code_version = serializers.IntegerField(help_text="Send it back with a repair report so a stale one is refused.")
+    has_embedded_test = serializers.BooleanField(
+        help_text="A lesson made before the test became its own screen still has it as a page in its code: hide it."
+    )
     data = serializers.DictField(help_text="`LESSON`: pages, the test without answers, and media as signed URLs.")
 
 
@@ -229,6 +271,37 @@ class TestSubmissionCreatedSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=TestSubmission.Status.choices)
 
 
+class TestQuestionSerializer(serializers.Serializer):
+    """A question as the learner sees it: no answer, marking scheme, explanation or concept."""
+
+    __test__ = False
+
+    id = serializers.CharField()
+    type = serializers.ChoiceField(choices=["mcq", "numerical", "short_answer", "long_answer", "code"])
+    question = serializers.CharField(help_text="Markdown; LaTeX between $…$ allowed.")
+    marks = serializers.IntegerField()
+    options = serializers.ListField(child=serializers.CharField(), required=False, help_text="mcq only.")
+    unit = serializers.CharField(required=False, help_text="numerical only.")
+    language = serializers.CharField(required=False, help_text="code only.")
+    starter_code = serializers.CharField(required=False, help_text="code only.")
+
+
+class TestSubmissionRefSerializer(serializers.Serializer):
+    __test__ = False
+
+    id = serializers.UUIDField()
+    status = serializers.ChoiceField(choices=TestSubmission.Status.choices)
+    submitted_at = serializers.DateTimeField()
+
+
+class LearnerTestSerializer(serializers.Serializer):
+    __test__ = False
+
+    questions = TestQuestionSerializer(many=True)
+    total_marks = serializers.IntegerField()
+    submission = TestSubmissionRefSerializer(allow_null=True, help_text="null until the test has been submitted.")
+
+
 class ScoreSerializer(serializers.Serializer):
     awarded = serializers.IntegerField(help_text="Marks earned so far (open-ended answers count once graded).")
     available = serializers.IntegerField(help_text="Marks the whole test is worth.")
@@ -258,8 +331,9 @@ class TestSubmissionSerializer(serializers.ModelSerializer):
     __test__ = False
 
     result = ScoreCardSerializer(allow_null=True, read_only=True)
+    answers = serializers.DictField(read_only=True, help_text="The learner's own answers, {question_id: answer}.")
 
     class Meta:
         model = TestSubmission
-        fields = ["id", "status", "error", "result", "submitted_at", "graded_at"]
+        fields = ["id", "status", "error", "answers", "result", "submitted_at", "graded_at"]
         read_only_fields = fields

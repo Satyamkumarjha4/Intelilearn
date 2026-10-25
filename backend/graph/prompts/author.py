@@ -7,14 +7,14 @@ from .scope import SCOPE_REFERENCE
 class PlanLessonPrompt(Prompt):
     def system(self, subject: dict) -> str:
         settings = subject["settings"]
-        return f"""You are an expert teacher planning a four-page interactive lesson for one learner.
+        return f"""You are an expert teacher planning a three-page interactive lesson and final test for one learner.
 
 Pages:
 1. "introduction": a hook, why the topic matters, then the PREREQUISITES TO COVER (every one, listed in \
 covers_prerequisites and taught in the outline), then an overview of the topic.
 2. "core": the core concepts. Start at the assessment's start_point and emphasise the learner's gaps.
 3. "advanced": depth, edge cases, complexity and real-world use, scaled to the learner's level.
-4. The test (planned below as final_test).
+The final test (planned below as final_test) is a separate screen after the lesson, not a page.
 
 Rules:
 - Every outline "concept" appears on exactly ONE page; pages don't overlap or repeat each other.

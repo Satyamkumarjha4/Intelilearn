@@ -19,6 +19,7 @@ from .events import RunEventStream, RunSnapshot
 from .media_urls import MediaUrlSigner
 from .models import GraphRun, Lesson, MaterialKind, MediaAsset, Stage
 from .serializers import (
+    LearnerTestSerializer,
     LessonCreatedSerializer,
     LessonCreateSerializer,
     LessonDetailSerializer,
@@ -88,11 +89,12 @@ class LessonListCreateView(generics.ListAPIView):
         return []
 
     def get_queryset(self):
-        lessons = Lesson.objects.owned_by(self.request.user)
+        # The summaries say how the test went and how many sheets there are: fetch those for the whole page at once.
+        lessons = Lesson.objects.owned_by(self.request.user).prefetch_related("submissions", "materials")
         if query := self.request.query_params.get("q", "").strip():
             lessons = lessons.filter(topic__icontains=query)
-        if stage := self.request.query_params.get("stage"):
-            lessons = lessons.filter(stage=stage)
+        if stages := [part.strip() for part in self.request.query_params.get("stage", "").split(",") if part.strip()]:
+            lessons = lessons.filter(stage__in=stages)
         return lessons
 
     @extend_schema(
@@ -100,7 +102,12 @@ class LessonListCreateView(generics.ListAPIView):
         summary="List your lessons",
         parameters=[
             OpenApiParameter("q", str, description="Search the topic."),
-            OpenApiParameter("stage", str, enum=[value for value, _ in Stage.choices]),
+            OpenApiParameter(
+                "stage",
+                str,
+                description="One stage, or several separated by commas.",
+                enum=[value for value, _ in Stage.choices],
+            ),
         ],
     )
     def get(self, request, *args, **kwargs):
@@ -345,6 +352,27 @@ class LessonVersionRestoreView(OwnedLessons, APIView):
         return Response({"code_version": lesson.code_version})
 
 
+class LessonTestView(OwnedLessons, APIView):
+    __test__ = False
+
+    @extend_schema(
+        tags=TEST_TAG,
+        summary="Get the lesson test to take",
+        description=(
+            "The final test as its own screen: questions without answers or marking schemes, what it is worth, and "
+            "the one submission once it has been made (`null` before)."
+        ),
+        parameters=[LESSON_ID],
+        responses={
+            200: LearnerTestSerializer,
+            409: OpenApiResponse(description="The lesson is not ready, or is a mastery lesson (`wrong_stage`)."),
+        },
+    )
+    def get(self, request, lesson_id):
+        body = SubmissionService().for_learner(self.lesson_of(request, lesson_id))
+        return Response(LearnerTestSerializer(body).data)
+
+
 class TestSubmissionsView(OwnedLessons, APIView):
     __test__ = False
 
@@ -358,14 +386,20 @@ class TestSubmissionsView(OwnedLessons, APIView):
         description=(
             "Multiple-choice and numerical answers are marked at once and blank answers score 0; the other answers "
             "are graded by a model in a `grade_test` run. Follow `run_id` (or poll the submission) until `status` "
-            "is `graded`. A test can be taken more than once."
+            "is `graded`. The test can be submitted once: afterwards its answers, score and recommendations are "
+            "read-only for good."
         ),
         parameters=[LESSON_ID],
         request=TestSubmitSerializer,
         responses={
             202: TestSubmissionCreatedSerializer,
             400: OpenApiResponse(description="Unknown question ids, or an answer that is not a number or text."),
-            409: OpenApiResponse(description="The lesson is not ready, or the last submission is still being graded."),
+            409: OpenApiResponse(
+                description=(
+                    "The lesson is not ready (`wrong_stage`), or the test was already submitted (`already_submitted`, "
+                    "with the first submission's `submission_id`). Nothing is stored."
+                )
+            ),
         },
     )
     def post(self, request, lesson_id):
@@ -391,6 +425,43 @@ class TestSubmissionView(OwnedLessons, APIView):
     def get(self, request, lesson_id, submission_id):
         submission = SubmissionService().get(self.lesson_of(request, lesson_id), submission_id)
         return Response(TestSubmissionSerializer(submission).data)
+
+
+class TestSubmissionRegradeView(OwnedLessons, APIView):
+    __test__ = False
+
+    @extend_schema(
+        tags=TEST_TAG,
+        summary="Grade a failed submission again",
+        description=(
+            "Re-runs the grading on the answers already stored: the learner never answers again. Only when `status` "
+            "is `failed`."
+        ),
+        parameters=[LESSON_ID, OpenApiParameter("submission_id", str, OpenApiParameter.PATH)],
+        request=None,
+        responses={
+            202: RunStartedSerializer,
+            404: OpenApiResponse(description="No such submission."),
+            409: OpenApiResponse(description="Not failed (`not_failed`), or a run is active (`run_in_progress`)."),
+        },
+    )
+    def post(self, request, lesson_id, submission_id):
+        run = SubmissionService().regrade(self.lesson_of(request, lesson_id), submission_id)
+        return Response({"run_id": run.id}, status=status.HTTP_202_ACCEPTED)
+
+
+class TestSubmissionCurrentView(OwnedLessons, APIView):
+    __test__ = False
+
+    @extend_schema(
+        tags=TEST_TAG,
+        summary="Get the lesson's test submission",
+        description="The one submission with its result (see the submission by id), or 404 before the test is taken.",
+        parameters=[LESSON_ID],
+        responses={200: TestSubmissionSerializer, 404: OpenApiResponse(description="Not submitted yet.")},
+    )
+    def get(self, request, lesson_id):
+        return Response(TestSubmissionSerializer(SubmissionService().current(self.lesson_of(request, lesson_id))).data)
 
 
 class OwnedRuns:

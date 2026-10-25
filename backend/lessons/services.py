@@ -8,7 +8,7 @@ from typing import Protocol
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.utils.module_loading import import_string
 
@@ -21,10 +21,12 @@ from .effects import RunEffects
 from .errors import (
     AlreadyAttempted,
     AlreadyExists,
+    AlreadySubmitted,
     InvalidAnswers,
     LessonNotConfigured,
     MaterialNotFound,
     NotAttempted,
+    NotFailed,
     QueueUnavailable,
     QuizNotFound,
     RepairLimitReached,
@@ -44,6 +46,7 @@ from .models import (
     MaterialKind,
     Quiz,
     QuizAttempt,
+    Route,
     Stage,
     StudyMaterial,
     TestSubmission,
@@ -167,10 +170,10 @@ class QuizService:
         with transaction.atomic():
             lesson = Lesson.objects.select_for_update().get(pk=lesson.pk)
             quiz = self._quiz(lesson, kind)
+            if QuizAttempt.objects.filter(quiz=quiz).exists():
+                raise AlreadyAttempted()  # before the stage: once the lesson has moved on, this is still the answer
             if lesson.stage != stage:
                 raise WrongStage(f"The lesson is not waiting for the {kind} quiz.")
-            if QuizAttempt.objects.filter(quiz=quiz).exists():
-                raise AlreadyAttempted()
             if has_active_run(lesson):
                 raise RunInProgress()
             if not isinstance(answers, dict):
@@ -204,7 +207,13 @@ class QuizService:
             }
             for q in quiz.questions
         ]
-        return {"quiz_id": str(quiz.id), "kind": quiz.kind, "questions": questions, "result": attempt.result}
+        return {
+            "quiz_id": str(quiz.id),
+            "kind": quiz.kind,
+            "questions": questions,
+            "result": attempt.result,
+            "submitted_at": attempt.submitted_at,
+        }
 
     def _kind(self, kind: str):
         try:
@@ -379,9 +388,13 @@ class CodeService:
 
 
 class SubmissionService:
-    """The lesson's final test: marking a submission at once, and queueing the open-ended answers for grading."""
+    """The lesson's final test: serving it, marking the one submission at once, queueing the open-ended answers for
+    grading, and grading again when that failed. The learner never answers twice."""
 
     MAX_ANSWER_CHARS = 10_000
+    #: what the test screen needs of `public_question` (the stripping of answers stays there); the concept and
+    #: difficulty are labels for the grader and the report, not for the person answering
+    SHOWN = ("id", "type", "question", "marks", "options", "unit", "language", "starter_code")
 
     def __init__(
         self, queue: TaskQueue | None = None, grader: AnswerGrader | None = None, cards: ScoreCard | None = None
@@ -390,35 +403,65 @@ class SubmissionService:
         self.grader = grader or AnswerGrader()
         self.cards = cards or ScoreCard()
 
-    def submit(self, lesson: Lesson, answers) -> tuple[TestSubmission, GraphRun | None]:
-        """Mark what can be marked now. Open-ended answers get a `grade_test` run; with none, the result is final."""
+    def for_learner(self, lesson: Lesson) -> dict:
+        """The test to take: questions without answers or marking schemes, what it is worth, and the submission if
+        one was made."""
         questions = self._questions(lesson)
-        clean = self._clean(questions, answers)
-        pending = bool(self.cards.open_items(questions, clean))
-        sheet = self.grader.grade_all(questions, clean)
+        submission = TestSubmission.objects.filter(lesson=lesson).first()
+        return {
+            "questions": [self._shown(q) for q in questions],
+            "total_marks": sum(q["marks"] for q in questions),
+            "submission": None
+            if submission is None
+            else {"id": str(submission.id), "status": submission.status, "submitted_at": submission.submitted_at},
+        }
+
+    def submit(self, lesson: Lesson, answers) -> tuple[TestSubmission, GraphRun | None]:
+        """Mark what can be marked now. Open-ended answers get a `grade_test` run; with none, the result is final.
+        Only the first submission is accepted: a second one stores nothing."""
+        questions = self._questions(lesson)
         with transaction.atomic():
-            lesson = Lesson.objects.select_for_update().get(pk=lesson.pk)
-            if self._grading(lesson):
-                raise RunInProgress("Your last submission is still being graded.")
+            lesson = Lesson.objects.select_for_update().get(pk=lesson.pk)  # two submits at once queue up here
+            if (existing := self._existing(lesson)) is not None:
+                raise AlreadySubmitted(existing.id)
+            clean = self._clean(questions, answers)
+            pending = bool(self.cards.open_items(questions, clean))
+            sheet = self.grader.grade_all(questions, clean)
             card = self.cards.build(questions, clean, sheet, None if pending else {})
-            submission = TestSubmission.objects.create(
-                lesson=lesson,
-                answers=clean,
-                result=card,
-                status=TestSubmission.Status.GRADING if pending else TestSubmission.Status.GRADED,
-                graded_at=None if pending else timezone.now(),
-            )
-            run = None
-            if pending:
-                run = GraphRun.objects.create(
-                    lesson=lesson,
-                    graph=GraphRun.Graph.GRADE_TEST,
-                    trigger=GraphRun.Trigger.GRADE,
-                    payload={"input": {"submission_id": str(submission.id)}},
-                )
+            try:
+                # A savepoint: the constraint's refusal must not poison the outer transaction.
+                with transaction.atomic():
+                    submission = TestSubmission.objects.create(
+                        lesson=lesson,
+                        answers=clean,
+                        result=card,
+                        status=TestSubmission.Status.GRADING if pending else TestSubmission.Status.GRADED,
+                        graded_at=None if pending else timezone.now(),
+                    )
+            except IntegrityError:  # the lock above makes this rare, but the constraint is the real guarantee
+                raise AlreadySubmitted(self._existing(lesson).id) from None
+            run = self._grading_run(lesson, submission) if pending else None
         if run:
             self.dispatcher.dispatch(run)
         return submission, run
+
+    @staticmethod
+    def _existing(lesson: Lesson) -> TestSubmission | None:
+        return TestSubmission.objects.filter(lesson=lesson).first()
+
+    def regrade(self, lesson: Lesson, submission_id) -> GraphRun:
+        """Grade a failed submission again on the answers it already has."""
+        with transaction.atomic():
+            lesson = Lesson.objects.select_for_update().get(pk=lesson.pk)
+            submission = self.get(lesson, submission_id)
+            if submission.status != TestSubmission.Status.FAILED:
+                raise NotFailed()
+            if has_active_run(lesson):
+                raise RunInProgress()
+            TestSubmission.objects.filter(pk=submission.pk).update(status=TestSubmission.Status.GRADING, error="")
+            run = self._grading_run(lesson, submission)
+        self.dispatcher.dispatch(run)
+        return run
 
     def get(self, lesson: Lesson, submission_id) -> TestSubmission:
         try:
@@ -426,15 +469,30 @@ class SubmissionService:
         except (TestSubmission.DoesNotExist, ValueError, ValidationError):
             raise SubmissionNotFound() from None
 
+    def current(self, lesson: Lesson) -> TestSubmission:
+        """The lesson's one submission."""
+        submission = TestSubmission.objects.filter(lesson=lesson).first()
+        if submission is None:
+            raise SubmissionNotFound()
+        return submission
+
+    def _shown(self, question: dict) -> dict:
+        public = public_question(question)
+        return {key: public[key] for key in self.SHOWN if key in public}
+
     @staticmethod
-    def _grading(lesson: Lesson) -> bool:
-        active = [GraphRun.Status.QUEUED, GraphRun.Status.RUNNING]
-        return GraphRun.objects.filter(lesson=lesson, graph=GraphRun.Graph.GRADE_TEST, status__in=active).exists()
+    def _grading_run(lesson: Lesson, submission: TestSubmission) -> GraphRun:
+        return GraphRun.objects.create(
+            lesson=lesson,
+            graph=GraphRun.Graph.GRADE_TEST,
+            trigger=GraphRun.Trigger.GRADE,
+            payload={"input": {"submission_id": str(submission.id)}},
+        )
 
     @staticmethod
     def _questions(lesson: Lesson) -> list[dict]:
         questions = (lesson.final_test or {}).get("questions")
-        if lesson.stage != Stage.READY or not questions:
+        if lesson.stage != Stage.READY or lesson.route == Route.MASTERY or not questions:
             raise WrongStage("The test can be taken once the lesson is ready.")
         return questions
 

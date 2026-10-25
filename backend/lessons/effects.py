@@ -1,7 +1,8 @@
 """What else a run that did not finish leaves behind besides its own row.
 
 A lesson's main flow fails the lesson (`Lesson.fail`, which leaves a ready lesson alone); a submitted test that was
-being graded must not stay "grading" for ever, so its submission is marked failed and the learner can submit again.
+being graded must not stay "grading" for ever, so its submission is marked failed and can be graded again (the
+learner never answers twice).
 """
 
 from typing import Protocol

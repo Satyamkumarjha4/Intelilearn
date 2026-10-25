@@ -39,7 +39,7 @@ REPORT = {
     "interactive_relevance": 5, "issues": [], "passed": True,
 }  # fmt: skip
 PAGE_KEYS = ("introduction", "core", "advanced")
-CLEAN = RenderReport(ok=True, pages={k: [] for k in (*PAGE_KEYS, "test")})
+CLEAN = RenderReport(ok=True, pages={k: [] for k in PAGE_KEYS})
 CORE_BROKEN = RenderReport(ok=False, pages={"core": ["Runtime error: x is undefined"]})
 
 
@@ -101,7 +101,7 @@ def test_after_stage_b_the_pages_are_compiled_assembled_checked_and_saved(flow, 
     assert flow.nodes.count("compile_page") == 3 and "repair_page" not in flow.nodes
     stored = Lesson.objects.get(pk=lesson.pk)
     assert (stored.stage, stored.code_version, stored.warnings) == (Stage.READY, 1, [])
-    assert "function LessonDocument()" in stored.code and "function Page_test()" in stored.code
+    assert "function LessonDocument()" in stored.code and "Page_test" not in stored.code
     assert set(stored.code_parts["pages"]) == set(PAGE_KEYS) and len(sandbox.render_calls) == 1
 
 

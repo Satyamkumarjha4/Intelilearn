@@ -74,7 +74,7 @@ class TestPageParts:
 
 
 def report(pages=None, components=None, security=()):
-    pages = {"introduction": [], "core": [], "advanced": [], "test": []} | (pages or {})
+    pages = {"introduction": [], "core": [], "advanced": []} | (pages or {})
     ok = not (any(pages.values()) or any((components or {}).values()) or security)
     return RenderReport(ok=ok, pages=pages, components=components or {}, security=list(security))
 
@@ -98,10 +98,10 @@ def test_broken_pages_and_interactives_with_rounds_left_are_repaired_and_named()
     assert verdict.problems == ["core: Runtime error: x is undefined", "Interactive_widget_core: boom"]
 
 
-def test_the_test_page_alone_cannot_be_repaired_by_a_model():
+def test_a_failure_on_a_page_that_is_not_a_content_page_cannot_be_repaired_by_a_model():
     verdict = decide(report({"test": ["Runtime error"]}), round_number=1)
 
-    assert verdict.decision == "fallback"  # not repairable: the test page is a template
+    assert verdict.decision == "fallback"  # not repairable: only the three content pages are written by a model
 
 
 @pytest.mark.parametrize(

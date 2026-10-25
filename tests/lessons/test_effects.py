@@ -1,8 +1,9 @@
 """Unit under test: `lessons.effects.RunEffects` and `SubmissionEffect`: what a run that did not finish leaves behind
 besides its own row.
 
-Why: a test submission that stays "grading" for ever leaves the learner staring at a spinner and, because one grading
-at a time is allowed, unable to submit again. Every way a grading run can stop must release it.
+Why: a test submission that stays "grading" for ever leaves the learner staring at a spinner and, because the test
+can be submitted only once, unable to ask for the grading to be run again. Every way a grading run can stop must
+release it.
 
 Use cases:
 - a grading run that stopped marks its submission failed with the reason

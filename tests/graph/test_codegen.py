@@ -1,17 +1,18 @@
-"""Unit under test: `graph.codegen.DocumentAssembler`, which builds the lesson document (template pages, the test page,
-and the assembly of components and pages into one TSX file).
+"""Unit under test: `graph.codegen.DocumentAssembler`, which builds the lesson document (template pages and the
+assembly of components and pages into one TSX file).
 
-Why: it is the deterministic fallback for everything a model gets wrong, and the page-4 test is never left to a model.
-If a template page failed to compile, or the assembled document failed the sandbox check, the learner would get no
-lesson at all. The tests build documents and run them through the real sandbox check.
+Why: it is the deterministic fallback for everything a model gets wrong. If a template page failed to compile, or the
+assembled document failed the sandbox check, the learner would get no lesson at all. The final test is not part of the
+document (it is a separate screen of the app), so a test page in here would let the test be taken twice. The tests
+build documents and run them through the real sandbox check.
 
 Use cases:
 - a template page renders every section through <Section>, with interactives and figures placed after their anchor
 - a template page without placements still renders its sections
-- the test page renders the Assessment from the injected test
+- the document has no test page: the assembler neither writes one nor declares one
 - placements put a built interactive or a stored figure after its anchor; unbuilt specs and other pages are skipped
-- an assembled document wraps each interactive in an error boundary, declares the four pages in order, ends with render
-- an assembled document passes the real sandbox check (the template pages, the test page and wrapped components)
+- an assembled document wraps each interactive in an error boundary, declares the three pages in order, ends with render
+- an assembled document passes the real sandbox check (the template pages and wrapped components)
 - the contracts name the component to declare and the components a page may use
 """
 
@@ -31,7 +32,7 @@ def full_pages(placements=None):
         key: assembler.template_page(key, (placements or {}).get(key, {}))
         for key in ("introduction", "core", "advanced")
     }
-    return pages | {"test": assembler.test_page()}
+    return pages
 
 
 def test_a_template_page_renders_every_section_with_placements_after_their_anchor():
@@ -49,10 +50,9 @@ def test_a_template_page_without_placements_still_renders_its_sections():
     assert "{null}" in code and "<Section key={section.id} section={section}>" in code
 
 
-def test_the_test_page_renders_the_assessment_from_the_injected_test():
-    code = assembler.test_page()
-
-    assert "function Page_test()" in code and "<Assessment test={LESSON.final_test} />" in code
+def test_the_document_has_no_test_page():
+    assert assembler.PAGE_ORDER == ("introduction", "core", "advanced")
+    assert not hasattr(assembler, "test_page")
 
 
 class TestPlacements:
@@ -88,7 +88,8 @@ class TestAssemble:
         order = [document.index(f"function Page_{key}()") for key in assembler.PAGE_ORDER]
         assert order == sorted(order)
         assert document.rstrip().endswith("render(<LessonDocument />);")
-        assert '{ key: "test", title: LESSON.final_test.title, render: Page_test }' in document
+        assert "Page_test" not in document and 'key: "test"' not in document
+        assert document.count("render: Page_") == 3
 
     def test_components_are_declared_in_name_order_before_the_pages(self):
         document = assembler.assemble({"Interactive_b": COMPONENT, "Interactive_a": COMPONENT}, full_pages())

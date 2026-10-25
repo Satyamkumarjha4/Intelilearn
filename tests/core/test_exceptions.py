@@ -7,6 +7,7 @@ Use cases:
 - field validation errors become "fields" with a generic detail and code "invalid"
 - a non-field validation error becomes the detail
 - other API errors keep their detail and code
+- an error that carries extra fields (`extra`) sends them next to the detail and code
 - errors DRF doesn't handle are left to Django (None)
 """
 
@@ -41,6 +42,19 @@ def test_other_api_errors_keep_their_detail_and_code():
         {"detail": "Authentication credentials were not provided.", "code": "not_authenticated"},
     )
     assert handle(Http404())[0] == 404
+
+
+def test_an_error_with_extra_fields_sends_them_next_to_the_detail_and_code():
+    class Conflict(exceptions.APIException):
+        status_code = 409
+        default_code = "already_done"
+        default_detail = "Done."
+
+        def __init__(self):
+            super().__init__()
+            self.extra = {"id": "abc"}
+
+    assert handle(Conflict()) == (409, {"detail": "Done.", "code": "already_done", "id": "abc"})
 
 
 def test_errors_drf_does_not_handle_are_left_to_django():
