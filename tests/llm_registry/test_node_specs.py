@@ -6,7 +6,8 @@ tool calling or vision be bound, and the lesson fails mid-flow instead of at con
 
 Use cases:
 - every node documented in model-registry.md has a spec
-- only the quiz reviewer and the vision check are optional; every other node is required
+- only the quiz reviewer, the vision check and the onboarding topic suggester are optional; every other node is required
+- the onboarding suggester is a fast, light structured node: low reasoning effort, a single attempt, a small output
 - tool calling, vision, text output and the alignment judge's context are declared
 - every structured node requires structured output
 - an unknown node key is a clear error that says how to add one
@@ -14,12 +15,12 @@ Use cases:
 
 import pytest
 
-from llm_registry.node_specs import NODE_SPECS, Capability, OutputMode
+from llm_registry.node_specs import NODE_SPECS, Capability, Effort, OutputMode
 
 DOCUMENTED_NODES = {
     "diagnostic.generate", "diagnostic.review", "learner.assess", "study.generate", "lesson.plan", "page.generate",
     "test.generate", "interactive.plan", "media.search", "media.verify", "interactive.generate", "alignment.judge",
-    "page.compile", "code.repair", "runtime.repair", "test.grade",
+    "page.compile", "code.repair", "runtime.repair", "test.grade", "onboarding.suggest_topics",
 }  # fmt: skip
 
 
@@ -27,9 +28,19 @@ def test_every_documented_node_has_a_spec():
     assert set(NODE_SPECS) == DOCUMENTED_NODES
 
 
-def test_only_judges_and_vision_check_are_optional():
-    assert {s.key for s in NODE_SPECS.optional()} == {"diagnostic.review", "media.verify"}
-    assert len(NODE_SPECS.required()) == len(NODE_SPECS) - 2
+def test_only_judges_vision_check_and_topic_suggester_are_optional():
+    assert {s.key for s in NODE_SPECS.optional()} == {"diagnostic.review", "media.verify", "onboarding.suggest_topics"}
+    assert len(NODE_SPECS.required()) == len(NODE_SPECS) - 3
+
+
+def test_the_topic_suggester_is_a_fast_light_structured_node():
+    spec = NODE_SPECS["onboarding.suggest_topics"]
+
+    assert spec.output == OutputMode.STRUCTURED
+    assert spec.schema_name == "TopicSuggestions"
+    assert Capability.STRUCTURED_OUTPUT in spec.requires
+    assert (spec.default_reasoning, spec.default_max_attempts) == (Effort.LOW, 1)
+    assert spec.min_output_tokens <= 2048
 
 
 def test_capability_requirements():

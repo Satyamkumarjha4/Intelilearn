@@ -4,6 +4,8 @@
   against the call's schema), a callable taking the messages, or an exception to raise.
 - `FakeSandbox`: a `CodeSandbox` whose LaTeX/code checks return what the test configured.
 - `ListEvents`: an `EventSink` that keeps what was emitted.
+- `FakeTopicModel`: the onboarding `TopicModel` port: scripted suggestions, a translation that tags the text with the
+  language (or a scripted answer or error), and a record of every call.
 """
 
 from dataclasses import dataclass, field
@@ -100,3 +102,60 @@ class ListEvents:
 
     def of_type(self, kind: str) -> list[dict]:
         return [e for e in self.events if e["type"] == kind]
+
+
+class FakeTopicModel:
+    """The `onboarding.topic_model.TopicModel` port without a model. `suggest` returns the next scripted list (or
+    raises the next scripted error); `translate` returns every topic with its title, subject and reason tagged "[hi]
+    …" unless a script says otherwise. `suggested` and `translated` hold the calls."""
+
+    def __init__(self):
+        self._suggestions: list = []
+        self._translations: list = []
+        self.suggested: list = []
+        self.translated: list = []
+
+    def script_suggest(self, *items) -> "FakeTopicModel":
+        self._suggestions.extend(items)
+        return self
+
+    def script_translate(self, *items) -> "FakeTopicModel":
+        self._translations.extend(items)
+        return self
+
+    def suggest(self, request):
+        self.suggested.append(request)
+        if not self._suggestions:
+            raise AssertionError("FakeTopicModel has no suggestions scripted")
+        item = self._suggestions.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return list(item)
+
+    def translate(self, language, topics):
+        from dataclasses import replace
+
+        self.translated.append((language, list(topics)))
+        if self._translations:
+            item = self._translations.pop(0)
+            if isinstance(item, Exception):
+                raise item
+            return list(item)
+        tag = f"[{language}] "
+        return [replace(t, title=tag + t.title_en, subject=tag + t.subject, reason=tag + t.reason) for t in topics]
+
+
+class RecordingCache:
+    """A cache double that keeps what was set and the timeout each entry was given."""
+
+    def __init__(self):
+        self.items, self.timeouts = {}, {}
+
+    def get(self, key, default=None):
+        return self.items.get(key, default)
+
+    def set(self, key, value, timeout=None):
+        self.items[key], self.timeouts[key] = value, timeout
+
+    def delete(self, key):
+        self.items.pop(key, None)

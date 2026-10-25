@@ -75,6 +75,18 @@ _NODES = {
     "code.repair": ([FLASH, LITE], {"params_override": {"temperature": 0.2}}),
     "runtime.repair": ([FLASH, LITE], {"params_override": {"temperature": 0.2}}),
     "test.grade": ([GPT_OSS, FLASH], {"params_override": {"temperature": 0}}),
+    # Onboarding must not wait: the smallest Groq model first and a Flash-Lite behind it, low effort, one attempt, 4 s a
+    # call and no retry on a model (the next model is the retry). Past that the learner gets the catalogue instead.
+    "onboarding.suggest_topics": (
+        [GPT_OSS_SMALL, LITE],
+        {
+            "params_override": {"temperature": 0.5},
+            "reasoning_effort": "low",
+            "max_attempts": 1,
+            "timeout_s": 4,
+            "max_retries": 0,
+        },
+    ),
 }
 
 
@@ -97,14 +109,19 @@ class DefaultRegistry:
                 {"key": "groq", "kind": "groq", "api_key_env": "GROQ_API_KEY", "base_url": "", "is_enabled": True},
             ],
             "models": _MODELS,
-            "nodes": [
-                {
-                    "node_key": key,
-                    **settings,
-                    "bindings": [{"provider": p, "model": m, "priority": i} for i, (p, m) in enumerate(chain)],
-                }
-                for key, (chain, settings) in self.nodes.items()
-            ],
+            "nodes": [self._node(key, chain, settings) for key, (chain, settings) in self.nodes.items()],
+        }
+
+    @staticmethod
+    def _node(key: str, chain: list, settings: dict) -> dict:
+        """One node as RegistrySerializer JSON. `max_retries` in a node's settings is a binding setting: it goes on
+        every model of the chain instead of the node."""
+        settings = dict(settings)
+        retries = {"max_retries": settings.pop("max_retries")} if "max_retries" in settings else {}
+        return {
+            "node_key": key,
+            **settings,
+            "bindings": [{"provider": p, "model": m, "priority": i, **retries} for i, (p, m) in enumerate(chain)],
         }
 
 

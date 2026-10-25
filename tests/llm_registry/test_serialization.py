@@ -11,6 +11,8 @@ Use cases:
   Gemini on the heavy ones, every chain has a fallback, and every model carries a requests-per-minute limit
 - the "cheap" seed profile, for validating the flow without rate or billing limits, binds every node to only the
   cheapest models, at low reasoning effort, each with a second model behind it
+- the onboarding topic suggester is seeded for speed: the small Groq model with a cheap Gemini behind it, low effort,
+  one attempt, a 4 second timeout and no retries on a model (the next model is tried instead), in both profiles
 - export then import round-trips to the same JSON
 - an invalid import rolls back everything
 - seed_registry leaves an existing registry alone unless forced
@@ -48,6 +50,19 @@ def test_default_seed_is_valid_and_covers_every_required_node():
         assert [m.model_name for m in resolved[key].chain] == chain
     chain_names = [m.model_name for m in resolved["media.verify"].chain]
     assert all(m.supports_vision for m in LLMModel.objects.filter(name__in=chain_names))  # it reads the picture
+
+
+@pytest.mark.parametrize("profile", [DefaultRegistry, CheapRegistry])
+def test_topic_suggester_is_seeded_for_speed(profile):
+    RegistrySerializer().load(profile().build())
+
+    node = NodeConfig.objects.get(node_key="onboarding.suggest_topics")
+    bindings = list(node.bindings.order_by("priority"))
+
+    assert node.is_enabled
+    assert (node.reasoning_effort, node.max_attempts, node.timeout_s) == ("low", 1, 4)
+    assert [b.model.name for b in bindings][:2] == ["openai/gpt-oss-20b", "gemini-3.5-flash-lite"]
+    assert {b.max_retries for b in bindings} == {0}
 
 
 def test_default_seed_spreads_load_across_both_free_tiers():
