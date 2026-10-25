@@ -4,7 +4,7 @@ Why: the stage decides which screen the learner sees and which API calls are all
 allows (a finished lesson back to a quiz) shows the wrong screen; one it wrongly refuses strands a lesson.
 
 Use cases:
-- the documented moves are allowed
+- the documented moves are allowed, including a stopped lesson going back to the quiz stage it was in
 - every other move is refused
 - staying in the same stage is always allowed (a node that re-runs on retry)
 """
@@ -31,6 +31,9 @@ class TestStageTransitions:
             (Stage.FAILED, Stage.PREPARING_DIAGNOSTIC),
             (Stage.FAILED, Stage.GENERATING_LESSON),
             (Stage.FAILED, Stage.GENERATING_MATERIAL),
+            (Stage.FAILED, Stage.AWAITING_DIAGNOSTIC),  # a stopped lesson goes back to where it was
+            (Stage.FAILED, Stage.AWAITING_PREREQUISITE),
+            (Stage.FAILED, Stage.AWAITING_CHOICE),
         ],
         ids=lambda s: str(s.value),
     )

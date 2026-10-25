@@ -33,7 +33,8 @@ class IllegalTransition(ValueError):
 class StageTransitions:
     """Only legal moves happen: a finished lesson never goes back to a quiz.
 
-    Leaving `failed` is how a retry resumes: it goes back to the stage of the node that gave up.
+    Leaving `failed` is how a retry resumes: it goes back to the stage of the node that gave up, or, after the learner
+    pressed Stop, to the stage the lesson was in (`StopPoint`), which can be a quiz it is waiting on.
     """
 
     TABLE: dict[Stage, frozenset[Stage]] = {
@@ -46,7 +47,16 @@ class StageTransitions:
         Stage.GENERATING_MATERIAL: frozenset({Stage.READY, Stage.FAILED}),
         Stage.GENERATING_LESSON: frozenset({Stage.READY, Stage.FAILED}),
         Stage.READY: frozenset(),
-        Stage.FAILED: frozenset({Stage.PREPARING_DIAGNOSTIC, Stage.GENERATING_LESSON, Stage.GENERATING_MATERIAL}),
+        Stage.FAILED: frozenset(
+            {
+                Stage.PREPARING_DIAGNOSTIC,
+                Stage.AWAITING_DIAGNOSTIC,
+                Stage.AWAITING_PREREQUISITE,
+                Stage.AWAITING_CHOICE,
+                Stage.GENERATING_LESSON,
+                Stage.GENERATING_MATERIAL,
+            }
+        ),
     }
 
     def allowed(self, source: str, target: str) -> bool:

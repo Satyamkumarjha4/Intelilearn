@@ -74,6 +74,43 @@ class RunDispatcher:
             raise
 
 
+class StopPoint:
+    """Where a stopped flow run left the lesson, so Retry can carry on from there.
+
+    Stop marks the lesson failed: once a quiz is answered there is nothing the learner can do from `awaiting_*`, so the
+    stopped lesson shows the Retry card. The run remembers the stage the lesson was in, and the answer it was about to
+    hand the graph, and Retry puts both back.
+    """
+
+    KEY = "stopped_in"
+    #: the resume trigger → the kind of pause its answer is for (an answer must never reach a different question)
+    ANSWERS = {
+        GraphRun.Trigger.RESUME_DIAGNOSTIC: "diagnostic",
+        GraphRun.Trigger.RESUME_PREREQUISITE: "prerequisite",
+        GraphRun.Trigger.RESUME_CHOICE: "mastery_choice",
+    }
+
+    def remember(self, run: GraphRun) -> None:
+        """Call before the lesson is failed: the stage is read from the database, where the graph moves it."""
+        if run.graph != GraphRun.Graph.FLOW:
+            return
+        stage = Lesson.objects.values_list("stage", flat=True).get(pk=run.lesson_id)
+        if stage in (Stage.READY, Stage.FAILED):
+            return
+        run.payload = {**run.payload, self.KEY: stage}
+        GraphRun.objects.filter(pk=run.pk).update(payload=run.payload)
+
+    def of(self, lesson: Lesson) -> tuple[Stage | None, dict]:
+        """The stage to go back to and the payload for the retry run. Nothing, unless the last flow run was stopped."""
+        last = GraphRun.objects.filter(lesson=lesson, graph=GraphRun.Graph.FLOW).order_by("-created_at").first()
+        if last is None or last.status != GraphRun.Status.CANCELLED or self.KEY not in last.payload:
+            return None, {}
+        payload = {}
+        if "resume" in last.payload and last.trigger in self.ANSWERS:
+            payload = {"resume": last.payload["resume"], "resume_for": self.ANSWERS[last.trigger]}
+        return Stage(last.payload[self.KEY]), payload
+
+
 def has_active_run(lesson: Lesson) -> bool:
     return GraphRun.objects.filter(lesson=lesson, status__in=[GraphRun.Status.QUEUED, GraphRun.Status.RUNNING]).exists()
 
@@ -90,6 +127,7 @@ class LessonService:
         self.dispatcher = RunDispatcher(queue)
         self.resolver = resolver or RegistryResolver()
         self.events = events or RedisEventPublisher()
+        self.stops = StopPoint()
 
     def create(self, user, topic: str, user_context: str = "") -> tuple[Lesson, GraphRun]:
         """A new lesson with its registry and settings snapshotted, and a queued start run."""
@@ -112,20 +150,29 @@ class LessonService:
         return lesson, run
 
     def retry(self, lesson: Lesson) -> GraphRun:
-        """Resume a failed lesson from its last checkpoint."""
+        """Resume a failed lesson from its last checkpoint. After a Stop, the lesson first goes back to the stage it was
+        stopped in, and the retry carries the answer the stopped run was about to give."""
         if lesson.stage != Stage.FAILED:
             raise WrongStage("Only a failed lesson can be retried.")
         if has_active_run(lesson):
             raise RunInProgress()
-        run = GraphRun.objects.create(lesson=lesson, graph=GraphRun.Graph.FLOW, trigger=GraphRun.Trigger.RETRY)
+        stage, payload = self.stops.of(lesson)
+        with transaction.atomic():
+            if stage is not None:
+                lesson.advance_to(stage)
+            run = GraphRun.objects.create(
+                lesson=lesson, graph=GraphRun.Graph.FLOW, trigger=GraphRun.Trigger.RETRY, payload=payload
+            )
         self.dispatcher.dispatch(run)
         return run
 
     def cancel(self, run: GraphRun) -> None:
-        """Stop an active run after its current step. The lesson is marked failed, which makes it retryable."""
+        """Stop an active run after its current step. The lesson is marked failed, which makes it retryable, and the run
+        remembers where the lesson was (`StopPoint`), because Retry has to pick up from there."""
         stopped = GraphRun.objects.filter(pk=run.pk, status__in=[GraphRun.Status.QUEUED, GraphRun.Status.RUNNING])
         if not stopped.update(status=GraphRun.Status.CANCELLED, finished_at=timezone.now()):
             raise RunEnded()
+        self.stops.remember(run)
         run.lesson.fail("Cancelled. Press Retry to continue where it stopped.")
         RunEffects().on_stopped(run, "Cancelled before it finished.")
         self.events.publish(run.id, RunEvent("cancelled", {}))

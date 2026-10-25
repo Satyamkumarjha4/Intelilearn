@@ -8,6 +8,9 @@ Use cases:
 - creating a lesson snapshots the registry and the flow settings, queues a start run and enqueues it
 - creating a lesson refuses when no model is bound for the first step, and leaves nothing behind
 - retrying a failed lesson queues a retry run; any other stage, or a run in progress, is refused
+- stopping a run remembers the stage the lesson was in; Retry puts it back there and hands the retry run the answer the
+  stopped run was about to give (for that kind of question only); a lesson that failed by itself, or whose stopped run
+  was not the flow's, is retried as before
 - deleting a lesson cancels its active runs and removes it with everything attached
 - an unreachable queue fails the run and the lesson, so Retry works once it is back
 - the learner's quiz has no answers, explanations or concepts
@@ -129,6 +132,81 @@ class TestRetry:
             GraphRun.Trigger.RETRY, GraphRun.Status.QUEUED, GraphRun.Graph.FLOW,
         )  # fmt: skip
         assert queue.runs == [run]
+
+    @pytest.fixture
+    def service(self, queue):
+        class Silent:
+            def publish(self, run_id, event):
+                pass
+
+        return LessonService(queue=queue, events=Silent())
+
+    @pytest.mark.parametrize(
+        ("trigger", "stage", "kind"),
+        [
+            (GraphRun.Trigger.RESUME_DIAGNOSTIC, Stage.AWAITING_DIAGNOSTIC, "diagnostic"),
+            (GraphRun.Trigger.RESUME_PREREQUISITE, Stage.AWAITING_PREREQUISITE, "prerequisite"),
+            (GraphRun.Trigger.RESUME_CHOICE, Stage.AWAITING_CHOICE, "mastery_choice"),
+        ],
+    )
+    def test_a_stopped_lesson_goes_back_to_its_stage_and_the_retry_carries_the_answer(
+        self, service, make_lesson, queue, trigger, stage, kind
+    ):
+        lesson = make_lesson(stage=stage)
+        run = GraphRun.objects.create(
+            lesson=lesson, trigger=trigger, status=GraphRun.Status.RUNNING, payload={"resume": "the-answer"}
+        )
+
+        service.cancel(run)
+        lesson.refresh_from_db()
+        assert lesson.stage == Stage.FAILED
+
+        retry = service.retry(lesson)
+
+        lesson.refresh_from_db()
+        assert (lesson.stage, lesson.error) == (stage, "")
+        assert retry.payload == {"resume": "the-answer", "resume_for": kind}
+        assert queue.runs == [retry]
+
+    def test_a_stopped_build_goes_back_to_building_with_nothing_to_carry(self, service, make_lesson):
+        lesson = make_lesson(stage=Stage.GENERATING_LESSON)
+        run = GraphRun.objects.create(lesson=lesson, trigger=GraphRun.Trigger.START, status=GraphRun.Status.RUNNING)
+
+        service.cancel(run)
+        retry = service.retry(Lesson.objects.get(pk=lesson.pk))
+
+        assert Lesson.objects.get(pk=lesson.pk).stage == Stage.GENERATING_LESSON
+        assert retry.payload == {}
+
+    def test_a_lesson_that_failed_by_itself_stays_failed_until_its_node_runs_again(self, service, make_lesson):
+        lesson = make_lesson(stage=Stage.FAILED, error="boom")
+        GraphRun.objects.create(
+            lesson=lesson, trigger=GraphRun.Trigger.RESUME_DIAGNOSTIC, status=GraphRun.Status.FAILED,
+            payload={"resume": "old"},
+        )  # fmt: skip
+
+        retry = service.retry(lesson)
+
+        assert Lesson.objects.get(pk=lesson.pk).stage == Stage.FAILED and retry.payload == {}
+
+    def test_a_stop_that_came_after_the_lesson_failed_or_finished_remembers_nothing(self, service, make_lesson):
+        ready = make_lesson(stage=Stage.READY)
+        grading = GraphRun.objects.create(
+            lesson=ready,
+            graph=GraphRun.Graph.GRADE_TEST,
+            trigger=GraphRun.Trigger.GRADE,
+            status=GraphRun.Status.RUNNING,
+        )
+        failed = make_lesson(stage=Stage.FAILED)
+        flow = GraphRun.objects.create(lesson=failed, trigger=GraphRun.Trigger.RETRY, status=GraphRun.Status.RUNNING)
+
+        service.cancel(grading)
+        service.cancel(flow)
+
+        grading.refresh_from_db()
+        flow.refresh_from_db()
+        assert "stopped_in" not in grading.payload and "stopped_in" not in flow.payload
+        assert Lesson.objects.get(pk=ready.pk).stage == Stage.READY
 
     @pytest.mark.parametrize("stage", [Stage.AWAITING_DIAGNOSTIC, Stage.GENERATING_LESSON, Stage.READY])
     def test_other_stages_cannot_be_retried(self, make_lesson, queue, stage):

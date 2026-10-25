@@ -154,12 +154,15 @@ class FlowRunner:
         try:
             interrupt = self._stream(run)
         except Exception as exc:
+            if self.recorder.is_cancelled(run):  # the learner stopped it first: the error is only the stop's aftermath
+                logger.info("Run %s stopped by the learner, then raised %r", run.id, exc)
+                self._stopped(run)
+                return
             logger.exception("Run %s failed", run.id)
             self._fail(run, self.failures.of(exc))
             return
         if self.recorder.is_cancelled(run):
-            self.effects.on_stopped(run, "Cancelled before it finished.")
-            self._publish(run, RunEvent("cancelled", {}))
+            self._stopped(run)
             return
         lesson = Lesson.objects.get(pk=run.lesson_id)
         if interrupt is None:
@@ -170,6 +173,10 @@ class FlowRunner:
         else:
             self.recorder.finish(run, GraphRun.Status.PAUSED)
             self._publish(run, RunEvent("awaiting_input", {k: v for k, v in interrupt.items() if k != "message"}))
+
+    def _stopped(self, run: GraphRun) -> None:
+        self.effects.on_stopped(run, "Cancelled before it finished.")
+        self._publish(run, RunEvent("cancelled", {}))
 
     def _stream(self, run: GraphRun) -> dict | None:
         """Run the graph until it ends or pauses. → the interrupt payload when it paused, else None."""
@@ -194,11 +201,16 @@ class FlowRunner:
 
     def _input(self, graph, run: GraphRun, config: dict):
         """What to feed the thread: a resume value if it waits at an interrupt, nothing if it was interrupted by a
-        crash (it continues from its checkpoint), the first input for a new thread."""
+        crash or a Stop (it continues from its checkpoint), the first input for a new thread."""
         snapshot = graph.get_state(config)
         if snapshot.interrupts:
+            expected = run.payload.get("resume_for")
+            if expected and expected != snapshot.interrupts[0].value.get("kind"):
+                return self.NOTHING_TO_DO  # it waits at another question than the one this answer is for: stay there
             return Command(resume=run.payload.get("resume", True))
-        if snapshot.next:
+        # `next` is empty when a Stop closed the stream after a step's tasks had finished but before the step was
+        # applied: those tasks still stand, so the thread is not finished and must continue.
+        if snapshot.next or snapshot.tasks:
             return None
         if snapshot.values:
             return self.NOTHING_TO_DO  # the thread already ran to its end (a redelivered task)
