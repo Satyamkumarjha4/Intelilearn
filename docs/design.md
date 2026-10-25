@@ -1095,11 +1095,17 @@ classDiagram
         +constructor(runId, onEvent)
         +close()
     }
-    class SandboxBridge {
-        +constructor(iframe, handlers)
-        +render(code, data, codeVersion)
-        -onMessage(event)
-        +dispose()
+    class SandboxMessages {
+        +parse(data)$ SandboxMessage
+        +from(event, frame)$ SandboxMessage
+    }
+    class HarnessBuilder {
+        +html(template) str
+        +absolute(document) LessonDocument
+    }
+    class RepairGate {
+        +shouldRepair(error, currentVersion) bool
+        +stop()
     }
     class RedirectPolicy {
         +safeNext(value)$ str
@@ -1109,9 +1115,90 @@ classDiagram
 
 - Components call the shared `apiClient` instance (`apiClient.request<T>(path, options)`), so concurrent 401s share one refresh. `fetch` and the cookie reader are constructor parameters, so `lib/api.test.ts` drives the client with a scripted fake `fetch`.
 - `useRunEvents`, `useProfile` and the `LessonSandbox` component are hooks/components that own one instance of these classes.
-- `SandboxBridge` accepts only messages whose `event.source` is its iframe.
+- `SandboxMessages.from` accepts only messages whose `event.source` is the embedded iframe and gives every field a safe type; `HarnessBuilder` fills the harness with absolute addresses (the iframe's origin is opaque); `RepairGate` asks for a repair once per code version and stops when the server refuses; `HarnessSource` fetches the harness once; `RenderMessage` and `RepairReport` shape what is posted to the iframe and to `/repair`; `LessonPdf` prints the reading pages.
 
 Where the pieces live: `lessons/runner.py` (`FlowRunner`, `GraphRunRecorder`, `RunLock`, `FailureMessage`), `lessons/events.py` (`RunEvent`, `RunEventTranslator`, `RedisEventPublisher`, `RunEventStream`, `RunSnapshot`), `lessons/checkpoints.py`, `lessons/tasks.py` (the tasks, `CeleryTaskQueue`, and `InlineTaskQueue` for the `flow` command), `lessons/services.py` (`LessonService`, `QuizService`, `RunDispatcher` over the `TaskQueue` port, chosen by `LESSON_TASK_QUEUE`), `lessons/reports.py`. Domain failures are `APIException`s in `lessons/errors.py`, so the API formats them itself.
+
+### 4.12 Stage C and runtime repair (Phase 6)
+
+```mermaid
+classDiagram
+    direction LR
+    class Node {
+        <<abstract>>
+        +__call__(state, runtime)
+        #run(state, ctx)*
+    }
+    class CodeFixer {
+        +fix(ctx, data, code, contract, required, components, asset_ids) tuple
+    }
+    class CodeFixLoopBuilder
+    class CompilePageNode
+    class AssembleDocumentNode
+    class RenderCheckNode
+    class RepairPageNode
+    class RepairComponentNode
+    class PersistLessonNode
+    class RenderPolicy {
+        +decide(report, state, round_number) RenderVerdict
+    }
+    class PageParts {
+        +of(data, key)$ tuple
+        +component_code(state)$ dict
+    }
+    class LoadRepairNode
+    class RepairRuntimeNode
+    class AssembleRepairedNode
+    class RegressionCheckNode
+    class VerifyRepairNode
+    class SaveRepairNode
+    class RepairTargetLocator {
+        +locate(error, parts) RepairTarget
+    }
+    class RegressionCheck {
+        +problems(before, after, pages) list~str~
+    }
+    class CodeSignature {
+        +of(code, section_ids)$ frozenset
+    }
+    class RuntimeRepairGraphBuilder
+    class CodeService {
+        +document(lesson) dict
+        +request_repair(lesson, error, code_version) GraphRun
+        +versions(lesson) QuerySet
+        +restore(lesson, number) Lesson
+    }
+
+    Node <|-- CompilePageNode
+    Node <|-- AssembleDocumentNode
+    Node <|-- RenderCheckNode
+    Node <|-- RepairPageNode
+    Node <|-- RepairComponentNode
+    Node <|-- PersistLessonNode
+    Node <|-- LoadRepairNode
+    Node <|-- RepairRuntimeNode
+    Node <|-- AssembleRepairedNode
+    Node <|-- RegressionCheckNode
+    Node <|-- VerifyRepairNode
+    Node <|-- SaveRepairNode
+    CompilePageNode o-- CodeFixer
+    RepairPageNode o-- CodeFixer
+    RepairComponentNode o-- CodeFixer
+    RepairRuntimeNode o-- CodeFixer
+    CodeFixer --> CodeFixLoopBuilder
+    RenderCheckNode o-- RenderPolicy
+    RenderPolicy ..> PageParts
+    LoadRepairNode o-- RepairTargetLocator
+    RegressionCheckNode o-- RegressionCheck
+    RegressionCheck ..> CodeSignature
+    RuntimeRepairGraphBuilder o-- LoadRepairNode
+    CodeService ..> RuntimeRepairGraphBuilder : queues a run
+```
+
+- **Template Method** again: every node is a `Node` subclass with its own `run`. `CodeFixer` is a small facade over the code-fix subgraph, injected into the nodes that need it so tests can replace it.
+- **Strategy**: `RenderPolicy` decides what to do with a render report (pass, repair, fall back, fail) from the report and the round; the node only carries the decision out.
+- `RepairTargetLocator`, `RegressionCheck` and `CodeSignature` are pure: no ORM, no network, no sandbox.
+- `CodeService` owns the lesson's code use cases (serve, request a repair, list versions, restore); views stay thin.
 
 ## 5. How to extend
 
@@ -1147,11 +1234,11 @@ Every phase 0–2 item is done. The rows still open describe the work-in-progres
 | ~~`graph/grading.py`~~ | ~~functions~~ | `QuizGrader`, `RoutingPolicy` | ✅ Done |
 | ~~`graph/validators.py`~~ | ~~`validate_*` functions~~ | `Validator` classes, `AssessmentGuard` (`graph/validators/`) | ✅ Done (tests for the study, plan, page, test and interactive-plan validators come with Phases 4–5) |
 | ~~`graph/prompts.py`~~ | ~~functions in one 470-line module~~ | `graph/prompts/` package, one `Prompt` subclass per node | ✅ Done |
-| `graph/nodes/*.py` | Stage A, the mastery path, Stage B and the media agent are classes (`diagnose.py`, `mastery.py`, `author.py`, `media_agent.py`, `routers.py`, `author_routers.py`); the build and repair nodes were removed and return as classes | `Node` subclasses, `Router` subclasses | Phase 6 |
-| `graph/builders.py`, `graph/registry.py` | `FlowGraphBuilder` with the diagnose, mastery, author and failure segments, `StudyMaterialGraphBuilder`, `MediaGraphBuilder`; the code-fix and repair graphs were removed | `GraphBuilder` subclasses | Phase 6 |
+| ~~`graph/nodes/*.py`~~ | ~~functions~~ | `Node` and `Router` subclasses: Stage A, the mastery path, Stage B, the media agent, Stage C (`build.py`, `build_routers.py`) and the runtime repair (`repair.py`) | ✅ Done |
+| ~~`graph/builders.py`, `graph/registry.py`~~ | ~~functions~~ | `FlowGraphBuilder` (diagnose, mastery, author, build and failure segments), `StudyMaterialGraphBuilder`, `MediaGraphBuilder`, `CodeFixLoopBuilder`, `RuntimeRepairGraphBuilder`; `GraphRegistry` | ✅ Done |
 | ~~`graph/context.py`~~ | ~~`Any`-typed fields, `emit`/`warn`/`llm` functions~~ | Protocol-typed `FlowContext`, `EventSink` | ✅ Done |
-| `graph/codegen.py` | `CodeSanitizer` done (`graph/sanitizer.py`); the page/test templates and `assemble` are still functions | `DocumentAssembler` | Phase 6 |
+| ~~`graph/codegen.py`~~ | ~~page/test templates and `assemble` as functions~~ | `DocumentAssembler`, `CodeSanitizer` (`graph/sanitizer.py`) | ✅ Done |
 | ~~`graph/media.py`~~ | ~~search methods on `MediaLibrary`~~ | `graph/media/`: `MediaSource` classes, `MediaDownloader` behind a `UrlGuard`, `LicensePolicy`, `MediaStorage`, `MediaLibrary` facade | ✅ Done |
-| `lessons/document.py` | functions | `LessonDocumentBuilder`, `MediaUrlSigner` | Phase 6 |
+| ~~`lessons/document.py`~~ | ~~functions~~ | `LessonSource`, `LessonData`, `LessonDocumentBuilder`, with `MediaUrlSigner` (`lessons/media_urls.py`) | ✅ Done |
 | ~~`frontend/lib/api.ts`~~ | ~~module functions + `ApiError`~~ | `ApiClient` + the shared `apiClient` instance | ✅ Done |
 | ~~`frontend/lib/safe-redirect.ts`~~ | ~~`safeNext()`~~ | `RedirectPolicy.safeNext` | ✅ Done |

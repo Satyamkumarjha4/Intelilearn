@@ -56,7 +56,7 @@ A lesson is a learner's request to learn one topic, from the diagnostic quiz thr
 | code | text, null | Assembled TSX document |
 | code_parts | JSON | The pages' and interactives' TSX the document was assembled from, for targeted runtime repairs |
 | code_version | int | Incremented on each runtime repair |
-| runtime_repairs | int | Automatic runtime repairs so far (capped by `max_auto_runtime_repairs`) |
+| runtime_repairs | int | Runtime repairs requested so far, counted when requested whether or not they work (capped by `max_auto_runtime_repairs`) |
 | warnings | JSON list | Degraded widgets, media fallbacks, minor alignment issues |
 | error | text, null | Readable failure reason |
 | config_snapshot | JSON | Resolved model registry used by this lesson's flow |
@@ -137,7 +137,7 @@ Multiple submissions are allowed, so the learner can retake the test.
 
 ### `LessonVersion`
 
-This is a snapshot of `code` (and `code_version`) taken before each runtime repair, for rollback.
+This is a snapshot of `code`, `code_parts` and `code_version` taken before each runtime repair and each restore, for rollback. `(lesson, code_version)` is unique; the current version has no row.
 
 ### `GraphRun`
 

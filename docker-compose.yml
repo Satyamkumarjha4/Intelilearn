@@ -37,8 +37,25 @@ x-backend: &backend
       condition: service_healthy
     redis:
       condition: service_healthy
+    sandbox-build:
+      condition: service_completed_successfully
 
 services:
+  # Builds the lesson runtime (sandbox/dist) and copies it to the frontend's public folder, then exits. The render check
+  # and the browser load the same files.
+  sandbox-build:
+    build:
+      context: ./backend
+      additional_contexts:
+        sandbox: ./sandbox
+    command: sh -c "cd /sandbox && bun run build"
+    environment:
+      OUT: /frontend-public-sandbox
+    volumes:
+      - ./sandbox:/sandbox:z
+      - /sandbox/node_modules
+      - ./frontend/public/sandbox:/frontend-public-sandbox:z
+
   db:
     image: postgres:17-alpine
     environment:
@@ -116,6 +133,7 @@ services:
       - "${BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-3000}:3000"
     depends_on:
       - backend
+      - sandbox-build # (backend waits for it too) so public/sandbox exists before the first page load
 
 volumes:
   postgres-data:

@@ -72,3 +72,21 @@ class AlreadyExists(LessonError):
     status_code = status.HTTP_409_CONFLICT
     default_code = "already_exists"
     default_detail = "The lesson already has that study sheet."
+
+
+class StaleCodeVersion(LessonError):
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "stale_code_version"
+    default_detail = "The lesson changed since that error was reported. Reload it."
+
+
+class RepairLimitReached(LessonError):
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "repair_limit_reached"
+    default_detail = "This lesson has already been repaired as often as allowed."
+
+
+class VersionNotFound(LessonError):
+    status_code = status.HTTP_404_NOT_FOUND
+    default_code = "not_found"
+    default_detail = "That version of the lesson does not exist."

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { use, useState } from "react";
 import { toast } from "sonner";
 
+import { LessonViewer } from "@/components/lessons/lesson-viewer";
 import { MasteryChoice } from "@/components/lessons/mastery-choice";
 import { PipelineProgress } from "@/components/lessons/pipeline-progress";
 import { QuizResultCard } from "@/components/lessons/quiz-result-card";
@@ -127,12 +128,7 @@ export default function LessonPage({ params }: PageProps<"/lessons/[id]">) {
       ) : screen === "material" ? (
         <StudyMaterialView lesson={lesson} pipeline={pipeline} onRequested={() => void refresh()} />
       ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>Your lesson</CardTitle>
-            <CardDescription>This part of the app is arriving in a later update.</CardDescription>
-          </CardHeader>
-        </Card>
+        <LessonViewer lessonId={lesson.id} />
       )}
 
       {lesson.warnings.length > 0 && (

@@ -65,6 +65,10 @@ class FakeSandbox:
     latex_errors: list[str] = field(default_factory=list)
     code_errors: list[str] = field(default_factory=list)
     failing_components: set[str] = field(default_factory=set)  # required names whose check always fails
+    check_script: list = field(default_factory=list)  # error lists for successive check_code calls (the last repeats)
+    check_calls: list = field(default_factory=list)
+    render_reports: list = field(default_factory=list)  # RenderReports to return, in order (the last repeats)
+    render_calls: list = field(default_factory=list)
     latex_calls: list[list[str]] = field(default_factory=list)
 
     def latex(self, expressions):
@@ -72,13 +76,19 @@ class FakeSandbox:
         return list(self.latex_errors)
 
     def check_code(self, code, *, required=(), components=(), asset_ids=()):
+        self.check_calls.append({"code": code, "required": list(required), "components": list(components)})
         errors = list(self.code_errors)
+        if self.check_script:
+            errors = list(self.check_script.pop(0) if len(self.check_script) > 1 else self.check_script[0])
         if self.failing_components & set(required):
             errors.append("line 1:0 [forbidden-global] `fetch` is not allowed in lesson code")
         return SimpleNamespace(ok=not errors, errors=errors)
 
     def render_check(self, code, data, *, pages, media_files):
-        raise NotImplementedError
+        self.render_calls.append({"code": code, "data": data, "pages": pages, "media_files": media_files})
+        if not self.render_reports:
+            raise AssertionError("FakeSandbox has no RenderReport scripted")
+        return self.render_reports.pop(0) if len(self.render_reports) > 1 else self.render_reports[0]
 
 
 class ListEvents:

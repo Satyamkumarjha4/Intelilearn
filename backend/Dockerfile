@@ -24,6 +24,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # image and are kept visible under the bind mount by an anonymous volume, like the frontend's.
 COPY --from=sandbox package.json bun.lock /sandbox/
 RUN cd /sandbox && bun install --frozen-lockfile
+# Headless Chromium for the render check (with the system libraries it needs).
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN cd /sandbox && bun x playwright install --with-deps chromium && rm -rf /var/lib/apt/lists/*
 
 COPY . .
 

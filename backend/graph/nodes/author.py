@@ -11,7 +11,7 @@ send the failing items again, accept them with a warning, or move on.
 
 from langgraph.types import Send
 
-from lessons.models import MediaAsset, Stage
+from lessons.models import Stage
 
 from ..alignment import AlignmentPolicy
 from ..authoring import ContentWriter
@@ -19,6 +19,7 @@ from ..context import FlowContext, NodeBudget
 from ..prompts import AlignmentPrompt, PlanInteractivesPrompt, PlanLessonPrompt
 from ..schemas import MEDIA_KINDS, PAGE_KEYS, AlignmentReport, InteractivePlan, LessonPlan
 from ..validators import InteractivePlanValidator, PlanValidator, Validator
+from .authoring_media import MediaAssets
 from .base import LLMNode, Node, ValidateNode
 from .branches import BranchBuilder
 from .media_agent import MediaFinder
@@ -270,24 +271,6 @@ class FindMediaNode(Node):
         if not problems:
             update["interactives"] = {spec["id"]: component}
         return update
-
-
-class MediaAssets:
-    """Saves the media the flow found as `MediaAsset` rows (the file is already stored)."""
-
-    @staticmethod
-    def persist(lesson_id: str, media: dict[str, dict]) -> None:
-        for spec_id, ref in media.items():
-            MediaAsset.objects.update_or_create(
-                id=ref["asset_id"],
-                defaults={
-                    "lesson_id": lesson_id, "spec_id": spec_id, "kind": ref["kind"], "file": ref["file"],
-                    "mime_type": ref["mime_type"], "width": ref["width"], "height": ref["height"],
-                    "source": ref["source"], "source_url": ref["source_url"][:1000], "title": ref["title"][:300],
-                    "license": ref["license"][:40], "attribution": ref["attribution"][:500],
-                    "alt_text": ref["alt_text"], "caption": ref["caption"], "verified": ref["verified"],
-                },
-            )  # fmt: skip
 
 
 class WidgetsJoinNode(Node):

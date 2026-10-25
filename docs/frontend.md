@@ -77,7 +77,14 @@ Sheets render Markdown with KaTeX (`components/markdown.tsx`: `react-markdown`, 
 
 ### `LessonViewer`
 
-`LessonViewer` loads `GET /lessons/{id}/document` and mounts `LessonSandbox`. Page navigation (Introduction · Core · Advanced · Test) is part of the generated document itself, and the parent shows only a toolbar: view code, version history, and PDF export of pages 1–3.
+`LessonViewer` loads `GET /lessons/{id}/document` and mounts `LessonSandbox`. Page navigation (Introduction · Core · Advanced · Test) is part of the generated document itself, and the parent shows only a toolbar:
+
+- **View code** shows the document's TSX.
+- **Versions** lists the earlier versions the repairs and restores kept, each with **Restore** (`POST /versions/{n}/restore`, then the document is reloaded).
+- **PDF** prints pages 1–3 from the structured page content (`LessonPdf`, `@react-pdf/renderer`); the test page is never included.
+- **Rebuild** reloads the document and starts a fresh iframe. It does not ask for a repair (the repair limit is the server's).
+
+A crash the runtime reports shows an alert under the toolbar; while a repair runs the alert says so, and when it finishes the document is reloaded and the new `code_version` is rendered in the same iframe. When the repair fails or the limit is reached the alert names the error and points to Rebuild and Versions.
 
 ## `sandbox/` runtime (shared with backend validation)
 
@@ -116,10 +123,10 @@ Adding a library to the scope is a deliberate change. You update `src/scope`, up
 ```
 
 - The harness sets a CSP: `default-src 'none'; script-src 'unsafe-eval' <runtime>; img-src <api origin>; style-src 'unsafe-inline'`. This means generated code cannot make network requests even if the static scan missed something. (`unsafe-eval` is needed to run the transformed code.)
-- The parent posts `{type: "render", code, data, codeVersion}`. The runtime transforms the TSX with **sucrase** and evaluates it with the scope.
+- The parent posts `{type: "render", code, data, codeVersion, theme}` (media URLs made absolute, because the iframe's origin is opaque) and `{type: "theme", theme}` when the theme changes, which does not restart the lesson. The runtime transforms the TSX with **sucrase** and evaluates it with the scope.
 - The runtime posts back `rendered` (with height), `error` (with `phase: transform | runtime`, message, stack, and page), and `test_submit` (answers from `Assessment`). The parent accepts only messages whose `event.source` is this iframe.
-- **Runtime errors that slipped past `render_check`** trigger `POST /repair`, at most `max_auto_runtime_repairs` times. After that, the learner sees the error with a **Rebuild** option.
-- `test_submit` → `POST /test/submissions`. The result (score, feedback per question, topics to revisit) is shown in a `TestResultPanel` next to the iframe.
+- **Runtime errors that slipped past `render_check`** trigger `POST /repair`, **once per `code_version`** (`RepairGate`: one crash raises several errors, and one repair covers them; an error from a version the page has moved past is ignored). The server enforces `max_auto_runtime_repairs`: on `repair_limit_reached` the gate stops for good and the learner sees the error with **Rebuild** and **Versions**. A `stale_code_version` just reloads the document.
+- `test_submit` → `POST /test/submissions`. The result (score, feedback per question, topics to revisit) is shown in a `TestResultPanel` next to the iframe. (Until Phase 7 lands, the viewer answers a submitted test with a notice.)
 
 ## `lib/`
 

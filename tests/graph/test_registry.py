@@ -4,7 +4,7 @@ Why: the runner picks the graph to execute from a name stored in the database. A
 loudly with the known names, not run the wrong graph.
 
 Use cases:
-- looks up the builder for a registered graph name
+- looks up the builder for each registered graph name (the lesson flow, extra sheets, runtime repairs)
 - reports the known names for an unknown graph
 - builders can be replaced, so tests and later phases add graphs without editing the registry
 """
@@ -17,6 +17,14 @@ from graph.registry import GraphRegistry, UnknownGraph
 
 def test_looks_up_the_builder_for_a_registered_graph():
     assert isinstance(GraphRegistry().builder("flow"), FlowGraphBuilder)
+
+
+def test_every_graph_a_run_can_name_has_a_builder():
+    from lessons.models import GraphRun
+
+    registry = GraphRegistry()
+
+    assert {name for name, _ in GraphRun.Graph.choices} <= set(registry.builders)
 
 
 def test_an_unknown_graph_names_the_known_ones():

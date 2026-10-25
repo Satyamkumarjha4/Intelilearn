@@ -145,7 +145,7 @@ make down            # stop; volumes are kept
 
 ## The sandbox package
 
-`sandbox/` is a small Node package (managed with bun) that the backend runs in a subprocess to check generated lesson code (`scripts/check.mjs`: syntax, security scan, scope contract, KaTeX). The **backend image has Node and installs its packages** (the `sandbox` build context in `docker-compose.yml`), and compose bind-mounts `./sandbox` with the image's `node_modules` kept visible. After pulling a change to `sandbox/package.json`, rebuild with `docker compose up --build`. Fixtures of known-malicious and known-good code are in `sandbox/fixtures/` and run by `tests/graph/test_sandbox.py`. To run a check by hand: `echo '{"mode":"latex","items":["x^2"]}' | docker compose run --rm -T backend node /sandbox/scripts/check.mjs`.
+`sandbox/` is a small Node package (managed with bun) that the backend runs in a subprocess to check generated lesson code (`scripts/check.mjs`: syntax, security scan, scope contract, KaTeX). The **backend image has Node and installs its packages** (the `sandbox` build context in `docker-compose.yml`), and compose bind-mounts `./sandbox` with the image's `node_modules` kept visible. After pulling a change to `sandbox/package.json`, rebuild with `docker compose up --build --renew-anon-volumes`: without the last flag compose keeps the old container's `node_modules` volume, which hides the new image's packages (for example `playwright` missing at render-check time). Fixtures of known-malicious and known-good code are in `sandbox/fixtures/` and run by `tests/graph/test_sandbox.py`. To run a check by hand: `echo '{"mode":"latex","items":["x^2"]}' | docker compose run --rm -T backend node /sandbox/scripts/check.mjs`.
 
 ## Adding dependencies
 
@@ -170,4 +170,4 @@ The backend image installs into `/opt/venv`, outside the bind-mounted `/app`. Th
 
 ## Later phases add
 
-- Playwright Chromium in the backend image, for the headless render check (Phase 6).
+- Playwright Chromium in the backend image, for the headless render check (Phase 6). It is built, and `sandbox-build` rebuilds the lesson runtime into `frontend/public/sandbox/` on every `docker compose up`.

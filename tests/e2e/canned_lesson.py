@@ -1,10 +1,13 @@
 # ruff: noqa: E501  (the widget templates are code samples; long lines read better there)
-"""Canned Stage B output for the fake LLM: a plan, pages, a test, an interactive plan, widget code and an alignment
-report that pass the real validators and the real sandbox check. Content is built from what the prompt contains (the
-topic, the page plan, the lesson plan), so the lesson the walk-through shows is about what the learner asked for."""
+"""Canned Stage B and C output for the fake LLM: a plan, pages, a test, an interactive plan, widget code and an
+alignment report that pass the real validators and the real sandbox check, and compiled pages in the standard layout.
+Content is built from what the prompt contains (the topic, the page plan, the lesson plan), so the lesson the
+walk-through shows is about what the learner asked for."""
 
 import json
 import re
+
+from graph.codegen import DocumentAssembler
 
 TOPICS_WITH_PICTURES = re.compile(r"reproduction|cell|amoeba|biology|photosynthesis|organism|anatomy|ecosystem", re.I)
 
@@ -204,3 +207,31 @@ class LessonCanned:
             "topic_relevance": 5, "level_fit": 4, "prerequisite_coverage": 5, "factual_accuracy": 5,
             "interactive_relevance": 4, "issues": [], "passed": True,
         }  # fmt: skip
+
+    # --- Stage C (text output: no schema, so chosen by the prompt) ---
+
+    PLACEMENT = re.compile(r'^- (<(?:Interactive_\w+|Figure asset="[^"]+") />) after section "([^"]+)"', re.M)
+
+    def for_text(self) -> str:
+        """A text answer chosen by the system prompt: a compiled page, or a replacement for a crashed interactive."""
+        system = self.messages[0].get("content", "")
+        if system.startswith("A lesson page crashed"):
+            return self.repaired_interactive(system)
+        if not system.startswith("You compile one page of a lesson"):
+            raise KeyError("text")
+        return self.compiled_page()
+
+    def repaired_interactive(self, system: str) -> str:
+        """A crashed interactive is replaced by the plain diagram widget; the fake cannot repair a page."""
+        match = re.search(r"function (Interactive_\w+)\(\)", system)
+        if match is None:
+            raise KeyError("text")
+        return SVG_TSX.format(name=match.group(1))
+
+    def compiled_page(self) -> str:
+        """A page compiled the safe way: the standard layout with each interactive and figure after its anchor."""
+        key = re.search(r"Page key: (\w+)", self._user()).group(1)
+        placements: dict[str, list[str]] = {}
+        for snippet, anchor in self.PLACEMENT.findall(self._user()):
+            placements.setdefault(anchor, []).append(snippet)
+        return DocumentAssembler().template_page(key, placements)

@@ -22,7 +22,9 @@ from .serializers import (
     LessonCreatedSerializer,
     LessonCreateSerializer,
     LessonDetailSerializer,
+    LessonDocumentSerializer,
     LessonSummarySerializer,
+    LessonVersionSerializer,
     MaterialKindSerializer,
     PracticeGradeRequestSerializer,
     PracticeGradeSerializer,
@@ -30,15 +32,18 @@ from .serializers import (
     QuizAttemptResponseSerializer,
     QuizForLearnerSerializer,
     QuizReviewSerializer,
+    RepairRequestSerializer,
+    RestoredSerializer,
     RunSerializer,
     RunStartedSerializer,
     StudyMaterialSerializer,
 )
-from .services import LessonService, MaterialService, QuizService
+from .services import CodeService, LessonService, MaterialService, QuizService
 
 LESSONS_TAG = ["lessons"]
 QUIZZES_TAG = ["quizzes"]
 MATERIALS_TAG = ["study sheets"]
+DOCUMENT_TAG = ["lesson document"]
 RUNS_TAG = ["runs"]
 LESSON_ID = OpenApiParameter("lesson_id", str, OpenApiParameter.PATH)
 KIND = OpenApiParameter("kind", str, OpenApiParameter.PATH, enum=["diagnostic", "prerequisite"])
@@ -267,6 +272,73 @@ class PracticeGradeView(OwnedLessons, APIView):
         return Response(
             MaterialService().grade_practice(self.lesson_of(request, lesson_id), serializer.validated_data["answers"])
         )
+
+
+class LessonDocumentView(OwnedLessons, APIView):
+    @extend_schema(
+        tags=DOCUMENT_TAG,
+        summary="Get the lesson document",
+        description=(
+            "The code the sandbox runs, its `code_version`, and the data it renders (`LESSON`): pages, the final "
+            "test without answers, and media as signed URLs."
+        ),
+        parameters=[LESSON_ID],
+        responses={200: LessonDocumentSerializer, 409: OpenApiResponse(description="The lesson is not ready.")},
+    )
+    def get(self, request, lesson_id):
+        return Response(CodeService().document(self.lesson_of(request, lesson_id)))
+
+
+class LessonRepairView(OwnedLessons, APIView):
+    @extend_schema(
+        tags=DOCUMENT_TAG,
+        summary="Repair a crash the browser reported",
+        description=(
+            "Queues the `runtime_repair` graph. Each request counts against the lesson's "
+            "`max_auto_runtime_repairs`, whether or not the repair works."
+        ),
+        parameters=[LESSON_ID],
+        request=RepairRequestSerializer,
+        responses={
+            202: RunStartedSerializer,
+            409: OpenApiResponse(description="Stale `code_version`, repair limit reached, wrong stage or active run."),
+        },
+    )
+    def post(self, request, lesson_id):
+        serializer = RepairRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        run = CodeService().request_repair(
+            self.lesson_of(request, lesson_id), dict(data["error"]), data["code_version"]
+        )
+        return Response({"run_id": run.id}, status=status.HTTP_202_ACCEPTED)
+
+
+class LessonVersionsView(OwnedLessons, APIView):
+    @extend_schema(
+        tags=DOCUMENT_TAG,
+        summary="List earlier versions of the lesson code",
+        description="Newest first. A version is kept before each repair and each restore.",
+        parameters=[LESSON_ID],
+        responses={200: LessonVersionSerializer(many=True)},
+    )
+    def get(self, request, lesson_id):
+        versions = CodeService().versions(self.lesson_of(request, lesson_id))
+        return Response(LessonVersionSerializer(versions, many=True).data)
+
+
+class LessonVersionRestoreView(OwnedLessons, APIView):
+    @extend_schema(
+        tags=DOCUMENT_TAG,
+        summary="Go back to an earlier version",
+        description="The code being replaced is kept as a version, and the restored code gets a new `code_version`.",
+        parameters=[LESSON_ID, OpenApiParameter("number", int, OpenApiParameter.PATH)],
+        request=None,
+        responses={200: RestoredSerializer, 404: OpenApiResponse(description="No such version.")},
+    )
+    def post(self, request, lesson_id, number):
+        lesson = CodeService().restore(self.lesson_of(request, lesson_id), number)
+        return Response({"code_version": lesson.code_version})
 
 
 class OwnedRuns:

@@ -71,6 +71,13 @@ class FlowState(TypedDict, total=False):
     document_code: str | None
     render_report: dict | None
 
+    # runtime repair
+    repair_error: dict  # {message, stack?, page?} as the learner's browser reported it
+    expected_code_version: int  # the version the browser was showing: a repair never overwrites a newer one
+    code_parts: dict  # the stored {pages, interactives} code, before the repair
+    repair_target: dict  # RepairTarget
+    repaired_parts: dict  # {pages, interactives} with the repaired part replaced
+
     # control
     attempts: Annotated[dict[str, int], Reducers.merge_counts]
     feedback: Annotated[dict[str, list[str]], Reducers.merge_dicts]

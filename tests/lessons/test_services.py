@@ -22,6 +22,11 @@ Use cases:
 - a sheet is served with its practice solutions hidden until revealed (by id, several ids or all)
 - a practice sheet is graded on submit: multiple choice and numerical are marked, the rest show their solution
 - the kinds of sheet a lesson has are listed
+- the document is served for a ready lesson only
+- a crash report queues a runtime repair and counts against the cap; a stale version, the cap, a lesson that is not
+  ready and a run in progress are refused, and nothing is queued
+- an earlier version can be restored: the code being replaced is kept, the restored code gets a new code_version, and
+  an unknown version, a lesson that is not ready or a run in progress are refused
 """
 
 import pytest
@@ -37,11 +42,14 @@ from lessons.errors import (
     NotAttempted,
     QueueUnavailable,
     QuizNotFound,
+    RepairLimitReached,
     RunInProgress,
+    StaleCodeVersion,
+    VersionNotFound,
     WrongStage,
 )
-from lessons.models import FlowSettings, GraphRun, Lesson, Quiz, QuizAttempt, Stage, StudyMaterial
-from lessons.services import LessonService, MaterialService, QuizService, RunDispatcher
+from lessons.models import FlowSettings, GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt, Stage, StudyMaterial
+from lessons.services import CodeService, LessonService, MaterialService, QuizService, RunDispatcher
 
 pytestmark = pytest.mark.django_db
 
@@ -434,3 +442,117 @@ class TestGradePractice:
 
         with pytest.raises(InvalidAnswers):
             MaterialService().grade_practice(lesson, ["t1"])
+
+
+def ready_lesson(make_lesson, **fields):
+    defaults = {"stage": Stage.READY, "code": "CODE v1", "code_parts": {"pages": {}}, "code_version": 1,
+                "settings_snapshot": {"max_auto_runtime_repairs": 2}}  # fmt: skip
+    return make_lesson(**defaults | fields)
+
+
+ERROR = {"message": "Interactive_x crashed", "page": "core"}
+
+
+class TestDocument:
+    def test_a_ready_lesson_is_served_with_its_code_version(self, make_lesson):
+        lesson = ready_lesson(make_lesson)
+
+        body = CodeService().document(lesson)
+
+        assert (body["code"], body["code_version"]) == ("CODE v1", 1) and "pages" in body["data"]
+
+    @pytest.mark.parametrize("fields", [{"stage": Stage.GENERATING_LESSON}, {"code": ""}])
+    def test_a_lesson_that_is_not_ready_has_no_document(self, make_lesson, fields):
+        with pytest.raises(WrongStage):
+            CodeService().document(ready_lesson(make_lesson, **fields))
+
+
+class TestRequestRepair:
+    def test_queues_a_runtime_repair_with_the_error_and_the_version(self, make_lesson, queue):
+        lesson = ready_lesson(make_lesson)
+
+        run = CodeService(queue=queue).request_repair(lesson, ERROR, 1)
+
+        assert (run.graph, run.trigger) == (GraphRun.Graph.RUNTIME_REPAIR, GraphRun.Trigger.REPAIR)
+        assert run.payload == {"input": {"repair_error": ERROR, "expected_code_version": 1}}
+        assert queue.runs == [run]
+
+    def test_each_request_counts_against_the_cap_until_it_is_reached(self, make_lesson, queue):
+        lesson = ready_lesson(make_lesson)
+        service = CodeService(queue=queue)
+
+        for _ in range(2):
+            run = service.request_repair(lesson, ERROR, 1)
+            GraphRun.objects.filter(pk=run.pk).update(status=GraphRun.Status.FAILED)
+
+        with pytest.raises(RepairLimitReached):
+            service.request_repair(lesson, ERROR, 1)
+        assert Lesson.objects.get(pk=lesson.pk).runtime_repairs == 2 and len(queue.runs) == 2
+
+    def test_a_snapshot_without_the_setting_uses_the_default_cap(self, make_lesson, queue):
+        lesson = ready_lesson(make_lesson, settings_snapshot={}, runtime_repairs=CodeService.DEFAULT_REPAIR_LIMIT)
+
+        with pytest.raises(RepairLimitReached):
+            CodeService(queue=queue).request_repair(lesson, ERROR, 1)
+
+    def test_a_stale_code_version_is_refused(self, make_lesson, queue):
+        lesson = ready_lesson(make_lesson, code_version=3)
+
+        with pytest.raises(StaleCodeVersion):
+            CodeService(queue=queue).request_repair(lesson, ERROR, 2)
+        assert queue.runs == [] and Lesson.objects.get(pk=lesson.pk).runtime_repairs == 0
+
+    def test_a_lesson_that_is_not_ready_is_refused(self, make_lesson, queue):
+        with pytest.raises(WrongStage):
+            CodeService(queue=queue).request_repair(ready_lesson(make_lesson, stage=Stage.FAILED), ERROR, 1)
+
+    def test_one_run_at_a_time(self, make_lesson, queue):
+        lesson = ready_lesson(make_lesson)
+        CodeService(queue=queue).request_repair(lesson, ERROR, 1)
+
+        with pytest.raises(RunInProgress):
+            CodeService(queue=queue).request_repair(lesson, ERROR, 1)
+
+
+class TestRestore:
+    def versioned(self, make_lesson):
+        lesson = ready_lesson(make_lesson, code="CODE v2", code_parts={"v": 2}, code_version=2)
+        LessonVersion.objects.create(lesson=lesson, code_version=1, code="CODE v1", code_parts={"v": 1}, reason="r")
+        return lesson
+
+    def test_the_old_code_comes_back_under_a_new_version_and_the_replaced_code_is_kept(self, make_lesson):
+        lesson = self.versioned(make_lesson)
+
+        restored = CodeService().restore(lesson, 1)
+
+        assert (restored.code, restored.code_parts, restored.code_version) == ("CODE v1", {"v": 1}, 3)
+        kept = LessonVersion.objects.get(lesson=lesson, code_version=2)
+        assert (kept.code, kept.reason) == ("CODE v2", "Before going back to version 1")
+        assert [v.code_version for v in CodeService().versions(lesson)] == [2, 1]
+
+    def test_going_forward_again_works_because_nothing_was_lost(self, make_lesson):
+        lesson = self.versioned(make_lesson)
+        service = CodeService()
+        service.restore(lesson, 1)
+
+        again = service.restore(lesson, 2)
+
+        assert (again.code, again.code_version) == ("CODE v2", 4)
+
+    def test_the_current_version_and_unknown_versions_are_not_found(self, make_lesson):
+        lesson = self.versioned(make_lesson)
+
+        for number in (2, 9):
+            with pytest.raises(VersionNotFound):
+                CodeService().restore(lesson, number)
+
+    def test_a_lesson_that_is_not_ready_or_is_being_worked_on_is_refused(self, make_lesson):
+        lesson = self.versioned(make_lesson)
+        Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.FAILED)
+        with pytest.raises(WrongStage):
+            CodeService().restore(lesson, 1)
+
+        Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.READY)
+        GraphRun.objects.create(lesson=lesson, graph="runtime_repair", trigger="repair", status="running")
+        with pytest.raises(RunInProgress):
+            CodeService().restore(lesson, 1)

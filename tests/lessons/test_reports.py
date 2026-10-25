@@ -9,6 +9,7 @@ Use cases:
 - the assessment lists the level, start point, knowledge, gaps and the prerequisites to cover
 - the plan, the pages and the test are summarised, with the prerequisites the introduction covers
 - the interactives are listed as built, media or dropped, with the media's source, licence and attribution
+- the code is summarised with its version, size, repairs and the versions kept; a lesson without code has no section
 - the study sheets are listed with their title and size
 - warnings and recent runs are listed
 - a brand-new lesson reports without error and without empty sections
@@ -17,7 +18,7 @@ Use cases:
 import pytest
 
 from graph.grading import QuizGrader
-from lessons.models import GraphRun, Lesson, MediaAsset, Quiz, QuizAttempt, Stage
+from lessons.models import GraphRun, Lesson, LessonVersion, MediaAsset, Quiz, QuizAttempt, Stage
 from lessons.reports import LessonReport
 
 pytestmark = pytest.mark.django_db
@@ -136,3 +137,18 @@ def test_interactives_are_listed_as_built_media_or_dropped_with_the_medias_credi
         and "widget_advanced (advanced, svg_diagram, dropped)" in report
     )
     assert "media widget_introduction: image 400x300 from wikimedia, cc-by-sa, by Jane Doe, verified" in report
+
+
+def test_the_code_is_summarised_with_its_version_repairs_and_kept_versions(lesson):
+    parts = {"pages": dict.fromkeys(("core", "advanced", "introduction"), "c"), "interactives": {"Interactive_a": "a"}}
+    Lesson.objects.filter(pk=lesson.pk).update(code="x" * 1234, code_version=3, runtime_repairs=2, code_parts=parts)
+    LessonVersion.objects.create(lesson=lesson, code_version=2, code="y", reason="Runtime repair: boom")
+
+    report = text(lesson)
+
+    assert "code: version 3, 1,234 characters, 3 pages, 1 interactives" in report
+    assert "runtime repairs requested: 2" in report and "kept v2: Runtime repair: boom" in report
+
+
+def test_a_lesson_without_code_has_no_code_section(lesson):
+    assert "code:" not in text(lesson)

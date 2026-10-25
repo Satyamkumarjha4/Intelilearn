@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from .models import GraphRun, Lesson, Quiz, QuizAttempt
+from .models import GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt
 from .stages import MaterialKind, Route
 
 
@@ -180,3 +180,31 @@ class PracticeResultSerializer(serializers.Serializer):
 class PracticeGradeSerializer(serializers.Serializer):
     score = PracticeScoreSerializer()
     results = PracticeResultSerializer(many=True)
+
+
+class LessonDocumentSerializer(serializers.Serializer):
+    code = serializers.CharField(help_text="The TSX document the sandbox runs.")
+    code_version = serializers.IntegerField(help_text="Send it back with a repair report so a stale one is refused.")
+    data = serializers.DictField(help_text="`LESSON`: pages, the test without answers, and media as signed URLs.")
+
+
+class RepairErrorSerializer(serializers.Serializer):
+    message = serializers.CharField(max_length=2000)
+    stack = serializers.CharField(max_length=8000, required=False, allow_blank=True)
+    page = serializers.CharField(max_length=20, required=False, allow_blank=True)
+
+
+class RepairRequestSerializer(serializers.Serializer):
+    error = RepairErrorSerializer()
+    code_version = serializers.IntegerField(min_value=0)
+
+
+class LessonVersionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LessonVersion
+        fields = ["code_version", "reason", "created_at"]
+        read_only_fields = fields
+
+
+class RestoredSerializer(serializers.Serializer):
+    code_version = serializers.IntegerField(help_text="The new current version.")

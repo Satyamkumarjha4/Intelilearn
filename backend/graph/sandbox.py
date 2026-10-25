@@ -38,6 +38,11 @@ class RenderReport:
     def as_dict(self) -> dict:
         return {"ok": self.ok, "pages": self.pages, "components": self.components, "security": self.security}
 
+    def problems(self) -> list[str]:
+        """One line per broken page or interactive (its first error), then the blocked requests."""
+        failures = {**self.pages, **self.components}
+        return [f"{name}: {errors[0]}" for name, errors in failures.items() if errors] + list(self.security)
+
 
 def _format(error: dict) -> str:
     where = f"line {error['line']}:{error.get('column', 0)} " if error.get("line") else ""
@@ -55,6 +60,14 @@ class SandboxRunner:
             (self.dir / "scripts" / "check.mjs").exists()
             and (self.dir / "node_modules").exists()
             and shutil.which(self.node) is not None
+        )
+
+    def render_available(self) -> bool:
+        """The render check needs the built runtime (sandbox/dist) and Chromium on top of the check script."""
+        return (
+            self.available()
+            and (self.dir / "dist" / "runtime.js").exists()
+            and (self.dir / "scripts" / "render-check.mjs").exists()
         )
 
     def _run(self, script: str, payload: dict, timeout_s: int) -> dict:
@@ -109,6 +122,8 @@ class SandboxRunner:
 
     def render_check(self, code: str, data: dict, *, pages: list[str], media_files: dict[str, str]) -> RenderReport:
         """Render every page headlessly. media_files: asset id → local file path (served; all else is blocked)."""
+        if not self.render_available():
+            raise SandboxError(f"The lesson runtime is not built at {self.dir / 'dist'} (run `bun run build` there)")
         result = self._run(
             "render-check.mjs",
             {
