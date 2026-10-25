@@ -15,6 +15,11 @@ Use cases:
 - the quiz has no answers; answering returns the score and route; bad, repeated or early answers get 400 and 409
 - the review is available only after answering
 - a run can be read, followed as an event stream (a browser's EventSource gets 200, not 406) and cancelled once
+- choosing a study sheet resumes the flow and is refused outside the choice
+- more sheets can be requested for a ready mastery lesson
+- a sheet is served without practice solutions, which a reveal adds
+- practice answers are graded on submit; another user's sheets are a 404
+- the lesson detail lists its sheets
 - the OpenAPI schema documents these endpoints
 """
 
@@ -24,8 +29,9 @@ import pytest
 from asgiref.sync import async_to_sync
 from rest_framework.throttling import SimpleRateThrottle
 from support.quiz_data import make_questions
+from support.study_data import make_cheat_sheet, make_practice_sheet
 
-from lessons.models import GraphRun, Lesson, Quiz, QuizAttempt, Stage
+from lessons.models import GraphRun, Lesson, Quiz, QuizAttempt, Stage, StudyMaterial
 
 pytestmark = pytest.mark.django_db
 
@@ -41,6 +47,10 @@ PATHS = [
     ("get", "/api/runs/{run}"),
     ("get", "/api/runs/{run}/events"),
     ("post", "/api/runs/{run}/cancel"),
+    ("post", "/api/lessons/{lesson}/choice"),
+    ("post", "/api/lessons/{lesson}/materials"),
+    ("get", "/api/lessons/{lesson}/materials/cheat_sheet"),
+    ("post", "/api/lessons/{lesson}/materials/practice_sheet/grade"),
 ]
 
 
@@ -357,9 +367,120 @@ class TestRuns:
         assert run.status == GraphRun.Status.CANCELLED and lesson.stage == Stage.FAILED
 
 
+class TestMaterials:
+    def mastery(self, make_lesson, stage=Stage.READY, **extra):
+        return make_lesson(stage=stage, route="mastery", **extra)
+
+    def test_choosing_a_sheet_resumes_the_flow(self, signed_in_client, make_lesson, queue):
+        lesson = self.mastery(make_lesson, Stage.AWAITING_CHOICE)
+
+        response = signed_in_client.post(f"/api/lessons/{lesson.id}/choice", {"kind": "cheat_sheet"}, format="json")
+
+        assert response.status_code == 202 and response.json() == {"run_id": str(queue.runs[0].id)}
+        assert queue.runs[0].payload == {"resume": "cheat_sheet"}
+
+    @pytest.mark.parametrize("body", [{}, {"kind": "poster"}, {"kind": ""}])
+    def test_choosing_needs_a_known_kind(self, signed_in_client, make_lesson, queue, body):
+        lesson = self.mastery(make_lesson, Stage.AWAITING_CHOICE)
+
+        response = signed_in_client.post(f"/api/lessons/{lesson.id}/choice", body, format="json")
+
+        assert response.status_code == 400 and "kind" in response.json()["fields"] and queue.runs == []
+
+    def test_choosing_outside_the_choice_is_a_conflict(self, signed_in_client, make_lesson, queue):
+        lesson = self.mastery(make_lesson, Stage.GENERATING_MATERIAL)
+
+        response = signed_in_client.post(f"/api/lessons/{lesson.id}/choice", {"kind": "cheat_sheet"}, format="json")
+
+        assert response.status_code == 409 and response.json()["code"] == "wrong_stage"
+
+    def test_more_sheets_can_be_requested_once_per_kind(self, signed_in_client, make_lesson, queue):
+        lesson = self.mastery(make_lesson)
+        StudyMaterial.objects.create(lesson=lesson, kind="cheat_sheet", content=make_cheat_sheet())
+
+        again = signed_in_client.post(f"/api/lessons/{lesson.id}/materials", {"kind": "cheat_sheet"}, format="json")
+        fresh = signed_in_client.post(f"/api/lessons/{lesson.id}/materials", {"kind": "revision_sheet"}, format="json")
+
+        assert again.status_code == 409 and again.json()["code"] == "already_exists"
+        assert fresh.status_code == 202 and queue.runs[0].graph == "study_material"
+
+    def test_serves_a_sheet(self, signed_in_client, lesson):
+        StudyMaterial.objects.create(lesson=lesson, kind="cheat_sheet", content=make_cheat_sheet())
+
+        body = signed_in_client.get(f"/api/lessons/{lesson.id}/materials/cheat_sheet").json()
+
+        assert body["kind"] == "cheat_sheet" and body["content"]["title"] == "Binary search cheat sheet"
+
+    def test_a_practice_sheet_has_no_solutions_until_revealed(self, signed_in_client, lesson):
+        StudyMaterial.objects.create(lesson=lesson, kind="practice_sheet", content=make_practice_sheet())
+        url = f"/api/lessons/{lesson.id}/materials/practice_sheet"
+
+        hidden = signed_in_client.get(url).json()
+        one = signed_in_client.get(url + "?reveal=t1").json()
+        several = signed_in_client.get(url + "?reveal=t1&reveal=t2,t3").json()
+        everything = signed_in_client.get(url + "?reveal=all").json()
+
+        assert hidden["solutions"] == {} and "correct_index" not in json.dumps(hidden)
+        assert set(one["solutions"]) == {"t1"}
+        assert set(several["solutions"]) == {"t1", "t2", "t3"}
+        assert len(everything["solutions"]) == 15
+        assert "model_answer" not in json.dumps(everything["content"])
+
+    def test_a_sheet_that_does_not_exist_is_a_404(self, signed_in_client, lesson):
+        assert signed_in_client.get(f"/api/lessons/{lesson.id}/materials/cheat_sheet").status_code == 404
+
+    def test_grades_a_practice_sheet_on_submit(self, signed_in_client, lesson):
+        StudyMaterial.objects.create(lesson=lesson, kind="practice_sheet", content=make_practice_sheet())
+
+        response = signed_in_client.post(
+            f"/api/lessons/{lesson.id}/materials/practice_sheet/grade",
+            {"answers": {"t1": 1, "t2": "4", "t3": "an essay"}},
+            format="json",
+        )
+
+        body = response.json()
+        assert response.status_code == 200
+        assert body["score"]["awarded"] == 4 and body["score"]["open_marks"] == 10
+        assert body["results"][0]["solution"]["correct_index"] == 1
+
+    def test_grading_without_answers_is_a_400(self, signed_in_client, lesson):
+        StudyMaterial.objects.create(lesson=lesson, kind="practice_sheet", content=make_practice_sheet())
+
+        response = signed_in_client.post(f"/api/lessons/{lesson.id}/materials/practice_sheet/grade", {}, format="json")
+
+        assert response.status_code == 400
+
+    def test_another_users_sheets_are_a_404(self, signed_in_client, make_lesson, other_user):
+        theirs = make_lesson(owner=other_user, stage=Stage.READY, route="mastery")
+        StudyMaterial.objects.create(lesson=theirs, kind="practice_sheet", content=make_practice_sheet())
+
+        for method, path, body in [
+            ("get", "/materials/practice_sheet", None),
+            ("post", "/materials/practice_sheet/grade", {"answers": {}}),
+            ("post", "/materials", {"kind": "cheat_sheet"}),
+            ("post", "/choice", {"kind": "cheat_sheet"}),
+        ]:
+            response = getattr(signed_in_client, method)(
+                f"/api/lessons/{theirs.id}{path}", *([body] if body else []), format="json"
+            )
+            assert response.status_code == 404, path
+
+    def test_the_lesson_detail_lists_its_sheets(self, signed_in_client, lesson):
+        StudyMaterial.objects.create(lesson=lesson, kind="revision_sheet", content={})
+        StudyMaterial.objects.create(lesson=lesson, kind="cheat_sheet", content={})
+
+        assert signed_in_client.get(f"/api/lessons/{lesson.id}").json()["materials"] == [
+            "cheat_sheet",
+            "revision_sheet",
+        ]
+
+
 def test_the_openapi_schema_documents_the_lessons_api(api_client):
     paths = api_client.get("/api/schema?format=json").json()["paths"]
 
     for path in ["/api/lessons", "/api/lessons/{lesson_id}", "/api/lessons/{lesson_id}/retry",
-                 "/api/lessons/{lesson_id}/quizzes/{kind}/attempt", "/api/runs/{run_id}/events"]:  # fmt: skip
+                 "/api/lessons/{lesson_id}/quizzes/{kind}/attempt", "/api/runs/{run_id}/events",
+                 "/api/lessons/{lesson_id}/choice", "/api/lessons/{lesson_id}/materials",
+                 "/api/lessons/{lesson_id}/materials/{kind}",
+                 "/api/lessons/{lesson_id}/materials/practice_sheet/grade"]:  # fmt: skip
         assert path in paths

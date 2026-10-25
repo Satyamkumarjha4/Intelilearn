@@ -128,3 +128,9 @@
     @apply font-sans;
   }
 }
+@media print {
+  /* Study sheets print on their own: no site chrome, no controls. */
+  header, nav[aria-label="Contents"], [data-slot="tabs-list"] { display: none !important; }
+  main { max-width: none !important; padding: 0 !important; }
+  details > summary { list-style: none; }
+}

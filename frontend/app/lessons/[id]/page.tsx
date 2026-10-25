@@ -5,10 +5,12 @@ import Link from "next/link";
 import { use, useState } from "react";
 import { toast } from "sonner";
 
+import { MasteryChoice } from "@/components/lessons/mastery-choice";
 import { PipelineProgress } from "@/components/lessons/pipeline-progress";
 import { QuizResultCard } from "@/components/lessons/quiz-result-card";
 import { QuizRunner } from "@/components/lessons/quiz-runner";
 import { ResultsSummary } from "@/components/lessons/results-summary";
+import { StudyMaterialView } from "@/components/lessons/study-material-view";
 import { StageBadge } from "@/components/lessons/stage-badge";
 import { useLesson } from "@/components/lessons/use-lesson";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -120,10 +122,14 @@ export default function LessonPage({ params }: PageProps<"/lessons/[id]">) {
             </Button>
           </CardContent>
         </Card>
+      ) : screen === "choice" ? (
+        <MasteryChoice lessonId={lesson.id} result={lesson.results.diagnostic} onChosen={() => void refresh()} />
+      ) : screen === "material" ? (
+        <StudyMaterialView lesson={lesson} pipeline={pipeline} onRequested={() => void refresh()} />
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle>{screen === "choice" ? "You already know this well" : "Your lesson"}</CardTitle>
+            <CardTitle>Your lesson</CardTitle>
             <CardDescription>This part of the app is arriving in a later update.</CardDescription>
           </CardHeader>
         </Card>

@@ -30,6 +30,8 @@ class Canned:
         self.text = "\n".join(self._text(m) for m in self.messages)
         match = re.search(r'Topic: "([^"]+)"', self.text)
         self.topic = match.group(1) if match else "the topic"
+        listed = re.search(r"must be covered: (\[.*?\])", self.text, re.S)
+        self.concepts = json.loads(listed.group(1)) if listed else [self.topic]
 
     @staticmethod
     def _text(message: dict) -> str:
@@ -81,6 +83,69 @@ class Canned:
             "author_notes": "Short sentences and one worked example per idea.",
             "confidence": "medium",
         }
+
+    # --- Mastery path ---
+
+    def _concept_text(self, number: int) -> str:
+        return self.concepts[number % len(self.concepts)]
+
+    def build_CheatSheet(self) -> dict:
+        def item(number: int, kind: str = "rule") -> dict:
+            return {
+                "label": f"{self._concept_text(number)} ({number})",
+                "kind": kind,
+                "content": f"Remember: {self._concept_text(number)} works like this in {self.topic}.",
+                "formula": "T(n) = O(\\log n)" if kind == "formula" else "",
+                "variables": [{"symbol": "n", "meaning": "size of the input"}] if kind == "formula" else [],
+                "when_to_use": "Whenever the input is ordered.",
+            }
+
+        sections = [
+            {"heading": "Key ideas", "items": [item(0, "formula"), item(1), item(2), item(3)]},
+            {"heading": "Watch out for", "items": [item(4), item(5), item(6)]},
+        ]
+        return {
+            "title": f"{self.topic}: cheat sheet",
+            "summary": f"The essentials of {self.topic}.",
+            "sections": sections,
+        }
+
+    def build_RevisionSheet(self) -> dict:
+        subtopics = [
+            {
+                "title": self._concept_text(n),
+                "summary": f"{self._concept_text(n)} is a central part of {self.topic}. " * 4
+                + "Work through a small example before moving on, then explain it back in your own words.",
+                "key_points": ["Know the definition.", "Know when it applies.", "Know the usual pitfall."],
+                "worked_examples": [
+                    {"problem": f"Apply {self._concept_text(n)} once.", "solution": "Step 1, then step 2."}
+                ],
+                "common_mistakes": ["Skipping the boundary case."],
+            }
+            for n in range(5)
+        ]
+        return {"title": f"{self.topic}: revision", "overview": f"Every part of {self.topic}.", "subtopics": subtopics,
+                "final_tips": ["Explain each idea aloud.", "Redo the mistakes."]}  # fmt: skip
+
+    def build_PracticeSheet(self) -> dict:
+        kinds = ["mcq", "numerical", "short_answer"]
+        levels = ["easy"] * 5 + ["medium"] * 5 + ["hard"] * 5
+        questions = []
+        for n in range(1, 16):
+            kind = kinds[(n - 1) % 3]
+            q = {"id": f"t{n}", "type": kind, "concept": self._concept_text(n), "difficulty": levels[n - 1], "marks": 2,
+                 "question": f"Practice {n}: {self._concept_text(n)} in {self.topic}?"}  # fmt: skip
+            if kind == "mcq":
+                q |= {"options": [f"Wrong {n}-{c}" for c in "ABC"] + [f"Right {n}"], "correct_index": 3}
+            elif kind == "numerical":
+                q |= {"answer": float(n), "tolerance": 0.01, "unit": ""}
+            else:
+                q |= {
+                    "model_answer": f"A good answer explains {self._concept_text(n)}.",
+                    "key_points": ["clear", "correct"],
+                }
+            questions.append(q)
+        return {"title": f"{self.topic}: practice", "instructions": "Answer, then check.", "questions": questions}
 
 
 class Handler(BaseHTTPRequestHandler):

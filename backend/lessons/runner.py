@@ -14,6 +14,7 @@ from django.utils import timezone
 from langgraph.types import Command
 
 from graph.context import FlowContext, default_context
+from graph.errors import RunFailed
 from graph.registry import GraphRegistry, UnknownGraph
 from graph.sandbox import SandboxError
 from llm_registry.gateway import AllModelsFailed, NodeDisabled
@@ -40,6 +41,8 @@ class FailureMessage:
             return f"The code sandbox could not run: {exc}"
         if isinstance(exc, UnknownGraph):
             return str(exc.args[0])
+        if isinstance(exc, RunFailed):
+            return str(exc)
         return f"Something went wrong while building the lesson ({type(exc).__name__}). Press Retry."
 
 

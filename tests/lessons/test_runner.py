@@ -17,6 +17,8 @@ Use cases:
 - a redelivered run that was left running continues from its checkpoint
 - a cancelled run stops after the current node and publishes cancelled
 - an unknown graph fails the run with a clear message
+- an extra study sheet runs in its own thread, ends succeeded and leaves the lesson ready
+- an extra sheet that fails its checks ends the run failed with the reason and leaves the lesson alone
 - a thread paused by one runner is resumed by another with a fresh Postgres checkpointer (a restarted worker)
 - failure messages: model failures name the step, unexpected errors do not leak details
 - the recorder and lock behave: begin is conditional, finish only from running, the lock is exclusive
@@ -28,13 +30,16 @@ import pytest
 from django.db import connection
 from langgraph.checkpoint.memory import InMemorySaver
 from support.fakes import FakeSandbox
+from support.quiz_data import make_questions
+from support.study_data import CONCEPTS, make_practice_sheet, make_revision_sheet
 
 from graph.context import FlowContext
+from graph.errors import RunFailed
 from graph.grading import QuizGrader
 from graph.registry import GraphRegistry
 from lessons.checkpoints import CheckpointerFactory
 from lessons.events import RunEvent
-from lessons.models import GraphRun, Lesson, Quiz, QuizAttempt, Stage
+from lessons.models import GraphRun, Lesson, Quiz, QuizAttempt, Stage, StudyMaterial
 from lessons.runner import FailureMessage, FlowRunner, GraphRunRecorder, RunLock
 from llm_registry.gateway import AllModelsFailed, NodeDisabled
 
@@ -325,7 +330,54 @@ def test_a_restarted_worker_resumes_a_paused_lesson_from_the_postgres_checkpoint
     assert len(gateway.called("diagnostic.generate")) == 1
 
 
+def ready_mastery_lesson(lesson):
+    questions = [{**q, "concept": CONCEPTS[n % 2]} for n, q in enumerate(make_questions())]
+    Quiz.objects.create(lesson=lesson, kind="diagnostic", questions=questions)
+    Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.READY, route="mastery")
+    return lesson
+
+
+def extra_run(lesson, kind):
+    payload = {"input": {"mastery_choice": kind, "extra_material": True}}
+    return new_run(lesson, GraphRun.Trigger.EXTRA_MATERIAL, payload, graph="study_material")
+
+
+def test_an_extra_sheet_runs_in_its_own_thread_and_leaves_the_lesson_ready(make_runner, prepared, gateway, publisher):
+    ready_mastery_lesson(prepared)
+    gateway.script("study.generate", make_revision_sheet())
+    run = extra_run(prepared, "revision_sheet")
+
+    make_runner().execute(run.id)
+
+    run.refresh_from_db()
+    assert run.status == GraphRun.Status.SUCCEEDED
+    assert publisher.of("done") == [{"lesson_id": str(prepared.id), "stage": "ready"}]
+    assert StudyMaterial.objects.get(lesson=prepared).kind == "revision_sheet"
+    assert FlowRunner.thread_id(run) == f"{prepared.id}:{run.id}"
+
+
+def test_an_extra_sheet_that_fails_its_checks_fails_the_run_but_not_the_lesson(
+    make_runner, prepared, gateway, publisher
+):
+    ready_mastery_lesson(prepared)
+    short = make_practice_sheet(14)
+    gateway.script("study.generate", short, short)
+    run = extra_run(prepared, "practice_sheet")
+
+    make_runner().execute(run.id)
+
+    run.refresh_from_db()
+    assert run.status == GraphRun.Status.FAILED and "The practice sheet still failed its checks" in run.error
+    assert publisher.of("error")[-1]["message"] == run.error
+    assert Lesson.objects.get(pk=prepared.pk).stage == Stage.READY and not StudyMaterial.objects.exists()
+
+
 class TestFailureMessage:
+    def test_a_deliberate_failure_is_shown_as_written(self):
+        assert FailureMessage().of(RunFailed("The cheat sheet still failed its checks")) == (
+            "The cheat sheet still failed its checks"
+        )
+
     def test_a_model_failure_names_the_step_and_points_at_the_registry(self):
         message = FailureMessage().of(AllModelsFailed("page.generate", ["gemini: 429"]))
 

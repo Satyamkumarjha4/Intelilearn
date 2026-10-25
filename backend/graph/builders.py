@@ -23,6 +23,14 @@ from .nodes.diagnose import (
     ValidateDiagnosticNode,
 )
 from .nodes.failure import AwaitRetryNode, MarkFailedNode
+from .nodes.mastery import (
+    AwaitChoiceNode,
+    FailStudyMaterialNode,
+    GenerateStudyMaterialNode,
+    PersistStudyMaterialNode,
+    PublishMasteryOptionsNode,
+    ValidateStudyMaterialNode,
+)
 from .nodes.routers import CheckRouter, LevelRouter
 from .state import FlowState
 
@@ -98,6 +106,34 @@ class DiagnoseSegment(Segment):
         graph.add_edge("assess_learner", exits["lesson"])
 
 
+class MasterySegment(Segment):
+    """The learner aced the diagnostic: offer a sheet, write it, check it, save it. Provides the `mastery` exit."""
+
+    retry_targets = ("generate_study_material",)
+    provides = {"mastery": "publish_mastery_options"}
+
+    def add_nodes(self, graph: StateGraph) -> None:
+        for node in (
+            PublishMasteryOptionsNode(),
+            AwaitChoiceNode(),
+            GenerateStudyMaterialNode(),
+            ValidateStudyMaterialNode(),
+            PersistStudyMaterialNode(),
+        ):
+            graph.add_node(node.name, node)
+
+    def add_edges(self, graph: StateGraph, exits: dict[str, str]) -> None:
+        graph.add_edge("publish_mastery_options", "await_choice")
+        graph.add_edge("await_choice", "generate_study_material")
+        graph.add_edge("generate_study_material", "validate_study_material")
+        graph.add_conditional_edges(
+            "validate_study_material",
+            CheckRouter("material", ok="persist_study_material", retry="generate_study_material", fail=exits["failed"]),
+            ["persist_study_material", "generate_study_material", exits["failed"]],
+        )
+        graph.add_edge("persist_study_material", END)
+
+
 class FailureSegment(Segment):
     """`mark_failed` records why; `await_retry` pauses until the learner presses Retry."""
 
@@ -120,7 +156,7 @@ class FlowGraphBuilder(GraphBuilder):
 
     @staticmethod
     def default_segments() -> list[Segment]:
-        return [DiagnoseSegment()]
+        return [DiagnoseSegment(), MasterySegment()]
 
     def _exits(self) -> dict[str, str]:
         # Exits that no segment provides lead to END.
@@ -142,3 +178,34 @@ class FlowGraphBuilder(GraphBuilder):
 
     def _retry_targets(self) -> tuple[str, ...]:
         return tuple(dict.fromkeys(t for segment in self.segments for t in segment.retry_targets))
+
+
+class StudyMaterialGraphBuilder(GraphBuilder):
+    """Another sheet for a lesson that is already ready: generate → validate → persist, in its own thread.
+
+    Input: `{"lesson_id", "mastery_choice": kind, "extra_material": True}`. There is no Retry: a failed run ends with
+    its reason and the learner asks again.
+    """
+
+    def add_nodes(self, graph: StateGraph) -> None:
+        for node in (
+            LoadContextNode(),
+            GenerateStudyMaterialNode(),
+            ValidateStudyMaterialNode(),
+            PersistStudyMaterialNode(),
+            FailStudyMaterialNode(),
+        ):
+            graph.add_node(node.name, node)
+
+    def add_edges(self, graph: StateGraph) -> None:
+        graph.add_edge(START, "load_context")
+        graph.add_edge("load_context", "generate_study_material")
+        graph.add_edge("generate_study_material", "validate_study_material")
+        graph.add_conditional_edges(
+            "validate_study_material",
+            CheckRouter(
+                "material", ok="persist_study_material", retry="generate_study_material", fail="fail_study_material"
+            ),
+            ["persist_study_material", "generate_study_material", "fail_study_material"],
+        )
+        graph.add_edge("persist_study_material", END)

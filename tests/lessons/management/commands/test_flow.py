@@ -12,6 +12,8 @@ Use cases:
 - answer refuses a lesson that is not waiting, with the service's reason
 - a lesson can be named by a prefix of its id; an unknown or ambiguous prefix is an error
 - show prints the report and --json prints the stored fields
+- choose resumes a mastery lesson with the sheet, writes it, and show lists it; sheet asks for another one
+- choose and sheet refuse a lesson in the wrong stage with the service's reason
 - retry resumes a failed lesson from its checkpoint, and refuses one that did not fail
 - runs lists the lesson's runs
 """
@@ -215,3 +217,32 @@ def test_runs_lists_the_lessons_runs(inline, valid_bundle, user):
     output = flow("runs", str(lesson.id))
 
     assert "flow/start  paused" in output
+
+
+def test_choose_writes_the_sheet_and_sheet_asks_for_another(inline, valid_bundle, user):
+    from support.study_data import CONCEPTS, make_cheat_sheet, make_revision_sheet
+
+    bundle = {
+        **valid_bundle,
+        "diagnostic": [{**q, "concept": f"{CONCEPTS[n % 2]} {n}"} for n, q in enumerate(valid_bundle["diagnostic"])],
+    }
+    inline.script("diagnostic.generate", bundle).script("study.generate", make_cheat_sheet(), make_revision_sheet())
+    flow("start", "Binary search", "--inline")
+    lesson = Lesson.objects.get()
+    flow("answer", str(lesson.id), "diagnostic", "--correct", "10", "--inline")
+
+    chosen = flow("choose", str(lesson.id), "cheat_sheet", "--inline")
+    more = flow("sheet", str(lesson.id), "revision_sheet", "--inline")
+
+    assert "stage: ready" in chosen and "route: mastery" in chosen and "run " in more
+    report = flow("show", str(lesson.id))
+    assert "cheat_sheet: Binary search cheat sheet" in report and "revision_sheet: Binary search revision" in report
+
+
+def test_choose_and_sheet_refuse_the_wrong_stage(inline, user, make_lesson):
+    lesson = make_lesson()
+
+    with pytest.raises(CommandError, match="not waiting for a study sheet"):
+        flow("choose", str(lesson.id), "cheat_sheet", "--inline")
+    with pytest.raises(CommandError, match="only available once a mastery lesson is ready"):
+        flow("sheet", str(lesson.id), "cheat_sheet", "--inline")

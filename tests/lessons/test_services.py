@@ -17,23 +17,31 @@ Use cases:
 - submitting is refused when the lesson is not waiting for that quiz, was already answered, or a run is active
 - incomplete or invalid answers are refused with the reason, and nothing is stored
 - reviewing shows the learner's answers next to the correct ones, only after an attempt
+- choosing a sheet resumes the flow, only while the lesson waits for the choice and with no run active
+- an extra sheet can be requested for a ready mastery lesson, once per kind, in its own graph
+- a sheet is served with its practice solutions hidden until revealed (by id, several ids or all)
+- a practice sheet is graded on submit: multiple choice and numerical are marked, the rest show their solution
+- the kinds of sheet a lesson has are listed
 """
 
 import pytest
 from support.quiz_data import make_prerequisites, make_questions
+from support.study_data import make_cheat_sheet, make_practice_sheet, make_revision_sheet
 
 from lessons.errors import (
     AlreadyAttempted,
+    AlreadyExists,
     InvalidAnswers,
     LessonNotConfigured,
+    MaterialNotFound,
     NotAttempted,
     QueueUnavailable,
     QuizNotFound,
     RunInProgress,
     WrongStage,
 )
-from lessons.models import FlowSettings, GraphRun, Lesson, Quiz, QuizAttempt, Stage
-from lessons.services import LessonService, QuizService, RunDispatcher
+from lessons.models import FlowSettings, GraphRun, Lesson, Quiz, QuizAttempt, Stage, StudyMaterial
+from lessons.services import LessonService, MaterialService, QuizService, RunDispatcher
 
 pytestmark = pytest.mark.django_db
 
@@ -279,3 +287,150 @@ class TestDispatcher:
         lesson.refresh_from_db()
         assert run.status == GraphRun.Status.FAILED and "queue" in run.error
         assert lesson.stage == Stage.FAILED and lesson.error == run.error
+
+
+def mastery_lesson(make_lesson, stage=Stage.AWAITING_CHOICE):
+    return make_lesson(stage=stage, route="mastery")
+
+
+class TestChoose:
+    def test_resumes_the_flow_with_the_chosen_kind(self, make_lesson, queue):
+        lesson = mastery_lesson(make_lesson)
+
+        run = MaterialService(queue=queue).choose(lesson, "cheat_sheet")
+
+        assert (run.graph, run.trigger, run.payload) == (
+            GraphRun.Graph.FLOW, GraphRun.Trigger.RESUME_CHOICE, {"resume": "cheat_sheet"},
+        )  # fmt: skip
+        assert queue.runs == [run]
+
+    @pytest.mark.parametrize("stage", [Stage.AWAITING_DIAGNOSTIC, Stage.GENERATING_MATERIAL, Stage.READY])
+    def test_is_refused_unless_the_lesson_waits_for_the_choice(self, make_lesson, queue, stage):
+        with pytest.raises(WrongStage):
+            MaterialService(queue=queue).choose(mastery_lesson(make_lesson, stage), "cheat_sheet")
+
+        assert queue.runs == []
+
+    def test_is_refused_while_a_run_is_active(self, make_lesson, queue):
+        lesson = mastery_lesson(make_lesson)
+        GraphRun.objects.create(lesson=lesson, trigger=GraphRun.Trigger.START, status=GraphRun.Status.RUNNING)
+
+        with pytest.raises(RunInProgress):
+            MaterialService(queue=queue).choose(lesson, "cheat_sheet")
+
+
+class TestRequestExtra:
+    def test_queues_the_study_material_graph_with_its_input(self, make_lesson, queue):
+        lesson = mastery_lesson(make_lesson, Stage.READY)
+
+        run = MaterialService(queue=queue).request_extra(lesson, "revision_sheet")
+
+        assert (run.graph, run.trigger) == (GraphRun.Graph.STUDY_MATERIAL, GraphRun.Trigger.EXTRA_MATERIAL)
+        assert run.payload == {"input": {"mastery_choice": "revision_sheet", "extra_material": True}}
+        assert queue.runs == [run]
+
+    def test_a_kind_the_lesson_already_has_is_refused(self, make_lesson, queue):
+        lesson = mastery_lesson(make_lesson, Stage.READY)
+        StudyMaterial.objects.create(lesson=lesson, kind="cheat_sheet", content=make_cheat_sheet())
+
+        with pytest.raises(AlreadyExists):
+            MaterialService(queue=queue).request_extra(lesson, "cheat_sheet")
+
+    @pytest.mark.parametrize(
+        ("stage", "route"),
+        [(Stage.AWAITING_CHOICE, "mastery"), (Stage.GENERATING_LESSON, "lesson"), (Stage.READY, "lesson")],
+    )
+    def test_only_a_ready_mastery_lesson_can_get_more_sheets(self, make_lesson, queue, stage, route):
+        with pytest.raises(WrongStage):
+            MaterialService(queue=queue).request_extra(make_lesson(stage=stage, route=route), "cheat_sheet")
+
+    def test_one_extra_sheet_at_a_time(self, make_lesson, queue):
+        lesson = mastery_lesson(make_lesson, Stage.READY)
+        MaterialService(queue=queue).request_extra(lesson, "cheat_sheet")
+
+        with pytest.raises(RunInProgress):
+            MaterialService(queue=queue).request_extra(lesson, "revision_sheet")
+
+
+class TestGetMaterial:
+    def stored(self, lesson, kind="practice_sheet", make=make_practice_sheet):
+        return StudyMaterial.objects.create(lesson=lesson, kind=kind, content=make())
+
+    def test_serves_a_sheet_that_has_no_solutions_to_hide_as_is(self, lesson):
+        self.stored(lesson, "cheat_sheet", make_cheat_sheet)
+
+        body = MaterialService().get(lesson, "cheat_sheet")
+
+        assert body == {"kind": "cheat_sheet", "content": make_cheat_sheet(), "solutions": {}}
+
+    def test_a_practice_sheet_has_no_solutions_until_revealed(self, lesson):
+        self.stored(lesson)
+
+        body = MaterialService().get(lesson, "practice_sheet")
+
+        text = str(body)
+        assert body["solutions"] == {} and "correct_index" not in text and "model_answer" not in text
+        assert len(body["content"]["questions"]) == 15
+
+    def test_reveals_the_solutions_of_the_questions_asked_for(self, lesson):
+        self.stored(lesson)
+
+        body = MaterialService().get(lesson, "practice_sheet", reveal=["t1", "t2", "zzz"])
+
+        assert set(body["solutions"]) == {"t1", "t2"}
+        assert body["solutions"]["t1"]["correct_index"] == 1  # t1 is the first multiple-choice question
+        assert body["solutions"]["t2"]["answer"] == 4.0  # t2 is numerical
+        assert "question" not in body["solutions"]["t1"] and "options" not in body["solutions"]["t1"]
+
+    def test_reveals_everything_for_all(self, lesson):
+        self.stored(lesson)
+
+        body = MaterialService().get(lesson, "practice_sheet", reveal=["all"])
+
+        assert len(body["solutions"]) == 15
+
+    def test_a_sheet_that_does_not_exist_is_not_found(self, lesson):
+        with pytest.raises(MaterialNotFound):
+            MaterialService().get(lesson, "cheat_sheet")
+
+    def test_an_unknown_kind_is_not_found(self, lesson):
+        with pytest.raises(MaterialNotFound):
+            MaterialService().get(lesson, "poster")
+
+    def test_lists_the_kinds_a_lesson_has(self, lesson):
+        self.stored(lesson, "revision_sheet", make_revision_sheet)
+        self.stored(lesson, "cheat_sheet", make_cheat_sheet)
+
+        assert MaterialService().kinds(lesson) == ["cheat_sheet", "revision_sheet"]
+
+
+class TestGradePractice:
+    def test_marks_what_can_be_marked_and_shows_every_solution(self, lesson):
+        StudyMaterial.objects.create(lesson=lesson, kind="practice_sheet", content=make_practice_sheet())
+        answers = {"t1": 1, "t2": "4.0", "t3": "my words", "t4": 2}
+
+        result = MaterialService().grade_practice(lesson, answers)
+
+        by_id = {r["id"]: r for r in result["results"]}
+        assert by_id["t1"]["correct"] is True and by_id["t1"]["awarded"] == 2
+        assert by_id["t2"]["correct"] is True
+        assert by_id["t3"]["correct"] is None and by_id["t3"]["solution"]["model_answer"] == "Halve the range."
+        assert by_id["t4"]["correct"] is False and by_id["t4"]["solution"]["correct_index"] == 0
+        assert result["score"]["awarded"] == 4 and result["score"]["open_marks"] == 10
+
+    def test_unanswered_questions_are_wrong_for_the_kinds_that_can_be_marked(self, lesson):
+        StudyMaterial.objects.create(lesson=lesson, kind="practice_sheet", content=make_practice_sheet())
+
+        result = MaterialService().grade_practice(lesson, {})
+
+        assert result["score"]["awarded"] == 0 and result["score"]["marked"] == 10
+
+    def test_needs_a_practice_sheet(self, lesson):
+        with pytest.raises(MaterialNotFound):
+            MaterialService().grade_practice(lesson, {})
+
+    def test_answers_must_be_an_object(self, lesson):
+        StudyMaterial.objects.create(lesson=lesson, kind="practice_sheet", content=make_practice_sheet())
+
+        with pytest.raises(InvalidAnswers):
+            MaterialService().grade_practice(lesson, ["t1"])

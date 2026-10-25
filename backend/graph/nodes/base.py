@@ -74,8 +74,12 @@ class LLMNode(Node):
         self.before(state)
         feedback = self.feedback(state, self.feedback_key) if self.feedback_key else None
         messages = self.prompt.messages(self.subject(state), feedback)
-        result = ctx.invoke(state, self.node_key, messages, schema=self.schema)
+        result = ctx.invoke(state, self.node_key, messages, schema=self.schema_of(state))
         return self.to_state(result.output, state)
+
+    def schema_of(self, state: dict) -> type[BaseModel] | None:
+        """The structured-output schema; most nodes have one, a few choose it from the state."""
+        return self.schema
 
     def before(self, state: dict) -> None:
         """Hook for side effects that must happen before the call (for example setting the lesson stage)."""
@@ -112,6 +116,9 @@ class ValidateNode(Node):
     def context(self, state: dict) -> dict:
         return {}
 
+    def label_of(self, state: dict) -> str:
+        return self.label
+
     def outcome(self, state: dict, problems: list[str], ctx: FlowContext) -> dict:
         update: dict = {"feedback": {self.feedback_key: problems}}
         if not problems:
@@ -120,7 +127,7 @@ class ValidateNode(Node):
         if attempts >= NodeBudget.of(state, self.node_key).max_attempts:
             summary = "; ".join(problems[:4]) + (" …" if len(problems) > 4 else "")
             update |= {
-                "error": f"{self.label} still failed its checks after {attempts} attempts: {summary}",
+                "error": f"{self.label_of(state)} still failed its checks after {attempts} attempts: {summary}",
                 "failed_node": self.retry_node,
                 "retry_keys": [self.feedback_key],
             }
@@ -153,4 +160,5 @@ class AwaitNode(Node):
         return {}
 
     def accept(self, value: Any) -> Any:
+        """Check the resume value; a value the API should have refused raises."""
         return value
