@@ -1,6 +1,7 @@
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import update_last_login
 from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_control
 from django.views.decorators.csrf import ensure_csrf_cookie
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import generics, status
@@ -16,7 +17,14 @@ from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from .authentication import CookieJWTAuthentication
 from .cookies import AuthCookies
 from .models import User
-from .serializers import LoginSerializer, ProfileSerializer, RegisterSerializer, UserSerializer
+from .options import ProfileOptions
+from .serializers import (
+    LoginSerializer,
+    ProfileOptionsSerializer,
+    ProfileSerializer,
+    RegisterSerializer,
+    UserSerializer,
+)
 from .throttling import AuthRateThrottle, LoginAccountThrottle
 
 AUTH_TAG = ["auth"]
@@ -194,3 +202,23 @@ class ProfileView(generics.RetrieveUpdateAPIView):
     def _update_and_mark(self, response):
         AuthCookies().set_onboarded(response, response.data["profile_complete"])
         return response
+
+
+class ProfileOptionsView(APIView):
+    """The choice lists the profile accepts. Public: the sign-up screens read them before there is an account."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        tags=["profile"],
+        summary="The choices a profile accepts",
+        description=(
+            "Every choice list of the profile (`education_level`, `learning_preference`, `goal`, "
+            "`preferred_language`) as `{value, label}` in display order. No sign-in needed."
+        ),
+        responses={200: ProfileOptionsSerializer},
+    )
+    @method_decorator(cache_control(public=True, max_age=3600))
+    def get(self, request):
+        return Response(ProfileOptions().payload())
