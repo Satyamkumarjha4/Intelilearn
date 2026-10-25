@@ -1,15 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { StageView } from "@/lib/stage-view";
-import type { Band, QuizResultSummary } from "@/lib/types";
-
-const BAND_LABELS: Record<Band, string> = {
-  basic: "Basics",
-  easy_moderate: "Easy applications",
-  moderate: "Standard problems",
-  moderate_hard: "Edge cases",
-  hard: "Expert",
-};
+import { BAND_LABELS, StageView } from "@/lib/stage-view";
+import type { QuizResultSummary } from "@/lib/types";
 
 /** The score right after a quiz, by band, and what happens next. */
 export function QuizResultCard({ result, level }: { result: QuizResultSummary; level?: string }) {

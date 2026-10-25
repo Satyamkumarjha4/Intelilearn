@@ -28,10 +28,10 @@ export function PageFrame({ title, subtitle, children }: { title?: string; subti
 }
 
 const CALLOUTS: Record<string, string> = {
-  note: "border-sky-500/40 bg-sky-500/10",
-  tip: "border-emerald-500/40 bg-emerald-500/10",
-  warning: "border-amber-500/40 bg-amber-500/10",
-  example: "border-violet-500/40 bg-violet-500/10",
+  note: "border-primary/40 bg-primary-soft",
+  tip: "border-success/40 bg-success-soft",
+  warning: "border-marigold/40 bg-marigold-soft",
+  example: "border-insight/40 bg-insight-soft",
 };
 
 export function Callout({ kind = "note", children }: { kind?: string; children?: React.ReactNode }) {

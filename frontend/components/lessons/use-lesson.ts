@@ -26,7 +26,14 @@ export function useLesson(id: string) {
 
   const refresh = useCallback(async () => {
     try {
-      setLesson(await lessonsApi.get(id));
+      const data = await lessonsApi.get(id);
+      setLesson(data);
+      // A retry starts while the lesson still reads "failed"; the stage that follows tells the model which steps to show.
+      setLive((current) => {
+        if (!current) return current;
+        current.model.setStage(data.stage);
+        return { ...current };
+      });
       setError(null);
     } catch (err) {
       setError(describe(err));
@@ -46,20 +53,21 @@ export function useLesson(id: string) {
 
   const runId = lesson?.active_run_id ?? null;
   const stage = lesson?.stage;
+  const route = lesson?.route ?? "";
   useEffect(() => {
     if (!runId || !stage) return;
-    const model = new PipelineModel(stage);
+    const model = new PipelineModel(stage, Date.now, route);
     const stream = new RunEventStream(runId, (event: RunEvent) => {
       model.apply(event);
       setLive({ runId, model });
       if (TERMINAL_EVENTS.has(event.name)) void refresh();
     });
     return () => stream.close();
-    // `stage` is read once per run: a stage change within a run must not restart the stream.
+    // `stage` and `route` are read once per run: a stage change within a run must not restart the stream.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId, refresh]);
 
-  const idle = useMemo(() => new PipelineModel(stage ?? "preparing_diagnostic"), [stage]);
+  const idle = useMemo(() => new PipelineModel(stage ?? "preparing_diagnostic", Date.now, route), [stage, route]);
 
   const working = lesson ? StageView.of(lesson) === "progress" || lesson.active_run_id !== null : false;
   useEffect(() => {

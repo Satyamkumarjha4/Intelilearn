@@ -12,6 +12,7 @@ Use cases:
 - a media entry carries the URL it is given, alt text (falling back to the title), caption, attribution and licence
 - a source built from a stored lesson has its media as refs keyed by spec id
 - the document builder returns the code, its version and the data, with media as signed URLs
+- the document says whether the code still has the test inside it (lessons made before the test was its own screen)
 """
 
 import pytest
@@ -19,7 +20,7 @@ from django.core.files.base import ContentFile
 from support.lesson_data import make_final_test, make_pages, make_plan
 from support.media import png
 
-from lessons.document import LessonData, LessonDocumentBuilder, LessonSource
+from lessons.document import EmbeddedTest, LessonData, LessonDocumentBuilder, LessonSource
 from lessons.media_urls import MediaUrlSigner
 from lessons.models import Lesson, MediaAsset
 
@@ -129,3 +130,25 @@ def test_the_document_has_the_code_its_version_and_signed_media_urls(lesson_with
     url = document["data"]["media"][str(asset.id)]["url"]
     assert url.startswith(f"/api/media/{asset.id}?exp=1060&sig=")
     assert document["data"]["title"] == "Binary search" and len(document["data"]["final_test"]["questions"]) == 10
+
+
+class TestEmbeddedTest:
+    NEW = 'const PAGES = [\n  { key: "introduction", title: LESSON.pages.introduction.title, render: Page_intro },\n];'
+    OLD = NEW.replace("];", '  { key: "test", title: LESSON.final_test.title, render: Page_test },\n];')
+
+    @pytest.mark.parametrize(("code", "embedded"), [(NEW, False), (OLD, True), ("", False), ("render(<X />)", False)])
+    def test_the_code_has_the_test_inside_only_if_it_declares_a_test_page(self, code, embedded):
+        assert EmbeddedTest().in_code(code) is embedded
+
+    def test_a_page_that_merely_mentions_test_is_not_the_embedded_test(self):
+        code = 'function Page_core() { return <p>key: "test" is a word, and so is Page_testing</p>; }'
+
+        assert EmbeddedTest().in_code(code) is False
+
+    def test_the_document_carries_the_flag(self, lesson):
+        Lesson.objects.filter(pk=lesson.pk).update(stage="ready", code=self.OLD, code_version=1)
+        lesson.refresh_from_db()
+
+        document = LessonDocumentBuilder().build(lesson)
+
+        assert document["has_embedded_test"] is True and document["code"] == self.OLD

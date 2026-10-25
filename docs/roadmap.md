@@ -93,6 +93,65 @@ Each phase ends with something runnable and checkable.
 - [x] The backlog items for the lesson-flow code (`graph/`, `lessons/`) landed with Phases 3–6 (grading, validators, prompts, Stage A nodes and the flow builder in Phase 3; media in Phase 5; code generation, the build nodes and the document builder in Phase 6).
 - [x] Every existing test file has the header from [testing.md](testing.md#31-the-file-header-required) (unit under test, why, use cases), and `tests/` is linted like the backend.
 
+## Across phases: the final test on its own screen, taken once
+
+- [x] Backend and API: the generated document has the three content pages only; `GET /lessons/{id}/test` serves the test without answers; one submission per lesson (unique constraint, `409 already_submitted`); `regrade` for a failed grading; `GET …/test/submission`; `test_status` and `test_score` on the lesson; `has_embedded_test` on the document for older lessons; quiz review confirmed to carry everything. Frontend types and API client updated.
+- [x] Lesson workspace shell: header with breadcrumb and journey stepper, `?tab=` tabs for a ready lesson, the redesigned building screen with "Your starting point", the friendly failed card, `loading.tsx`, `not-found.tsx`, `error.tsx`, and a `Dialog` primitive that replaces `window.confirm`.
+- [x] Lesson viewer as a notebook with index flaps; the document's own navigation and the test page of older lessons are hidden by the runtime.
+- [x] Flashcard deck for the quick check and the final test (forward only, resumes after a refresh); the Test tab takes the test once.
+- [x] Read-only test results and quick check answers views.
+- [x] "My lessons" (continue card, filter chips, status pills, delete in a dialog) and "New lesson" redesigned.
+- [x] Five-step setup and the single-page profile, with the same tiles.
+- [x] Backend: `POST /onboarding/topic-suggestions` (curated catalogue, `onboarding.suggest_topics` as the fallback and for translation); the setup's last step is built against the request and answer shapes of `backend/onboarding` (see docs/frontend.md).
+- [ ] Removing the iframe `test_submit` path (nothing sends it any more).
+
+## Across phases: the public landing page
+
+- [x] `/` for signed-out visitors, built from the mockup's screen 11: hero with a try-it question, "How it works" walkthrough, "Three ways forward" carousel, proof strip, call to action and footer; scroll reveal and reduced-motion handling; `RouteGuard` sends signed-in visitors on; the system-status widget and the Swagger/admin links are gone from public UI.
+- [x] Read `socra.pendingTopic` back on the screens after sign-up (it stays until the setup ends, so a refresh on the last step keeps it), and write `/privacy` and `/terms`.
+
+## Across phases: landing page, second pass
+
+- [x] Hero question bank: `marketing.DemoQuestion` (admin with subject, band and active filters), 25 seeded questions, `GET /api/landing/demo-question` (public, 60 a minute, never cached); a different question on every load, "Try again" flips to another, the built-in question when the API fails.
+- [x] "How it works": the stage is as tall as the step list, caption top-left, preview under it.
+- [x] "Your score decides" carousel autoplays every 6 s with a progress bar, pausing on hover, keyboard focus, touch and off screen (`Autoplay`).
+
+## Across phases: onboarding topic suggestions (backend)
+
+- [x] `GET /api/profile/options` (every choice list with its label); `Profile.preferred_language` has choices and `notes` a 2000-character limit, with a migration that fits existing rows (unknown language becomes English, long notes are cut).
+- [x] `POST /api/onboarding/topic-suggestions`: four first topics from a curated catalogue (Classes 6 to 12, five field families at two levels, professional, interview and self-learner lists), with rule-built reasons, paging, and a per-learner throttle ([onboarding.md](onboarding.md)).
+- [x] Node `onboarding.suggest_topics` (optional, seeded for speed): a model for a field the catalogue does not know, and one batched translation for other languages; Redis cache (30 days); any failure gives the English catalogue (`source: fallback`), never a `5xx`.
+- [ ] Frontend: read `title_en` and `source` where they are useful; bind the node in an existing registry (admin, or `seed_registry --force` on an untuned one).
+
+## Across phases: the staff console API
+
+The backend of an in-app admin ("Socra Console"), replacing the Django admin for the everyday jobs. The design is [design.md §4.16](design.md#416-console-the-staff-api) and the endpoints are in [api.md](api.md#console-staff-only).
+
+- [x] App `console`: staff-only access (404 for anyone else), a `120/min` throttle per staff member, `AuditEntry` and `AuditTrail`, `is_staff` on `/auth/me`.
+- [x] `overview`: health with worker count, lessons, spend against `CONSOLE_MONTHLY_BUDGET_USD`, calls, daily spend by provider, funnel, slowest steps and four attention rules.
+- [x] `usage` and `usage/export.csv`: KPIs, per model and per step with `percentile_cont`; one definition of ok, retried, failed and fallback (`CallOutcomes`); `ModelCall` indexed on `(model_name, created_at)` and `(node_key, created_at)`; `ModelCall.rate_limit_wait_ms`.
+- [x] `runs`: list, detail with a timeline (`GraphRun.node_timings`, written by `GraphRunRecorder`) and the last 20 calls, retry and cancel through the learner's own services.
+- [x] `providers` and `models`: list, change, add, delete (409 naming the steps), and a 20-second test that keeps `LLMModel.last_probe_*`.
+- [x] `nodes` and `profiles`: grouped routing, atomic validated replace, profile preview; seed profiles `balanced` and `quality` next to `cheap`.
+- [x] `flow-settings` with the admin form's validation and the routing thresholds (`RoutingPolicy.thresholds`); read-only `learners`; `audit`.
+- [x] `lib/types.ts` and `lib/console-api.ts` (typed client).
+- [x] The console UI, built from `docs/design/mockups/socra-admin-mockup.html`, screen by screen:
+  - [x] Lesson runs (`/console/runs`: filters in the address, detail with timeline and model calls, Retry, Stop, live updates; [frontend.md](frontend.md#console-lesson-runs-consoleruns))
+  - [x] The shell (access check, sidebar, query client), Overview and Usage & cost ([frontend.md](frontend.md#console-shell-overview-and-usage--cost-console))
+  - [x] Models, Model routing and Lesson settings ([frontend.md](frontend.md#console-models-model-routing-and-lesson-settings-consolemodels-consolerouting-consolesettings))
+  - [x] Learners and Change log ([frontend.md](frontend.md#console-learners-and-change-log-consolelearners-consoleaudit))
+- [ ] Apply a profile in one request (today a screen would preview it and save each changed step with `PUT /console/nodes/{key}`), and a pause or an alert on the monthly budget.
+- [ ] Tighten `FlowSettings.clean()` (the final test's minimum above its maximum, unknown media sources and licences are accepted by the admin and so by the console).
+
+## Final UI wrap-up (audit and fixes)
+
+The audit is in [audit/ui-audit-2026-10-25.md](audit/ui-audit-2026-10-25.md).
+
+- [x] Stop, then Retry always picks the lesson up from its checkpoint (it was a no-op that left the lesson failed); the stop dialog is tied to the learner, not the run.
+- [x] Refresh on the last onboarding step, `?next=` kept through sign-in and onboarding, no 401s on public pages, status pill from the pages read, loading and error states, print-safe landing page.
+- [x] Browser tests in `e2e/` (`make e2e`) on a throwaway fake-LLM stack.
+- [ ] Run `make e2e` in CI (needs a browser in the workflow).
+
 ## Later (not now)
 
 - Deployment (hosting, managed Redis, production settings, media on Supabase Storage)

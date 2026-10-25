@@ -179,4 +179,5 @@ class RunSnapshot:
             "node_status": run.node_status,
             "error": run.error,
             "awaiting": self.AWAITING.get(run.lesson.stage),
+            "started_at": (run.started_at or run.created_at).isoformat(),
         }

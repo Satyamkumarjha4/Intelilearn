@@ -5,16 +5,18 @@ Why: this is the whole sign-in flow. Tokens must stay in httpOnly cookies, cooki
 CSRF header, and a refresh token must be rotated and the old one blacklisted, or a stolen token keeps working.
 
 Use cases:
-- register signs in with httpOnly cookies
+- register signs in with httpOnly cookies, and keeps when and to which version of the terms the person agreed
+- register refuses a person who has not confirmed the terms (a field error, nothing created)
 - register rejects a duplicate email (any case) and reports a weak password on the password field
 - login accepts any email case and rejects a wrong password
-- /auth/me requires authentication and returns the signed-in user
+- /auth/me requires authentication and returns the signed-in user, with whether they are staff (the console's guard)
 - a Bearer header works without CSRF; the auth endpoints and cookie-authenticated writes require it
 - refresh rotates and blacklists the old token, and fails without a cookie or for a deactivated user
 - logout clears the cookies and blacklists the refresh token, and succeeds without a session
 """
 
 import pytest
+from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -39,7 +41,9 @@ def is_cleared(response, name):
 
 def test_register_signs_in_with_httponly_cookies(api_client):
     response = api_client.post(
-        "/api/auth/register", {"email": "Grace@Example.com", "password": PASSWORD, "name": "Grace"}, format="json"
+        "/api/auth/register",
+        {"email": "Grace@Example.com", "password": PASSWORD, "name": "Grace", "accept_terms": True},
+        format="json",
     )
 
     assert response.status_code == 201
@@ -56,7 +60,9 @@ def test_register_signs_in_with_httponly_cookies(api_client):
 
 def test_register_rejects_duplicate_email_case_insensitively(api_client, user):
     response = api_client.post(
-        "/api/auth/register", {"email": "ADA@example.com", "password": PASSWORD, "name": "Ada"}, format="json"
+        "/api/auth/register",
+        {"email": "ADA@example.com", "password": PASSWORD, "name": "Ada", "accept_terms": True},
+        format="json",
     )
 
     assert response.status_code == 400
@@ -66,12 +72,56 @@ def test_register_rejects_duplicate_email_case_insensitively(api_client, user):
 
 def test_register_rejects_weak_password_on_the_password_field(api_client):
     response = api_client.post(
-        "/api/auth/register", {"email": "weak@example.com", "password": "12345", "name": "Weak"}, format="json"
+        "/api/auth/register",
+        {"email": "weak@example.com", "password": "12345", "name": "Weak", "accept_terms": True},
+        format="json",
     )
 
     assert response.status_code == 400
     assert "password" in response.json()["fields"]
     assert not User.objects.filter(email="weak@example.com").exists()
+
+
+def test_register_keeps_when_and_to_what_the_person_agreed(api_client):
+    before = timezone.now()
+
+    api_client.post(
+        "/api/auth/register",
+        {"email": "grace@example.com", "password": PASSWORD, "name": "Grace", "accept_terms": True},
+        format="json",
+    )
+
+    grace = User.objects.get(email="grace@example.com")
+    assert before <= grace.terms_accepted_at <= timezone.now()
+    assert grace.terms_version == "2026-10-25"
+
+
+@pytest.mark.parametrize("consent", [{}, {"accept_terms": False}, {"accept_terms": None}])
+def test_register_needs_the_terms_confirmed_and_creates_nothing_without_it(api_client, consent):
+    response = api_client.post(
+        "/api/auth/register",
+        {"email": "grace@example.com", "password": PASSWORD, "name": "Grace", **consent},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["fields"]["accept_terms"] == ["Please confirm to continue."]
+    assert not User.objects.filter(email="grace@example.com").exists()
+    assert "lc_access" not in response.cookies
+
+
+def test_the_consent_is_not_part_of_what_the_api_says_about_a_person(api_client):
+    body = api_client.post(
+        "/api/auth/register",
+        {"email": "grace@example.com", "password": PASSWORD, "name": "Grace", "accept_terms": True},
+        format="json",
+    ).json()
+
+    assert "accept_terms" not in body["user"] and "terms_version" not in body["user"]
+
+
+def test_people_who_signed_up_before_the_terms_have_no_consent_on_record(user):
+    assert user.terms_accepted_at is None and user.terms_version == ""
 
 
 # --- login / me ---
@@ -104,7 +154,20 @@ def test_me_returns_the_signed_in_user(signed_in_client, user):
     response = signed_in_client.get("/api/auth/me")
 
     assert response.status_code == 200
-    assert response.json() == {"id": str(user.id), "email": user.email, "name": user.name, "profile_complete": False}
+    assert response.json() == {
+        "id": str(user.id),
+        "email": user.email,
+        "name": user.name,
+        "profile_complete": False,
+        "is_staff": False,
+    }
+
+
+def test_me_says_when_the_user_is_staff(api_client):
+    staff = User.objects.create_user("staff@example.com", password=PASSWORD, name="Staff", is_staff=True)
+    api_client.post("/api/auth/login", {"email": staff.email, "password": PASSWORD}, format="json")
+
+    assert api_client.get("/api/auth/me").json()["is_staff"] is True
 
 
 def test_bearer_header_works_without_csrf(user):

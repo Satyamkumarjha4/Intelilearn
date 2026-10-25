@@ -1,5 +1,5 @@
 /**
- * Unit under test: `SandboxMessages`, `HarnessBuilder`, `RenderMessage`, `RepairReport` and `RepairGate`, the page's side
+ * Unit under test: `SandboxMessages`, `HarnessBuilder`, `RenderMessage`, `SetPageMessage`, `RepairReport` and `RepairGate`, the page's side
  * of the conversation with the lesson iframe.
  *
  * Why: the iframe runs generated code, so everything it posts is untrusted and every address it uses must be absolute
@@ -8,19 +8,20 @@
  * not be asked for again.
  *
  * Use cases:
- * - parses ready, rendered, height, error and test_submit messages, and fills in what an error leaves out
+ * - parses ready, rendered, height, error, pages, page_changed and test_submit messages, and fills in what an error leaves out
  * - drops anything that is not a known message, and a test_submit without answers
  * - accepts a message only from the iframe that was embedded
  * - fills the harness with the runtime's absolute addresses, in every place they occur
  * - makes media URLs absolute without changing the rest of the document
  * - loads the harness once, and tries again after a failure
- * - builds the render message from the document and the theme
+ * - builds the render message from the document and the theme, hiding the test page of an older lesson
+ * - builds the message that opens a page
  * - names the interactive in the repair report, cuts long fields, and leaves out what is missing
  * - asks for a repair once per code version, ignores errors from other versions, and stops when told to
  */
 import { describe, expect, test } from "bun:test";
 
-import { HarnessBuilder, HarnessSource, RenderMessage, RepairGate, RepairReport, SandboxMessages, type SandboxError } from "./sandbox-bridge";
+import { HarnessBuilder, HarnessSource, RenderMessage, RepairGate, RepairReport, SandboxMessages, SetPageMessage, type SandboxError } from "./sandbox-bridge";
 import type { LessonDocument } from "./types";
 
 const error = (over: Partial<SandboxError> = {}): SandboxError => ({
@@ -34,6 +35,7 @@ const error = (over: Partial<SandboxError> = {}): SandboxError => ({
 const document: LessonDocument = {
   code: "CODE",
   code_version: 2,
+  has_embedded_test: false,
   data: {
     title: "T",
     media: {
@@ -51,6 +53,17 @@ describe("SandboxMessages.parse", () => {
     expect(
       SandboxMessages.parse({ type: "error", phase: "transform", message: "bad", stack: "s", codeVersion: 3, component: "Interactive_x", page: "core" }),
     ).toEqual({ type: "error", error: { phase: "transform", message: "bad", stack: "s", codeVersion: 3, component: "Interactive_x", page: "core" } });
+  });
+
+  test("reads which pages the document has and which one is open", () => {
+    expect(SandboxMessages.parse({ type: "pages", count: 3, titles: ["A", "B", "C"] })).toEqual({ type: "pages", count: 3, titles: ["A", "B", "C"] });
+    expect(SandboxMessages.parse({ type: "page_changed", index: 1 })).toEqual({ type: "page_changed", index: 1 });
+  });
+
+  test("keeps only titles that are text, and a missing list is empty", () => {
+    expect(SandboxMessages.parse({ type: "pages", count: 2, titles: ["A", 4, null] })).toEqual({ type: "pages", count: 2, titles: ["A"] });
+    expect(SandboxMessages.parse({ type: "pages", count: "x" })).toEqual({ type: "pages", count: 0, titles: [] });
+    expect(SandboxMessages.parse({ type: "page_changed", index: "2" })).toEqual({ type: "page_changed", index: 0 });
   });
 
   test("fills in what an error leaves out", () => {
@@ -143,7 +156,17 @@ describe("HarnessSource", () => {
 
 describe("RenderMessage", () => {
   test("carries the code, the data, the version and the theme", () => {
-    expect(RenderMessage.of(document, "dark")).toEqual({ type: "render", code: "CODE", data: document.data, codeVersion: 2, theme: "dark" });
+    expect(RenderMessage.of(document, "dark")).toEqual({ type: "render", code: "CODE", data: document.data, codeVersion: 2, theme: "dark", hide: [] });
+  });
+
+  test("hides the test page of a lesson that still has it in its code", () => {
+    expect(RenderMessage.of({ ...document, has_embedded_test: true }, "light").hide).toEqual(["test"]);
+  });
+});
+
+describe("SetPageMessage", () => {
+  test("opens the page at an index", () => {
+    expect(SetPageMessage.of(2)).toEqual({ type: "set_page", index: 2 });
   });
 });
 

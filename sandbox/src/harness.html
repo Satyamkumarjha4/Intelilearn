@@ -2,32 +2,89 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<title>Socra</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src __ASSETS__ 'unsafe-eval'; style-src __ASSETS__ 'unsafe-inline'; font-src data:; img-src __MEDIA__ data:; connect-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'">
 <style type="text/tailwindcss">
 @custom-variant dark (&:where(.dark, .dark *));
+/* The app's palette (frontend/app/globals.css). The page only tells this frame "light" or "dark", so the values are
+   copied here; frontend/lib/theme-tokens.test.ts fails when they drift apart. The CSP blocks network fonts, so text
+   uses a rounded system stack instead of Nunito and Fredoka. */
 @theme {
-  --color-background: oklch(1 0 0);
-  --color-foreground: oklch(0.145 0 0);
-  --color-muted: oklch(0.97 0 0);
-  --color-muted-foreground: oklch(0.45 0 0);
-  --color-border: oklch(0.9 0 0);
-  --color-primary: oklch(0.205 0 0);
-  --color-primary-foreground: oklch(0.985 0 0);
-  --color-destructive: oklch(0.577 0.245 27);
+  --font-sans: ui-rounded, "Nunito", system-ui, sans-serif;
+  --font-heading: ui-rounded, "Fredoka", system-ui, sans-serif;
+  --radius-sm: 0.6rem;
+  --radius-md: 0.8rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.4rem;
+  --radius-2xl: 1.8rem;
+  --radius-3xl: 2.2rem;
+  --radius-4xl: 2.6rem;
+  --color-background: oklch(0.985 0.008 190);
+  --color-paper: oklch(0.995 0.006 85);
+  --color-foreground: oklch(0.26 0.025 190);
+  --color-card: oklch(1 0 0);
+  --color-muted: oklch(0.965 0.013 190);
+  --color-muted-foreground: oklch(0.52 0.025 190);
+  --color-border: oklch(0.9 0.018 190);
+  --color-ring: oklch(0.64 0.12 190);
+  --color-primary: oklch(0.64 0.12 190);
+  --color-primary-foreground: oklch(0.99 0.01 190);
+  --color-primary-deep: oklch(0.52 0.11 190);
+  --color-primary-soft: oklch(0.95 0.035 190);
+  --color-primary-text: oklch(0.48 0.1 190);
+  --color-marigold: oklch(0.8 0.15 70);
+  --color-marigold-foreground: oklch(0.25 0.05 70);
+  --color-marigold-deep: oklch(0.66 0.14 70);
+  --color-marigold-soft: oklch(0.96 0.05 70);
+  --color-marigold-text: oklch(0.5 0.11 70);
+  --color-insight: oklch(0.6 0.16 295);
+  --color-insight-soft: oklch(0.955 0.03 295);
+  --color-insight-text: oklch(0.48 0.16 295);
+  --color-success: oklch(0.64 0.15 150);
+  --color-success-soft: oklch(0.95 0.05 150);
+  --color-success-text: oklch(0.45 0.13 150);
+  --color-destructive: oklch(0.63 0.19 25);
+  --color-destructive-soft: oklch(0.96 0.03 25);
+  --color-destructive-text: oklch(0.5 0.17 25);
 }
 @layer base {
   :root.dark {
-    --color-background: oklch(0.145 0 0);
-    --color-foreground: oklch(0.985 0 0);
-    --color-muted: oklch(0.269 0 0);
-    --color-muted-foreground: oklch(0.72 0 0);
-    --color-border: oklch(1 0 0 / 14%);
-    --color-primary: oklch(0.922 0 0);
-    --color-primary-foreground: oklch(0.205 0 0);
+    --color-background: oklch(0.2 0.025 295);
+    --color-paper: oklch(0.26 0.03 295);
+    --color-foreground: oklch(0.95 0.012 295);
+    --color-card: oklch(0.245 0.03 295);
+    --color-muted: oklch(0.29 0.032 295);
+    --color-muted-foreground: oklch(0.74 0.025 295);
+    --color-border: oklch(0.35 0.035 295);
+    --color-ring: oklch(0.76 0.12 190);
+    --color-primary: oklch(0.76 0.12 190);
+    --color-primary-foreground: oklch(0.2 0.03 190);
+    --color-primary-deep: oklch(0.58 0.1 190);
+    --color-primary-soft: oklch(0.33 0.05 190);
+    --color-primary-text: oklch(0.82 0.11 190);
+    --color-marigold: oklch(0.82 0.14 70);
+    --color-marigold-foreground: oklch(0.25 0.05 70);
+    --color-marigold-deep: oklch(0.64 0.13 70);
+    --color-marigold-soft: oklch(0.33 0.05 70);
+    --color-marigold-text: oklch(0.86 0.12 70);
+    --color-insight: oklch(0.72 0.14 295);
+    --color-insight-soft: oklch(0.34 0.07 295);
+    --color-insight-text: oklch(0.84 0.1 295);
+    --color-success: oklch(0.72 0.15 150);
+    --color-success-soft: oklch(0.32 0.06 150);
+    --color-success-text: oklch(0.82 0.13 150);
+    --color-destructive: oklch(0.7 0.17 25);
+    --color-destructive-soft: oklch(0.33 0.06 25);
+    --color-destructive-text: oklch(0.82 0.12 25);
   }
-  html { color-scheme: light dark; }
-  body { background: var(--color-background); color: var(--color-foreground); font-family: ui-sans-serif, system-ui, sans-serif; margin: 0; }
+  /* One scheme at a time, matching the theme the page last sent: the app frames this page on its paper, and a frame
+     whose scheme differs from the frame's own would get an opaque canvas instead of showing it through. */
+  :root { color-scheme: light; }
+  :root.dark { color-scheme: dark; }
+  html, body { background: transparent; }
+  body { color: var(--color-foreground); font-family: var(--font-sans); margin: 0; }
+  h1, h2, h3 { font-family: var(--font-heading); font-weight: 600; line-height: 1.2; text-wrap: balance; }
   * { border-color: var(--color-border); }
 }
 </style>

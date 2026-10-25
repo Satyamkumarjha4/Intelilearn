@@ -26,6 +26,7 @@ class ModelCallRecorder:
         attempt: int,
         status: str,
         latency_ms: int,
+        rate_limit_wait_ms: int = 0,
         error: str = "",
         message=None,
     ) -> None:
@@ -43,6 +44,7 @@ class ModelCallRecorder:
                 status=status,
                 error=self._redactor.redact(error)[: self.MAX_ERROR_CHARS],
                 latency_ms=latency_ms,
+                rate_limit_wait_ms=rate_limit_wait_ms,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 reasoning_tokens=(usage.get("output_token_details") or {}).get("reasoning"),

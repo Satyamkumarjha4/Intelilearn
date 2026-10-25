@@ -86,7 +86,6 @@ def test_editing_the_flow_settings_changes_the_next_snapshot(admin_client):
 
 def test_the_submissions_changelist_shows_the_score(admin_client, lesson):
     TestSubmission.objects.create(lesson=lesson, result={"score": {"awarded": 14, "available": 20}}, status="graded")
-    TestSubmission.objects.create(lesson=lesson)
 
     response = admin_client.get(reverse("admin:lessons_testsubmission_changelist"))
 

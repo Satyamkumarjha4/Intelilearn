@@ -17,7 +17,7 @@ Use cases:
 - LaTeX that KaTeX can parse passes, and what it cannot is reported with the expression; no expressions need no run
 - a missing sandbox, a script that hangs, one that crashes and one that prints garbage are SandboxErrors
 - LaTeX checking is skipped (with a log line) when the sandbox is not installed, so content validation still works
-- the render check: a good lesson renders all four pages; a throwing interactive is reported by name, carrying the
+- the render check: a good lesson renders all three pages; a throwing interactive is reported by name, carrying the
   code version it belongs to (the page ignores errors without it, so a repair would never start), while its page still
   renders; a throwing page is reported for that page only; an endless loop hits the time budget; a network request is
   blocked and reported as a security violation; a blank page and an error in a click handler are found; an unreadable
@@ -161,7 +161,7 @@ from support.media import png  # noqa: E402
 
 from graph.codegen import DocumentAssembler  # noqa: E402
 
-PAGES = ["introduction", "core", "advanced", "test"]
+PAGES = ["introduction", "core", "advanced"]
 needs_render = pytest.mark.skipif(not runner.render_available(), reason="the lesson runtime is not built")
 assembler = DocumentAssembler()
 PUBLIC_FIELDS = ("id", "type", "concept", "difficulty", "marks", "question", "options")
@@ -187,7 +187,7 @@ def lesson_payload(with_media: bool = False) -> dict:
 
 def document(components=None, page_overrides=None, placements=None) -> str:
     pages = {k: assembler.template_page(k, (placements or {}).get(k, {})) for k in ("introduction", "core", "advanced")}
-    pages |= {"test": assembler.test_page()} | (page_overrides or {})
+    pages |= page_overrides or {}
     return assembler.assemble(components or {}, pages)
 
 
@@ -214,7 +214,7 @@ PAGE_WITH_TEXT = '<PageFrame title="Core"><p>some honest looking content, long e
 
 
 @needs_render
-def test_a_good_lesson_renders_on_all_four_pages(tmp_path):
+def test_a_good_lesson_renders_on_all_three_pages(tmp_path):
     placements = {
         "core": {"s1": ["<Interactive_widget_core />"]},
         "introduction": {"s1": ['<Figure asset="a-1" />']},
@@ -250,7 +250,7 @@ def test_a_page_that_throws_while_rendering_is_reported_for_that_page_only():
 
     assert report.ok is False
     assert any("Runtime error" in e or "Uncaught" in e for e in report.pages["advanced"])
-    assert report.pages["core"] == [] and report.pages["test"] == []
+    assert report.pages["core"] == [] and report.pages["introduction"] == []
 
 
 @needs_render

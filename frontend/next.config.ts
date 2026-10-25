@@ -7,8 +7,10 @@ import type { NextConfig } from "next";
 // isn't mounted and compose provides the variables instead. Already-set variables are never overridden.
 loadEnvConfig(path.resolve(process.cwd(), ".."));
 
-// Browser-facing Django URL (Swagger/admin links); inlined into the client bundle at build time.
+// Browser-facing Django URL (the console links to its admin); inlined into the client bundle at build time.
 process.env.NEXT_PUBLIC_BACKEND_URL ??= `http://localhost:${process.env.BACKEND_PORT ?? "8000"}`;
+// Where the console's learners page links to the Django admin (the console only reads accounts).
+process.env.NEXT_PUBLIC_DJANGO_ADMIN_URL ??= `${process.env.NEXT_PUBLIC_BACKEND_URL}/admin`;
 
 // The browser only ever talks to this origin: /api/* is proxied to Django by app/api/[...path]/route.ts,
 // so auth cookies and EventSource work without CORS. Django API routes have no trailing slash.

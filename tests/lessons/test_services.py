@@ -8,13 +8,17 @@ Use cases:
 - creating a lesson snapshots the registry and the flow settings, queues a start run and enqueues it
 - creating a lesson refuses when no model is bound for the first step, and leaves nothing behind
 - retrying a failed lesson queues a retry run; any other stage, or a run in progress, is refused
+- stopping a run remembers the stage the lesson was in; Retry puts it back there and hands the retry run the answer the
+  stopped run was about to give (for that kind of question only); a lesson that failed by itself, or whose stopped run
+  was not the flow's, is retried as before
 - deleting a lesson cancels its active runs and removes it with everything attached
 - an unreachable queue fails the run and the lesson, so Retry works once it is back
 - the learner's quiz has no answers, explanations or concepts
 - a quiz that does not exist yet is not found
 - submitting grades the quiz, stores the attempt, queues a resume run and returns the score with the route
 - submitting the prerequisite quiz returns a score without a route
-- submitting is refused when the lesson is not waiting for that quiz, was already answered, or a run is active
+- submitting is refused when the lesson is not waiting for that quiz, was already answered (even once the lesson has
+  moved on), or a run is active
 - incomplete or invalid answers are refused with the reason, and nothing is stored
 - reviewing shows the learner's answers next to the correct ones, only after an attempt
 - choosing a sheet resumes the flow, only while the lesson waits for the choice and with no run active
@@ -27,7 +31,13 @@ Use cases:
   ready and a run in progress are refused, and nothing is queued
 - a test submission marks the automatic answers at once and queues the open-ended ones for grading; with none to grade
   it is final at once; blank answers are never sent; unknown ids, odd values and long answers are refused; a lesson that
-  is not ready and a grading still running are refused; a submission can be read, only by its own lesson
+  is not ready (or is a mastery lesson) is refused; a submission can be read, only by its own lesson
+- the test can be submitted once: a second go is refused with the first submission's id, whatever its status, and
+  stores nothing, even when two submits slip past the first check together (the unique constraint says no, and the
+  answer is the same 409 with the first one's id, never a 500)
+- the learner's test has no answers, marking schemes or concepts, its total marks, and the one submission once made
+- a failed grading is re-run on the stored answers (never new ones), only when it failed and no run is active
+- the lesson's one submission can be read, and its absence is a 404
 - a grading run that cannot be queued or is cancelled fails its submission
 - an earlier version can be restored: the code being replaced is kept, the restored code gets a new code_version, and
   an unknown version, a lesson that is not ready or a run in progress are refused
@@ -41,10 +51,12 @@ from support.study_data import make_cheat_sheet, make_practice_sheet, make_revis
 from lessons.errors import (
     AlreadyAttempted,
     AlreadyExists,
+    AlreadySubmitted,
     InvalidAnswers,
     LessonNotConfigured,
     MaterialNotFound,
     NotAttempted,
+    NotFailed,
     QueueUnavailable,
     QuizNotFound,
     RepairLimitReached,
@@ -120,6 +132,81 @@ class TestRetry:
             GraphRun.Trigger.RETRY, GraphRun.Status.QUEUED, GraphRun.Graph.FLOW,
         )  # fmt: skip
         assert queue.runs == [run]
+
+    @pytest.fixture
+    def service(self, queue):
+        class Silent:
+            def publish(self, run_id, event):
+                pass
+
+        return LessonService(queue=queue, events=Silent())
+
+    @pytest.mark.parametrize(
+        ("trigger", "stage", "kind"),
+        [
+            (GraphRun.Trigger.RESUME_DIAGNOSTIC, Stage.AWAITING_DIAGNOSTIC, "diagnostic"),
+            (GraphRun.Trigger.RESUME_PREREQUISITE, Stage.AWAITING_PREREQUISITE, "prerequisite"),
+            (GraphRun.Trigger.RESUME_CHOICE, Stage.AWAITING_CHOICE, "mastery_choice"),
+        ],
+    )
+    def test_a_stopped_lesson_goes_back_to_its_stage_and_the_retry_carries_the_answer(
+        self, service, make_lesson, queue, trigger, stage, kind
+    ):
+        lesson = make_lesson(stage=stage)
+        run = GraphRun.objects.create(
+            lesson=lesson, trigger=trigger, status=GraphRun.Status.RUNNING, payload={"resume": "the-answer"}
+        )
+
+        service.cancel(run)
+        lesson.refresh_from_db()
+        assert lesson.stage == Stage.FAILED
+
+        retry = service.retry(lesson)
+
+        lesson.refresh_from_db()
+        assert (lesson.stage, lesson.error) == (stage, "")
+        assert retry.payload == {"resume": "the-answer", "resume_for": kind}
+        assert queue.runs == [retry]
+
+    def test_a_stopped_build_goes_back_to_building_with_nothing_to_carry(self, service, make_lesson):
+        lesson = make_lesson(stage=Stage.GENERATING_LESSON)
+        run = GraphRun.objects.create(lesson=lesson, trigger=GraphRun.Trigger.START, status=GraphRun.Status.RUNNING)
+
+        service.cancel(run)
+        retry = service.retry(Lesson.objects.get(pk=lesson.pk))
+
+        assert Lesson.objects.get(pk=lesson.pk).stage == Stage.GENERATING_LESSON
+        assert retry.payload == {}
+
+    def test_a_lesson_that_failed_by_itself_stays_failed_until_its_node_runs_again(self, service, make_lesson):
+        lesson = make_lesson(stage=Stage.FAILED, error="boom")
+        GraphRun.objects.create(
+            lesson=lesson, trigger=GraphRun.Trigger.RESUME_DIAGNOSTIC, status=GraphRun.Status.FAILED,
+            payload={"resume": "old"},
+        )  # fmt: skip
+
+        retry = service.retry(lesson)
+
+        assert Lesson.objects.get(pk=lesson.pk).stage == Stage.FAILED and retry.payload == {}
+
+    def test_a_stop_that_came_after_the_lesson_failed_or_finished_remembers_nothing(self, service, make_lesson):
+        ready = make_lesson(stage=Stage.READY)
+        grading = GraphRun.objects.create(
+            lesson=ready,
+            graph=GraphRun.Graph.GRADE_TEST,
+            trigger=GraphRun.Trigger.GRADE,
+            status=GraphRun.Status.RUNNING,
+        )
+        failed = make_lesson(stage=Stage.FAILED)
+        flow = GraphRun.objects.create(lesson=failed, trigger=GraphRun.Trigger.RETRY, status=GraphRun.Status.RUNNING)
+
+        service.cancel(grading)
+        service.cancel(flow)
+
+        grading.refresh_from_db()
+        flow.refresh_from_db()
+        assert "stopped_in" not in grading.payload and "stopped_in" not in flow.payload
+        assert Lesson.objects.get(pk=ready.pk).stage == Stage.READY
 
     @pytest.mark.parametrize("stage", [Stage.AWAITING_DIAGNOSTIC, Stage.GENERATING_LESSON, Stage.READY])
     def test_other_stages_cannot_be_retried(self, make_lesson, queue, stage):
@@ -237,6 +324,16 @@ class TestSubmit:
         with pytest.raises(AlreadyAttempted):
             QuizService(queue=queue).submit(lesson, "diagnostic", answers_for(quiz, 5))
 
+    def test_a_second_attempt_is_still_already_attempted_once_the_lesson_has_moved_on(self, lesson, queue):
+        quiz = make_quiz(lesson)
+        QuizAttempt.objects.create(quiz=quiz, answers={}, result={})
+        Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.GENERATING_LESSON)
+
+        with pytest.raises(AlreadyAttempted):
+            QuizService(queue=queue).submit(lesson, "diagnostic", answers_for(quiz, 5))
+
+        assert QuizAttempt.objects.count() == 1 and queue.runs == []
+
     def test_refuses_while_a_run_is_still_active(self, lesson, queue):
         quiz = make_quiz(lesson)
         GraphRun.objects.create(lesson=lesson, trigger=GraphRun.Trigger.START, status=GraphRun.Status.RUNNING)
@@ -291,6 +388,7 @@ class TestReview:
         assert first["explanation"] == "Because of concept basic 0."
         assert last["answer"] == "dont_know" and last["correct"] is False
         assert body["result"]["correct"] == 6
+        assert body["submitted_at"] == QuizAttempt.objects.get(quiz=quiz).submitted_at
 
     def test_is_refused_before_the_attempt(self, lesson):
         make_quiz(lesson)
@@ -587,7 +685,7 @@ MCQ, NUM, SHORT, CODE = TEST_IDS["mcq"], TEST_IDS["numerical"], TEST_IDS["short_
 
 
 def lesson_with_test(make_lesson, **fields):
-    return ready_lesson(make_lesson, final_test=FINAL_TEST, **fields)
+    return ready_lesson(make_lesson, **({"final_test": FINAL_TEST} | fields))
 
 
 class TestSubmitLessonTest:
@@ -641,17 +739,56 @@ class TestSubmitLessonTest:
         with pytest.raises(WrongStage):
             SubmissionService(queue=queue).submit(lesson, {MCQ: 1})
 
-    def test_a_second_submission_waits_for_the_first_to_be_graded_and_then_works(self, make_lesson, queue):
+    @pytest.mark.parametrize("status", list(TestSubmission.Status))
+    def test_a_second_submission_is_refused_with_the_first_ones_id_and_stores_nothing(self, make_lesson, queue, status):
         lesson = lesson_with_test(make_lesson)
-        service = SubmissionService(queue=queue)
-        _, run = service.submit(lesson, {SHORT: "Halve it."})
+        first = TestSubmission.objects.create(lesson=lesson, answers={MCQ: 1}, status=status)
 
-        with pytest.raises(RunInProgress, match="still being graded"):
-            service.submit(lesson, {SHORT: "Again."})
+        with pytest.raises(AlreadySubmitted) as refused:
+            SubmissionService(queue=queue).submit(lesson, {MCQ: 2})
 
-        GraphRun.objects.filter(pk=run.pk).update(status=GraphRun.Status.SUCCEEDED)
-        second, _ = service.submit(lesson, {SHORT: "Again."})
-        assert TestSubmission.objects.filter(lesson=lesson).count() == 2 and second.status == "grading"
+        assert refused.value.extra == {"submission_id": str(first.id)}
+        assert list(TestSubmission.objects.filter(lesson=lesson)) == [first] and first.answers == {MCQ: 1}
+        assert queue.runs == []
+
+    def test_two_submits_that_race_past_the_first_check_end_in_the_same_refusal(self, make_lesson, queue):
+        lesson = lesson_with_test(make_lesson)
+        first = TestSubmission.objects.create(lesson=lesson, answers={MCQ: 1}, status=TestSubmission.Status.GRADED)
+
+        class Racing(SubmissionService):
+            """Looks, finds nothing (the other request has not committed yet), and then meets the constraint."""
+
+            looked = 0
+
+            def _existing(self, lesson):
+                self.looked += 1
+                return None if self.looked == 1 else super()._existing(lesson)
+
+        with pytest.raises(AlreadySubmitted) as refused:
+            Racing(queue=queue).submit(lesson, {MCQ: 2})
+
+        assert refused.value.extra == {"submission_id": str(first.id)}
+        assert TestSubmission.objects.filter(lesson=lesson).count() == 1 and queue.runs == []
+
+    def test_a_second_submission_is_refused_before_its_answers_are_looked_at(self, make_lesson, queue):
+        lesson = lesson_with_test(make_lesson)
+        TestSubmission.objects.create(lesson=lesson)
+
+        with pytest.raises(AlreadySubmitted):
+            SubmissionService(queue=queue).submit(lesson, {"nope": 1})
+
+    def test_another_lessons_submission_does_not_count(self, make_lesson, queue):
+        TestSubmission.objects.create(lesson=lesson_with_test(make_lesson))
+
+        submission, _ = SubmissionService(queue=queue).submit(lesson_with_test(make_lesson), {MCQ: 1})
+
+        assert submission.status == TestSubmission.Status.GRADED
+
+    def test_a_mastery_lesson_has_no_test_to_take(self, make_lesson, queue):
+        lesson = lesson_with_test(make_lesson, route="mastery")
+
+        with pytest.raises(WrongStage):
+            SubmissionService(queue=queue).submit(lesson, {MCQ: 1})
 
     def test_a_repair_in_progress_does_not_block_a_submission(self, make_lesson, queue):
         lesson = lesson_with_test(make_lesson)
@@ -701,3 +838,111 @@ class TestGradingStops:
         submission.refresh_from_db()
         assert submission.status == "failed" and "Cancelled" in submission.error
         assert Lesson.objects.get(pk=lesson.pk).stage == Stage.READY
+
+
+class TestLearnerTest:
+    SECRETS = ("correct_index", "answer", "tolerance", "model_answer", "key_points", "rubric", "reference_solution",
+               "test_cases", "concept", "difficulty")  # fmt: skip
+
+    def test_the_questions_come_without_answers_marking_schemes_or_concepts(self, make_lesson):
+        body = SubmissionService().for_learner(lesson_with_test(make_lesson))
+
+        by_id = {q["id"]: q for q in body["questions"]}
+        assert list(by_id) == [q["id"] for q in FINAL_TEST["questions"]]
+        assert not [key for q in body["questions"] for key in self.SECRETS if key in q]
+        assert set(by_id[MCQ]) == {"id", "type", "question", "options", "marks"}
+        assert by_id[NUM]["unit"] == "steps"
+        assert {"language", "starter_code"} <= set(by_id[CODE])
+
+    def test_the_total_is_the_sum_of_the_marks(self, make_lesson):
+        body = SubmissionService().for_learner(lesson_with_test(make_lesson))
+
+        assert body["total_marks"] == sum(q["marks"] for q in FINAL_TEST["questions"])
+
+    def test_before_a_submission_there_is_none(self, make_lesson):
+        assert SubmissionService().for_learner(lesson_with_test(make_lesson))["submission"] is None
+
+    def test_after_a_submission_it_is_named_with_its_status(self, make_lesson, queue):
+        lesson = lesson_with_test(make_lesson)
+        submission, _ = SubmissionService(queue=queue).submit(lesson, {SHORT: "Halve it."})
+
+        named = SubmissionService().for_learner(lesson)["submission"]
+
+        assert named == {"id": str(submission.id), "status": "grading", "submitted_at": submission.submitted_at}
+
+    @pytest.mark.parametrize(
+        "fields",
+        [{"stage": Stage.GENERATING_LESSON}, {"final_test": None}, {"final_test": {}}, {"route": "mastery"}],
+    )
+    def test_a_lesson_that_is_not_ready_or_has_no_test_is_refused(self, make_lesson, fields):
+        with pytest.raises(WrongStage):
+            SubmissionService().for_learner(lesson_with_test(make_lesson, **fields))
+
+
+class TestCurrentSubmission:
+    def test_it_is_the_lessons_one_submission(self, make_lesson):
+        lesson = lesson_with_test(make_lesson)
+        submission = TestSubmission.objects.create(lesson=lesson)
+
+        assert SubmissionService().current(lesson) == submission
+
+    def test_without_a_submission_it_is_not_found(self, make_lesson):
+        with pytest.raises(SubmissionNotFound):
+            SubmissionService().current(lesson_with_test(make_lesson))
+
+
+class TestRegrade:
+    def failed(self, make_lesson, **fields):
+        lesson = lesson_with_test(make_lesson)
+        submission = TestSubmission.objects.create(
+            lesson=lesson, answers={SHORT: "Halve it."}, result={"complete": False}, error="model down",
+            status=TestSubmission.Status.FAILED, **fields,
+        )  # fmt: skip
+        return lesson, submission
+
+    def test_a_failed_grading_runs_again_on_the_same_stored_answers(self, make_lesson, queue):
+        lesson, submission = self.failed(make_lesson)
+
+        run = SubmissionService(queue=queue).regrade(lesson, submission.id)
+
+        submission.refresh_from_db()
+        assert (submission.status, submission.error, submission.answers) == ("grading", "", {SHORT: "Halve it."})
+        assert (run.graph, run.trigger) == (GraphRun.Graph.GRADE_TEST, GraphRun.Trigger.GRADE)
+        assert run.payload == {"input": {"submission_id": str(submission.id)}} and queue.runs == [run]
+        assert TestSubmission.objects.filter(lesson=lesson).count() == 1
+
+    @pytest.mark.parametrize("status", [TestSubmission.Status.GRADING, TestSubmission.Status.GRADED])
+    def test_a_submission_that_has_not_failed_is_not_regraded(self, make_lesson, queue, status):
+        lesson = lesson_with_test(make_lesson)
+        submission = TestSubmission.objects.create(lesson=lesson, status=status)
+
+        with pytest.raises(NotFailed):
+            SubmissionService(queue=queue).regrade(lesson, submission.id)
+
+        submission.refresh_from_db()
+        assert submission.status == status and queue.runs == []
+
+    def test_it_waits_for_a_run_that_is_still_going(self, make_lesson, queue):
+        lesson, submission = self.failed(make_lesson)
+        GraphRun.objects.create(lesson=lesson, graph="grade_test", trigger="grade", status="running")
+
+        with pytest.raises(RunInProgress):
+            SubmissionService(queue=queue).regrade(lesson, submission.id)
+
+        submission.refresh_from_db()
+        assert submission.status == "failed" and queue.runs == []
+
+    def test_another_lessons_submission_is_not_found(self, make_lesson, queue):
+        _, theirs = self.failed(make_lesson)
+
+        with pytest.raises(SubmissionNotFound):
+            SubmissionService(queue=queue).regrade(lesson_with_test(make_lesson), theirs.id)
+
+    def test_a_run_that_cannot_be_queued_fails_the_submission_again(self, make_lesson):
+        lesson, submission = self.failed(make_lesson)
+
+        with pytest.raises(QueueUnavailable):
+            SubmissionService(queue=TestDispatcher.BrokenQueue()).regrade(lesson, submission.id)
+
+        submission.refresh_from_db()
+        assert submission.status == "failed" and "queue" in submission.error

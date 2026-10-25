@@ -1,4 +1,4 @@
-"""Django settings for Lesson Crafter.
+"""Django settings for Socra.
 
 All configuration comes from the environment: the root .env file, which docker compose also
 injects. Every value has a development default, so CI and tests run with no .env at all.
@@ -51,6 +51,9 @@ INSTALLED_APPS = [
     "accounts",
     "llm_registry",
     "lessons",
+    "onboarding",
+    "marketing",
+    "console",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -163,6 +166,14 @@ LLM_REASONING_BUDGETS = {
     "high": env.int("LLM_REASONING_BUDGET_HIGH", default=24576),
 }
 
+# --- Onboarding ---
+# How long a suggested-topics page, a model's topic list and a translation stay in the cache (30 days).
+ONBOARDING_SUGGESTION_TTL_S = env.int("ONBOARDING_SUGGESTION_TTL_S", default=30 * 24 * 3600)
+
+# --- Landing page ---
+# How long the hero card's list of active question ids is cached (it is also cleared when a question is saved).
+LANDING_DEMO_IDS_TTL_S = env.int("LANDING_DEMO_IDS_TTL_S", default=600)
+
 # --- Lesson flow ---
 # The sandbox/ package (Node): check.mjs and render-check.mjs run in a subprocess (see graph/sandbox.py).
 SANDBOX_DIR = env.path("SANDBOX_DIR", default=BASE_DIR.parent / "sandbox")
@@ -187,6 +198,11 @@ MEDIA_URL_TTL_S = env.int("MEDIA_URL_TTL_S", default=6 * 3600)
 # environment by their SDKs (LANGSMITH_API_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST).
 LLM_TRACING = env("LLM_TRACING", default="none")
 
+# --- Console ---
+# What the AI spend of one calendar month (UTC) should stay under, in US dollars. The console's overview shows month to
+# date against it; nothing is cut off when it is passed.
+CONSOLE_MONTHLY_BUDGET_USD = env("CONSOLE_MONTHLY_BUDGET_USD", default="25")
+
 # --- DRF / OpenAPI ---
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
@@ -200,6 +216,11 @@ REST_FRAMEWORK = {
         "auth_refresh": env("AUTH_REFRESH_THROTTLE_RATE", default="60/min"),
         "lesson_create": env("LESSON_CREATE_THROTTLE_RATE", default="30/hour"),  # each lesson costs model calls
         "test_submit": env("TEST_SUBMIT_THROTTLE_RATE", default="30/hour"),  # open-ended answers cost model calls
+        "landing_demo": env("LANDING_DEMO_THROTTLE_RATE", default="60/min"),  # public, per client address
+        "topic_suggestions": env(
+            "TOPIC_SUGGESTIONS_THROTTLE_RATE", default="30/min"
+        ),  # per user; may cost a model call
+        "console": env("CONSOLE_THROTTLE_RATE", default="120/min"),  # staff-only console API, per user
     },
     # Requests arrive through the Next.js proxy; the client address is the X-Forwarded-For entry it appends.
     # Keep the API port bound to localhost (BIND_ADDRESS) so nobody can reach Django directly with a forged header.
@@ -223,7 +244,7 @@ SESSION_COOKIE_SECURE = AUTH_COOKIE_SECURE
 CSRF_COOKIE_SECURE = AUTH_COOKIE_SECURE
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Lesson Crafter API",
+    "TITLE": "Socra API",
     "DESCRIPTION": "Diagnose what a learner knows, then generate a lesson or study sheet for the rest.",
     "VERSION": "0.1.0",
     "SERVE_INCLUDE_SCHEMA": False,
@@ -242,6 +263,10 @@ SPECTACULAR_SETTINGS = {
         "QuizKindEnum": "lessons.models.Quiz.Kind",
         "RunStatusEnum": "lessons.models.GraphRun.Status",
         "TestSubmissionStatusEnum": "lessons.models.TestSubmission.Status",
+        "ModelCallStatusEnum": "llm_registry.models.ModelCall.Status",
+        "RoutingPhaseEnum": "console.serializers.ROUTING_PHASES",
+        "TimelinePhaseEnum": "console.serializers.TIMELINE_PHASES",
+        "HealthStatusEnum": "console.serializers.HEALTH_STATUSES",
     },
 }
 

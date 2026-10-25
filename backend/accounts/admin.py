@@ -17,12 +17,13 @@ class UserAdmin(BaseUserAdmin):
     list_display = ["email", "name", "is_staff", "is_active", "date_joined", "last_login"]
     list_filter = ["is_staff", "is_superuser", "is_active"]
     search_fields = ["email", "name"]
-    readonly_fields = ["date_joined", "last_login"]
+    readonly_fields = ["date_joined", "last_login", "terms_accepted_at", "terms_version"]
     fieldsets = [
         (None, {"fields": ["email", "password"]}),
         ("Personal info", {"fields": ["name"]}),
         ("Permissions", {"fields": ["is_active", "is_staff", "is_superuser", "groups", "user_permissions"]}),
         ("Dates", {"fields": ["last_login", "date_joined"]}),
+        ("Consent", {"fields": ["terms_accepted_at", "terms_version"]}),
     ]
     add_fieldsets = [
         (None, {"classes": ["wide"], "fields": ["email", "name", "password1", "password2"]}),

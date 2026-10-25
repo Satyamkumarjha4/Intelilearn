@@ -10,6 +10,18 @@ export function setCodeVersion(version: number): void {
   currentCodeVersion = version;
 }
 
+let hiddenPages = new Set<string>();
+
+/** Pages of the document the app does not want shown (the test page of lessons made before the test had its own
+ *  screen). The document still declares them; the shell leaves them out. */
+export function setHiddenPages(keys: unknown): void {
+  hiddenPages = new Set(Array.isArray(keys) ? keys.filter((key): key is string => typeof key === "string") : []);
+}
+
+export function isHiddenPage(key: string): boolean {
+  return hiddenPages.has(key);
+}
+
 export function post(message: HostMessage): void {
   const full = message.type === "error" && message.codeVersion === undefined ? { ...message, codeVersion: currentCodeVersion } : message;
   const w = window as unknown as { __lessonHost?: (m: HostMessage) => void };

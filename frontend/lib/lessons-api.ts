@@ -1,6 +1,7 @@
 import { apiClient, type ApiClient } from "@/lib/api";
 import type {
   Answer,
+  LearnerTest,
   LessonDetail,
   LessonDocument,
   LessonSummary,
@@ -19,7 +20,7 @@ import type {
   TestSubmissionCreated,
 } from "@/lib/types";
 
-export type LessonQuery = { q?: string; stage?: Stage | ""; cursor?: string | null; pageSize?: number };
+export type LessonQuery = { q?: string; stage?: Stage | Stage[] | ""; cursor?: string | null; pageSize?: number };
 
 /** The lessons endpoints (docs/api.md), typed. */
 export class LessonsApi {
@@ -28,7 +29,8 @@ export class LessonsApi {
   list(query: LessonQuery = {}): Promise<Page<LessonSummary>> {
     const params = new URLSearchParams();
     if (query.q?.trim()) params.set("q", query.q.trim());
-    if (query.stage) params.set("stage", query.stage);
+    const stages = [query.stage ?? []].flat().filter(Boolean);
+    if (stages.length) params.set("stage", stages.join(","));
     if (query.cursor) params.set("cursor", query.cursor);
     if (query.pageSize) params.set("page_size", String(query.pageSize));
     const text = params.toString();
@@ -92,12 +94,28 @@ export class LessonsApi {
     return this.client.request(`/lessons/${id}/repair`, { method: "POST", body: { error, code_version: codeVersion } });
   }
 
+  /** The test as its own screen: no answers, and the one submission once it has been made. */
+  test(id: string): Promise<LearnerTest> {
+    return this.client.request(`/lessons/${id}/test`);
+  }
+
+  /** The test can be submitted once: a second try is refused with 409 `already_submitted`. */
   submitTest(id: string, answers: Record<string, unknown>): Promise<TestSubmissionCreated> {
     return this.client.request(`/lessons/${id}/test/submissions`, { method: "POST", body: { answers } });
   }
 
   submission(id: string, submissionId: string): Promise<TestSubmission> {
     return this.client.request(`/lessons/${id}/test/submissions/${submissionId}`);
+  }
+
+  /** The lesson's one submission with its result; 404 before the test is taken. */
+  currentSubmission(id: string): Promise<TestSubmission> {
+    return this.client.request(`/lessons/${id}/test/submission`);
+  }
+
+  /** Grades a failed submission again on the answers it already has (never new ones). */
+  regradeTest(id: string, submissionId: string): Promise<{ run_id: string }> {
+    return this.client.request(`/lessons/${id}/test/submissions/${submissionId}/regrade`, { method: "POST" });
   }
 
   versions(id: string): Promise<LessonVersion[]> {

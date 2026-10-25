@@ -97,7 +97,7 @@ class AssembleRepairedNode(Node):
 
     def run(self, state: dict, ctx: FlowContext) -> dict:
         parts = state["repaired_parts"]
-        document = assembler.assemble(parts["interactives"], parts["pages"] | {"test": assembler.test_page()})
+        document = assembler.assemble(parts["interactives"], parts["pages"])
         check = ctx.sandbox.check_code(document, required=["LessonDocument"], asset_ids=PageParts.asset_ids(state))
         if check.errors:
             raise RepairFailed(f"The repaired lesson does not pass the code checks ({check.errors[0]}).")
@@ -125,7 +125,7 @@ class VerifyRepairNode(Node):
     def run(self, state: dict, ctx: FlowContext) -> dict:
         data = LessonData.build(state, media_url=lambda asset_id: f"https://media.invalid/{asset_id}")
         report = ctx.sandbox.render_check(
-            state["document_code"], data, pages=[*PAGE_KEYS, "test"], media_files=RenderCheckNode.media_files(state)
+            state["document_code"], data, pages=list(PAGE_KEYS), media_files=RenderCheckNode.media_files(state)
         )
         if not report.ok:
             raise RepairFailed(

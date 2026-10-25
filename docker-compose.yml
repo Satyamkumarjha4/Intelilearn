@@ -125,10 +125,13 @@ services:
     environment:
       DJANGO_API_ORIGIN: http://backend:8000
       NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:${BACKEND_PORT:-8000}}
+      NEXT_PUBLIC_DJANGO_ADMIN_URL: ${NEXT_PUBLIC_DJANGO_ADMIN_URL:-http://localhost:${BACKEND_PORT:-8000}/admin}
     volumes:
       - ./frontend:/app:z
       - /app/node_modules
       - /app/.next
+      # Read-only: frontend/lib/theme-tokens.test.ts compares the app palette with the sandbox harness page.
+      - ./sandbox/src:/sandbox/src:ro,z
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-3000}:3000"
     depends_on:

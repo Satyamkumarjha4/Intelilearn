@@ -1,0 +1,983 @@
+{
+  "school": {
+    "general": [
+      {
+        "subject": "Maths",
+        "title": "Fractions and decimals"
+      },
+      {
+        "subject": "Maths",
+        "title": "Linear equations"
+      },
+      {
+        "subject": "Science",
+        "title": "Force and motion"
+      },
+      {
+        "subject": "Science",
+        "title": "Electricity and circuits"
+      },
+      {
+        "subject": "Science",
+        "title": "Photosynthesis"
+      },
+      {
+        "subject": "Geography",
+        "title": "Latitudes and longitudes"
+      },
+      {
+        "subject": "History",
+        "title": "The French Revolution"
+      },
+      {
+        "subject": "English",
+        "title": "Parts of speech"
+      }
+    ],
+    "classes": {
+      "6": [
+        {
+          "subject": "Maths",
+          "title": "Fractions"
+        },
+        {
+          "subject": "Maths",
+          "title": "Ratio and proportion"
+        },
+        {
+          "subject": "Maths",
+          "title": "Perimeter and area"
+        },
+        {
+          "subject": "Science",
+          "title": "Motion and measurement of distances"
+        },
+        {
+          "subject": "Science",
+          "title": "Light, shadows and reflections"
+        },
+        {
+          "subject": "Science",
+          "title": "Electricity and circuits"
+        },
+        {
+          "subject": "Science",
+          "title": "Separation of substances"
+        },
+        {
+          "subject": "Geography",
+          "title": "Latitudes and longitudes"
+        },
+        {
+          "subject": "History",
+          "title": "Early humans and the first farmers"
+        }
+      ],
+      "7": [
+        {
+          "subject": "Maths",
+          "title": "Integers"
+        },
+        {
+          "subject": "Maths",
+          "title": "Simple equations"
+        },
+        {
+          "subject": "Maths",
+          "title": "Properties of triangles"
+        },
+        {
+          "subject": "Maths",
+          "title": "Percentages, profit and loss"
+        },
+        {
+          "subject": "Science",
+          "title": "Heat and temperature"
+        },
+        {
+          "subject": "Science",
+          "title": "Acids, bases and salts"
+        },
+        {
+          "subject": "Science",
+          "title": "Motion and time"
+        },
+        {
+          "subject": "Geography",
+          "title": "Inside our Earth"
+        },
+        {
+          "subject": "History",
+          "title": "The Mughal Empire"
+        }
+      ],
+      "8": [
+        {
+          "subject": "Maths",
+          "title": "Linear equations in one variable"
+        },
+        {
+          "subject": "Maths",
+          "title": "Squares and square roots"
+        },
+        {
+          "subject": "Maths",
+          "title": "Algebraic identities"
+        },
+        {
+          "subject": "Maths",
+          "title": "Area of plane figures"
+        },
+        {
+          "subject": "Science",
+          "title": "Force and pressure"
+        },
+        {
+          "subject": "Science",
+          "title": "Friction"
+        },
+        {
+          "subject": "Science",
+          "title": "Sound and how it travels"
+        },
+        {
+          "subject": "Science",
+          "title": "The cell: structure and functions"
+        },
+        {
+          "subject": "Geography",
+          "title": "Resources and their types"
+        },
+        {
+          "subject": "History",
+          "title": "The revolt of 1857"
+        }
+      ],
+      "9": [
+        {
+          "subject": "Maths",
+          "title": "Number systems"
+        },
+        {
+          "subject": "Maths",
+          "title": "Polynomials"
+        },
+        {
+          "subject": "Maths",
+          "title": "Linear equations in two variables"
+        },
+        {
+          "subject": "Maths",
+          "title": "Triangles and congruence"
+        },
+        {
+          "subject": "Physics",
+          "title": "Motion"
+        },
+        {
+          "subject": "Physics",
+          "title": "Force and the laws of motion"
+        },
+        {
+          "subject": "Physics",
+          "title": "Gravitation"
+        },
+        {
+          "subject": "Chemistry",
+          "title": "Atoms and molecules"
+        },
+        {
+          "subject": "Biology",
+          "title": "The fundamental unit of life: the cell"
+        },
+        {
+          "subject": "Geography",
+          "title": "Climate of India"
+        }
+      ],
+      "10": [
+        {
+          "subject": "Maths",
+          "title": "Quadratic equations"
+        },
+        {
+          "subject": "Maths",
+          "title": "Arithmetic progressions"
+        },
+        {
+          "subject": "Maths",
+          "title": "Introduction to trigonometry"
+        },
+        {
+          "subject": "Maths",
+          "title": "Probability"
+        },
+        {
+          "subject": "Physics",
+          "title": "Electricity"
+        },
+        {
+          "subject": "Physics",
+          "title": "Light: reflection and refraction"
+        },
+        {
+          "subject": "Chemistry",
+          "title": "Chemical reactions and equations"
+        },
+        {
+          "subject": "Chemistry",
+          "title": "Carbon and its compounds"
+        },
+        {
+          "subject": "Biology",
+          "title": "Life processes"
+        },
+        {
+          "subject": "History",
+          "title": "Nationalism in India"
+        }
+      ],
+      "11": [
+        {
+          "subject": "Maths",
+          "title": "Sets and relations"
+        },
+        {
+          "subject": "Maths",
+          "title": "Trigonometric functions"
+        },
+        {
+          "subject": "Maths",
+          "title": "Limits and derivatives"
+        },
+        {
+          "subject": "Maths",
+          "title": "Permutations and combinations"
+        },
+        {
+          "subject": "Physics",
+          "title": "Units and measurements"
+        },
+        {
+          "subject": "Physics",
+          "title": "Laws of motion"
+        },
+        {
+          "subject": "Physics",
+          "title": "Work, energy and power"
+        },
+        {
+          "subject": "Chemistry",
+          "title": "The mole concept"
+        },
+        {
+          "subject": "Chemistry",
+          "title": "Structure of the atom"
+        },
+        {
+          "subject": "Biology",
+          "title": "Photosynthesis in higher plants"
+        }
+      ],
+      "12": [
+        {
+          "subject": "Maths",
+          "title": "Matrices"
+        },
+        {
+          "subject": "Maths",
+          "title": "Continuity and differentiability"
+        },
+        {
+          "subject": "Maths",
+          "title": "Integrals"
+        },
+        {
+          "subject": "Maths",
+          "title": "Probability: Bayes' theorem"
+        },
+        {
+          "subject": "Physics",
+          "title": "Electric charges and fields"
+        },
+        {
+          "subject": "Physics",
+          "title": "Current electricity"
+        },
+        {
+          "subject": "Physics",
+          "title": "Ray optics"
+        },
+        {
+          "subject": "Chemistry",
+          "title": "Electrochemistry"
+        },
+        {
+          "subject": "Chemistry",
+          "title": "Chemical kinetics"
+        },
+        {
+          "subject": "Biology",
+          "title": "Molecular basis of inheritance"
+        }
+      ]
+    }
+  },
+  "higher_education": {
+    "general": {
+      "undergraduate": [
+        {
+          "subject": "Study skills",
+          "title": "Active recall and spaced repetition"
+        },
+        {
+          "subject": "Writing",
+          "title": "Structuring an essay"
+        },
+        {
+          "subject": "Statistics",
+          "title": "Mean, median and standard deviation"
+        },
+        {
+          "subject": "Thinking",
+          "title": "Spotting logical fallacies"
+        },
+        {
+          "subject": "Study skills",
+          "title": "Planning your study week"
+        },
+        {
+          "subject": "Research",
+          "title": "Reading a research paper"
+        }
+      ],
+      "postgraduate": [
+        {
+          "subject": "Research",
+          "title": "Reading and critiquing a research paper"
+        },
+        {
+          "subject": "Research",
+          "title": "Writing a research question"
+        },
+        {
+          "subject": "Writing",
+          "title": "Writing a literature review"
+        },
+        {
+          "subject": "Writing",
+          "title": "Citing sources and avoiding plagiarism"
+        },
+        {
+          "subject": "Statistics",
+          "title": "Hypothesis testing"
+        },
+        {
+          "subject": "Writing",
+          "title": "Writing a clear abstract"
+        }
+      ]
+    },
+    "families": [
+      {
+        "slug": "computer_science",
+        "label": "Computer science and IT",
+        "keywords": [
+          "computer science",
+          "computer",
+          "cs",
+          "cse",
+          "it",
+          "information technology",
+          "information systems",
+          "software",
+          "data science",
+          "artificial intelligence",
+          "ai",
+          "machine learning",
+          "ml",
+          "programming",
+          "cybersecurity",
+          "bca",
+          "mca"
+        ],
+        "undergraduate": [
+          {
+            "subject": "Algorithms",
+            "title": "Binary search"
+          },
+          {
+            "subject": "Programming",
+            "title": "Recursion"
+          },
+          {
+            "subject": "Data structures",
+            "title": "Linked lists"
+          },
+          {
+            "subject": "Algorithms",
+            "title": "Big-O notation"
+          },
+          {
+            "subject": "Databases",
+            "title": "SQL joins"
+          },
+          {
+            "subject": "Data structures",
+            "title": "How hashing works"
+          },
+          {
+            "subject": "Operating systems",
+            "title": "Process scheduling"
+          },
+          {
+            "subject": "Networks",
+            "title": "How TCP works"
+          },
+          {
+            "subject": "Programming",
+            "title": "Object-oriented principles"
+          }
+        ],
+        "postgraduate": [
+          {
+            "subject": "Algorithms",
+            "title": "Dynamic programming"
+          },
+          {
+            "subject": "Algorithms",
+            "title": "Shortest paths in graphs"
+          },
+          {
+            "subject": "Machine learning",
+            "title": "Gradient descent"
+          },
+          {
+            "subject": "Machine learning",
+            "title": "How neural networks learn"
+          },
+          {
+            "subject": "Distributed systems",
+            "title": "Consensus with Raft"
+          },
+          {
+            "subject": "Machine learning",
+            "title": "The transformer architecture"
+          },
+          {
+            "subject": "Databases",
+            "title": "Indexes and query plans"
+          },
+          {
+            "subject": "Compilers",
+            "title": "Parsing"
+          }
+        ]
+      },
+      {
+        "slug": "engineering",
+        "label": "Engineering",
+        "keywords": [
+          "engineering",
+          "engineer",
+          "b tech",
+          "btech",
+          "m tech",
+          "mtech",
+          "mechanical",
+          "civil",
+          "electrical",
+          "electronics",
+          "aerospace",
+          "mechatronics",
+          "robotics",
+          "industrial",
+          "instrumentation",
+          "automobile"
+        ],
+        "undergraduate": [
+          {
+            "subject": "Circuits",
+            "title": "Ohm's law and circuits"
+          },
+          {
+            "subject": "Mechanics",
+            "title": "Stress and strain"
+          },
+          {
+            "subject": "Fluids",
+            "title": "Bernoulli's principle"
+          },
+          {
+            "subject": "Mathematics",
+            "title": "Laplace transforms"
+          },
+          {
+            "subject": "Thermodynamics",
+            "title": "Thermodynamic cycles"
+          },
+          {
+            "subject": "Mechanics",
+            "title": "Free-body diagrams"
+          },
+          {
+            "subject": "Electronics",
+            "title": "Boolean algebra and logic gates"
+          },
+          {
+            "subject": "Signals",
+            "title": "Fourier series"
+          }
+        ],
+        "postgraduate": [
+          {
+            "subject": "Mechanics",
+            "title": "The finite element method"
+          },
+          {
+            "subject": "Control",
+            "title": "PID control"
+          },
+          {
+            "subject": "Heat transfer",
+            "title": "Heat exchangers"
+          },
+          {
+            "subject": "Signals",
+            "title": "The Fourier transform"
+          },
+          {
+            "subject": "Estimation",
+            "title": "The Kalman filter"
+          },
+          {
+            "subject": "Optimisation",
+            "title": "Linear programming"
+          },
+          {
+            "subject": "Reliability",
+            "title": "Failure rates and reliability"
+          },
+          {
+            "subject": "Control",
+            "title": "State-space models"
+          }
+        ]
+      },
+      {
+        "slug": "commerce_economics",
+        "label": "Commerce and economics",
+        "keywords": [
+          "commerce",
+          "b com",
+          "bcom",
+          "m com",
+          "mcom",
+          "economics",
+          "economic",
+          "business",
+          "bba",
+          "mba",
+          "finance",
+          "accounting",
+          "accountancy",
+          "marketing",
+          "management",
+          "banking"
+        ],
+        "undergraduate": [
+          {
+            "subject": "Economics",
+            "title": "Supply and demand"
+          },
+          {
+            "subject": "Economics",
+            "title": "Elasticity of demand"
+          },
+          {
+            "subject": "Finance",
+            "title": "The time value of money"
+          },
+          {
+            "subject": "Accounting",
+            "title": "Double-entry bookkeeping"
+          },
+          {
+            "subject": "Accounting",
+            "title": "Reading a balance sheet"
+          },
+          {
+            "subject": "Economics",
+            "title": "GDP and inflation"
+          },
+          {
+            "subject": "Business",
+            "title": "Break-even analysis"
+          },
+          {
+            "subject": "Marketing",
+            "title": "The marketing mix"
+          }
+        ],
+        "postgraduate": [
+          {
+            "subject": "Economics",
+            "title": "Game theory and Nash equilibrium"
+          },
+          {
+            "subject": "Finance",
+            "title": "The capital asset pricing model"
+          },
+          {
+            "subject": "Econometrics",
+            "title": "Regression analysis"
+          },
+          {
+            "subject": "Economics",
+            "title": "Monetary policy transmission"
+          },
+          {
+            "subject": "Finance",
+            "title": "Discounted cash flow valuation"
+          },
+          {
+            "subject": "Finance",
+            "title": "Portfolio diversification"
+          },
+          {
+            "subject": "Economics",
+            "title": "Behavioural economics"
+          },
+          {
+            "subject": "Accounting",
+            "title": "Analysing financial statements"
+          }
+        ]
+      },
+      {
+        "slug": "arts_humanities",
+        "label": "Arts and humanities",
+        "keywords": [
+          "humanities",
+          "liberal arts",
+          "bachelor of arts",
+          "master of arts",
+          "history",
+          "english",
+          "literature",
+          "psychology",
+          "sociology",
+          "political science",
+          "politics",
+          "philosophy",
+          "linguistics",
+          "journalism",
+          "mass communication",
+          "anthropology",
+          "geography",
+          "law",
+          "social science",
+          "social work",
+          "education",
+          "languages",
+          "hindi",
+          "fine arts",
+          "b a",
+          "ba",
+          "m a",
+          "ma"
+        ],
+        "undergraduate": [
+          {
+            "subject": "Writing",
+            "title": "Writing a thesis statement"
+          },
+          {
+            "subject": "Literature",
+            "title": "Literary devices"
+          },
+          {
+            "subject": "History",
+            "title": "Causes of the First World War"
+          },
+          {
+            "subject": "Psychology",
+            "title": "Classical conditioning"
+          },
+          {
+            "subject": "Sociology",
+            "title": "Social stratification"
+          },
+          {
+            "subject": "Politics",
+            "title": "Separation of powers"
+          },
+          {
+            "subject": "Thinking",
+            "title": "Critical reading"
+          },
+          {
+            "subject": "Psychology",
+            "title": "Cognitive biases"
+          }
+        ],
+        "postgraduate": [
+          {
+            "subject": "Research",
+            "title": "Qualitative and quantitative methods"
+          },
+          {
+            "subject": "Literature",
+            "title": "Postcolonial theory"
+          },
+          {
+            "subject": "History",
+            "title": "Historiography"
+          },
+          {
+            "subject": "Linguistics",
+            "title": "Discourse analysis"
+          },
+          {
+            "subject": "Philosophy",
+            "title": "Utilitarianism and deontology"
+          },
+          {
+            "subject": "Theory",
+            "title": "Structuralism and semiotics"
+          },
+          {
+            "subject": "Research",
+            "title": "Writing a literature review"
+          },
+          {
+            "subject": "Politics",
+            "title": "Political economy"
+          }
+        ]
+      },
+      {
+        "slug": "science",
+        "label": "Science",
+        "keywords": [
+          "science",
+          "physics",
+          "chemistry",
+          "biology",
+          "maths",
+          "mathematics",
+          "math",
+          "botany",
+          "zoology",
+          "biotechnology",
+          "biotech",
+          "microbiology",
+          "geology",
+          "statistics",
+          "b sc",
+          "bsc",
+          "m sc",
+          "msc",
+          "environmental",
+          "biochemistry",
+          "genetics",
+          "astronomy"
+        ],
+        "undergraduate": [
+          {
+            "subject": "Physics",
+            "title": "The wave function in quantum mechanics"
+          },
+          {
+            "subject": "Chemistry",
+            "title": "Organic reaction mechanisms"
+          },
+          {
+            "subject": "Biology",
+            "title": "Mendelian genetics"
+          },
+          {
+            "subject": "Chemistry",
+            "title": "Chemical equilibrium"
+          },
+          {
+            "subject": "Physics",
+            "title": "Entropy"
+          },
+          {
+            "subject": "Physics",
+            "title": "Electromagnetic induction"
+          },
+          {
+            "subject": "Biology",
+            "title": "Cellular respiration"
+          },
+          {
+            "subject": "Mathematics",
+            "title": "Eigenvalues and eigenvectors"
+          }
+        ],
+        "postgraduate": [
+          {
+            "subject": "Physics",
+            "title": "The partition function"
+          },
+          {
+            "subject": "Chemistry",
+            "title": "NMR spectroscopy"
+          },
+          {
+            "subject": "Biology",
+            "title": "CRISPR gene editing"
+          },
+          {
+            "subject": "Chemistry",
+            "title": "Molecular orbital theory"
+          },
+          {
+            "subject": "Physics",
+            "title": "Special relativity"
+          },
+          {
+            "subject": "Mathematics",
+            "title": "Fourier analysis"
+          },
+          {
+            "subject": "Statistics",
+            "title": "Hypothesis testing"
+          },
+          {
+            "subject": "Biology",
+            "title": "Protein folding"
+          }
+        ]
+      }
+    ]
+  },
+  "professional": [
+    {
+      "subject": "Work skills",
+      "title": "Excel pivot tables"
+    },
+    {
+      "subject": "Data",
+      "title": "Reading a dashboard"
+    },
+    {
+      "subject": "Finance",
+      "title": "How compound interest works"
+    },
+    {
+      "subject": "Work skills",
+      "title": "Writing a clear email"
+    },
+    {
+      "subject": "AI",
+      "title": "How AI chatbots work"
+    },
+    {
+      "subject": "Business",
+      "title": "Unit economics"
+    },
+    {
+      "subject": "Management",
+      "title": "Giving constructive feedback"
+    },
+    {
+      "subject": "Management",
+      "title": "Project planning with a Gantt chart"
+    },
+    {
+      "subject": "Data",
+      "title": "SQL basics for analysts"
+    },
+    {
+      "subject": "Work skills",
+      "title": "Negotiation basics"
+    }
+  ],
+  "interview_prep": [
+    {
+      "subject": "Data structures",
+      "title": "Arrays and hashing"
+    },
+    {
+      "subject": "Algorithms",
+      "title": "Binary search"
+    },
+    {
+      "subject": "Algorithms",
+      "title": "Recursion and backtracking"
+    },
+    {
+      "subject": "Algorithms",
+      "title": "Dynamic programming basics"
+    },
+    {
+      "subject": "System design",
+      "title": "Load balancers and caching"
+    },
+    {
+      "subject": "Databases",
+      "title": "SQL joins and window functions"
+    },
+    {
+      "subject": "Programming",
+      "title": "Object-oriented principles"
+    },
+    {
+      "subject": "Algorithms",
+      "title": "Big-O notation"
+    },
+    {
+      "subject": "Web",
+      "title": "HTTP and REST"
+    },
+    {
+      "subject": "Soft skills",
+      "title": "Answering with the STAR method"
+    }
+  ],
+  "self_learner": [
+    {
+      "subject": "Finance",
+      "title": "Personal finance basics"
+    },
+    {
+      "subject": "Space",
+      "title": "How black holes form"
+    },
+    {
+      "subject": "Technology",
+      "title": "How the internet works"
+    },
+    {
+      "subject": "Science",
+      "title": "Climate change science"
+    },
+    {
+      "subject": "Finance",
+      "title": "How the stock market works"
+    },
+    {
+      "subject": "Psychology",
+      "title": "How habits form"
+    },
+    {
+      "subject": "Health",
+      "title": "How vaccines work"
+    },
+    {
+      "subject": "Psychology",
+      "title": "How memory works"
+    },
+    {
+      "subject": "Health",
+      "title": "The basics of nutrition"
+    },
+    {
+      "subject": "Technology",
+      "title": "How GPS finds you"
+    }
+  ]
+}

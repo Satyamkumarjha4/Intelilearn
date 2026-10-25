@@ -3,7 +3,8 @@ from rest_framework.views import exception_handler
 
 
 class ApiErrorFormatter:
-    """Every API error has the same shape: {"detail": str, "code": str, "fields"?: {field: [messages]}}."""
+    """Every API error has the same shape: {"detail": str, "code": str, "fields"?: {field: [messages]}}. An exception
+    may carry more for the client to act on in an `extra` dict (the id of the thing that is already there, say)."""
 
     FIELDS_DETAIL = "Please correct the highlighted fields."
 
@@ -31,7 +32,7 @@ class ApiErrorFormatter:
         detail = response.data.get("detail", str(exc)) if isinstance(response.data, dict) else str(exc)
         codes = exc.get_codes() if isinstance(exc, exceptions.APIException) else "error"
         code = codes.get("detail", "error") if isinstance(codes, dict) else codes
-        return {"detail": str(detail), "code": str(code)}
+        return {"detail": str(detail), "code": str(code), **getattr(exc, "extra", {})}
 
 
 def api_exception_handler(exc, context):

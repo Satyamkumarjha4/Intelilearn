@@ -2,6 +2,15 @@ import type { Band, LessonDetail, QuizResultSummary, Route } from "@/lib/types";
 
 export const BAND_ORDER: Band[] = ["basic", "easy_moderate", "moderate", "moderate_hard", "hard"];
 
+/** How a learner reads a difficulty band. */
+export const BAND_LABELS: Record<Band, string> = {
+  basic: "Basics",
+  easy_moderate: "Easy applications",
+  moderate: "Standard problems",
+  moderate_hard: "Edge cases",
+  hard: "Expert",
+};
+
 /** Which screen of the lesson page a lesson is on (docs/frontend.md, "the stage-driven view"). */
 export type ScreenKind =
   | "progress"

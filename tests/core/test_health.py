@@ -10,6 +10,7 @@ Use cases:
 - a check that raises is a failed result with its message and latency, not an exception
 - the overall status is the worst component's
 - the celery check fails when no worker answers
+- the celery check can say how many workers answered (the console's overview)
 - the OpenAPI schema lists /api/health
 """
 
@@ -88,6 +89,20 @@ def test_celery_check_fails_when_no_worker_answers():
     result = CeleryHealthCheck(app=App()).run()
 
     assert (result.ok, result.detail) == (False, "no workers responded")
+
+
+def test_celery_check_counts_the_workers_that_answered():
+    class Control:
+        def ping(self, timeout):
+            return [{"worker-1": {"ok": "pong"}}, {"worker-2": {"ok": "pong"}}]
+
+    class App:
+        control = Control()
+
+    check = CeleryHealthCheck(app=App())
+
+    assert check.worker_count() == 2
+    assert check.run().detail == "2 worker(s)"
 
 
 def test_openapi_schema_lists_health(client):

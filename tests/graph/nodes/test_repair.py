@@ -10,7 +10,8 @@ Use cases:
   `code_version` and an error that cannot be traced to a part
 - repair_runtime: asks `runtime.repair` for the crashed interactive or page with the error and the contract, holds the
   answer to the code checks, and replaces only that part; refuses code that still fails or did not change
-- assemble_repaired: assembles the document with the test page; refuses a document that fails the code checks
+- assemble_repaired: assembles the document from the three pages (an old lesson's test page is dropped); refuses
+  a document that fails the code checks
 - regression_check: lets a faithful repair through and refuses one that dropped content
 - verify_repair: records a clean render; refuses a repair that still fails in the browser, saying what failed
 - save_repair: keeps the old code as a LessonVersion, stores the new code under the next code_version, and refuses when
@@ -129,12 +130,10 @@ class TestRepairRuntime:
 
 
 class TestAssemble:
-    def test_the_repaired_parts_are_assembled_with_the_test_page(self, ready, runtime, sandbox):
+    def test_the_repaired_parts_are_assembled_from_the_three_pages_without_a_test_page(self, ready, runtime, sandbox):
         update = AssembleRepairedNode()(ready | {"repaired_parts": OLD_PARTS}, runtime)
 
-        assert (
-            "function Page_test()" in update["document_code"] and "function LessonDocument()" in update["document_code"]
-        )
+        assert "Page_test" not in update["document_code"] and "function LessonDocument()" in update["document_code"]
         assert sandbox.check_calls[0]["required"] == ["LessonDocument"]
 
     def test_a_document_that_fails_the_checks_is_refused(self, ready, runtime, sandbox):
@@ -168,7 +167,7 @@ class TestVerify:
 
         assert update["render_report"]["ok"] is True
         call = sandbox.render_calls[0]
-        assert call["pages"] == ["introduction", "core", "advanced", "test"] and call["code"] == "DOC"
+        assert call["pages"] == ["introduction", "core", "advanced"] and call["code"] == "DOC"
 
     def test_a_repair_that_still_fails_in_the_browser_is_refused_and_says_why(self, ready, runtime, sandbox):
         sandbox.render_reports = [RenderReport(ok=False, pages={"core": ["Runtime error: boom"]})]
@@ -205,5 +204,5 @@ class TestSave:
         assert len(LessonVersion.objects.get(lesson=lesson).reason) == 300
 
 
-def test_the_standard_test_page_is_not_part_of_the_stored_pages():
-    assert "test" not in OLD_PARTS["pages"] and "function Page_test()" in assembler.test_page()
+def test_the_test_is_not_part_of_the_stored_pages():
+    assert set(OLD_PARTS["pages"]) == {"introduction", "core", "advanced"}

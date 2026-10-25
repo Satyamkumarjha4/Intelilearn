@@ -24,8 +24,8 @@ class RepairTargetLocator:
     """Reads a browser error and says which interactive or page to repair.
 
     A component is named in the error when its boundary caught it (`Interactive_x`); a page is named by the viewer
-    (`error.page`) or by its function in the stack (`Page_core`). The test page is never written by a model, so it is
-    never a target.
+    (`error.page`) or by its function in the stack (`Page_core`). The final test is not part of the document, so it
+    is never a target.
     """
 
     COMPONENT = re.compile(r"\bInteractive_\w+")

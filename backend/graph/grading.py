@@ -101,8 +101,28 @@ class QuizGrader:
         )
 
 
+@dataclass(frozen=True)
+class RoutingThresholds:
+    """`RoutingPolicy` for a given set of settings, in numbers of correct answers out of `questions_total`: a score at
+    or below `foundations_max` goes to the prerequisites, one at or above `mastery_min` can be mastery (with the relaxed
+    rule the hard band must also be right), anything between is the lesson."""
+
+    questions_total: int
+    foundations_max: int
+    mastery_min: int
+
+
 class RoutingPolicy:
     """Where the learner goes after a quiz. The thresholds are the lesson's `FlowSettings` snapshot."""
+
+    def thresholds(self, settings: dict) -> RoutingThresholds:
+        total = settings.get("diagnostic_questions_per_band", 2) * len(BANDS)
+        strict = settings.get("mastery_requires_all_correct", True)
+        return RoutingThresholds(
+            questions_total=total,
+            foundations_max=settings.get("prereq_trigger_max_correct", 2),
+            mastery_min=total if strict else total - 1,
+        )
 
     def route_for(self, result: QuizResult, settings: dict) -> Route:
         hard_right, hard_total = result.by_band.get("hard", [0, 0])

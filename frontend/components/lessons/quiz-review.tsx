@@ -36,7 +36,7 @@ export function QuizReview({ lessonId, kind }: { lessonId: string; kind: QuizKin
             <li key={q.id} className="flex flex-col gap-1 rounded-lg border p-3 text-sm">
               <p className="flex items-start gap-2 font-medium">
                 {q.correct ? (
-                  <CheckIcon className="mt-0.5 size-4 shrink-0 text-emerald-600" aria-label="correct" />
+                  <CheckIcon className="mt-0.5 size-4 shrink-0 text-success" aria-label="correct" />
                 ) : (
                   <XIcon className="mt-0.5 size-4 shrink-0 text-destructive" aria-label="wrong" />
                 )}

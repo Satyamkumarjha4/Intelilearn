@@ -1,3 +1,4 @@
+import { ApiError } from "@/lib/api";
 import type { LessonsApi } from "@/lib/lessons-api";
 import type { QuestionResult, ScoreCard, TestSubmission } from "@/lib/types";
 
@@ -36,6 +37,16 @@ export class TestResultView {
 
   static topics(card: ScoreCard): string {
     return card.topics_to_revisit.join(", ");
+  }
+}
+
+/** The reply to a second try at the test: it can be taken once, and the answer names the submission that is there. */
+export class AlreadySubmitted {
+  /** The id of the existing submission, or null when `error` is not that refusal. */
+  static idOf(error: unknown): string | null {
+    if (!(error instanceof ApiError) || error.status !== 409 || error.code !== "already_submitted") return null;
+    const id = error.extra.submission_id;
+    return typeof id === "string" && id ? id : null;
   }
 }
 

@@ -16,6 +16,13 @@ Use cases:
 - a run that is already finished, or that another worker holds, is not executed again
 - a redelivered run that was left running continues from its checkpoint
 - a cancelled run stops after the current node and publishes cancelled
+- Retry after a stop carries on from the checkpoint, however far the graph got: a stop between a node's end and the
+  next step leaves tasks that are done but not applied, and that is not "finished"; it is never a no-op that leaves the
+  lesson failed
+- a resume run stopped before the worker took it is retried with the answer the learner already gave, not a bare True
+- a stop noticed after the graph had already paused again retries into that pause (the old answer is not fed to a
+  different question), and the lesson is back at that quiz's stage
+- an error that surfaces in a node after the learner stopped the run does not replace the "Cancelled" message
 - an unknown graph fails the run with a clear message
 - an extra study sheet runs in its own thread, ends succeeded and leaves the lesson ready
 - an extra sheet that fails its checks ends the run failed with the reason and leaves the lesson alone
@@ -26,12 +33,15 @@ Use cases:
 - a thread paused by one runner is resumed by another with a fresh Postgres checkpointer (a restarted worker)
 - failure messages: model failures name the step, unexpected errors do not leak details
 - the recorder and lock behave: begin is conditional, finish only from running, the lock is exclusive
+- the recorder keeps when each node started and finished, and how often the graph ran it again (the console timeline)
 """
 
 import contextlib
+from datetime import UTC, datetime
 
 import pytest
 from django.db import connection
+from django.utils import timezone
 from langgraph.checkpoint.memory import InMemorySaver
 from support.fakes import FakeSandbox
 from support.fixtures import budget_snapshot
@@ -49,6 +59,7 @@ from lessons.checkpoints import CheckpointerFactory
 from lessons.events import RunEvent
 from lessons.models import GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt, Stage, StudyMaterial, TestSubmission
 from lessons.runner import FailureMessage, FlowRunner, GraphRunRecorder, RunLock
+from lessons.services import LessonService
 from llm_registry.gateway import AllModelsFailed, NodeDisabled
 
 # LangGraph runs a node on a worker thread, which has its own database connection: it only sees committed rows.
@@ -315,6 +326,126 @@ def test_a_cancelled_run_stops_after_the_current_node(make_runner, prepared, gat
     assert Quiz.objects.filter(lesson=prepared).count() == 0
 
 
+class TestRetryAfterAStop:
+    """The learner pressed Stop (`LessonService.cancel`, as the API does), then Retry."""
+
+    @pytest.fixture
+    def service(self, queue, publisher):
+        return LessonService(queue=queue, events=publisher)
+
+    def stop_in(self, service, run, gateway, node_key, answer):
+        """Script `node_key` so that the learner stops the run while the model is answering."""
+
+        def stop_then_answer(messages):
+            service.cancel(GraphRun.objects.select_related("lesson").get(pk=run.pk))
+            return answer
+
+        gateway.script(node_key, stop_then_answer)
+
+    def test_a_stop_while_the_quiz_is_being_written_is_retried_from_the_saved_node(
+        self, service, make_runner, prepared, gateway, valid_bundle
+    ):
+        run = new_run(prepared)
+        self.stop_in(service, run, gateway, "diagnostic.generate", valid_bundle)
+        make_runner().execute(run.id)
+        assert Lesson.objects.get(pk=prepared.pk).stage == Stage.FAILED
+
+        retry = service.retry(Lesson.objects.get(pk=prepared.pk))
+        make_runner().execute(retry.id)
+
+        retry.refresh_from_db()
+        stored = Lesson.objects.get(pk=prepared.pk)
+        assert retry.status == GraphRun.Status.PAUSED
+        assert (stored.stage, stored.error) == (Stage.AWAITING_DIAGNOSTIC, "")
+        assert Quiz.objects.filter(lesson=prepared, kind="diagnostic").count() == 1
+        assert len(gateway.called("diagnostic.generate")) == 1  # the saved answer was used, not asked for again
+
+    def test_a_stop_while_the_learner_is_assessed_is_retried_to_the_end_of_the_graph(
+        self, service, make_runner, prepared, gateway, publisher, valid_bundle
+    ):
+        gateway.script("diagnostic.generate", valid_bundle)
+        make_runner().execute(new_run(prepared).id)
+        answered = attempt(prepared, "diagnostic", right=5)
+        resume = new_run(prepared, GraphRun.Trigger.RESUME_DIAGNOSTIC, {"resume": str(answered.id)})
+        self.stop_in(service, resume, gateway, "learner.assess", ASSESSMENT)
+        make_runner().execute(resume.id)
+        assert Lesson.objects.get(pk=prepared.pk).stage == Stage.FAILED
+
+        retry = service.retry(Lesson.objects.get(pk=prepared.pk))
+        make_runner().execute(retry.id)
+
+        retry.refresh_from_db()
+        stored = Lesson.objects.get(pk=prepared.pk)
+        assert retry.status == GraphRun.Status.SUCCEEDED
+        assert publisher.of("done")[-1] == {"lesson_id": str(prepared.id), "stage": "generating_lesson"}
+        assert (stored.stage, stored.route, stored.error) == (Stage.GENERATING_LESSON, "lesson", "")
+        assert stored.assessment["start_point"] == "Halving"
+        assert len(gateway.called("learner.assess")) == 1
+
+    def test_a_resume_run_stopped_before_the_worker_took_it_is_retried_with_the_answer_already_given(
+        self, service, make_runner, prepared, gateway, valid_bundle
+    ):
+        gateway.script("diagnostic.generate", valid_bundle).script("learner.assess", ASSESSMENT)
+        make_runner().execute(new_run(prepared).id)
+        answered = attempt(prepared, "diagnostic", right=5)
+        resume = new_run(prepared, GraphRun.Trigger.RESUME_DIAGNOSTIC, {"resume": str(answered.id)})
+        service.cancel(resume)
+        make_runner().execute(resume.id)  # the worker finds it cancelled and does nothing
+
+        retry = service.retry(Lesson.objects.get(pk=prepared.pk))
+        make_runner().execute(retry.id)
+
+        retry.refresh_from_db()
+        stored = Lesson.objects.get(pk=prepared.pk)
+        assert retry.status == GraphRun.Status.SUCCEEDED
+        assert retry.payload["resume"] == str(answered.id)
+        assert (stored.stage, stored.route) == (Stage.GENERATING_LESSON, "lesson")
+        assert QuizAttempt.objects.filter(quiz__lesson=prepared).count() == 1  # the answers were not asked for again
+
+    def test_a_stop_noticed_after_the_graph_paused_again_retries_into_that_pause(
+        self, service, make_runner, prepared, gateway, publisher, valid_bundle
+    ):
+        gateway.script("diagnostic.generate", valid_bundle)
+        make_runner().execute(new_run(prepared).id)
+        answered = attempt(prepared, "diagnostic", right=0)  # a poor score: the prerequisite quiz comes next
+        resume = new_run(prepared, GraphRun.Trigger.RESUME_DIAGNOSTIC, {"resume": str(answered.id)})
+        make_runner().execute(resume.id)
+        assert Lesson.objects.get(pk=prepared.pk).stage == Stage.AWAITING_PREREQUISITE
+        # The Stop came while the worker was wrapping up, so the run row says cancelled although the graph paused.
+        GraphRun.objects.filter(pk=resume.pk).update(status=GraphRun.Status.RUNNING)
+        service.cancel(GraphRun.objects.select_related("lesson").get(pk=resume.pk))
+        assert Lesson.objects.get(pk=prepared.pk).stage == Stage.FAILED
+
+        retry = service.retry(Lesson.objects.get(pk=prepared.pk))
+        make_runner().execute(retry.id)
+
+        retry.refresh_from_db()
+        assert retry.status == GraphRun.Status.PAUSED and retry.error == ""
+        assert publisher.of("awaiting_input")[-1]["kind"] == "prerequisite"
+        stored = Lesson.objects.get(pk=prepared.pk)
+        assert (stored.stage, stored.error) == (Stage.AWAITING_PREREQUISITE, "")
+        assert QuizAttempt.objects.filter(quiz__lesson=prepared).count() == 1  # the diagnostic answer was not replayed
+
+    def test_an_error_after_the_stop_does_not_replace_the_cancelled_message(
+        self, service, make_runner, prepared, gateway, publisher
+    ):
+        run = new_run(prepared)
+
+        def stop_then_break(messages):
+            service.cancel(GraphRun.objects.select_related("lesson").get(pk=run.pk))
+            raise RuntimeError("the connection dropped")
+
+        gateway.script("diagnostic.generate", stop_then_break)
+
+        make_runner().execute(run.id)
+
+        run.refresh_from_db()
+        stored = Lesson.objects.get(pk=prepared.pk)
+        assert run.status == GraphRun.Status.CANCELLED
+        assert stored.stage == Stage.FAILED and stored.error.startswith("Cancelled")
+        assert publisher.names()[-1] == "cancelled" and publisher.of("error") == []
+
+
 def test_an_unknown_graph_fails_the_run_with_a_clear_message(make_runner, prepared):
     run = new_run(prepared, graph="runtime_repair")
 
@@ -547,6 +678,65 @@ class TestRecorder:
 
         run.refresh_from_db()
         assert run.node_status == {"plan_lesson": "done"}
+
+
+class TestRecorderTimings:
+    def at(self, hour, minute=0):
+        return datetime(2026, 3, 1, hour, minute, tzinfo=UTC)
+
+    def record(self, recorder, run, node, status, when, monkeypatch):
+        monkeypatch.setattr(timezone, "now", lambda: when)
+        recorder.record(run, RunEvent("node", {"node": node, "status": status}))
+
+    def test_a_node_gets_its_start_and_finish_time(self, prepared, monkeypatch):
+        run, recorder = new_run(prepared), GraphRunRecorder()
+
+        self.record(recorder, run, "plan_lesson", "running", self.at(10), monkeypatch)
+        self.record(recorder, run, "plan_lesson", "done", self.at(10, 5), monkeypatch)
+
+        run.refresh_from_db()
+        assert run.node_timings == {
+            "plan_lesson": {
+                "started_at": "2026-03-01T10:00:00+00:00",
+                "finished_at": "2026-03-01T10:05:00+00:00",
+                "retries": 0,
+            }  # fmt: skip
+        }
+
+    def test_a_node_that_has_not_finished_has_no_finish_time(self, prepared, monkeypatch):
+        run, recorder = new_run(prepared), GraphRunRecorder()
+
+        self.record(recorder, run, "await_diagnostic", "running", self.at(10), monkeypatch)
+
+        run.refresh_from_db()
+        assert run.node_timings["await_diagnostic"]["finished_at"] is None
+
+    def test_a_node_that_runs_again_keeps_its_first_start_and_its_last_finish_and_counts_the_retries(
+        self, prepared, monkeypatch
+    ):
+        run, recorder = new_run(prepared), GraphRunRecorder()
+
+        self.record(recorder, run, "generate_diagnostic", "running", self.at(10), monkeypatch)
+        self.record(recorder, run, "generate_diagnostic", "retrying", self.at(10, 1), monkeypatch)
+        self.record(recorder, run, "generate_diagnostic", "running", self.at(10, 2), monkeypatch)
+        self.record(recorder, run, "generate_diagnostic", "done", self.at(10, 3), monkeypatch)
+
+        run.refresh_from_db()
+        assert run.node_timings["generate_diagnostic"] == {
+            "started_at": "2026-03-01T10:00:00+00:00",
+            "finished_at": "2026-03-01T10:03:00+00:00",
+            "retries": 1,
+        }
+
+    def test_a_failed_or_degraded_node_is_finished_too(self, prepared, monkeypatch):
+        run, recorder = new_run(prepared), GraphRunRecorder()
+
+        self.record(recorder, run, "render_check", "failed", self.at(11), monkeypatch)
+        self.record(recorder, run, "verify_media", "degraded", self.at(11, 1), monkeypatch)
+
+        run.refresh_from_db()
+        assert run.node_timings["render_check"]["finished_at"] == "2026-03-01T11:00:00+00:00"
+        assert run.node_timings["verify_media"]["finished_at"] == "2026-03-01T11:01:00+00:00"
 
 
 class TestRunLock:

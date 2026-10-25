@@ -24,13 +24,31 @@ All tables live in the Supabase Postgres `public` schema and are created by Djan
 | education_level | enum `school` \| `undergraduate` \| `postgraduate` \| `professional` \| `self_learner` | Depth and vocabulary |
 | grade_or_year | char, null | For example "Class 10" or "2nd year B.Tech" |
 | field_of_study | char, null | Examples and analogies |
-| preferred_language | char, default `en` | Language of generated content |
+| preferred_language | enum `en` \| `hi` \| `es` \| `fr` \| `de`, default `en` | Language of generated content, and of the suggested first topics |
 | learning_preference | enum `visual` \| `reading` \| `hands_on` \| `mixed` | How many interactives, and which kinds |
 | goal | enum `exam_prep` \| `deep_understanding` \| `quick_overview` \| `interview_prep` | Tone and test style |
-| notes | text, null | Anything else the learner wants the tutor to know |
+| notes | text, at most 2000 characters | Anything else the learner wants the tutor to know |
 | updated_at | datetime | |
 
 The graph turns this into `LearnerProfile` in `load_context`.
+
+## `marketing`
+
+### `DemoQuestion` (the landing page's try-it question bank; curated in the Django admin)
+
+| Field | Type | Used for |
+|---|---|---|
+| subject | char | "Physics", "Personal finance"...; shown in the card's label and a filter in the admin |
+| level_label | char | Who it is pitched at: "Class 8", "College", "Working" |
+| band | smallint 1–5 | Difficulty: 1 Basics, 2 Easy, 3 Medium, 4 Hard, 5 Expert |
+| question | char | Short: two lines in the card |
+| options | JSON list of exactly 3 different texts | |
+| correct_index | smallint 0–2 | The right option |
+| outcome_right, outcome_wrong | JSON `{level 1–5, level_label, lesson_start}` | The "Your starting point" card after a right answer, and after a wrong one or "I don't know"; a right answer never leaves the learner lower |
+| is_active | bool | Only active questions are served |
+| created_at | datetime | |
+
+`clean()` enforces all of this, so the admin refuses a broken question. Migration `marketing.0002` seeds 25 questions across 13 subjects, Class 6 to working, all five bands. The picker caches the active ids for 10 minutes (`LANDING_DEMO_IDS_TTL_S`) and clears them when a question is saved or deleted.
 
 ## `lessons`
 
@@ -134,7 +152,7 @@ A lesson is a learner's request to learn one topic, from the diagnostic quiz thr
 | error | text | Why grading failed (blank otherwise) |
 | submitted_at / graded_at | datetime | |
 
-Multiple submissions are allowed, so the learner can retake the test.
+A lesson has at most one submission (`UniqueConstraint(lesson)`): the test is taken once, and a failed grading is run again on the stored `answers`. The migration `0003` kept the most recent graded submission per lesson (else the most recent) and deleted the rest before the constraint of `0004` was added.
 
 ### `LessonVersion`
 
@@ -152,6 +170,7 @@ There is one row per Celery execution segment of any graph, for example start, e
 | trigger | enum `start` \| `resume_diagnostic` \| `resume_prerequisite` \| `resume_choice` \| `retry` \| `repair` \| `grade` \| `extra_material` | |
 | status | enum `queued` \| `running` \| `paused` \| `succeeded` \| `failed` \| `cancelled` | `paused` = ended at an `interrupt()` |
 | node_status | JSON | `{node: pending \| running \| done \| retrying \| degraded \| failed}` |
+| node_timings | JSON | `{node: {started_at, finished_at, retries}}`, kept by `GraphRunRecorder` next to `node_status`: the node's first start, its latest finish (null while it runs or waits) and how often the graph ran it again. Runs from before it existed have `{}`. The console's timeline reads it |
 | payload | JSON | The resume value (`{"resume": attempt_id}`) or the requested sheet kind |
 | celery_task_id | char | |
 | error | text, null | |
@@ -174,6 +193,21 @@ There is one row per Celery execution segment of any graph, for example start, e
 | media_sources | `["wikimedia", "openverse"]` |
 | allowed_media_licenses | `["cc0", "pdm", "cc-by", "cc-by-sa"]` |
 
+## `console`
+
+### `AuditEntry` (the change log of the staff console; read-only everywhere, including the admin)
+
+| Field | Type | Notes |
+|---|---|---|
+| actor | FK User, null | `SET_NULL`: the entry outlives the account |
+| actor_email | email | The address at the time |
+| action | char | `run.retry`, `run.cancel`, `provider.update`, `model.create` \| `update` \| `delete` \| `probe`, `node.update`, `flow_settings.update` |
+| target_type / target_id | char | `run`, `provider`, `model`, `node` or `flow_settings`; the run id, provider key, model id, node key or `1` |
+| before / after | JSON, null | The target as it was and as it became (what the console API shows, never a secret; null for a creation / a deletion) |
+| created_at | datetime | |
+
+Written by `console.audit.AuditTrail` in the same transaction as the change.
+
 ## LangGraph checkpoint tables
 
 These are created by `PostgresSaver.setup()` (`manage.py setup_checkpointer`) in the same database. They are not Django models. Treat them as internal and include them in the RLS lock-down script.
@@ -181,5 +215,6 @@ These are created by `PostgresSaver.setup()` (`manage.py setup_checkpointer`) in
 ## Access rules
 
 - Every lessons endpoint filters by `owner=request.user`. Another user's lesson ID returns `404`, not `403`.
+- Every `/api/console` endpoint requires `User.is_staff`; anyone else, signed in or not, gets a `404`.
 - Quiz answers and final-test answers stay server-side until the learner submits.
 - `MediaAsset` files are served through **signed, expiring URLs** (`/api/media/{asset_id}?exp=…&sig=…`, HMAC with `DJANGO_SECRET_KEY`). The URLs are generated when the lesson detail is fetched and passed into the sandbox as `LESSON.media`. Cookies can't be used here: the sandboxed iframe has an opaque origin, so the browser does not send the session cookie on its image requests.

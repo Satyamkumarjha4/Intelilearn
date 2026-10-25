@@ -81,11 +81,15 @@ class CeleryHealthCheck(HealthCheck):
     def __init__(self, app=celery_app, timeout_s: float = 1.0):
         self._app, self._timeout_s = app, timeout_s
 
+    def worker_count(self) -> int:
+        """How many workers answered a ping (0 when none did)."""
+        return len(self._app.control.ping(timeout=self._timeout_s) or [])
+
     def probe(self) -> str:
-        replies = self._app.control.ping(timeout=self._timeout_s)
-        if not replies:
+        count = self.worker_count()
+        if not count:
             raise RuntimeError("no workers responded")
-        return f"{len(replies)} worker(s)"
+        return f"{count} worker(s)"
 
 
 class HealthService:

@@ -11,6 +11,10 @@ export class ApiError extends Error {
     readonly code: string,
     message: string,
     readonly fields: FieldErrors = {},
+    /** Whatever else the error body carried (for example `submission_id` on `already_submitted`). */
+    readonly extra: Record<string, unknown> = {},
+    /** Seconds the server asks the client to wait (the `Retry-After` header of a 429), when it said. */
+    readonly retryAfter: number | null = null,
   ) {
     super(message);
     this.name = "ApiError";
@@ -40,7 +44,7 @@ export class ApiClient {
   ) {}
 
   async request<T = unknown>(path: string, options: RequestOptions = {}): Promise<T> {
-    const method = options.method ?? "GET";
+    const method = (options.method ?? "GET").toUpperCase();
 
     const send = async () => {
       const headers: Record<string, string> = { Accept: "application/json" };
@@ -88,13 +92,21 @@ export class ApiClient {
     return token ?? "";
   }
 
+  private static retryAfterOf(response: Response): number | null {
+    const seconds = Number(response.headers?.get("Retry-After"));
+    return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : null;
+  }
+
   private async toApiError(response: Response): Promise<ApiError> {
     const body = await response.json().catch(() => null);
+    const { detail, code, fields, ...extra } = body && typeof body === "object" ? body : ({} as Record<string, unknown>);
     return new ApiError(
       response.status,
-      body?.code ?? "error",
-      body?.detail ?? `Request failed (${response.status})`,
-      body?.fields ?? {},
+      code ?? "error",
+      detail ?? `Request failed (${response.status})`,
+      fields ?? {},
+      extra,
+      ApiClient.retryAfterOf(response),
     );
   }
 }

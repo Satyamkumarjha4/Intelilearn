@@ -7,7 +7,8 @@ status code makes the UI misread a conflict as a failure.
 
 Use cases:
 - every endpoint requires a signed-in user
-- listing shows only your own lessons, newest first, with search and stage filters and cursor pagination
+- listing shows only your own lessons, newest first, with search, stage filters (one stage or several, comma-separated)
+  and cursor pagination, and says how the test went and how many sheets each has without a query per lesson
 - starting a lesson validates the topic, queues a run, is rate limited, and reports an unconfigured registry
 - a lesson's detail hides the page writers' notes, reports the active run and keeps the quiz scores after a reload
 - another user's lesson, quiz or run is a 404, and so is an id that is not a UUID
@@ -22,9 +23,15 @@ Use cases:
 - the lesson detail lists its sheets
 - the document is served for a ready lesson with signed media and no answers; a repair report is queued, validated and
   refused when stale, capped or early; versions are listed and one can be restored; another user's lesson is a 404
-- the lesson test: a submission is marked at once and queued for grading, bad answers are a 400, a lesson that is not
-  ready or a grading in progress is a 409, the submission can be read with its score card, submissions are rate limited,
+- the lesson detail reports the test's status and, once graded, its score
+- the document says whether an old lesson still has its test inside the code
+- the standalone test is served without answers, with its total marks and the one submission once made, and is a 409
+  for a lesson that is not ready or is a mastery lesson
+- the lesson test can be submitted once: a submission is marked at once and queued for grading, bad answers are a 400,
+  a lesson that is not ready is a 409, a second go is a 409 `already_submitted` naming the first submission, the
+  submission can be read with its score card (by id, or as the lesson's one submission), submissions are rate limited,
   and another user's lesson or submission is a 404
+- a failed grading is re-run on the same answers (202), and only a failed one
 - the OpenAPI schema documents these endpoints
 """
 
@@ -59,8 +66,11 @@ PATHS = [
     ("post", "/api/lessons/{lesson}/materials/practice_sheet/grade"),
     ("get", "/api/lessons/{lesson}/document"),
     ("post", "/api/lessons/{lesson}/repair"),
+    ("get", "/api/lessons/{lesson}/test"),
     ("post", "/api/lessons/{lesson}/test/submissions"),
     ("get", "/api/lessons/{lesson}/test/submissions/{run}"),
+    ("post", "/api/lessons/{lesson}/test/submissions/{run}/regrade"),
+    ("get", "/api/lessons/{lesson}/test/submission"),
     ("get", "/api/lessons/{lesson}/versions"),
     ("post", "/api/lessons/{lesson}/versions/1/restore"),
 ]
@@ -110,6 +120,9 @@ class TestList:
             "level",
             "created_at",
             "updated_at",
+            "test_status",
+            "test_score",
+            "material_count",
         }
         assert body["next"] is None and body["previous"] is None
 
@@ -123,6 +136,45 @@ class TestList:
 
         assert sorted(item["topic"] for item in by_text) == ["Binary search", "Binary trees"]
         assert [item["topic"] for item in by_stage] == ["Binary search"]
+
+    def test_filters_by_several_stages_at_once(self, signed_in_client, make_lesson):
+        make_lesson(topic="Waiting", stage=Stage.AWAITING_DIAGNOSTIC)
+        make_lesson(topic="Choosing", stage=Stage.AWAITING_CHOICE)
+        make_lesson(topic="Done", stage=Stage.READY)
+        make_lesson(topic="Broken", stage=Stage.FAILED)
+
+        body = signed_in_client.get("/api/lessons?stage=awaiting_diagnostic, awaiting_choice,nonsense").json()
+
+        assert sorted(item["topic"] for item in body["results"]) == ["Choosing", "Waiting"]
+
+    def test_says_how_the_test_went_and_how_many_sheets_there_are_without_a_query_per_lesson(
+        self, signed_in_client, make_lesson, django_assert_max_num_queries
+    ):
+        graded = make_lesson(topic="Graded", stage=Stage.READY)
+        TestSubmission.objects.create(
+            lesson=graded, status="graded", result={"score": {"awarded": 7, "available": 10, "percent": 70}}
+        )
+        grading = make_lesson(topic="Grading", stage=Stage.READY)
+        TestSubmission.objects.create(
+            lesson=grading, status="grading", result={"score": {"awarded": 1, "available": 10}}
+        )
+        mastery = make_lesson(topic="Sheets", stage=Stage.READY, route="mastery")
+        StudyMaterial.objects.create(lesson=mastery, kind="cheat_sheet", content={})
+        StudyMaterial.objects.create(lesson=mastery, kind="revision_sheet", content={})
+        for n in range(5):
+            make_lesson(topic=f"More {n}")
+
+        with django_assert_max_num_queries(8):
+            body = signed_in_client.get("/api/lessons").json()
+
+        by_topic = {item["topic"]: item for item in body["results"]}
+        assert (by_topic["Graded"]["test_status"], by_topic["Graded"]["test_score"]) == (
+            "graded",
+            {"awarded": 7, "available": 10},
+        )
+        assert (by_topic["Grading"]["test_status"], by_topic["Grading"]["test_score"]) == ("grading", None)
+        assert (by_topic["Sheets"]["test_status"], by_topic["Sheets"]["material_count"]) == ("not_started", 2)
+        assert by_topic["More 0"]["material_count"] == 0
 
     def test_pages_with_a_cursor(self, signed_in_client, make_lesson):
         for n in range(5):
@@ -203,6 +255,26 @@ class TestDetail:
         assert body["results"]["diagnostic"]["correct"] == 5 and body["results"]["diagnostic"]["route"] == "lesson"
         assert body["results"]["prerequisite"] is None
         assert "per_question" not in body["results"]["diagnostic"]
+
+    @pytest.mark.parametrize(
+        ("submission", "status", "score"),
+        [
+            (None, "not_started", None),
+            ({"status": "grading", "result": {"score": {"awarded": 2, "available": 20}}}, "grading", None),
+            ({"status": "failed", "result": {"score": {"awarded": 2, "available": 20}}}, "failed", None),
+            ({"status": "graded", "result": {"score": {"awarded": 14, "available": 20}}}, "graded",
+             {"awarded": 14, "available": 20}),
+        ],
+    )  # fmt: skip
+    def test_reports_the_status_of_the_test_and_its_score_once_graded(
+        self, signed_in_client, lesson, submission, status, score
+    ):
+        if submission:
+            TestSubmission.objects.create(lesson=lesson, **submission)
+
+        body = signed_in_client.get(f"/api/lessons/{lesson.id}").json()
+
+        assert (body["test_status"], body["test_score"]) == (status, score)
 
     def test_another_users_lesson_is_a_404(self, signed_in_client, make_lesson, other_user):
         theirs = make_lesson(owner=other_user)
@@ -293,7 +365,7 @@ class TestQuizzes:
 
         response = signed_in_client.post(url, {"answers": right_answers(quiz)}, format="json")
 
-        assert response.status_code == 409 and response.json()["code"] in {"already_attempted", "wrong_stage"}
+        assert response.status_code == 409 and response.json()["code"] == "already_attempted"
 
     def test_answering_a_quiz_the_lesson_is_not_waiting_for_is_a_conflict(self, signed_in_client, lesson, queue):
         quiz = waiting(lesson)
@@ -304,6 +376,19 @@ class TestQuizzes:
         )
 
         assert response.status_code == 409 and response.json()["code"] == "wrong_stage"
+
+    def test_answering_twice_is_still_already_attempted_after_the_lesson_has_moved_on(
+        self, signed_in_client, lesson, queue
+    ):
+        quiz = waiting(lesson)
+        url = f"/api/lessons/{lesson.id}/quizzes/diagnostic/attempt"
+        signed_in_client.post(url, {"answers": right_answers(quiz)}, format="json")
+        Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.GENERATING_LESSON)
+
+        response = signed_in_client.post(url, {"answers": right_answers(quiz, 0)}, format="json")
+
+        assert response.status_code == 409 and response.json()["code"] == "already_attempted"
+        assert QuizAttempt.objects.get(quiz=quiz).result["correct"] == 5
 
     def test_the_review_needs_an_attempt_and_then_shows_the_answers(self, signed_in_client, lesson, queue):
         quiz = waiting(lesson)
@@ -317,6 +402,28 @@ class TestQuizzes:
 
         assert body["questions"][0]["correct_index"] == 0 and body["questions"][0]["correct"] is True
         assert body["questions"][9]["correct"] is False and body["result"]["correct"] == 4
+
+    def test_the_review_has_everything_the_learner_needs_to_see_where_they_went_wrong(
+        self, signed_in_client, lesson, queue
+    ):
+        quiz = waiting(lesson)
+        answers = right_answers(quiz, 4) | {quiz.questions[1]["id"]: "dont_know"}
+        signed_in_client.post(
+            f"/api/lessons/{lesson.id}/quizzes/diagnostic/attempt", {"answers": answers}, format="json"
+        )
+
+        questions = signed_in_client.get(f"/api/lessons/{lesson.id}/quizzes/diagnostic/review").json()["questions"]
+
+        assert len(questions) == len(quiz.questions)
+        assert signed_in_client.get(f"/api/lessons/{lesson.id}/quizzes/diagnostic/review").json()["submitted_at"]
+        for shown, stored in zip(questions, quiz.questions, strict=True):
+            assert {
+                key: shown[key] for key in ("id", "band", "question", "options", "correct_index", "explanation")
+            } == {key: stored[key] for key in ("id", "band", "question", "options", "correct_index", "explanation")}
+            assert shown["answer"] == answers[stored["id"]] and shown["correct"] is (
+                shown["answer"] == stored["correct_index"]
+            )
+        assert questions[1]["answer"] == "dont_know" and questions[1]["correct"] is False
 
 
 class TestRuns:
@@ -494,7 +601,9 @@ def test_the_openapi_schema_documents_the_lessons_api(api_client):
                  "/api/lessons/{lesson_id}/quizzes/{kind}/attempt", "/api/runs/{run_id}/events",
                  "/api/lessons/{lesson_id}/choice", "/api/lessons/{lesson_id}/materials",
                  "/api/lessons/{lesson_id}/materials/{kind}",
-                 "/api/lessons/{lesson_id}/materials/practice_sheet/grade"]:  # fmt: skip
+                 "/api/lessons/{lesson_id}/materials/practice_sheet/grade", "/api/lessons/{lesson_id}/test",
+                 "/api/lessons/{lesson_id}/test/submission",
+                 "/api/lessons/{lesson_id}/test/submissions/{submission_id}/regrade"]:  # fmt: skip
         assert path in paths
 
 
@@ -514,6 +623,15 @@ class TestLessonCode:
         assert (body["code"], body["code_version"]) == ("CODE v2", 2)
         assert body["data"]["final_test"]["questions"][0]["id"] == "t1"
         assert "correct_index" not in json.dumps(body) and "because" not in json.dumps(body)
+
+    def test_a_new_lesson_has_no_test_inside_its_code(self, signed_in_client, ready):
+        assert signed_in_client.get(f"/api/lessons/{ready.id}/document").json()["has_embedded_test"] is False
+
+    def test_an_old_lesson_says_its_code_still_has_the_test_page(self, signed_in_client, ready):
+        code = 'const PAGES = [\n  { key: "test", title: "T", render: Page_test },\n];'
+        Lesson.objects.filter(pk=ready.pk).update(code=code)
+
+        assert signed_in_client.get(f"/api/lessons/{ready.id}/document").json()["has_embedded_test"] is True
 
     def test_a_lesson_that_is_not_ready_has_no_document(self, signed_in_client, lesson):
         response = signed_in_client.get(f"/api/lessons/{lesson.id}/document")
@@ -595,6 +713,42 @@ class TestLessonTest:
     def url(self, lesson, suffix=""):
         return f"/api/lessons/{lesson.id}/test/submissions{suffix}"
 
+    def test_the_test_is_served_without_answers_and_with_its_total_marks(self, signed_in_client, ready):
+        response = signed_in_client.get(f"/api/lessons/{ready.id}/test")
+
+        body = response.json()
+        assert response.status_code == 200 and body["submission"] is None
+        assert [q["id"] for q in body["questions"]] == [q["id"] for q in self.FINAL["questions"]]
+        assert body["total_marks"] == sum(q["marks"] for q in self.FINAL["questions"])
+        leaks = (
+            "correct_index",
+            "model_answer",
+            "key_points",
+            "rubric",
+            "reference_solution",
+            "test_cases",
+            "tolerance",
+        )
+        assert not [word for word in leaks if word in json.dumps(body)]
+        assert {"id", "type", "question", "marks"} <= set(body["questions"][0])
+
+    def test_the_test_names_the_one_submission_once_made(self, signed_in_client, ready, queue):
+        made = signed_in_client.post(self.url(ready), {"answers": {self.IDS["short_answer"]: "x"}}, format="json")
+
+        shown = signed_in_client.get(f"/api/lessons/{ready.id}/test").json()["submission"]
+
+        assert shown["id"] == made.json()["submission_id"] and shown["status"] == "grading"
+        assert set(shown) == {"id", "status", "submitted_at"}
+
+    def test_the_test_is_a_conflict_for_a_lesson_that_is_not_ready_or_is_mastery(
+        self, signed_in_client, lesson, make_lesson
+    ):
+        mastery = make_lesson(stage=Stage.READY, code="x", final_test=self.FINAL, route="mastery")
+
+        responses = [signed_in_client.get(f"/api/lessons/{target.id}/test") for target in (lesson, mastery)]
+
+        assert [(r.status_code, r.json()["code"]) for r in responses] == [(409, "wrong_stage")] * 2
+
     def test_a_submission_is_marked_at_once_and_queued_for_grading(self, signed_in_client, ready, queue):
         answers = {self.IDS["mcq"]: 1, self.IDS["short_answer"]: "Halve it."}
 
@@ -623,21 +777,42 @@ class TestLessonTest:
 
         assert response.status_code == 400 and queue.runs == [] and not TestSubmission.objects.exists()
 
-    def test_a_lesson_that_is_not_ready_and_a_grading_in_progress_are_conflicts(
-        self, signed_in_client, ready, lesson, queue
-    ):
+    def test_a_lesson_that_is_not_ready_is_a_conflict(self, signed_in_client, lesson, queue):
         early = signed_in_client.post(self.url(lesson), {"answers": {}}, format="json")
-        first = signed_in_client.post(self.url(ready), {"answers": {self.IDS["short_answer"]: "x"}}, format="json")
-        second = signed_in_client.post(self.url(ready), {"answers": {self.IDS["short_answer"]: "y"}}, format="json")
 
         assert (early.status_code, early.json()["code"]) == (409, "wrong_stage")
-        assert first.status_code == 202 and (second.status_code, second.json()["code"]) == (409, "run_in_progress")
 
-    def test_submissions_are_rate_limited(self, signed_in_client, ready, queue, monkeypatch):
+    def test_a_second_submission_is_a_conflict_that_names_the_first_and_stores_nothing(
+        self, signed_in_client, ready, queue
+    ):
+        first = signed_in_client.post(self.url(ready), {"answers": {self.IDS["mcq"]: 1}}, format="json")
+        queued = len(queue.runs)
+
+        second = signed_in_client.post(self.url(ready), {"answers": {self.IDS["mcq"]: 2}}, format="json")
+
+        assert first.status_code == 202
+        assert second.status_code == 409
+        assert second.json() == {
+            "detail": "The test has already been submitted. Its answers and score cannot be changed.",
+            "code": "already_submitted",
+            "submission_id": first.json()["submission_id"],
+        }
+        assert TestSubmission.objects.filter(lesson=ready).count() == 1 and len(queue.runs) == queued
+
+    def test_the_first_submission_is_untouched_by_a_second_try(self, signed_in_client, ready, queue):
+        first = signed_in_client.post(self.url(ready), {"answers": {self.IDS["mcq"]: 1}}, format="json").json()
+        signed_in_client.post(self.url(ready), {"answers": {self.IDS["mcq"]: 0}}, format="json")
+
+        stored = signed_in_client.get(self.url(ready, f"/{first['submission_id']}")).json()
+
+        assert stored["result"]["score"]["awarded"] == 2
+
+    def test_submissions_are_rate_limited(self, signed_in_client, make_lesson, queue, monkeypatch):
         monkeypatch.setitem(SimpleRateThrottle.THROTTLE_RATES, "test_submit", "2/hour")
+        lessons = [make_lesson(stage=Stage.READY, code="x", final_test=self.FINAL) for _ in range(3)]
         body = {"answers": {self.IDS["mcq"]: 1}}
 
-        codes = [signed_in_client.post(self.url(ready), body, format="json").status_code for _ in range(3)]
+        codes = [signed_in_client.post(self.url(one), body, format="json").status_code for one in lessons]
 
         assert codes == [202, 202, 429]
 
@@ -645,11 +820,46 @@ class TestLessonTest:
         for wrong in ("not-a-uuid", "00000000-0000-0000-0000-000000000000"):
             assert signed_in_client.get(self.url(ready, f"/{wrong}")).status_code == 404
 
+    def test_the_lessons_one_submission_can_be_read_without_its_id(self, signed_in_client, ready, queue):
+        assert signed_in_client.get(f"/api/lessons/{ready.id}/test/submission").status_code == 404
+        made = signed_in_client.post(self.url(ready), {"answers": {self.IDS["mcq"]: 1}}, format="json").json()
+
+        response = signed_in_client.get(f"/api/lessons/{ready.id}/test/submission")
+
+        body = response.json()
+        assert response.status_code == 200 and body["id"] == made["submission_id"] and body["status"] == "graded"
+        assert body["answers"] == {self.IDS["mcq"]: 1}  # the learner's own answers, for the read-only result
+        assert body["result"]["complete"] is True and body["result"]["score"]["awarded"] == 2
+
+    def test_a_failed_grading_is_run_again_on_the_same_answers(self, signed_in_client, ready, queue):
+        failed = TestSubmission.objects.create(
+            lesson=ready, answers={self.IDS["short_answer"]: "x"}, status="failed", error="boom"
+        )
+
+        response = signed_in_client.post(self.url(ready, f"/{failed.id}/regrade"))
+
+        assert response.status_code == 202 and response.json() == {"run_id": str(queue.runs[0].id)}
+        failed.refresh_from_db()
+        assert (failed.status, failed.answers) == ("grading", {self.IDS["short_answer"]: "x"})
+
+    @pytest.mark.parametrize("status", ["grading", "graded"])
+    def test_only_a_failed_grading_can_be_run_again(self, signed_in_client, ready, queue, status):
+        submission = TestSubmission.objects.create(lesson=ready, status=status)
+
+        response = signed_in_client.post(self.url(ready, f"/{submission.id}/regrade"))
+
+        assert (response.status_code, response.json()["code"]) == (409, "not_failed") and queue.runs == []
+
     def test_another_users_lesson_and_submission_are_a_404(self, signed_in_client, other_user, make_lesson):
         theirs = make_lesson(owner=other_user, stage=Stage.READY, code="x", final_test=self.FINAL)
-        submission = TestSubmission.objects.create(lesson=theirs)
+        submission = TestSubmission.objects.create(lesson=theirs, status="failed")
 
-        post = signed_in_client.post(self.url(theirs), {"answers": {}}, format="json")
-        get = signed_in_client.get(self.url(theirs, f"/{submission.id}"))
+        statuses = [
+            signed_in_client.get(f"/api/lessons/{theirs.id}/test").status_code,
+            signed_in_client.post(self.url(theirs), {"answers": {}}, format="json").status_code,
+            signed_in_client.get(self.url(theirs, f"/{submission.id}")).status_code,
+            signed_in_client.get(f"/api/lessons/{theirs.id}/test/submission").status_code,
+            signed_in_client.post(self.url(theirs, f"/{submission.id}/regrade")).status_code,
+        ]
 
-        assert (post.status_code, get.status_code) == (404, 404)
+        assert statuses == [404] * 5 and TestSubmission.objects.get().status == "failed"

@@ -1,63 +1,58 @@
-import React, { Component, useEffect, useState } from "react";
+import React, { Component, useEffect, useMemo, useState } from "react";
 
-import { describeError, post } from "./host";
+import { describeError, isHiddenPage, post } from "./host";
 
 type PageEntry = { key: string; title: string; render: () => React.ReactElement };
 
-/** Lets the host (or the render check) open a page by key: `{type: "goto", page}`. */
-function useGoto(setIndex: (i: number) => void, pages: PageEntry[]) {
+/**
+ * Opens pages on request, from outside the document:
+ * - `{type: "set_page", index}` from the app, which has its own book chrome (flaps, previous and next)
+ * - `{type: "goto", page}` and `window.__goto(key)` from the render check, which visits pages by key
+ */
+function usePageControl(visible: PageEntry[], setIndex: (i: number) => void) {
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
-      if (event.data?.type !== "goto") return;
-      const found = pages.findIndex((p) => p.key === event.data.page);
-      if (found >= 0) setIndex(found);
+      const message = event.data;
+      if (message?.type === "set_page" && Number.isInteger(message.index)) {
+        setIndex(Math.min(Math.max(message.index, 0), visible.length - 1));
+      } else if (message?.type === "goto") {
+        const found = visible.findIndex((p) => p.key === message.page);
+        if (found >= 0) setIndex(found);
+      }
     };
     const w = window as unknown as { __goto?: (key: string) => void };
-    w.__goto = (key: string) => setIndex(Math.max(0, pages.findIndex((p) => p.key === key)));
+    w.__goto = (key: string) => setIndex(Math.max(0, visible.findIndex((p) => p.key === key)));
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [pages, setIndex]);
+  }, [visible, setIndex]);
 }
 
-/** The document's frame: page navigation (Introduction · Core · Advanced · Test) and a progress bar. */
+/**
+ * The document's frame. It shows one page at a time and has no navigation of its own: the app draws the book around it
+ * (index flaps, previous and next) and drives it with `set_page`. It tells the app which pages there are (`pages`) and
+ * which one is open (`page_changed`). Pages the app hides (`isHiddenPage`) are left out, so an older lesson that still
+ * declares a test page does not show it.
+ */
 export function LessonShell({ pages }: { pages: PageEntry[] }) {
+  const visible = useMemo(() => pages.filter((p) => !isHiddenPage(p.key)), [pages]);
   const [index, setIndex] = useState(0);
-  useGoto(setIndex, pages);
-  const page = pages[index];
+  usePageControl(visible, setIndex);
+  const current = Math.min(index, visible.length - 1);
+
+  useEffect(() => {
+    post({ type: "pages", count: visible.length, titles: visible.map((p) => p.title) });
+  }, [visible]);
+  useEffect(() => {
+    post({ type: "page_changed", index: current });
+  }, [current]);
+
+  const page = visible[current];
   const Page = page.render;
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-4">
-      <nav aria-label="Lesson pages" className="flex flex-col gap-2">
-        <div className="flex flex-wrap gap-1" role="tablist">
-          {pages.map((p, i) => (
-            <button
-              key={p.key}
-              type="button"
-              role="tab"
-              data-lesson-nav
-              aria-selected={i === index}
-              onClick={() => setIndex(i)}
-              className={"rounded-lg px-3 py-1.5 text-sm font-medium " + (i === index ? "bg-primary text-primary-foreground" : "hover:bg-muted")}
-            >
-              {p.key === "test" ? "Test" : p.key[0].toUpperCase() + p.key.slice(1)}
-            </button>
-          ))}
-        </div>
-        <div className="h-1 w-full overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={index + 1} aria-valuemin={1} aria-valuemax={pages.length}>
-          <div className="h-full bg-primary transition-all" style={{ width: `${((index + 1) / pages.length) * 100}%` }} />
-        </div>
-      </nav>
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-4">
       <main data-page={page.key}>
         <Page />
       </main>
-      <footer className="flex justify-between">
-        <button type="button" data-lesson-nav disabled={index === 0} className="rounded-lg border px-3 py-1.5 text-sm disabled:opacity-40" onClick={() => setIndex(index - 1)}>
-          Previous
-        </button>
-        <button type="button" data-lesson-nav disabled={index === pages.length - 1} className="rounded-lg border px-3 py-1.5 text-sm disabled:opacity-40" onClick={() => setIndex(index + 1)}>
-          Next
-        </button>
-      </footer>
     </div>
   );
 }

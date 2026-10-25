@@ -1,14 +1,16 @@
 "use client";
 
+import { EyeIcon } from "lucide-react";
 import { useMemo, useReducer, useState } from "react";
 import { toast } from "sonner";
 
+import { MutedBox, SheetHeading } from "@/components/lessons/sheet-parts";
 import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { ApiError } from "@/lib/api";
 import { lessonsApi } from "@/lib/lessons-api";
 import { PracticeSession } from "@/lib/practice-session";
@@ -21,13 +23,17 @@ type Props = {
   onSolutions?: (solutions: Record<string, Solution>) => void;
 };
 
+const LETTERS = ["A", "B", "C", "D", "E", "F"];
+
 function SolutionView({ question, solution }: { question: PracticeQuestion; solution: Solution }) {
   return (
-    <div className="rounded-lg bg-muted/50 p-3 text-sm" aria-label="Solution">
-      <p className="font-medium">Solution</p>
-      {solution.correct_index !== undefined && question.options && <p>{question.options[solution.correct_index]}</p>}
+    <MutedBox className="bg-primary-soft text-sm">
+      <p className="font-mono text-xs font-bold tracking-wider text-primary-text uppercase">
+        Solution
+      </p>
+      {solution.correct_index !== undefined && question.options && <p className="font-bold">{question.options[solution.correct_index]}</p>}
       {solution.answer !== undefined && (
-        <p>
+        <p className="font-bold">
           {solution.answer}
           {solution.unit ? ` ${solution.unit}` : ""}
         </p>
@@ -48,7 +54,7 @@ function SolutionView({ question, solution }: { question: PracticeQuestion; solu
         </ul>
       )}
       {solution.reference_solution && <pre className="overflow-x-auto font-mono">{solution.reference_solution}</pre>}
-    </div>
+    </MutedBox>
   );
 }
 
@@ -95,23 +101,22 @@ export function PracticeSheetView({ lessonId, sheet, onSolutions }: Props) {
 
   return (
     <article className="flex flex-col gap-4">
-      <header>
-        <h2 className="text-2xl font-semibold tracking-tight">{sheet.title}</h2>
-        <Markdown className="text-muted-foreground">{sheet.instructions}</Markdown>
-      </header>
+      <SheetHeading eyebrow="Practice sheet" title={sheet.title}>
+        <Markdown>{sheet.instructions}</Markdown>
+      </SheetHeading>
 
       {session.score && (
-        <Card role="status">
-          <CardHeader>
-            <CardTitle>
+        <Card role="status" className="border-primary/40 bg-primary-soft">
+          <CardContent className="flex flex-col gap-0.5">
+            <p className="font-heading text-lg font-semibold">
               {session.score.awarded} of {session.score.available} marks on the questions we can mark
-            </CardTitle>
+            </p>
             {session.score.open_marks > 0 && (
               <p className="text-sm text-muted-foreground">
                 The other {session.score.open_marks} marks are for written answers: compare yours with the solution.
               </p>
             )}
-          </CardHeader>
+          </CardContent>
         </Card>
       )}
 
@@ -119,21 +124,22 @@ export function PracticeSheetView({ lessonId, sheet, onSolutions }: Props) {
         const grade = session.gradeOf(question.id);
         const solution = solutions[question.id];
         const shown = session.isRevealed(question.id) || grade !== undefined;
+        const picked = session.answerOf(question.id);
+        const correctIndex = shown ? solution?.correct_index : undefined;
         return (
           <Card key={question.id} className="break-inside-avoid">
-            <CardHeader>
-              <CardTitle className="flex items-start justify-between gap-3 text-base">
-                <span className="flex gap-2">
-                  <span>{index + 1}.</span>
-                  <Markdown>{question.question}</Markdown>
-                </span>
+            <CardContent className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-mono text-xs font-bold tracking-wider text-primary-text uppercase">Question {index + 1}</h3>
                 <span className="flex shrink-0 items-center gap-2">
                   <Badge variant="outline">{question.difficulty}</Badge>
-                  <Badge variant="secondary">{question.marks} marks</Badge>
+                  <Badge variant="primary">
+                    {question.marks} {question.marks === 1 ? "mark" : "marks"}
+                  </Badge>
                 </span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3">
+              </div>
+              <Markdown className="font-heading text-lg leading-snug font-medium">{question.question}</Markdown>
+
               {question.type === "mcq" && question.options && (
                 <div role="radiogroup" aria-label={`Answer to question ${index + 1}`} className="flex flex-col gap-2">
                   {question.options.map((option, i) => (
@@ -141,13 +147,23 @@ export function PracticeSheetView({ lessonId, sheet, onSolutions }: Props) {
                       key={i}
                       type="button"
                       role="radio"
-                      aria-checked={session.answerOf(question.id) === i}
+                      aria-checked={picked === i}
                       onClick={() => set(question.id, i)}
                       className={cn(
-                        "rounded-lg border px-3 py-2 text-left text-sm hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
-                        session.answerOf(question.id) === i && "border-primary bg-primary/5 ring-1 ring-primary",
+                        "flex items-center gap-3 rounded-xl border-2 px-3 py-2.5 text-left text-sm transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+                        picked === i ? "border-primary bg-primary-soft" : "border-border",
+                        correctIndex === i && "border-success bg-success-soft",
+                        correctIndex !== undefined && picked === i && picked !== correctIndex && "border-destructive bg-destructive-soft",
                       )}
                     >
+                      <span
+                        className={cn(
+                          "grid size-6 shrink-0 place-items-center rounded-md font-mono text-xs font-bold",
+                          picked === i ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {LETTERS[i]}
+                      </span>
                       {option}
                     </button>
                   ))}
@@ -157,34 +173,44 @@ export function PracticeSheetView({ lessonId, sheet, onSolutions }: Props) {
                 <div className="flex items-center gap-2">
                   <Input
                     inputMode="decimal"
+                    autoComplete="off"
                     aria-label={`Answer to question ${index + 1}`}
-                    className="max-w-40"
-                    value={String(session.answerOf(question.id) ?? "")}
+                    className="max-w-48"
+                    value={String(picked ?? "")}
                     onChange={(e) => set(question.id, e.target.value)}
                   />
                   {question.unit && <span className="text-sm text-muted-foreground">{question.unit}</span>}
                 </div>
               )}
-              {(question.type === "short_answer" || question.type === "long_answer" || question.type === "code") && (
+              {question.type === "short_answer" && (
+                <Input
+                  autoComplete="off"
+                  aria-label={`Answer to question ${index + 1}`}
+                  value={String(picked ?? "")}
+                  onChange={(e) => set(question.id, e.target.value)}
+                />
+              )}
+              {(question.type === "long_answer" || question.type === "code") && (
                 <Textarea
                   aria-label={`Answer to question ${index + 1}`}
-                  rows={question.type === "short_answer" ? 2 : 5}
-                  className={question.type === "code" ? "font-mono" : undefined}
+                  rows={question.type === "code" ? 8 : 5}
+                  spellCheck={question.type !== "code"}
+                  className={question.type === "code" ? "font-mono text-sm" : undefined}
                   defaultValue={question.starter_code}
                   onChange={(e) => set(question.id, e.target.value)}
                 />
               )}
 
               {grade && grade.correct !== null && (
-                <p role="status" className={grade.correct ? "text-sm text-emerald-700 dark:text-emerald-400" : "text-sm text-destructive"}>
+                <p role="status" className={cn("text-sm font-extrabold", grade.correct ? "text-success-text" : "text-destructive-text")}>
                   {grade.correct ? `Correct: ${grade.awarded} marks` : "Not quite"}
                 </p>
               )}
               {shown && solution ? (
                 <SolutionView question={question} solution={solution} />
               ) : (
-                <Button variant="ghost" size="sm" className="self-start print:hidden" onClick={() => reveal(question.id)}>
-                  Reveal solution
+                <Button variant="outline" size="sm" className="self-start print:hidden" onClick={() => reveal(question.id)}>
+                  <EyeIcon /> Reveal solution
                 </Button>
               )}
             </CardContent>
@@ -192,12 +218,13 @@ export function PracticeSheetView({ lessonId, sheet, onSolutions }: Props) {
         );
       })}
 
-      <div className="flex gap-2 print:hidden">
-        <Button onClick={check} disabled={busy || session.answered === 0}>
+      <div className="flex flex-wrap gap-3 print:hidden">
+        <Button size="lg" onClick={check} disabled={busy || session.answered === 0}>
           {busy ? "Checking…" : "Check my answers"}
         </Button>
         {(session.score || session.answered > 0) && (
           <Button
+            size="lg"
             variant="outline"
             onClick={() => {
               session.reset();
