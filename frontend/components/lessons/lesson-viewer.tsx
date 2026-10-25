@@ -1,30 +1,44 @@
 "use client";
 
-import { CodeIcon, DownloadIcon, HistoryIcon, RefreshCwIcon } from "lucide-react";
+import { CodeIcon, DownloadIcon, FlagIcon, HistoryIcon, MoreHorizontalIcon, RefreshCwIcon } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { LessonBook } from "@/components/lessons/lesson-book";
 import { LessonSandbox } from "@/components/lessons/lesson-sandbox";
-import { TestResultPanel } from "@/components/lessons/test-result-panel";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { CONTACT, CONTACT_TOPICS } from "@/content/legal/contact";
 import { ApiError } from "@/lib/api";
+import { BookKeys, LessonBook as Book, ReadPages } from "@/lib/lesson-book";
 import { lessonsApi } from "@/lib/lessons-api";
+import { Mailto } from "@/lib/mailto";
+import { PlainError, PlainVersion } from "@/lib/plain-notes";
 import { RunEventStream, TERMINAL_EVENTS } from "@/lib/run-events";
 import { RepairGate, RepairReport, type SandboxError, type SandboxMessage } from "@/lib/sandbox-bridge";
-import { TestSubmitFlow } from "@/lib/test-session";
-import type { LessonDocument, LessonVersion, TestSubmission } from "@/lib/types";
+import type { LessonDocument, LessonVersion, TestStatus } from "@/lib/types";
 
 type Repair = { state: "idle" } | { state: "running" } | { state: "failed"; message: string } | { state: "limit" };
 type Panel = "code" | "versions" | null;
 
+type Props = {
+  lessonId: string;
+  testStatus: TestStatus;
+  /** Opens the Test tab (the last page of the book leads there). */
+  onGoToTest: () => void;
+};
+
 /**
- * Loads the lesson document and shows it in the sandbox, with a small toolbar (view code, version history, rebuild).
+ * Loads the lesson document and shows it as a notebook: one page of the sandboxed document at a time, index flaps and
+ * previous/next around it, and a toolbar (PDF, and a menu with version history, view code and reload).
  * A crash the runtime reports is sent to `POST /repair` once per version of the code; when that fails or the server's
- * repair limit is reached, the learner sees the error and can rebuild the view or go back to an earlier version.
+ * repair limit is reached, the learner is told plainly and can reload the view or go back to an earlier version.
  */
-export function LessonViewer({ lessonId }: { lessonId: string }) {
+export function LessonViewer({ lessonId, testStatus, onGoToTest }: Props) {
   const { resolvedTheme } = useTheme();
   const [doc, setDoc] = useState<LessonDocument | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -35,8 +49,41 @@ export function LessonViewer({ lessonId }: { lessonId: string }) {
   const [gate] = useState(() => new RepairGate());
   const [stream, setStream] = useState<RunEventStream | null>(null);
   const [instance, setInstance] = useState(0);
-  const [submission, setSubmission] = useState<TestSubmission | null>(null);
-  const [grading, setGrading] = useState<TestSubmitFlow | null>(null);
+  const [readPages] = useState(() => new ReadPages(lessonId));
+  // The ticks of an earlier visit live in this browser (and only there); on the server there is no storage and none show.
+  const [book, setBook] = useState(() => new Book(0).withRead(readPages.load()));
+  const [reloading, setReloading] = useState(false);
+  const toolbar = useRef<HTMLDivElement>(null);
+  const turned = useRef(false);
+
+  useEffect(() => readPages.save(book.read), [readPages, book.read]);
+
+  // ← and → turn the page whenever focus is not in the lesson itself (keys typed inside the iframe never reach us).
+  useEffect(() => {
+    const turn = (event: KeyboardEvent) => {
+      const direction = BookKeys.direction({
+        key: event.key,
+        altKey: event.altKey,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey,
+        target: event.target as Element | null,
+      });
+      if (direction) setBook((current) => (direction > 0 ? current.next() : current.prev()));
+    };
+    window.addEventListener("keydown", turn);
+    return () => window.removeEventListener("keydown", turn);
+  }, []);
+
+  // A new page starts at its top: bring the toolbar back into view if the learner had scrolled down.
+  useEffect(() => {
+    if (!turned.current) {
+      turned.current = true;
+      return;
+    }
+    const top = toolbar.current?.getBoundingClientRect().top ?? 0;
+    if (top < 0) toolbar.current?.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }, [book.index]);
 
   const load = useCallback(async () => {
     try {
@@ -59,19 +106,6 @@ export function LessonViewer({ lessonId }: { lessonId: string }) {
   }, [lessonId]);
 
   useEffect(() => () => stream?.close(), [stream]);
-  useEffect(() => () => grading?.dispose(), [grading]);
-
-  const submitTest = (answers: Record<string, unknown>) => {
-    const flow = new TestSubmitFlow(lessonsApi, (runId, onEnd) => {
-      const events = new RunEventStream(runId, (event) => TERMINAL_EVENTS.has(event.name) && onEnd());
-      return () => events.close();
-    });
-    setGrading(flow);
-    setSubmission(null);
-    flow.run(lessonId, answers, setSubmission).catch((err) => {
-      toast.error(err instanceof ApiError ? err.message : "Could not submit the test.");
-    });
-  };
 
   const follow = useCallback(
     (runId: string) => {
@@ -117,9 +151,10 @@ export function LessonViewer({ lessonId }: { lessonId: string }) {
     if (message.type === "error" && doc) {
       setCrash(message.error);
       if (gate.shouldRepair(message.error, doc.code_version)) startRepair(message.error, doc.code_version);
-    } else if (message.type === "test_submit") {
-      submitTest(message.answers);
+    } else if (message.type === "pages") {
+      setBook((current) => current.withPages(message.count, message.titles));
     }
+    // `page_changed` only confirms what the book asked for, and `test_submit` (an old lesson's test) is no longer shown.
   };
 
   const showVersions = async () => {
@@ -157,7 +192,14 @@ export function LessonViewer({ lessonId }: { lessonId: string }) {
     }
   };
 
-  const rebuild = async () => {
+  /** Opens the mail app with the lesson problem subject, and the lesson's address and page in the message. */
+  const reportProblem = () => {
+    const subject = CONTACT_TOPICS.find((topic) => topic.id === "lesson")!.subject;
+    const body = `Lesson: ${window.location.href}\nPage: ${book.eyebrow}\n\nWhat looked wrong:\n`;
+    window.location.href = Mailto.link(CONTACT.email, subject, body);
+  };
+
+  const reload = async () => {
     setCrash(null);
     setRepair({ state: "idle" });
     await load();
@@ -171,49 +213,92 @@ export function LessonViewer({ lessonId }: { lessonId: string }) {
       </Alert>
     );
   }
-  if (!doc) return <div className="h-96 rounded-lg border bg-muted/30" aria-busy="true" />;
+  if (!doc) return <Skeleton className="h-[32rem] rounded-[22px]" />;
+
+  const next = book.nextAction(testStatus);
+  const onNext = () => {
+    if (next.kind === "test") {
+      setBook((current) => current.finish());
+      onGoToTest();
+    } else {
+      setBook((current) => current.next());
+    }
+  };
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button variant="outline" size="sm" onClick={() => setPanel(panel === "code" ? null : "code")} aria-pressed={panel === "code"}>
-          <CodeIcon /> View code
-        </Button>
-        <Button variant="outline" size="sm" onClick={showVersions} aria-pressed={panel === "versions"}>
-          <HistoryIcon /> Versions
-        </Button>
-        <Button variant="outline" size="sm" onClick={download}>
-          <DownloadIcon /> PDF
-        </Button>
-        <Button variant="outline" size="sm" onClick={rebuild}>
-          <RefreshCwIcon /> Rebuild
-        </Button>
-        <span className="ml-auto text-xs text-muted-foreground">Version {doc.code_version}</span>
+    <div className="flex flex-col gap-4">
+      <div ref={toolbar} className="flex scroll-mt-20 flex-wrap items-end justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="font-mono text-xs font-bold tracking-wider text-primary-text uppercase">{book.eyebrow}</p>
+          <h2 className="font-heading text-2xl font-semibold tracking-tight">{book.title}</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={download}>
+            <DownloadIcon /> PDF
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger className={buttonVariants({ variant: "ghost", size: "icon" })} aria-label="More">
+              <MoreHorizontalIcon />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem onClick={showVersions}>
+                <HistoryIcon /> Version history
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setPanel(panel === "code" ? null : "code")}>
+                <CodeIcon /> View code
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setReloading(true)}>
+                <RefreshCwIcon /> Reload this lesson
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={reportProblem}>
+                <FlagIcon /> Report a problem
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
-      {repair.state === "running" && (
-        <Alert aria-live="polite">
-          <AlertTitle>Repairing this lesson…</AlertTitle>
-          <AlertDescription>Something on this page crashed. We are fixing it and will reload it automatically.</AlertDescription>
-        </Alert>
-      )}
       {crash && repair.state !== "running" && (
         <Alert variant="destructive">
           <AlertTitle>Something on this page did not work</AlertTitle>
           <AlertDescription>
             {repair.state === "limit"
-              ? "It has already been repaired as often as allowed. Rebuild the view, or go back to an earlier version."
+              ? "It has already been fixed as often as we allow. Reload this lesson, or go back to an earlier version."
               : repair.state === "failed"
-                ? `${repair.message} You can rebuild the view or go back to an earlier version.`
-                : "You can rebuild the view or go back to an earlier version."}
-            <span className="mt-1 block font-mono text-xs">{crash.component ? `${crash.component}: ` : ""}{crash.message}</span>
+                ? `${PlainError.of(repair.message)} You can reload this lesson or go back to an earlier version.`
+                : "You can reload this lesson or go back to an earlier version."}
           </AlertDescription>
         </Alert>
       )}
 
-      <LessonSandbox key={instance} document={doc} theme={resolvedTheme === "dark" ? "dark" : "light"} onMessage={onMessage} />
+      <LessonBook
+        book={book}
+        next={next}
+        onGoTo={(index) => setBook((current) => current.goTo(index))}
+        onPrev={() => setBook((current) => current.prev())}
+        onNext={onNext}
+        overlay={
+          repair.state === "running" && (
+            <>
+              <p className="font-heading text-lg font-semibold">Fixing a glitch on this page…</p>
+              <p className="text-sm text-muted-foreground">It will reload by itself in a moment.</p>
+            </>
+          )
+        }
+      >
+        <LessonSandbox key={instance} document={doc} theme={resolvedTheme === "dark" ? "dark" : "light"} page={book.index} onMessage={onMessage} />
+      </LessonBook>
 
-      {submission && <TestResultPanel submission={submission} />}
+      <ConfirmDialog
+        open={reloading}
+        onOpenChange={setReloading}
+        title="Reload this lesson?"
+        description="We'll load the lesson again from scratch. Your place in the book is kept."
+        confirmLabel="Reload"
+        cancelLabel="Not now"
+        confirmVariant="default"
+        onConfirm={reload}
+      />
 
       {panel === "code" && (
         <pre className="max-h-96 overflow-auto rounded-lg border bg-muted/30 p-3 text-xs" aria-label="Lesson code">
@@ -222,6 +307,7 @@ export function LessonViewer({ lessonId }: { lessonId: string }) {
       )}
       {panel === "versions" && (
         <div className="rounded-lg border p-3 text-sm">
+          <p className="mb-2 font-extrabold">Version history <span className="font-normal text-muted-foreground">· you are on version {doc.code_version}</span></p>
           {versions === null ? (
             <p className="text-muted-foreground">Loading…</p>
           ) : versions.length === 0 ? (
@@ -231,7 +317,7 @@ export function LessonViewer({ lessonId }: { lessonId: string }) {
               {versions.map((v) => (
                 <li key={v.code_version} className="flex flex-wrap items-center gap-2">
                   <span className="font-medium">Version {v.code_version}</span>
-                  <span className="text-muted-foreground">{v.reason || "Earlier code"}</span>
+                  <span className="text-muted-foreground">{PlainVersion.of(v.reason)}</span>
                   <Button className="ml-auto" size="xs" variant="outline" onClick={() => restore(v.code_version)}>
                     Restore
                   </Button>

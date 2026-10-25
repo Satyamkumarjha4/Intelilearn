@@ -6,6 +6,7 @@ import type { LessonPageContent, LessonSection } from "@/lib/types";
 
 const styles = StyleSheet.create({
   page: { padding: 36, fontSize: 10, fontFamily: "Helvetica", lineHeight: 1.4 },
+  footer: { position: "absolute", bottom: 16, left: 36, right: 36, flexDirection: "row", justifyContent: "space-between", fontSize: 8, color: "#777" },
   title: { fontSize: 22, marginBottom: 12, fontFamily: "Helvetica-Bold" },
   pageTitle: { fontSize: 16, marginBottom: 8, fontFamily: "Helvetica-Bold" },
   heading: { fontSize: 12, marginTop: 10, marginBottom: 3, fontFamily: "Helvetica-Bold" },
@@ -29,6 +30,10 @@ export class LessonPdf {
             {page.sections.flatMap((section) => LessonPdf.section(section))}
             <Text style={styles.heading}>Summary</Text>
             <Text>{text(page.summary)}</Text>
+          <View fixed style={styles.footer}>
+              <Text>Socra</Text>
+              <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
+            </View>
           </Page>
         ))}
       </Document>

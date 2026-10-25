@@ -1,73 +1,68 @@
+import { MistakeList, MutedBox, RememberBox, SheetBox, SheetHeading } from "@/components/lessons/sheet-parts";
 import { Markdown } from "@/components/markdown";
 import type { RevisionSheet } from "@/lib/types";
 
 const anchor = (index: number) => `subtopic-${index + 1}`;
 
-/** Long-form notes with a table of contents and collapsible sections (all open when printed). */
+/** A box per subtopic (summary, key points, worked examples, common mistakes) under a row of links to them, and the
+ *  final tips as the closing "Remember". Fixed template: no generated code. */
 export function RevisionSheetView({ sheet }: { sheet: RevisionSheet }) {
   return (
-    <article className="flex flex-col gap-6">
-      <header className="flex flex-col gap-2">
-        <h2 className="text-2xl font-semibold tracking-tight">{sheet.title}</h2>
-        <Markdown className="text-muted-foreground">{sheet.overview}</Markdown>
-      </header>
+    <article className="flex flex-col gap-4">
+      <SheetHeading eyebrow="Revision sheet" title={sheet.title}>
+        <Markdown>{sheet.overview}</Markdown>
+      </SheetHeading>
 
-      <nav aria-label="Contents" className="rounded-lg border p-3 text-sm print:hidden">
-        <p className="mb-1 font-medium">Contents</p>
-        <ol className="list-decimal pl-5">
-          {sheet.subtopics.map((sub, i) => (
-            <li key={sub.title}>
-              <a className="underline-offset-4 hover:underline" href={`#${anchor(i)}`}>
-                {sub.title}
-              </a>
-            </li>
-          ))}
-        </ol>
+      <nav aria-label="Contents" className="flex flex-wrap gap-2 print:hidden">
+        {sheet.subtopics.map((sub, i) => (
+          <a
+            key={sub.title}
+            href={`#${anchor(i)}`}
+            className="rounded-full bg-primary-soft px-3 py-1 text-sm font-bold text-primary-text outline-none hover:bg-primary-soft/70 focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            {sub.title}
+          </a>
+        ))}
       </nav>
 
-      {sheet.subtopics.map((sub, i) => (
-        <details key={sub.title} id={anchor(i)} open className="group rounded-lg border p-4 open:pb-5">
-          <summary className="cursor-pointer text-lg font-medium">{sub.title}</summary>
-          <div className="mt-3 flex flex-col gap-3">
+      <div className="grid items-start gap-4 md:grid-cols-2">
+        {sheet.subtopics.map((sub, i) => (
+          <SheetBox key={sub.title} id={anchor(i)} heading={sub.title}>
             <Markdown>{sub.summary}</Markdown>
-            <ul className="list-disc pl-5">
-              {sub.key_points.map((point) => (
-                <li key={point}>
-                  <Markdown>{point}</Markdown>
-                </li>
-              ))}
-            </ul>
+            {sub.key_points.length > 0 && (
+              <ul className="flex list-disc flex-col gap-1.5 pl-5 marker:text-primary">
+                {sub.key_points.map((point) => (
+                  <li key={point}>
+                    <Markdown>{point}</Markdown>
+                  </li>
+                ))}
+              </ul>
+            )}
             {sub.worked_examples.map((example) => (
-              <div key={example.problem} className="rounded-lg bg-muted/50 p-3">
-                <p className="font-medium">Example</p>
+              <MutedBox key={example.problem}>
+                <p className="text-sm font-extrabold">Example</p>
                 <Markdown>{example.problem}</Markdown>
-                <Markdown className="text-muted-foreground">{example.solution}</Markdown>
-              </div>
+                <Markdown className="text-muted-foreground [&_.katex-display]:overflow-x-auto">{example.solution}</Markdown>
+              </MutedBox>
             ))}
             {sub.common_mistakes.length > 0 && (
-              <div>
-                <p className="font-medium">Common mistakes</p>
-                <ul className="list-disc pl-5 text-muted-foreground">
-                  {sub.common_mistakes.map((mistake) => (
-                    <li key={mistake}>{mistake}</li>
-                  ))}
-                </ul>
+              <div className="flex flex-col gap-1.5">
+                <p className="text-sm font-extrabold">Common mistakes</p>
+                <MistakeList items={sub.common_mistakes} />
               </div>
             )}
-          </div>
-        </details>
-      ))}
-
-      {sheet.final_tips.length > 0 && (
-        <section>
-          <h3 className="mb-1 text-lg font-medium">Final tips</h3>
-          <ul className="list-disc pl-5">
-            {sheet.final_tips.map((tip) => (
-              <li key={tip}>{tip}</li>
-            ))}
-          </ul>
-        </section>
-      )}
+          </SheetBox>
+        ))}
+        {sheet.final_tips.length > 0 && (
+          <RememberBox>
+            <ul className="flex list-disc flex-col gap-1 pl-5 marker:text-insight">
+              {sheet.final_tips.map((tip) => (
+                <li key={tip}>{tip}</li>
+              ))}
+            </ul>
+          </RememberBox>
+        )}
+      </div>
     </article>
   );
 }

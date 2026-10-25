@@ -1,5 +1,5 @@
 // The lesson runtime: runs inside the sandboxed iframe (and, identically, in the render check). It receives
-// `{type: "render", code, data, codeVersion, theme}`, transforms the generated TSX with sucrase, evaluates it with the
+// `{type: "render", code, data, codeVersion, theme, hide?}`, transforms the generated TSX with sucrase, evaluates it with the
 // scope, and reports `rendered`, `error` and `height` to the page that embeds it.
 
 import React from "react";
@@ -8,7 +8,7 @@ import { transform } from "sucrase";
 
 import { SCOPE_NAMES, STANDARD_NAMES } from "./scope-names.mjs";
 import { SCOPE } from "./scope";
-import { describeError, post, setCodeVersion } from "./scope/host";
+import { describeError, post, setCodeVersion, setHiddenPages } from "./scope/host";
 import { Boundary } from "./scope/shell";
 
 const STANDARD = new Set<string>(STANDARD_NAMES);
@@ -66,6 +66,7 @@ window.addEventListener("message", (event: MessageEvent) => {
     currentVersion = Number(message.codeVersion ?? 0);
     setCodeVersion(currentVersion);
     applyTheme(message.theme);
+    setHiddenPages(message.hide);
     run(String(message.code ?? ""), message.data);
   } else if (message.type === "theme") {
     applyTheme(message.theme);

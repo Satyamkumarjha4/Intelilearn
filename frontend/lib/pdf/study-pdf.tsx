@@ -6,6 +6,7 @@ import type { CheatSheet, MaterialKind, PracticeSheet, RevisionSheet, Solution }
 
 const styles = StyleSheet.create({
   page: { padding: 36, fontSize: 10, fontFamily: "Helvetica", lineHeight: 1.4 },
+  footer: { position: "absolute", bottom: 16, left: 36, right: 36, flexDirection: "row", justifyContent: "space-between", fontSize: 8, color: "#777" },
   title: { fontSize: 20, marginBottom: 4, fontFamily: "Helvetica-Bold" },
   lead: { marginBottom: 12, color: "#444" },
   heading: { fontSize: 13, marginTop: 12, marginBottom: 4, fontFamily: "Helvetica-Bold" },
@@ -32,7 +33,11 @@ export class StudyPdf {
         <Page size="A4" style={styles.page} wrap>
           <Text style={styles.title}>{title}</Text>
           {body}
-        </Page>
+        <View fixed style={styles.footer}>
+          <Text>Socra</Text>
+          <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
+        </View>
+      </Page>
       </Document>
     );
   }
