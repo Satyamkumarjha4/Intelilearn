@@ -121,9 +121,11 @@ class Gateway:
         raise AllModelsFailed(node_key, call.errors)
 
     def _try_model(self, call: _Call, model: ResolvedModel, index: int, messages: list) -> GatewayResult | None:
+        waited_ms = 0  # of the attempt being made: how long it stood in line for a rate-limit window
+
         def record(**fields):
             self.recorder.record(node_key=call.node.node_key, lesson_id=call.lesson_id, run_id=call.run_id,
-                                 model=model, fallback_index=index, **fields)  # fmt: skip
+                                 model=model, fallback_index=index, rate_limit_wait_ms=waited_ms, **fields)  # fmt: skip
 
         try:
             chat = self.chat_factory(model, call.node.timeout_s)
@@ -139,11 +141,13 @@ class Gateway:
         attempt = 0
         while attempt <= model.max_retries:
             attempt += 1
+            waited_ms = 0
             started = time.perf_counter()
             try:
-                self.limiter.acquire(
+                waited_s = self.limiter.acquire(
                     {f"provider:{model.provider_key}": model.provider_rpm, f"model:{model.label}": model.model_rpm}
                 )
+                waited_ms = int((waited_s or 0) * 1000)
                 trace = self.tracing.config(
                     node_key=call.node.node_key, model=model.label, lesson_id=call.lesson_id, run_id=call.run_id
                 )

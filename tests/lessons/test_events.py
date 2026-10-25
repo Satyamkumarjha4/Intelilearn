@@ -13,6 +13,8 @@ Use cases:
 - the stream sends a snapshot first, relays published events, and stops after a terminal one
 - the stream ends right after the snapshot when the run has already finished (it connected late)
 - the stream pings while idle
+- the first snapshot says where the run stands, including when it started (so the page can say "Started 2 min ago"),
+  falling back to when it was queued
 """
 
 import asyncio
@@ -21,8 +23,10 @@ import json
 import pytest
 import redis
 from django.conf import settings
+from django.utils import timezone
 
-from lessons.events import RedisEventPublisher, RunEvent, RunEventStream, RunEventTranslator
+from lessons.events import RedisEventPublisher, RunEvent, RunEventStream, RunEventTranslator, RunSnapshot
+from lessons.models import GraphRun, Lesson
 
 translate = RunEventTranslator().translate
 
@@ -205,3 +209,25 @@ class TestStream:
         chunks = await asyncio.wait_for(collect(stream.events("r4", snapshot_of()), limit=3), timeout=3)
 
         assert chunks[1:] == [": ping\n\n", ": ping\n\n"]
+
+
+@pytest.mark.django_db
+class TestRunSnapshot:
+    def run_of(self, user, **fields):
+        lesson = Lesson.objects.create(owner=user, topic="Binary search", stage="generating_lesson")
+        return GraphRun.objects.create(lesson=lesson, trigger="start", **fields)
+
+    def test_says_where_the_run_stands_and_when_it_started(self, user):
+        started = timezone.now()
+        run = self.run_of(user, status="running", started_at=started, node_status={"plan_lesson": "done"})
+
+        snapshot = RunSnapshot(run.id)()
+
+        assert snapshot["status"] == "running" and snapshot["stage"] == "generating_lesson"
+        assert snapshot["node_status"] == {"plan_lesson": "done"} and snapshot["awaiting"] is None
+        assert snapshot["started_at"] == started.isoformat()
+
+    def test_falls_back_to_when_the_run_was_queued(self, user):
+        run = self.run_of(user)
+
+        assert RunSnapshot(run.id)()["started_at"] == run.created_at.isoformat()

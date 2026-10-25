@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     "lessons",
     "onboarding",
     "marketing",
+    "console",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -197,6 +198,11 @@ MEDIA_URL_TTL_S = env.int("MEDIA_URL_TTL_S", default=6 * 3600)
 # environment by their SDKs (LANGSMITH_API_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST).
 LLM_TRACING = env("LLM_TRACING", default="none")
 
+# --- Console ---
+# What the AI spend of one calendar month (UTC) should stay under, in US dollars. The console's overview shows month to
+# date against it; nothing is cut off when it is passed.
+CONSOLE_MONTHLY_BUDGET_USD = env("CONSOLE_MONTHLY_BUDGET_USD", default="25")
+
 # --- DRF / OpenAPI ---
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
@@ -214,6 +220,7 @@ REST_FRAMEWORK = {
         "topic_suggestions": env(
             "TOPIC_SUGGESTIONS_THROTTLE_RATE", default="30/min"
         ),  # per user; may cost a model call
+        "console": env("CONSOLE_THROTTLE_RATE", default="120/min"),  # staff-only console API, per user
     },
     # Requests arrive through the Next.js proxy; the client address is the X-Forwarded-For entry it appends.
     # Keep the API port bound to localhost (BIND_ADDRESS) so nobody can reach Django directly with a forged header.
@@ -256,6 +263,10 @@ SPECTACULAR_SETTINGS = {
         "QuizKindEnum": "lessons.models.Quiz.Kind",
         "RunStatusEnum": "lessons.models.GraphRun.Status",
         "TestSubmissionStatusEnum": "lessons.models.TestSubmission.Status",
+        "ModelCallStatusEnum": "llm_registry.models.ModelCall.Status",
+        "RoutingPhaseEnum": "console.serializers.ROUTING_PHASES",
+        "TimelinePhaseEnum": "console.serializers.TIMELINE_PHASES",
+        "HealthStatusEnum": "console.serializers.HEALTH_STATUSES",
     },
 }
 

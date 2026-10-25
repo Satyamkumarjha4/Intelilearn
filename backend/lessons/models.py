@@ -265,6 +265,8 @@ class GraphRun(models.Model):
     payload = models.JSONField(default=dict, blank=True)  # e.g. the resume value or the requested sheet kind
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.QUEUED)
     node_status = models.JSONField(default=dict, blank=True)  # {node: pending|running|done|retrying|degraded|failed}
+    # {node: {started_at, finished_at, retries}}, kept next to node_status (lessons/runner.py): the console's timeline.
+    node_timings = models.JSONField(default=dict, blank=True)
     celery_task_id = models.CharField(max_length=80, blank=True)
     error = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

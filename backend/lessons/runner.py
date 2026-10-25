@@ -60,11 +60,31 @@ class GraphRunRecorder:
         run.refresh_from_db()
         return bool(moved)
 
+    #: statuses that end a stretch of work on a node (the others, running and retrying, start or restart one)
+    FINISHED = frozenset({"done", "failed", "degraded"})
+
     def record(self, run: GraphRun, event: RunEvent) -> None:
         if event.name != "node":
             return
-        run.node_status = {**run.node_status, event.data["node"]: event.data["status"]}
-        GraphRun.objects.filter(pk=run.pk).update(node_status=run.node_status)
+        node, status = event.data["node"], event.data["status"]
+        run.node_status = {**run.node_status, node: status}
+        run.node_timings = {**run.node_timings, node: self._timing(run.node_timings.get(node), status)}
+        GraphRun.objects.filter(pk=run.pk).update(node_status=run.node_status, node_timings=run.node_timings)
+
+    def _timing(self, previous: dict | None, status: str) -> dict:
+        """The node's first start, its latest finish and how often the graph ran it again. A node that was never seen
+        starting (an `updates` event only) starts when it finishes, so it has a duration of zero rather than none."""
+        now = timezone.now().isoformat()
+        timing = dict(previous or {"started_at": None, "finished_at": None, "retries": 0})
+        if timing["started_at"] is None:
+            timing["started_at"] = now
+        if status == "retrying":
+            timing["retries"] += 1
+        if status in self.FINISHED:
+            timing["finished_at"] = now
+        elif status == "running":
+            timing["finished_at"] = None  # it started (again), so it is not finished
+        return timing
 
     def is_cancelled(self, run: GraphRun) -> bool:
         return GraphRun.objects.filter(pk=run.pk, status=GraphRun.Status.CANCELLED).exists()

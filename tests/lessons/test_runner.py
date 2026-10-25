@@ -26,12 +26,15 @@ Use cases:
 - a thread paused by one runner is resumed by another with a fresh Postgres checkpointer (a restarted worker)
 - failure messages: model failures name the step, unexpected errors do not leak details
 - the recorder and lock behave: begin is conditional, finish only from running, the lock is exclusive
+- the recorder keeps when each node started and finished, and how often the graph ran it again (the console timeline)
 """
 
 import contextlib
+from datetime import UTC, datetime
 
 import pytest
 from django.db import connection
+from django.utils import timezone
 from langgraph.checkpoint.memory import InMemorySaver
 from support.fakes import FakeSandbox
 from support.fixtures import budget_snapshot
@@ -547,6 +550,65 @@ class TestRecorder:
 
         run.refresh_from_db()
         assert run.node_status == {"plan_lesson": "done"}
+
+
+class TestRecorderTimings:
+    def at(self, hour, minute=0):
+        return datetime(2026, 3, 1, hour, minute, tzinfo=UTC)
+
+    def record(self, recorder, run, node, status, when, monkeypatch):
+        monkeypatch.setattr(timezone, "now", lambda: when)
+        recorder.record(run, RunEvent("node", {"node": node, "status": status}))
+
+    def test_a_node_gets_its_start_and_finish_time(self, prepared, monkeypatch):
+        run, recorder = new_run(prepared), GraphRunRecorder()
+
+        self.record(recorder, run, "plan_lesson", "running", self.at(10), monkeypatch)
+        self.record(recorder, run, "plan_lesson", "done", self.at(10, 5), monkeypatch)
+
+        run.refresh_from_db()
+        assert run.node_timings == {
+            "plan_lesson": {
+                "started_at": "2026-03-01T10:00:00+00:00",
+                "finished_at": "2026-03-01T10:05:00+00:00",
+                "retries": 0,
+            }  # fmt: skip
+        }
+
+    def test_a_node_that_has_not_finished_has_no_finish_time(self, prepared, monkeypatch):
+        run, recorder = new_run(prepared), GraphRunRecorder()
+
+        self.record(recorder, run, "await_diagnostic", "running", self.at(10), monkeypatch)
+
+        run.refresh_from_db()
+        assert run.node_timings["await_diagnostic"]["finished_at"] is None
+
+    def test_a_node_that_runs_again_keeps_its_first_start_and_its_last_finish_and_counts_the_retries(
+        self, prepared, monkeypatch
+    ):
+        run, recorder = new_run(prepared), GraphRunRecorder()
+
+        self.record(recorder, run, "generate_diagnostic", "running", self.at(10), monkeypatch)
+        self.record(recorder, run, "generate_diagnostic", "retrying", self.at(10, 1), monkeypatch)
+        self.record(recorder, run, "generate_diagnostic", "running", self.at(10, 2), monkeypatch)
+        self.record(recorder, run, "generate_diagnostic", "done", self.at(10, 3), monkeypatch)
+
+        run.refresh_from_db()
+        assert run.node_timings["generate_diagnostic"] == {
+            "started_at": "2026-03-01T10:00:00+00:00",
+            "finished_at": "2026-03-01T10:03:00+00:00",
+            "retries": 1,
+        }
+
+    def test_a_failed_or_degraded_node_is_finished_too(self, prepared, monkeypatch):
+        run, recorder = new_run(prepared), GraphRunRecorder()
+
+        self.record(recorder, run, "render_check", "failed", self.at(11), monkeypatch)
+        self.record(recorder, run, "verify_media", "degraded", self.at(11, 1), monkeypatch)
+
+        run.refresh_from_db()
+        assert run.node_timings["render_check"]["finished_at"] == "2026-03-01T11:00:00+00:00"
+        assert run.node_timings["verify_media"]["finished_at"] == "2026-03-01T11:01:00+00:00"
 
 
 class TestRunLock:

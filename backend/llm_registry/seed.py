@@ -7,6 +7,7 @@ Verify ids, capability flags and rpm limits against each provider's current cata
 them on a paid plan. Loaded by `manage.py seed_registry`.
 """
 
+from .node_specs import NODE_SPECS, Effort
 from .serialization import RegistrySerializer
 
 _GEMINI = {
@@ -93,6 +94,9 @@ _NODES = {
 class DefaultRegistry:
     """The seed as RegistrySerializer JSON, so `seed_registry` loads it exactly like an exported file."""
 
+    #: how the profile is offered in the console's list: a short name and one sentence on when to pick it
+    label = "Default"
+    description = "The free-tier layout: Groq answers the light steps, Gemini the big ones, a second quota behind each."
     nodes = _NODES
 
     def build(self) -> dict:
@@ -135,11 +139,71 @@ class CheapRegistry(DefaultRegistry):
     """For validating the lesson flow end to end without hitting rate or billing limits: only the cheapest models, at
     low reasoning effort. Quality is not the point. Once the flow works, seed the default and tune for accuracy."""
 
+    label = "Cheap"
+    description = "Only the cheapest models, at low reasoning effort. For trying the flow end to end, not for quality."
     nodes = {
         key: (_CHEAP_LIGHT if chain[0][0] == "groq" else _CHEAP_HEAVY, {**settings, "reasoning_effort": "low"})
         for key, (chain, settings) in _NODES.items()
     }
 
 
-# `seed_registry --profile NAME`: add a profile by adding a class here.
-SEED_PROFILES = {"default": DefaultRegistry, "cheap": CheapRegistry}
+# The steps where the lesson's quality is decided (writing it, planning it, judging it, grading the learner), and the
+# mechanical ones that only reshape or repair what was written. Balanced spends the better model on the first kind.
+_JUDGEMENT_NODES = frozenset({
+    "diagnostic.generate", "learner.assess", "study.generate", "lesson.plan", "page.generate", "test.generate",
+    "interactive.generate", "alignment.judge", "test.grade", "media.verify",
+})  # fmt: skip
+_QUICK_NODES = frozenset({"onboarding.suggest_topics"})  # the learner is waiting: every profile keeps these as seeded
+
+
+def _own_effort(key: str) -> str:
+    """The reasoning effort the node's spec asks for."""
+    return str(NODE_SPECS[key].default_reasoning)
+
+
+def _raised(effort: str) -> str:
+    """One step more reasoning (nothing to raise when it is off or already high)."""
+    return {Effort.LOW: "medium", Effort.MEDIUM: "high"}.get(Effort(effort), effort)
+
+
+class BalancedRegistry(DefaultRegistry):
+    """Gemini Flash writes and judges the lesson, the two Flash-Lite models (and the small Groq model on the light
+    steps) do the mechanical work, every node at its own reasoning effort."""
+
+    label = "Balanced"
+    description = "Gemini Flash writes and judges the lesson; the cheaper models do the mechanical steps."
+    nodes = {
+        key: (
+            ([FLASH, LITE] if key in _JUDGEMENT_NODES else _CHEAP_LIGHT if chain[0][0] == "groq" else _CHEAP_HEAVY),
+            {**settings, "reasoning_effort": _own_effort(key)},
+        )
+        if key not in _QUICK_NODES
+        else (chain, settings)
+        for key, (chain, settings) in _NODES.items()
+    }
+
+
+class QualityRegistry(DefaultRegistry):
+    """Gemini Flash first on every step, with the second Flash-Lite and the big Groq model behind it where Groq can
+    take the reply, and one step more reasoning than each node asks for. For when the cost does not matter."""
+
+    label = "Quality"
+    description = "The strongest model first on every step, thinking a step harder. Slower and the most expensive."
+    nodes = {
+        key: (
+            ([FLASH, GPT_OSS, LITE] if any(p == "groq" for p, _ in chain) else [FLASH, LITE]),
+            {**settings, "reasoning_effort": _raised(_own_effort(key))},
+        )
+        if key not in _QUICK_NODES
+        else (chain, settings)
+        for key, (chain, settings) in _NODES.items()
+    }
+
+
+# `seed_registry --profile NAME`: add a profile by adding a class here (and its label and description).
+SEED_PROFILES = {
+    "default": DefaultRegistry,
+    "cheap": CheapRegistry,
+    "balanced": BalancedRegistry,
+    "quality": QualityRegistry,
+}

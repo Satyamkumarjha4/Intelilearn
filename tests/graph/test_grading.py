@@ -17,6 +17,8 @@ Use cases:
 - never routes an empty quiz to mastery
 - honours custom thresholds and the relaxed mastery rule
 - lists the prerequisites to cover: all on 0/5, none on 5/5, only the missed ones otherwise
+- states the thresholds of the current settings as numbers (the console's "where learners go"): the quiz length, the
+  last score sent to the prerequisites, and the lowest score that can still be mastery
 - summarises a result for the learner, with the route when there is one
 """
 
@@ -231,3 +233,23 @@ class TestSummary:
 
     def test_includes_the_route_when_given(self):
         assert graded(6).summary("lesson")["route"] == "lesson"
+
+
+def test_thresholds_state_the_routing_in_numbers_for_the_default_settings():
+    thresholds = policy.thresholds({"diagnostic_questions_per_band": 2, "prereq_trigger_max_correct": 2,
+                                    "mastery_requires_all_correct": True})  # fmt: skip
+
+    assert (thresholds.questions_total, thresholds.foundations_max, thresholds.mastery_min) == (10, 2, 10)
+
+
+def test_thresholds_follow_the_relaxed_mastery_rule_and_the_quiz_length():
+    thresholds = policy.thresholds({"diagnostic_questions_per_band": 3, "prereq_trigger_max_correct": 4,
+                                    "mastery_requires_all_correct": False})  # fmt: skip
+
+    assert (thresholds.questions_total, thresholds.foundations_max, thresholds.mastery_min) == (15, 4, 14)
+
+
+def test_thresholds_fall_back_to_the_defaults_for_missing_settings():
+    thresholds = policy.thresholds({})
+
+    assert (thresholds.questions_total, thresholds.foundations_max, thresholds.mastery_min) == (10, 2, 10)

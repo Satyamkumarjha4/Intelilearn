@@ -7,6 +7,7 @@ Use cases:
 - records status, tokens (including reasoning tokens), tool calls and cost
 - masks secrets and truncates long errors
 - has no cost when the model has no prices or usage is missing
+- keeps how long the call waited for a rate-limit window (none by default)
 - a failing write is logged, not raised
 """
 
@@ -51,6 +52,13 @@ def test_masks_secrets_and_truncates_errors(resolved_model):
 def test_no_cost_without_prices_or_usage(resolved_model):
     assert ModelCallRecorder.cost(resolved_model("m"), 10, 5) is None
     assert ModelCallRecorder.cost(resolved_model("m", input_cost_per_mtok=1.0), None, 5) is None
+
+
+def test_keeps_the_rate_limit_wait(resolved_model):
+    record(ModelCallRecorder(), resolved_model("m"), rate_limit_wait_ms=1800)
+    record(ModelCallRecorder(), resolved_model("m"))
+
+    assert sorted(ModelCall.objects.values_list("rate_limit_wait_ms", flat=True)) == [0, 1800]
 
 
 def test_a_failing_write_is_logged_not_raised(resolved_model, monkeypatch, caplog):

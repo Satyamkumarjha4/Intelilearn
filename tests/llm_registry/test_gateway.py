@@ -19,6 +19,7 @@ Use cases:
 - text nodes return the text; tool nodes return the message with its tool calls
 - a disabled node is refused; a structured node without a schema is a programming error
 - the rate limiter is asked before each call, per provider and per model
+- the time a call waited for a rate-limit window is logged on its ModelCall row, and is zero when it did not wait
 - cost is computed from the model's prices
 """
 
@@ -250,3 +251,31 @@ def test_cost_is_computed_from_model_prices(resolved_model, make_snapshot, FakeC
         "learner.assess", MESSAGES, snapshot=snapshot, schema=Answer
     )
     assert float(ModelCall.objects.get().cost) == pytest.approx((10 * 1 + 5 * 4) / 1e6)
+
+
+class WaitingLimiter:
+    def __init__(self, seconds):
+        self.seconds = seconds
+
+    def acquire(self, limits):
+        return self.seconds
+
+
+def test_the_wait_for_a_rate_limit_window_is_logged_on_the_call(resolved_model, make_snapshot, FakeChat):
+    snapshot = make_snapshot("learner.assess", "structured", [resolved_model("m", provider_rpm=1)])
+
+    Gateway(lambda m, t: FakeChat(ok()), sleep=lambda s: None, limiter=WaitingLimiter(2.5)).invoke(
+        "learner.assess", MESSAGES, snapshot=snapshot, schema=Answer
+    )
+
+    assert ModelCall.objects.get().rate_limit_wait_ms == 2500
+
+
+def test_a_call_that_did_not_wait_logs_no_wait(resolved_model, make_snapshot, FakeChat):
+    snapshot = make_snapshot("learner.assess", "structured", [resolved_model("m")])
+
+    Gateway(lambda m, t: FakeChat(ok()), sleep=lambda s: None, limiter=NoRateLimit()).invoke(
+        "learner.assess", MESSAGES, snapshot=snapshot, schema=Answer
+    )
+
+    assert ModelCall.objects.get().rate_limit_wait_ms == 0

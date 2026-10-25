@@ -82,6 +82,13 @@ class LLMModel(models.Model):
     output_cost_per_mtok = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
     is_enabled = models.BooleanField(default=True)
 
+    # The latest connectivity test (the console's "Test" button): when, whether it worked, how long the plain text round
+    # trip took and, if it did not work, why (already redacted by the prober). Never an input to routing.
+    last_probe_at = models.DateTimeField(null=True, blank=True, editable=False)
+    last_probe_ok = models.BooleanField(null=True, blank=True, editable=False)
+    last_probe_latency_s = models.FloatField(null=True, blank=True, editable=False)
+    last_probe_error = models.TextField(blank=True, editable=False)
+
     class Meta:
         ordering = ["provider__key", "name"]
         constraints = [models.UniqueConstraint(fields=["provider", "name"], name="unique_model_per_provider")]
@@ -208,7 +215,10 @@ class ModelCall(models.Model):
     fallback_index = models.PositiveSmallIntegerField()
     status = models.CharField(max_length=20, choices=Status.choices)
     error = models.TextField(blank=True)
-    latency_ms = models.PositiveIntegerField()
+    latency_ms = models.PositiveIntegerField()  # includes any wait for a rate-limit window
+    rate_limit_wait_ms = models.PositiveIntegerField(
+        default=0, help_text="Part of the latency spent waiting for a window."
+    )
     input_tokens = models.PositiveIntegerField(null=True)
     output_tokens = models.PositiveIntegerField(null=True)
     reasoning_tokens = models.PositiveIntegerField(null=True)
@@ -218,6 +228,11 @@ class ModelCall(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        # The console's usage page filters by one model or one node over a time range; created_at is indexed on its own.
+        indexes = [
+            models.Index(fields=["model_name", "created_at"], name="modelcall_model_created_idx"),
+            models.Index(fields=["node_key", "created_at"], name="modelcall_node_created_idx"),
+        ]
 
     def __str__(self):
         return f"{self.node_key} → {self.provider_key}/{self.model_name} ({self.status})"
