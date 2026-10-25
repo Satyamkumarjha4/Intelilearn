@@ -1,24 +1,47 @@
-import { HomeContent } from "@/components/home-content";
-import { SystemStatus } from "@/components/system-status";
+import type { Metadata } from "next";
+import { headers } from "next/headers";
 
-// Swagger and the admin are served by Django directly (they need Django's static files).
-const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
+import { Band } from "@/components/landing/band";
+import { CtaBand } from "@/components/landing/cta-band";
+import { Hero } from "@/components/landing/hero";
+import { LandingFooter } from "@/components/landing/landing-footer";
+import { LandingHeader } from "@/components/landing/landing-header";
+import { PathsCarousel } from "@/components/landing/paths-carousel";
+import { ProofStrip } from "@/components/landing/proof-strip";
+import { WalkthroughSection } from "@/components/landing/walkthrough";
+import { DemoQuestionFetcher, DemoQuestions } from "@/lib/demo-question";
+import { LANDING_META, PATH_INTRO } from "@/lib/landing-content";
 
-export default function Home() {
+import "./landing.css";
+
+export const metadata: Metadata = {
+  title: { absolute: LANDING_META.title },
+  description: LANDING_META.description,
+  openGraph: { title: LANDING_META.title, description: LANDING_META.description, type: "website" },
+};
+
+// The public landing page, for visitors who are not signed in (proxy.ts sends everyone else on to the app).
+// The hero's question is picked at random on the server for every load (never cached), so the page arrives with it:
+// no flash, and no question at all is a built-in one, not an error.
+export default async function Home() {
+  const clientIp = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim();
+  const question = (await DemoQuestionFetcher.forServer().fetch({ clientIp })) ?? DemoQuestions.fallback();
+
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-10 px-4 py-12">
-      <HomeContent />
-
-      <SystemStatus />
-
-      <nav className="flex gap-4 text-sm text-muted-foreground">
-        <a className="underline underline-offset-4" href={`${backendUrl}/api/docs`} target="_blank">
-          API docs (Swagger)
-        </a>
-        <a className="underline underline-offset-4" href={`${backendUrl}/admin/`} target="_blank">
-          Django admin
-        </a>
-      </nav>
-    </main>
+    <>
+      <LandingHeader />
+      <main className="flex flex-1 flex-col">
+        <Hero question={question} />
+        <Band id="how" eyebrow="How it works" title="It starts by finding out what you already know." text="Most courses start at page one. Socra starts where you are.">
+          <WalkthroughSection />
+        </Band>
+        <Band id="paths" eyebrow="Three ways forward" title="Your score decides what happens next." text={PATH_INTRO}>
+          <PathsCarousel />
+        </Band>
+        <ProofStrip />
+        <CtaBand />
+      </main>
+      <LandingFooter />
+    </>
   );
 }

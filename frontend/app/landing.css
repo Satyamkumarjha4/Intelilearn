@@ -1,0 +1,97 @@
+/*
+ * Motion for the public landing page (docs/frontend.md, "The landing page"). Components mark what moves with data
+ * attributes and set a delay in `--d`; this file says how. Nothing here is needed to read the page: it renders visible
+ * on the server, and a visitor who asked for less motion gets none of it.
+ */
+:root {
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+html {
+  scroll-padding-top: 1rem;
+}
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(32px) scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes cta-pop {
+  from { opacity: 0; transform: scale(0.88) rotate(-1.5deg); }
+  60% { transform: scale(1.02) rotate(0.4deg); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes panel-in {
+  from { opacity: 0; transform: translateX(32px); }
+}
+@keyframes seg-fill {
+  from { background: var(--muted); }
+}
+@keyframes opt-pick {
+  from { background: var(--card); border-color: var(--border); box-shadow: 0 4px 0 var(--border); }
+  55% { transform: scale(1.05); }
+  to { transform: none; }
+}
+@keyframes grow {
+  from { transform: scaleX(0); }
+}
+@keyframes draw {
+  from { stroke-dashoffset: 400; }
+}
+@keyframes flap-in {
+  from { transform: translateX(-16px); }
+}
+@keyframes ring-sweep {
+  from { stroke-dashoffset: 314.16; }
+}
+@keyframes tick {
+  to { width: 100%; }
+}
+@keyframes ask-pulse {
+  0% { box-shadow: 0 0 0 0 var(--primary-soft); }
+  70% { box-shadow: 0 0 0 10px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+/* Scroll reveal: `data-reveal` is set by the browser, never by the server, so the page is whole without script. */
+[data-reveal="pre"] {
+  opacity: 0;
+  transform: translateY(32px) scale(0.94);
+}
+[data-reveal="pop"] {
+  animation: pop-in 0.65s var(--spring) both;
+  animation-delay: var(--d, 0s);
+}
+[data-reveal="pop"][data-tilt] {
+  animation-name: cta-pop;
+}
+
+/* Previews and slides play when `data-play="true"` is put on their container. */
+[data-play="true"] [data-anim="card"] { animation: pop-in 0.55s var(--spring) both; }
+[data-play="true"] [data-anim="seg"] { animation: seg-fill 0.3s ease both; animation-delay: var(--d, 0s); }
+[data-play="true"] [data-anim="pick"] { animation: opt-pick 0.55s 1.2s var(--spring) both; }
+[data-play="true"] [data-anim="grow"] { animation: grow 0.5s ease both; animation-delay: var(--d, 0s); }
+[data-play="true"] [data-anim="pill"] { animation: pop-in 0.45s var(--spring) both; animation-delay: var(--d, 0s); }
+[data-anim="draw"] { stroke-dasharray: 400; }
+[data-play="true"] [data-anim="draw"] { animation: draw 1.2s 0.35s ease both; }
+[data-play="true"] [data-anim="dot"] { animation: pop-in 0.4s 1.3s var(--spring) both; }
+[data-play="true"] [data-anim="flap"] { animation: flap-in 0.5s 0.25s var(--spring) both; }
+[data-play="true"] [data-anim="ring"] { animation: ring-sweep 1.2s 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+[data-play="true"] [data-anim="late"] { animation: pop-in 0.5s 1s var(--spring) both; }
+[data-play="true"] [data-anim="slide"] { animation: pop-in 0.5s var(--spring) both; animation-delay: var(--d, 0s); }
+[data-play="true"] [data-anim="slide-dot"] { animation: pop-in 0.35s var(--spring) both; animation-delay: var(--d, 0s); }
+
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal="pre"] { opacity: 1; transform: none; }
+  [data-reveal="pop"], [data-play="true"] [data-anim] { animation: none !important; }
+}
+
+/* On paper nothing is still waiting to pop in: whatever scrolled past or never did is printed in place. */
+@media print {
+  [data-reveal="pre"] { opacity: 1; transform: none; }
+  [data-reveal="pop"], [data-play="true"] [data-anim] { animation: none !important; }
+}
