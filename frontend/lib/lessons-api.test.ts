@@ -5,14 +5,14 @@
  * proxy depends on it), and the cursor must be taken from the backend's absolute `next` link.
  *
  * Use cases:
- * - lists with only the query parameters that were given
+ * - lists with only the query parameters that were given, and several stages as one comma-separated parameter
  * - creates a lesson with the topic and the learner's context
  * - reads, deletes and retries a lesson
  * - reads a quiz and submits answers to its attempt endpoint
  * - reads the review and cancels a run
  * - chooses a sheet, asks for another, reads one (with revealed solutions) and grades practice answers
  * - reads the lesson document, reports a crash for repair, lists versions and restores one
- * - submits the lesson test and reads a submission
+ * - reads the test to take, submits it, reads the submission (by id, or the lesson's one) and grades a failed one again
  * - extracts the cursor from a `next` link, and handles no link
  */
 import { describe, expect, test } from "bun:test";
@@ -38,10 +38,14 @@ describe("LessonsApi", () => {
     await api.list();
     await api.list({ q: " binary ", stage: "ready", cursor: "abc", pageSize: 5 });
     await api.list({ q: "  ", stage: "" });
+    await api.list({ stage: ["awaiting_diagnostic", "awaiting_choice"] });
+    await api.list({ stage: [] });
 
     expect(calls.map((c) => c.path)).toEqual([
       "/lessons",
       "/lessons?q=binary&stage=ready&cursor=abc&page_size=5",
+      "/lessons",
+      "/lessons?stage=awaiting_diagnostic%2Cawaiting_choice",
       "/lessons",
     ]);
   });
@@ -132,17 +136,24 @@ describe("LessonsApi", () => {
     expect(calls[1].options?.body).toEqual({ error: { message: "boom", page: "core" }, code_version: 3 });
   });
 
-  test("submits the lesson test and reads a submission", async () => {
+  test("reads the test to take, submits it, reads the submission and grades a failed one again", async () => {
     const { api, calls } = fakeClient();
 
+    await api.test("L1");
     await api.submitTest("L1", { t1: 2, t2: "text" });
     await api.submission("L1", "S1");
+    await api.currentSubmission("L1");
+    await api.regradeTest("L1", "S1");
 
     expect(calls.map((c) => [c.path, c.options?.method])).toEqual([
+      ["/lessons/L1/test", undefined],
       ["/lessons/L1/test/submissions", "POST"],
       ["/lessons/L1/test/submissions/S1", undefined],
+      ["/lessons/L1/test/submission", undefined],
+      ["/lessons/L1/test/submissions/S1/regrade", "POST"],
     ]);
-    expect(calls[0].options?.body).toEqual({ answers: { t1: 2, t2: "text" } });
+    expect(calls[1].options?.body).toEqual({ answers: { t1: 2, t2: "text" } });
+    expect(calls[4].options?.body).toBeUndefined();
   });
 
   test("extracts the cursor from a next link", () => {
