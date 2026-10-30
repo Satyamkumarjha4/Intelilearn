@@ -33,6 +33,7 @@ Legend for status columns: ✅ in code · ◐ partly (functions still to wrap in
   - [4.14 `onboarding`: first-topic suggestions](#414-onboarding-first-topic-suggestions)
   - [4.15 `marketing`: the landing page's question bank](#415-marketing-the-landing-pages-question-bank)
   - [4.16 `console`: the staff API](#416-console-the-staff-api)
+  - [4.17 `graph`: levels, difficulties and score bands (Phase 9, modular lessons)](#417-graph-levels-difficulties-and-score-bands-phase-9-modular-lessons)
 - [5. How to extend](#5-how-to-extend)
 - [Refactor backlog](#refactor-backlog)
 
@@ -1692,6 +1693,91 @@ classDiagram
 - **Adapter**: `ModelProbeService` runs the same `CapabilityProbe`s as `probe_models`, one at a time under one 20-second deadline (each client gets the time left), because `ModelProber` gives every probe the whole timeout. `UsageCsv` streams rows through a `csv.writer` over an `Echo` buffer.
 - **Views** are thin: `ConsoleAccess` gives them staff-only access (404, never 403), the `console` throttle, `Cache-Control: no-store` and the audit trail; serializers (`console/serializers.py`) describe the shapes for Swagger and reject fields that cannot be set (`RejectUnknownFields`). A guard test fails when an endpoint that changes something is added without an audit test.
 - The timeline is derived from `GraphRun.node_timings`, which `GraphRunRecorder.record` fills as node events arrive (first start, latest finish, retry count); `NodePhases` places a node in a phase by the module that defines it. [api.md](../reference/api.md#console-staff-only) has the derivation and every endpoint.
+
+### 4.17 `graph`: levels, difficulties and score bands (Phase 9, modular lessons)
+
+Pure value classes in `graph/levels.py` and `graph/scoring.py`: no ORM, no I/O, no settings lookups. They are the
+vocabulary of the modular-lesson plan ([plan §6.1](../to_be_developed/modular-lessons-implementation-plan.md#61-value-objects-pure-in-graph)).
+Phase 9.0 only adds them; nothing reads them yet, and the existing level and difficulty names are migrated in 9.1 and 9.2.
+
+```mermaid
+classDiagram
+    direction LR
+    class Level {
+        <<StrEnum>>
+        BEGINNER
+        FOUNDATION
+        PROFICIENT
+        EXPERT
+        +parse(raw)$ Level
+        +parse_legacy(raw)$ Level
+        +shifted(by) Level
+        +label str
+    }
+    class StarRating {
+        <<frozen>>
+        +int halves
+        +from_stars(stars)$ StarRating
+        +stars float
+        +level() Level
+        +rater_category() RaterCategory
+    }
+    class RaterCategory {
+        <<StrEnum>>
+        LOW
+        MID
+        HIGH
+        +of(level)$ RaterCategory
+    }
+    class Difficulty {
+        <<StrEnum>>
+        EASY
+        BASIC
+        STANDARD
+        DIFFICULT
+        EXPERT
+        +parse(raw)$ Difficulty
+        +tier MarkTier
+    }
+    class MarkTier {
+        <<StrEnum>>
+        NORMAL
+        DIFFICULT
+    }
+    class BandDifficulty {
+        +of(band)$ Difficulty
+        +band_of(difficulty)$ str
+    }
+    class Thresholds {
+        <<frozen>>
+        +int fail_below
+        +int excellent_above
+    }
+    class ScoreBand {
+        <<StrEnum>>
+        FAIL
+        NORMAL
+        EXCELLENT
+        +of(awarded, available, thresholds)$ ScoreBand
+    }
+
+    StarRating --> Level
+    StarRating --> RaterCategory
+    RaterCategory ..> Level
+    Difficulty --> MarkTier
+    BandDifficulty ..> Difficulty
+    ScoreBand ..> Thresholds
+```
+
+- Patterns: value objects with a tolerant reader (`parse`), and an explicit bridge (`BandDifficulty`) between two
+  vocabularies that overlap in words only. The diagnostic's bands (`basic`, `easy_moderate`, `moderate`, `moderate_hard`,
+  `hard`) are never renamed; `hard` the band is `expert` the difficulty.
+- `Level.parse` reads the new names and the three old names that cannot be confused (`novice`, `intermediate`,
+  `advanced`). **`beginner` is both a new name and an old one** (it used to mean Foundation), so `parse` takes it as the
+  new Beginner and only `Level.parse_legacy` maps the old four by position. Phase 9.1 must use `parse_legacy` only where
+  the data is known to predate the rename (see the open item in the plan, D24 T19).
+- `StarRating` stores whole halves (1 to 10), never a float. `ScoreBand` compares `awarded * 100` with
+  `percent * available`, so the 30% and 90% edges are exact (both edges are Normal); it refuses zero available marks.
 
 ## 5. How to extend
 

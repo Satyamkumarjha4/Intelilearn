@@ -20,6 +20,7 @@ Third pass, 2026-10-30 (branch `docs/spec-fixes`, before phase 9.0 starts). Docs
 | C23 | **Star sentences approved.** 0.5 is "This is completely new to me." and 1 is "I've heard the name, but I don't know what it means."; every other sentence is approved as drafted and the "draft" markers are removed. The spec now carries the full table | Spec 2.2, 11.1, D23, C11 |
 | C24 | **Blank-attempt rule decided:** an attempt with every answer blank is stored and scores 0, but does not count toward the Foundation offer | 8.2, 13, 15.1 |
 | C25 | Phase 9.0 deferral, recorded here so it is not forgotten: the `GraphRun.quick_quiz` foreign key and making `GraphRun.lesson` nullable land with the `quizzes` app in 9.6, not in 9.0. In 9.0 `RunSubject` is a property over the existing `lesson` column | 5.3, 7.6, 14 (9.0) |
+| C26 | Found while building 9.0: `beginner` is ambiguous between the old and new level names. `Level.parse` and `Level.parse_legacy` are separate readers; how 9.1 tells old data from new is open (D24 T19) | R2, D24, 6.1 |
 
 Second pass, 2026-10-29. The confirmed decisions below replace what the first pass assumed. Superseded decisions keep their number and say which decision replaced them.
 
@@ -331,6 +332,7 @@ Adopted as a `BatchPlanner` rule: at most **1 long and 2 short answers per batch
 | T16 | The data migration rewrites a stored `difficulty` wherever it is found (test, plan mix, practice sheets, stored results), with a scan test that fails on any leftover old name | A missed spot would break a legacy page |
 | T17 | A failed or stopped `generating` attempt is **deleted** by a `RunEffect`, so the attempt number is never consumed | No gaps in the history |
 | T18 | The diagnostic submit refuses before it stores anything; the learner's answers stay in the browser (session storage) until they resubmit | "Refusal creates nothing", and the one-attempt rule stays intact |
+| T19 | **`beginner` is both an old and a new level name** (old: the second of four, now Foundation; new: the first). `Level.parse` takes it as the **new** Beginner; `Level.parse_legacy` maps the old four by position and is used only where the data is known to predate the rename. Found while building 9.0, and R2's "tolerant reader" cannot be one function. **Open for 9.1:** how a checkpointed value is known to be old (a one-off rewrite of the checkpoint state at deploy, a state version marker, or finishing every in-flight thread first) | One rule per vocabulary, and no silent change of level for a lesson mid-flight |
 
 ---
 
