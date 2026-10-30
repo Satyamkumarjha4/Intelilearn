@@ -4,7 +4,8 @@ Why: the stage decides which screen the learner sees and which API calls are all
 allows (a finished lesson back to a quiz) shows the wrong screen; one it wrongly refuses strands a lesson.
 
 Use cases:
-- the documented moves are allowed, including a stopped lesson going back to the quiz stage it was in
+- the documented moves are allowed, including a stopped lesson going back to the quiz stage it was in, a self-rated
+  lesson skipping the quiz, and the mastery choice leading to the Expert lesson
 - every other move is refused
 - staying in the same stage is always allowed (a node that re-runs on retry)
 """
@@ -24,6 +25,8 @@ class TestStageTransitions:
             (Stage.AWAITING_DIAGNOSTIC, Stage.GENERATING_LESSON),
             (Stage.AWAITING_PREREQUISITE, Stage.GENERATING_LESSON),
             (Stage.AWAITING_CHOICE, Stage.GENERATING_MATERIAL),
+            (Stage.AWAITING_CHOICE, Stage.GENERATING_LESSON),  # the Expert lesson
+            (Stage.PREPARING_DIAGNOSTIC, Stage.GENERATING_LESSON),  # a self-rated lesson has no quiz
             (Stage.GENERATING_MATERIAL, Stage.READY),
             (Stage.GENERATING_LESSON, Stage.READY),
             (Stage.GENERATING_LESSON, Stage.FAILED),
@@ -46,7 +49,7 @@ class TestStageTransitions:
             (Stage.READY, Stage.AWAITING_DIAGNOSTIC),
             (Stage.READY, Stage.FAILED),
             (Stage.AWAITING_DIAGNOSTIC, Stage.READY),
-            (Stage.PREPARING_DIAGNOSTIC, Stage.GENERATING_LESSON),
+            (Stage.AWAITING_CHOICE, Stage.AWAITING_DIAGNOSTIC),
             (Stage.AWAITING_PREREQUISITE, Stage.AWAITING_DIAGNOSTIC),
             (Stage.FAILED, Stage.READY),
             (Stage.GENERATING_LESSON, Stage.AWAITING_DIAGNOSTIC),

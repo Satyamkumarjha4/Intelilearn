@@ -13,7 +13,17 @@ from django.db import models
 from django.utils import timezone
 
 from .errors import AttemptSealed
-from .stages import IllegalTransition, MaterialKind, Route, Stage, StageTransitions  # noqa: F401  (re-exported)
+from .stages import (  # noqa: F401  (re-exported)
+    Entry,
+    IllegalTransition,
+    Intent,
+    LevelSource,
+    MaterialKind,
+    Origin,
+    Route,
+    Stage,
+    StageTransitions,
+)
 from .subjects import RunSubject
 
 
@@ -35,6 +45,14 @@ class Lesson(models.Model):
     user_context = models.TextField(blank=True)
     stage = models.CharField(max_length=30, choices=Stage.choices, default=Stage.PREPARING_DIAGNOSTIC)
     route = models.CharField(max_length=20, choices=Route.choices, blank=True)
+    # How the lesson came about (docs/architecture/data-model.md). `entry` says how the level was found, `origin`
+    # why the lesson was made; the server sets and verifies `origin`, so a client cannot claim one.
+    intent = models.CharField(max_length=10, choices=Intent.choices, default=Intent.LESSON)
+    origin = models.CharField(max_length=20, choices=Origin.choices, default=Origin.DIRECT)
+    recommended_from = models.JSONField(null=True, blank=True)  # {attempt_id, topic} for a recommended lesson
+    entry = models.CharField(max_length=20, choices=Entry.choices, default=Entry.DIAGNOSTIC)
+    level_source = models.CharField(max_length=20, choices=LevelSource.choices, blank=True)
+    self_rating_halves = models.PositiveSmallIntegerField(null=True, blank=True)  # stars times two, 1 to 10
 
     # Stage A
     assessment = models.JSONField(null=True, blank=True)  # LearnerAssessment
@@ -67,6 +85,13 @@ class Lesson(models.Model):
     class Meta:
         ordering = ["-created_at"]
         indexes = [models.Index(fields=["owner", "-created_at"])]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(self_rating_halves__isnull=True)
+                | models.Q(self_rating_halves__gte=1, self_rating_halves__lte=10),
+                name="self_rating_is_one_to_ten_halves",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.topic} ({self.get_stage_display()})"

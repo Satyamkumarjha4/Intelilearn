@@ -20,6 +20,40 @@ class Route(models.TextChoices):
     MASTERY = "mastery", "Mastery"
 
 
+class Entry(models.TextChoices):
+    """How the learner's starting level was found. A follow-up and a quiz result arrive in later phases."""
+
+    DIAGNOSTIC = "diagnostic", "Quick check"
+    SELF_RATING = "self_rating", "Self-rating"
+    FOLLOWUP = "followup", "Follow-up"
+    QUIZ_RESULT = "quiz_result", "Quiz result"
+
+
+class Intent(models.TextChoices):
+    """What the learner asked for. Only a lesson can be asked for until study sheets from a topic arrive."""
+
+    LESSON = "lesson", "A lesson"
+    SHEETS = "sheets", "Study sheets"
+
+
+class Origin(models.TextChoices):
+    """Why the lesson was made: set by the server and verified, never taken from the client's word."""
+
+    DIRECT = "direct", "Direct"
+    RECOMMENDATION = "recommendation", "Recommended by a result"
+    FOLLOWUP = "followup", "Follow-up"
+    QUIZ_RESULT = "quiz_result", "Quiz result"
+
+
+class LevelSource(models.TextChoices):
+    """Where `Lesson.level` came from."""
+
+    DIAGNOSTIC = "diagnostic", "Quick check"
+    SELF_RATING = "self_rating", "Self-rating"
+    TEST_SCORE = "test_score", "Test score"
+    QUIZ_RESULT = "quiz_result", "Quiz result"
+
+
 class MaterialKind(models.TextChoices):
     CHEAT_SHEET = "cheat_sheet", "Cheat sheet"
     REVISION_SHEET = "revision_sheet", "Revision sheet"
@@ -38,12 +72,14 @@ class StageTransitions:
     """
 
     TABLE: dict[Stage, frozenset[Stage]] = {
-        Stage.PREPARING_DIAGNOSTIC: frozenset({Stage.AWAITING_DIAGNOSTIC, Stage.FAILED}),
+        # a self-rated lesson has no quiz, so it goes straight to building the lesson
+        Stage.PREPARING_DIAGNOSTIC: frozenset({Stage.AWAITING_DIAGNOSTIC, Stage.GENERATING_LESSON, Stage.FAILED}),
         Stage.AWAITING_DIAGNOSTIC: frozenset(
             {Stage.AWAITING_PREREQUISITE, Stage.AWAITING_CHOICE, Stage.GENERATING_LESSON, Stage.FAILED}
         ),
         Stage.AWAITING_PREREQUISITE: frozenset({Stage.GENERATING_LESSON, Stage.FAILED}),
-        Stage.AWAITING_CHOICE: frozenset({Stage.GENERATING_MATERIAL, Stage.FAILED}),
+        # the Expert lesson or the sheets (two sheets are written at once, and the lesson says so when it starts)
+        Stage.AWAITING_CHOICE: frozenset({Stage.GENERATING_LESSON, Stage.GENERATING_MATERIAL, Stage.FAILED}),
         Stage.GENERATING_MATERIAL: frozenset({Stage.READY, Stage.FAILED}),
         Stage.GENERATING_LESSON: frozenset({Stage.READY, Stage.FAILED}),
         Stage.READY: frozenset(),
