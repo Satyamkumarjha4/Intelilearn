@@ -155,6 +155,10 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": FLOW_RUN_LOCK_TTL_S}
 
 # Where a started run is queued (the TaskQueue port, lessons/services.py). Tests swap it for an in-memory queue.
 LESSON_TASK_QUEUE = "lessons.tasks.CeleryTaskQueue"
+# Who may start work that costs model calls (the ActionGate port, lessons/metering.py). The open gate allows everything.
+ACTION_GATE = env("ACTION_GATE", default="lessons.metering.OpenGate")
+# How long a creation request's answer is kept for a replayed `Idempotency-Key` (lessons/idempotency.py).
+IDEMPOTENCY_TTL_S = env.int("IDEMPOTENCY_TTL_S", default=86400)
 # Seconds between keep-alive comments on a run's event stream, so proxies don't close an idle connection.
 SSE_HEARTBEAT_S = env.int("SSE_HEARTBEAT_S", default=15)
 

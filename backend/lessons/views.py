@@ -16,6 +16,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from .events import RunEventStream, RunSnapshot
+from .idempotency import IdempotentRequest
 from .media_urls import MediaUrlSigner
 from .models import GraphRun, Lesson, MaterialKind, MediaAsset, Stage
 from .serializers import (
@@ -51,6 +52,13 @@ DOCUMENT_TAG = ["lesson document"]
 TEST_TAG = ["lesson test"]
 RUNS_TAG = ["runs"]
 LESSON_ID = OpenApiParameter("lesson_id", str, OpenApiParameter.PATH)
+IDEMPOTENCY_KEY = OpenApiParameter(
+    "Idempotency-Key",
+    str,
+    OpenApiParameter.HEADER,
+    required=False,
+    description="1 to 128 printable characters. A repeated request with the same key returns the first answer.",
+)
 KIND = OpenApiParameter("kind", str, OpenApiParameter.PATH, enum=["diagnostic", "prerequisite"])
 
 
@@ -116,19 +124,32 @@ class LessonListCreateView(generics.ListAPIView):
     @extend_schema(
         tags=LESSONS_TAG,
         summary="Start a lesson",
-        description="Snapshots the model registry and the flow settings, and queues the diagnostic.",
+        description=(
+            "Snapshots the model registry and the flow settings, and queues the diagnostic. An optional "
+            "`Idempotency-Key` header makes a repeated request return the first answer (marked "
+            "`Idempotent-Replayed: true`) instead of starting another lesson."
+        ),
+        parameters=[IDEMPOTENCY_KEY],
         request=LessonCreateSerializer,
         responses={
             202: LessonCreatedSerializer,
+            400: OpenApiResponse(
+                description="Invalid body, or an invalid `Idempotency-Key` (`invalid_idempotency_key`)."
+            ),
+            409: OpenApiResponse(description="The same keyed request is still being handled (`request_in_progress`)."),
             503: OpenApiResponse(description="No model is bound for the first step (`llm_not_configured`)."),
         },
     )
     def post(self, request):
         serializer = LessonCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        lesson, run = LessonService().create(request.user, **serializer.validated_data)
-        body = LessonCreatedSerializer({"lesson_id": lesson.id, "run_id": run.id}).data
-        return Response(body, status=status.HTTP_202_ACCEPTED)
+
+        def start(client_key: str) -> Response:
+            lesson, run = LessonService().create(request.user, idempotency_key=client_key, **serializer.validated_data)
+            body = LessonCreatedSerializer({"lesson_id": lesson.id, "run_id": run.id}).data
+            return Response(body, status=status.HTTP_202_ACCEPTED)
+
+        return IdempotentRequest().run(request, "lessons.create", serializer.validated_data, start)
 
 
 class LessonDetailView(OwnedLessons, APIView):
@@ -228,19 +249,30 @@ class MaterialRequestView(OwnedLessons, APIView):
     @extend_schema(
         tags=MATERIALS_TAG,
         summary="Ask for another study sheet",
-        description="For a ready mastery lesson. Runs the small `study_material` graph; the lesson stays `ready`.",
-        parameters=[LESSON_ID],
+        description=(
+            "For a ready mastery lesson. Runs the small `study_material` graph; the lesson stays `ready`. An optional "
+            "`Idempotency-Key` header makes a repeated request return the first answer."
+        ),
+        parameters=[LESSON_ID, IDEMPOTENCY_KEY],
         request=MaterialKindSerializer,
         responses={
             202: RunStartedSerializer,
-            409: OpenApiResponse(description="Wrong stage, exists, or a run is active."),
+            400: OpenApiResponse(description="Invalid body, or an invalid `Idempotency-Key`."),
+            409: OpenApiResponse(
+                description="Wrong stage, exists, a run is active, or the same keyed request is still being handled."
+            ),
         },
     )
     def post(self, request, lesson_id):
         serializer = MaterialKindSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        run = MaterialService().request_extra(self.lesson_of(request, lesson_id), serializer.validated_data["kind"])
-        return Response({"run_id": run.id}, status=status.HTTP_202_ACCEPTED)
+        lesson = self.lesson_of(request, lesson_id)
+
+        def ask(client_key: str) -> Response:
+            run = MaterialService().request_extra(lesson, serializer.validated_data["kind"], client_key)
+            return Response({"run_id": run.id}, status=status.HTTP_202_ACCEPTED)
+
+        return IdempotentRequest().run(request, f"materials.request:{lesson.id}", serializer.validated_data, ask)
 
 
 class MaterialView(OwnedLessons, APIView):

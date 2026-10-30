@@ -240,6 +240,10 @@ class GraphRunQuerySet(models.QuerySet):
             raise TypeError(f"{type(subject).__name__} cannot have runs") from None
         return self.filter(**{field: subject})
 
+    def for_subject_id(self, subject_id) -> "GraphRunQuerySet":
+        """For a subject that may not be a row yet, or that the caller only has the id of."""
+        return self.filter(lesson_id=subject_id)
+
     def owned_by(self, user) -> "GraphRunQuerySet":
         """The runs of this learner's own lessons. The API always starts from here, as it does for lessons."""
         return self.filter(lesson__owner=user)

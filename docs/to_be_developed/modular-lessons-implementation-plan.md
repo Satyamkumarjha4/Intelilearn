@@ -1,7 +1,7 @@
 # Implementation plan: Modular Lesson Parts
 
 **Spec:** [modular-lessons.md](modular-lessons.md) (finalized 2026-10-26)
-**Status:** Plan, not started. No code has been changed.
+**Status:** Plan. Phase 9.0 is built (branches `refactor/levels`, `refactor/run-subject`, `refactor/action-gate`); phases 9.1 to 9.8 are not started.
 **Last updated:** 2026-10-30 (third pass: doc fixes before phase 9.0, see the [changelog](#changelog))
 **Checked against:** the code and docs on branch `refactor/docs-layout` (Phases 0 to 8 built).
 
@@ -21,6 +21,7 @@ Third pass, 2026-10-30 (branch `docs/spec-fixes`, before phase 9.0 starts). Docs
 | C24 | **Blank-attempt rule decided:** an attempt with every answer blank is stored and scores 0, but does not count toward the Foundation offer | 8.2, 13, 15.1 |
 | C25 | Phase 9.0 deferral, recorded here so it is not forgotten: the `GraphRun.quick_quiz` foreign key and making `GraphRun.lesson` nullable land with the `quizzes` app in 9.6, not in 9.0. In 9.0 `RunSubject` is a property over the existing `lesson` column | 5.3, 7.6, 14 (9.0) |
 | C26 | Found while building 9.0: `beginner` is ambiguous between the old and new level names. `Level.parse` and `Level.parse_legacy` are separate readers; how 9.1 tells old data from new is open (D24 T19) | R2, D24, 6.1 |
+| C27 | **Phase 9.0 built.** Where the build differs from, or adds to, this plan: (a) the open gate's authorization is `tracked=False` and is **not stored** on the run, so payloads are unchanged with the default gate (a stored one would have changed every existing payload assertion); (b) `ActionContext` carries `completes_at`, and `CompletionPoint.reached(stage, ended)` takes whether the run ended, so the check stays pure; (c) `IdempotencyStore` gained `claim` and `release`, so two simultaneous requests with one key give `409 request_in_progress` instead of both running; the key is scoped to learner, endpoint and body; (d) an open authorization is **carried** into the prerequisite quiz's resume run (`ActionMetering.carry`) instead of being asked again, because the diagnostic's `lesson.continue` is not complete until the lesson is ready; (e) `ActionRefused` answers `403` for now (the plan left the status open); (f) only the three wired actions have completion points; `CompletionPoints.of` raises for the other four until their phases; (g) `RunSubject` gained `error`; (h) delete erases checkpoints and model calls **before** the lesson row, so a failed erasure can be repeated; (i) `Level.parse` and `Level.parse_legacy` are separate readers (T19) | 5.3, 5.5, 6.1, 6.7, D24 |
 
 Second pass, 2026-10-29. The confirmed decisions below replace what the first pass assumed. Superseded decisions keep their number and say which decision replaced them.
 
@@ -1176,7 +1177,7 @@ flowchart LR
     P7 --> P8
 ```
 
-### Phase 9.0: Prepare (no visible change) — M
+### Phase 9.0: Prepare (no visible change) — M ✅ built (see C25, C26 and C27)
 
 Branch `refactor/run-subject`, `refactor/delete-cleanup`.
 
@@ -1354,7 +1355,7 @@ The rules in [testing.md](../process/testing.md) apply: test first, a header wit
 
 ### Roadmap checklist to copy into `roadmap.md` when work starts
 
-- [ ] 9.0 `RunSubject`, delete clean-up (and settle on delete), `Level` family, the metering seam with completion points, resume-on-Retry and `Idempotency-Key`
+- [x] 9.0 `RunSubject`, delete clean-up (and settle on delete), `Level` family, the metering seam with completion points, resume-on-Retry and `Idempotency-Key`
 - [ ] 9.1 `QuestionTypes` (neutral), then five-level `Difficulty` and its migration, marks, MSQ, expressions, criteria
 - [ ] 9.2 Question record, fixed 10-question objective test, attempts graded at submit, retakes (always generate, `test.retake`), trend, forward-only on the server
 - [ ] 9.3 Self-rating entry, `AssessmentSources`, lesson shapes, verified `origin`, the two-option mastery choice (Expert lesson or two sheets)

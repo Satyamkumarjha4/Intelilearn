@@ -1,6 +1,6 @@
 # Roadmap
 
-**Current goal: a complete project that runs locally.** Deployment is out of scope until that goal is met. Phases 0 to 8 are built. What is left is the [open work](#open-work) below.
+**Current goal: a complete project that runs locally.** Deployment is out of scope until that goal is met. Phases 0 to 8 are built, and phase 9 (modular lessons, specified in [to_be_developed/](../to_be_developed/modular-lessons-implementation-plan.md)) has begun. What is left is the [open work](#open-work) below and [phase 9](#phase-9-modular-lesson-parts).
 
 Each phase ended with something runnable and checkable. Every phase was verified on the offline fake-LLM stack (`make fake-llm`, see [local-setup.md](../getting-started/local-setup.md#6-walk-through-the-app-without-api-keys)), driving the real frontend in a headless browser where it applied. Real models (Gemini and Groq) have been tried end to end only a few times, so lesson quality and the tuning of the registry for real models are still open.
 
@@ -125,6 +125,26 @@ The final screen-by-screen review is kept in [../archive/ui-audit-2026-10-25.md]
 - [x] Stop, then Retry always picks the lesson up from its checkpoint; the stop dialog is tied to the learner, not the run
 - [x] Refresh on the last onboarding step, `?next=` kept through sign-in and onboarding, no 401s on public pages, status pill from the pages read, loading and error states, print-safe landing page
 - [x] Browser tests in `e2e/` (`make e2e`) on a throwaway fake-LLM stack
+
+### Phase 9: Modular lesson parts
+
+Specified in [modular-lessons.md](../to_be_developed/modular-lessons.md) and planned in [modular-lessons-implementation-plan.md](../to_be_developed/modular-lessons-implementation-plan.md) (phase details in its §14). Tick items off as they land.
+
+- [x] 9.0 Prepare, with no visible change:
+  - [x] Pure `Level`, `StarRating`, `RaterCategory`, `Difficulty`, `BandDifficulty`, `ScoreBand` and `Thresholds` classes (not wired in yet)
+  - [x] `RunSubject` port and `GraphRun.subject`; the runner, `StopPoint`, `has_active_run`, the dispatcher, `LessonService.cancel` and the console runs list read it *(the `GraphRun.quick_quiz` foreign key and a nullable `lesson` wait for 9.6)*
+  - [x] `ModelCall.quiz_id`
+  - [x] Delete clean-up: checkpoints and model calls go with the lesson
+  - [x] The metering seam: `ActionGate`, `OpenGate`, `ActionRefused`, completion points, settlement, resume-on-Retry, `IdempotencyStore` and the `Idempotency-Key` header; wired for `lesson.create`, `lesson.continue` and `sheet.generate`
+  - [ ] Decisions answered and the mockup extended with the new screens
+- [ ] 9.1 `QuestionTypes` (neutral), then five-level `Difficulty` and its migration, marks, MSQ, expressions, criteria
+- [ ] 9.2 Question record, fixed 10-question objective test, attempts graded at submit, retakes (always generate, `test.retake`), trend, forward-only on the server
+- [ ] 9.3 Self-rating entry, `AssessmentSources`, lesson shapes, verified `origin`, the two-option mastery choice (Expert lesson or two sheets)
+- [ ] 9.4 Follow-up lessons and the pop-up policy
+- [ ] 9.5 Modular sheets, any ready lesson, once per kind (`409` on repeat), no versions
+- [ ] 9.6 Quick quiz: presets, calibration, up to 10 sources, difficulty mix, graphs, screens, code editor
+- [ ] 9.7 Concept tags, recommendations, deep links
+- [ ] 9.8 Drop the combined test call and `Lesson.final_test`; live and e2e suites; docs and spec moved out of `to_be_developed/`
 
 ## Across phases
 

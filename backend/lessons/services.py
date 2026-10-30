@@ -4,6 +4,7 @@
 (with the same grader the graph uses, so the score they see is the one the graph routes on) and queues the resume.
 """
 
+import uuid
 from typing import Protocol
 
 from django.conf import settings
@@ -39,6 +40,7 @@ from .errors import (
     WrongStage,
 )
 from .events import EventPublisher, RedisEventPublisher, RunEvent
+from .metering import ActionGate, ActionMetering, AuthorizationSettlement, MeteredAction, RunOutcome
 from .models import (
     FlowSettings,
     GraphRun,
@@ -123,6 +125,8 @@ def has_active_run(subject: RunSubject) -> bool:
 
 class LessonService:
     FIRST_NODE = "diagnostic.generate"
+    #: what `lesson.create` is asked with: the quiz stage of a lesson found by a diagnostic, started by the learner
+    CREATE_SIZE = {"entry": "diagnostic", "covers": "diagnostic", "origin": "direct"}
 
     def __init__(
         self,
@@ -130,30 +134,48 @@ class LessonService:
         resolver: RegistryResolver | None = None,
         events: EventPublisher | None = None,
         erasure: LessonErasure | None = None,
+        gate: ActionGate | None = None,
     ):
-        self.dispatcher = RunDispatcher(queue)
+        self.metering = ActionMetering(gate)
+        self.effects = RunEffects(settlement=AuthorizationSettlement(gate))
+        self.dispatcher = RunDispatcher(queue, self.effects)
         self.resolver = resolver or RegistryResolver()
         self.events = events or RedisEventPublisher()
         self.stops = StopPoint()
         self.erasure = erasure or LessonErasure()
 
-    def create(self, user, topic: str, user_context: str = "") -> tuple[Lesson, GraphRun]:
-        """A new lesson with its registry and settings snapshotted, and a queued start run."""
+    def create(self, user, topic: str, user_context: str = "", idempotency_key: str = "") -> tuple[Lesson, GraphRun]:
+        """A new lesson with its registry and settings snapshotted, and a queued start run. The action gate is asked
+        first (`lesson.create`), so a refusal creates nothing."""
         snapshot = self.resolver.snapshot()
         first = snapshot.node(self.FIRST_NODE)
         if not first.enabled or not first.chain:
             raise LessonNotConfigured(
                 f"No AI model is bound to '{self.FIRST_NODE}'. An admin must bind one in the model registry first."
             )
-        with transaction.atomic():
+        lesson_id = uuid.uuid4()
+        authorization = self.metering.authorize(
+            user,
+            MeteredAction.LESSON_CREATE,
+            size=self.CREATE_SIZE,
+            subject_id=lesson_id,
+            client_key=idempotency_key,
+        )
+        with self.metering.guard(authorization), transaction.atomic():
             lesson = Lesson.objects.create(
+                id=lesson_id,
                 owner=user,
                 topic=topic.strip(),
                 user_context=user_context.strip(),
                 config_snapshot=snapshot.to_json(),
                 settings_snapshot=FlowSettings.load().snapshot(),
             )
-            run = GraphRun.objects.create(lesson=lesson, graph=GraphRun.Graph.FLOW, trigger=GraphRun.Trigger.START)
+            run = GraphRun.objects.create(
+                lesson=lesson,
+                graph=GraphRun.Graph.FLOW,
+                trigger=GraphRun.Trigger.START,
+                payload=self.metering.payload(authorization),
+            )
         self.dispatcher.dispatch(run)
         return lesson, run
 
@@ -165,11 +187,15 @@ class LessonService:
         if has_active_run(lesson):
             raise RunInProgress()
         stage, payload = self.stops.of(lesson)
-        with transaction.atomic():
+        authorization = self.metering.ask_again(lesson)  # Stop and failure released the last one; a refusal ends here
+        with self.metering.guard(authorization), transaction.atomic():
             if stage is not None:
                 lesson.advance_to(stage)
             run = GraphRun.objects.create(
-                lesson=lesson, graph=GraphRun.Graph.FLOW, trigger=GraphRun.Trigger.RETRY, payload=payload
+                lesson=lesson,
+                graph=GraphRun.Graph.FLOW,
+                trigger=GraphRun.Trigger.RETRY,
+                payload={**payload, **self.metering.payload(authorization)},
             )
         self.dispatcher.dispatch(run)
         return run
@@ -182,7 +208,7 @@ class LessonService:
             raise RunEnded()
         self.stops.remember(run)
         run.subject.fail("Cancelled. Press Retry to continue where it stopped.")
-        RunEffects().on_stopped(run, "Cancelled before it finished.")
+        self.effects.on_stopped(run, "Cancelled before it finished.")
         self.events.publish(run.id, RunEvent("cancelled", {}))
 
     def delete(self, lesson: Lesson) -> list:
@@ -194,6 +220,7 @@ class LessonService:
         )
         cancelled = list(active.values_list("pk", flat=True))
         active.update(status=GraphRun.Status.CANCELLED)
+        self.metering.settle_open(lesson, RunOutcome.CANCELLED)
         self.erasure.erase(lesson)
         lesson.delete()
         return cancelled
@@ -211,8 +238,10 @@ class QuizService:
         queue: TaskQueue | None = None,
         grader: QuizGrader | None = None,
         policy: RoutingPolicy | None = None,
+        gate: ActionGate | None = None,
     ):
-        self.dispatcher = RunDispatcher(queue)
+        self.metering = ActionMetering(gate)
+        self.dispatcher = RunDispatcher(queue, RunEffects(settlement=AuthorizationSettlement(gate)))
         self.grader = grader or QuizGrader()
         self.policy = policy or RoutingPolicy()
 
@@ -242,13 +271,35 @@ class QuizService:
                 result = self.grader.grade(quiz.questions, answers)
             except AnswerError as exc:
                 raise InvalidAnswers(str(exc)) from exc
-            attempt = QuizAttempt.objects.create(quiz=quiz, answers=answers, result=result.as_dict())
-            run = GraphRun.objects.create(
-                lesson=lesson, graph=GraphRun.Graph.FLOW, trigger=trigger, payload={"resume": str(attempt.id)}
-            )
-        route = self.policy.route_for(result, lesson.settings_snapshot) if kind == Quiz.Kind.DIAGNOSTIC else None
+            route = self.policy.route_for(result, lesson.settings_snapshot) if kind == Quiz.Kind.DIAGNOSTIC else None
+            authorization = self.authorization_for(lesson, kind, route)  # after grading, before anything is stored
+            with self.metering.guard(authorization):
+                attempt = QuizAttempt.objects.create(quiz=quiz, answers=answers, result=result.as_dict())
+                run = GraphRun.objects.create(
+                    lesson=lesson,
+                    graph=GraphRun.Graph.FLOW,
+                    trigger=trigger,
+                    payload={"resume": str(attempt.id), **self.metering_payload(lesson, kind, authorization)},
+                )
         self.dispatcher.dispatch(run)
         return result.summary(route), run
+
+    def authorization_for(self, lesson: Lesson, kind: str, route: str | None):
+        """`lesson.continue` is asked when a diagnostic leads to a lesson (not a perfect score: that learner chooses
+        first, and `MaterialService.choose` asks). The prerequisite quiz asks nothing; it carries on the open one."""
+        if kind != Quiz.Kind.DIAGNOSTIC or route == Route.MASTERY:
+            return None
+        return self.metering.authorize(
+            lesson.owner,
+            MeteredAction.LESSON_CONTINUE,
+            size={"choice": "lesson", "perfect": False},
+            subject_id=lesson.id,
+        )
+
+    def metering_payload(self, lesson: Lesson, kind: str, authorization) -> dict:
+        if kind == Quiz.Kind.PREREQUISITE:
+            return self.metering.carry(lesson)
+        return self.metering.payload(authorization)
 
     def review(self, lesson: Lesson, kind: str) -> dict:
         quiz = self._quiz(lesson, kind)
@@ -292,8 +343,11 @@ class QuizService:
 class MaterialService:
     """Study sheets: choosing the first one (resumes the flow), asking for more, serving them, grading practice."""
 
-    def __init__(self, queue: TaskQueue | None = None, grader: AnswerGrader | None = None):
-        self.dispatcher = RunDispatcher(queue)
+    def __init__(
+        self, queue: TaskQueue | None = None, grader: AnswerGrader | None = None, gate: ActionGate | None = None
+    ):
+        self.metering = ActionMetering(gate)
+        self.dispatcher = RunDispatcher(queue, RunEffects(settlement=AuthorizationSettlement(gate)))
         self.grader = grader or AnswerGrader()
 
     def choose(self, lesson: Lesson, kind: str) -> GraphRun:
@@ -304,16 +358,23 @@ class MaterialService:
                 raise WrongStage("The lesson is not waiting for a study sheet choice.")
             if has_active_run(lesson):
                 raise RunInProgress()
-            run = GraphRun.objects.create(
-                lesson=lesson,
-                graph=GraphRun.Graph.FLOW,
-                trigger=GraphRun.Trigger.RESUME_CHOICE,
-                payload={"resume": kind},
+            authorization = self.metering.authorize(
+                lesson.owner,
+                MeteredAction.LESSON_CONTINUE,
+                size={"choice": "sheets_only", "perfect": True},
+                subject_id=lesson.id,
             )
+            with self.metering.guard(authorization):
+                run = GraphRun.objects.create(
+                    lesson=lesson,
+                    graph=GraphRun.Graph.FLOW,
+                    trigger=GraphRun.Trigger.RESUME_CHOICE,
+                    payload={"resume": kind, **self.metering.payload(authorization)},
+                )
         self.dispatcher.dispatch(run)
         return run
 
-    def request_extra(self, lesson: Lesson, kind: str) -> GraphRun:
+    def request_extra(self, lesson: Lesson, kind: str, idempotency_key: str = "") -> GraphRun:
         """Another sheet for a ready mastery lesson, written by the small `study_material` graph."""
         with transaction.atomic():
             lesson = Lesson.objects.select_for_update().get(pk=lesson.pk)
@@ -323,12 +384,23 @@ class MaterialService:
                 raise AlreadyExists()
             if has_active_run(lesson):
                 raise RunInProgress()
-            run = GraphRun.objects.create(
-                lesson=lesson,
-                graph=GraphRun.Graph.STUDY_MATERIAL,
-                trigger=GraphRun.Trigger.EXTRA_MATERIAL,
-                payload={"input": {"mastery_choice": kind, "extra_material": True}},
+            authorization = self.metering.authorize(
+                lesson.owner,
+                MeteredAction.SHEET_GENERATE,
+                size={"sheets": 1, "grounding": "quiz"},  # a mastery lesson has no pages: the sheet rests on the quiz
+                subject_id=lesson.id,
+                client_key=idempotency_key,
             )
+            with self.metering.guard(authorization):
+                run = GraphRun.objects.create(
+                    lesson=lesson,
+                    graph=GraphRun.Graph.STUDY_MATERIAL,
+                    trigger=GraphRun.Trigger.EXTRA_MATERIAL,
+                    payload={
+                        "input": {"mastery_choice": kind, "extra_material": True},
+                        **self.metering.payload(authorization),
+                    },
+                )
         self.dispatcher.dispatch(run)
         return run
 

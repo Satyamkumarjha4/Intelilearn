@@ -23,6 +23,8 @@ Use cases:
 - a stop noticed after the graph had already paused again retries into that pause (the old answer is not fed to a
   different question), and the lesson is back at that quiz's stage
 - an error that surfaces in a node after the learner stopped the run does not replace the "Cancelled" message
+- the runner tells the run's effects when a run paused or ended (`on_finished`, and whether it ended) and when it failed
+  or was stopped (`on_stopped`), and never both for one run
 - an unknown graph fails the run with a clear message
 - an extra study sheet runs in its own thread, ends succeeded and leaves the lesson ready
 - an extra sheet that fails its checks ends the run failed with the reason and leaves the lesson alone
@@ -755,3 +757,53 @@ class TestRunLock:
 
     def test_refreshing_a_lock_that_expired_is_harmless(self):
         RunLock().refresh("never-held")
+
+
+class RecordingEffects:
+    """What the runner tells the effects: `(\"finished\", ended)` or `(\"stopped\", message)`."""
+
+    def __init__(self):
+        self.calls = []
+
+    def on_finished(self, run, *, ended=False):
+        self.calls.append(("finished", ended))
+
+    def on_stopped(self, run, message):
+        self.calls.append(("stopped", message))
+
+
+def test_a_run_that_paused_is_reported_finished_but_not_ended(make_runner, prepared, gateway, valid_bundle):
+    gateway.script("diagnostic.generate", valid_bundle)
+    effects = RecordingEffects()
+
+    make_runner(effects=effects).execute(new_run(prepared).id)
+
+    assert effects.calls == [("finished", False)]
+
+
+def test_a_run_that_ended_is_reported_finished_and_ended(make_runner, prepared, gateway, valid_bundle):
+    gateway.script("diagnostic.generate", valid_bundle).script("learner.assess", ASSESSMENT)
+    make_runner().execute(new_run(prepared).id)
+    answered = attempt(prepared, "diagnostic", right=5)
+    resume = new_run(prepared, GraphRun.Trigger.RESUME_DIAGNOSTIC, {"resume": str(answered.id)})
+    effects = RecordingEffects()
+
+    make_runner(effects=effects).execute(resume.id)
+
+    resume.refresh_from_db()
+    assert resume.status == GraphRun.Status.SUCCEEDED
+    assert effects.calls == [("finished", True)]
+
+
+def test_a_run_that_failed_is_reported_stopped_with_its_reason_and_not_finished(
+    make_runner, prepared, gateway, valid_bundle
+):
+    bad = {**valid_bundle, "diagnostic": valid_bundle["diagnostic"][:9]}
+    gateway.script("diagnostic.generate", bad, bad)
+    run = new_run(prepared)
+    effects = RecordingEffects()
+
+    make_runner(effects=effects).execute(run.id)
+
+    run.refresh_from_db()
+    assert effects.calls == [("stopped", run.error)]

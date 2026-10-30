@@ -34,6 +34,7 @@ Legend for status columns: ✅ in code · ◐ partly (functions still to wrap in
   - [4.15 `marketing`: the landing page's question bank](#415-marketing-the-landing-pages-question-bank)
   - [4.16 `console`: the staff API](#416-console-the-staff-api)
   - [4.17 `graph`: levels, difficulties and score bands (Phase 9, modular lessons)](#417-graph-levels-difficulties-and-score-bands-phase-9-modular-lessons)
+  - [4.18 `lessons`: the action gate (Phase 9, metering seam)](#418-lessons-the-action-gate-phase-9-metering-seam)
 - [5. How to extend](#5-how-to-extend)
 - [Refactor backlog](#refactor-backlog)
 
@@ -1812,6 +1813,132 @@ classDiagram
   the data is known to predate the rename (see the open item in the plan, D24 T19).
 - `StarRating` stores whole halves (1 to 10), never a float. `ScoreBand` compares `awarded * 100` with
   `percent * available`, so the 30% and 90% edges are exact (both edges are Normal); it refuses zero available marks.
+
+### 4.18 `lessons`: the action gate (Phase 9, metering seam)
+
+A port that lets a later pricing feature say yes or no to work that costs model calls, and be told how it ended. Nothing
+here prices anything and nothing is metered by default ([plan §5.5](../to_be_developed/modular-lessons-implementation-plan.md#55-extension-seam-for-metering)
+and §6.7). Code: `lessons/metering.py` and `lessons/idempotency.py`.
+
+```mermaid
+classDiagram
+    direction LR
+    class MeteredAction {
+        <<StrEnum>>
+        LESSON_CREATE
+        LESSON_CONTINUE
+        LESSON_FOLLOWUP
+        TEST_RETAKE
+        QUIZ_CREATE
+        QUIZ_RETAKE
+        SHEET_GENERATE
+    }
+    class ActionGate {
+        <<interface>>
+        +authorize(context) Authorization
+        +settle(authorization, outcome)
+    }
+    class OpenGate
+    class ActionRefused {
+        <<APIException>>
+    }
+    class ActionContext {
+        <<frozen>>
+        +user
+        +action
+        +size dict
+        +subject_id
+        +key str
+        +resume bool
+        +completes_at CompletionPoint
+    }
+    class Authorization {
+        <<frozen>>
+        +id str
+        +action
+        +size dict
+        +resume bool
+        +completes_at CompletionPoint
+        +meta dict
+        +tracked bool
+        +of(context)$ Authorization
+        +to_payload() dict
+        +from_payload(data)$ Authorization
+    }
+    class CompletionPoint {
+        <<frozen>>
+        +at_stage(stage)$
+        +at_run_end()$
+        +reached(stage, ended) bool
+    }
+    class CompletionPoints {
+        +TABLE
+        +of(action)$ CompletionPoint
+    }
+    class ActionMetering {
+        +authorize(user, action, size, subject_id, client_key, resume) Authorization
+        +payload(authorization) dict
+        +carry(subject) dict
+        +ask_again(lesson) Authorization
+        +settle_open(subject, outcome)
+        +guard(authorization)
+    }
+    class AuthorizationLedger {
+        +payload(authorization) dict
+        +read(run) StoredAuthorization
+        +latest(subject) GraphRun
+        +settle_once(run_id, outcome, settle) bool
+    }
+    class AuthorizationSettlement {
+        +on_finished(run, ended)
+        +on_stopped(run, message)
+    }
+    class RunEffects {
+        +on_stopped(run, message)
+        +on_finished(run, ended)
+    }
+    class RunStarters {
+        +METERED
+        +RESUMING
+        +NEVER
+    }
+    class IdempotentRequest {
+        +run(request, scope, body, perform) Response
+    }
+    class IdempotencyKey {
+        +of(request, scope, body)$ IdempotencyKey
+    }
+    class IdempotencyStore {
+        <<interface>>
+        +replay(key) StoredResponse
+        +claim(key) bool
+        +remember(key, response)
+        +release(key)
+    }
+
+    ActionGate <|.. OpenGate
+    ActionGate ..> ActionRefused : raises
+    ActionGate ..> ActionContext
+    ActionGate ..> Authorization
+    ActionMetering --> ActionGate
+    ActionMetering --> AuthorizationLedger
+    ActionMetering ..> CompletionPoints
+    CompletionPoints ..> MeteredAction
+    Authorization --> CompletionPoint
+    AuthorizationSettlement --> ActionGate
+    AuthorizationSettlement --> AuthorizationLedger
+    RunEffects --> AuthorizationSettlement
+    IdempotentRequest --> IdempotencyStore
+    IdempotentRequest ..> IdempotencyKey
+```
+
+- **Pattern:** the gate is a Strategy chosen by a setting (`ACTION_GATE`), the way `LESSON_TASK_QUEUE` chooses the queue; `OpenGate` is the Null Object. `ActionMetering` is a Facade the services use; `AuthorizationSettlement` is a `RunEffects` collaborator, so the runner needs to know nothing about it.
+- **The rules** (all tested in `tests/lessons/test_action_gate.py`): a **service** asks, never a view or a graph node, and only on the creation path, after every other check and before the first row exists, so a refusal creates nothing. The answer is stored on the run that it authorizes (`GraphRun.payload["authorization"]`, no schema change). Idempotent paths (`409 already_exists`, an answered quiz, a stage that is not waiting, a replayed `Idempotency-Key`) never ask.
+- **Wired today:** `lesson.create` (`LessonService.create`), `lesson.continue` (`QuizService.submit` for a diagnostic that is not perfect, after grading and before the attempt is stored; `MaterialService.choose` for a perfect one), `sheet.generate` (`MaterialService.request_extra`). `LessonService.retry` asks again for the action of the last flow run as a resume (`resume: true`), once, when Stop or a failure released it; `LessonService.delete` settles an open one as cancelled. `RunStarters` lists every service method that queues a run and how it is treated, and a test fails if a new one is missing. The other four actions exist in `MeteredAction` for the later phases and have no completion point yet (`CompletionPoints.of` says so).
+- **Settlement:** `RunEffects.on_finished(run, ended)` is called by the runner when a run pauses or ends; the authorization is settled `succeeded` when its `CompletionPoint` is reached (`lesson.create`: the quiz is served; `lesson.continue`: the lesson is ready; `sheet.generate`: the run ended). `RunEffects.on_stopped` settles `cancelled` after Stop and `failed` otherwise. `AuthorizationLedger.settle_once` marks the run under a row lock, so each authorization is reported once even when a task is redelivered or Stop and the runner both report; a gate that raises leaves it unmarked and is logged, never breaking the run.
+- **Carry:** the prerequisite quiz continues the work the diagnostic's `lesson.continue` authorized, so `ActionMetering.carry` copies that open authorization into its resume run instead of asking again.
+- **The open gate stores nothing:** its authorization is `tracked=False`, so run payloads (and every test that compares them) are exactly as before the seam existed.
+- **Idempotency:** `IdempotentRequest` wraps the two creation views. The key is the header made specific to the learner, endpoint and body (`IdempotencyKey`), kept in the cache (Redis) for `IDEMPOTENCY_TTL_S`; a `claim` makes a concurrent repeat a `409 request_in_progress`. The service passes the header on as `ActionContext.key`, so a gate can dedupe on its side too.
 
 ## 5. How to extend
 

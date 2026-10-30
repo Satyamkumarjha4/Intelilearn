@@ -167,11 +167,13 @@ class FlowRunner:
         subject = run.fresh_subject()
         if interrupt is None:
             self.recorder.finish(run, GraphRun.Status.SUCCEEDED)
+            self.effects.on_finished(run, ended=True)
             self._publish(run, RunEvent("done", {"lesson_id": str(subject.id), "stage": subject.stage}))
         elif interrupt.get("kind") == "retry":  # the graph gave up and recorded why on the subject
             self._fail(run, subject.error, subject_already_failed=True)
         else:
             self.recorder.finish(run, GraphRun.Status.PAUSED)
+            self.effects.on_finished(run)
             self._publish(run, RunEvent("awaiting_input", {k: v for k, v in interrupt.items() if k != "message"}))
 
     def _stopped(self, run: GraphRun) -> None:
