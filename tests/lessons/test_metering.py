@@ -32,7 +32,7 @@ from django.test import override_settings
 from rest_framework.exceptions import APIException
 from support.gates import CountingGate, RefusingGate
 
-from lessons import attempts, services
+from lessons import attempts, followups, services
 from lessons.metering import (
     ActionContext,
     ActionGates,
@@ -343,7 +343,7 @@ class TestSettleOpen:
 
 
 class TestEveryRunStarterIsClassified:
-    SERVICES = (pathlib.Path(services.__file__), pathlib.Path(attempts.__file__))
+    SERVICES = (pathlib.Path(services.__file__), pathlib.Path(attempts.__file__), pathlib.Path(followups.__file__))
 
     def run_starters(self) -> set[str]:
         """`Class.method` for every method in the services that hands a run to the dispatcher."""

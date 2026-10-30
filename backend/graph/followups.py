@@ -10,7 +10,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from .levels import RaterCategory
+from .levels import Level, RaterCategory
 from .scoring import ScoreBand, Thresholds
 
 
@@ -37,6 +37,23 @@ class Offer:
     @classmethod
     def from_json(cls, data: dict) -> "Offer":
         return cls(data["kind"], data["action"], data.get("lesson_id"))
+
+
+class FollowupTargets:
+    """The level a follow-up lesson is written for (decision D5). One method, so "one step below or above the parent's
+    level" would be a change here and nowhere else. A Foundation follow-up is a Beginner lesson and an Advanced one an
+    Expert lesson, which also makes the first a low rater and the second a high rater, so follow-ups of follow-ups
+    stop on
+    their own: a Beginner who fails is told to revisit, and an Expert who excels is told nothing."""
+
+    LEVELS = {"foundation": Level.BEGINNER, "advanced": Level.EXPERT}
+
+    @classmethod
+    def level_for(cls, followup_level: str) -> Level:
+        try:
+            return cls.LEVELS[followup_level]
+        except KeyError:
+            raise ValueError(f"Not a follow-up level: {followup_level!r}") from None
 
 
 class Passes:

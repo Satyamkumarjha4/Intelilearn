@@ -43,6 +43,7 @@ class FlowState(TypedDict, total=False):
     entry: str  # diagnostic or self_rating
     intent: str  # lesson (sheets from a topic come later)
     self_rating_halves: int | None
+    followup_level: str  # foundation or advanced, for a lesson made from a test result (else empty)
     level_source: str  # where the level came from
 
     # Stage A

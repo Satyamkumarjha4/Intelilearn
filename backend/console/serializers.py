@@ -95,6 +95,8 @@ class FunnelSerializer(serializers.Serializer):
     quick_check_done = serializers.IntegerField()
     built = serializers.IntegerField(help_text="Ready lessons (not study-sheet ones).")
     test_submitted = serializers.IntegerField()
+    retested = serializers.IntegerField(help_text="Lessons with two or more attempts that are over.")
+    followups_started = serializers.IntegerField(help_text="Lessons a Foundation or Advanced lesson was made from.")
     study_sheets = serializers.IntegerField(help_text="Ready lessons that went to study sheets (mastery).")
     failed_building = serializers.IntegerField()
     waiting = serializers.IntegerField(help_text="Waiting for the learner (a quiz or a sheet choice).")

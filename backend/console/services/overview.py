@@ -128,7 +128,8 @@ class Funnel:
     """Where the lessons started in the range have got to. The counts overlap (a built lesson also answered its quick
     check); `test_submitted` is a lesson with an attempt that is over, not one still in progress or being prepared;
     `failed_building` and `waiting` are where the rest stopped. Joins would repeat a lesson, so each count is
-    distinct."""
+    distinct. `retested` is a lesson with two or more attempts that are over, and `followups_started` a lesson that a
+    Foundation or Advanced lesson was made from."""
 
     WAITING = (Stage.AWAITING_DIAGNOSTIC, Stage.AWAITING_PREREQUISITE, Stage.AWAITING_CHOICE)
 
@@ -138,11 +139,20 @@ class Funnel:
 
         started = Lesson.objects.filter(created_at__gte=period.start, created_at__lte=period.end)
         ready = Q(stage=Stage.READY)
+        retried = (
+            TestSubmission.objects.filter(status__in=TestSubmission.SEALED)
+            .values("lesson")
+            .annotate(n=Count("id"))
+            .filter(n__gte=2)
+            .values("lesson")
+        )
         return started.aggregate(
             started=count(),
             quick_check_done=count(quizzes__kind=Quiz.Kind.DIAGNOSTIC, quizzes__attempt__isnull=False),
             built=Count("id", filter=ready & ~Q(route=Route.MASTERY), distinct=True),
             test_submitted=count(submissions__status__in=TestSubmission.SEALED),
+            retested=count(id__in=retried),
+            followups_started=count(followups__isnull=False),
             study_sheets=Count("id", filter=ready & Q(route=Route.MASTERY), distinct=True),
             failed_building=count(stage=Stage.FAILED),
             waiting=count(stage__in=self.WAITING),

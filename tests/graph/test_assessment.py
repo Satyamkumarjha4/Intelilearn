@@ -17,6 +17,9 @@ Use cases:
   level's own starting point and notes, and low confidence (nothing was tested)
 - the self-rating source stamps the level scheme and says the source is the self-rating
 - a rating that is not a whole number of halves from 1 to 10 is refused
+- the follow-up source gives the level the follow-up is for (Foundation follow-up: Beginner; Advanced: Expert), with no
+  known concepts or gaps, the level's own start point and notes, low confidence, and the test score as the level source
+- every source says where the lesson records its level as coming from
 - a source that needs input it was not given says so
 - the registry finds a source by key, lists its keys, and refuses an unknown one
 - a source is told apart by its key and says whether it uses a model
@@ -28,6 +31,7 @@ from graph.assessment import (
     AssessmentRequest,
     AssessmentSources,
     DiagnosticSource,
+    FollowupSource,
     SelfRatingSource,
 )
 from graph.levels import Level, LevelScheme
@@ -127,13 +131,52 @@ class TestSelfRatingSource:
         assert SelfRatingSource.uses_model is False and SelfRatingSource.key == "self_rating"
 
 
+class TestFollowupSource:
+    @pytest.mark.parametrize(("followup", "level"), [("foundation", "beginner"), ("advanced", "expert")])
+    def test_the_level_is_the_one_the_followup_is_for(self, followup, level):
+        assessment = FollowupSource().assess(AssessmentRequest(followup_level=followup))
+
+        assert assessment["level"] == level
+
+    def test_nothing_is_known_and_the_levels_own_start_point_is_used(self):
+        assessment = FollowupSource().assess(AssessmentRequest(followup_level="advanced"))
+
+        shape = LessonShapes.for_level(Level.EXPERT)
+        assert (
+            assessment["known_concepts"] == []
+            and assessment["gaps"] == []
+            and assessment["prerequisites_to_cover"] == []
+        )
+        assert assessment["start_point"] == shape.start_point and assessment["author_notes"] == shape.author_notes
+        assert assessment["confidence"] == "low"
+
+    def test_it_is_stamped_and_says_where_it_came_from(self):
+        assessment = FollowupSource().assess(AssessmentRequest(followup_level="foundation"))
+
+        assert assessment["source"] == "followup" and assessment[LevelScheme.KEY] == LevelScheme.CURRENT
+
+    @pytest.mark.parametrize("followup", [None, "", "intermediate"])
+    def test_it_needs_a_level_the_followup_can_have(self, followup):
+        with pytest.raises(ValueError):
+            FollowupSource().assess(AssessmentRequest(followup_level=followup))
+
+    def test_it_uses_no_model(self):
+        assert FollowupSource.uses_model is False and FollowupSource.key == "followup"
+
+
+def test_each_source_says_where_the_lesson_records_its_level_as_coming_from():
+    assert {s.key: s.level_source for s in map(AssessmentSources.for_key, AssessmentSources.keys())} == {
+        "diagnostic": "diagnostic", "self_rating": "self_rating", "followup": "test_score",
+    }  # fmt: skip
+
+
 class TestRegistry:
     def test_a_source_is_found_by_its_key(self):
         assert isinstance(AssessmentSources.for_key("diagnostic"), DiagnosticSource)
         assert isinstance(AssessmentSources.for_key("self_rating"), SelfRatingSource)
 
     def test_the_keys_are_listed(self):
-        assert AssessmentSources.keys() == ("diagnostic", "self_rating")
+        assert AssessmentSources.keys() == ("diagnostic", "self_rating", "followup")
 
     def test_an_unknown_key_is_refused(self):
         with pytest.raises(KeyError, match="calibration"):

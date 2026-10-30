@@ -10,6 +10,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import ClassVar
 
+from .followups import FollowupTargets
 from .levels import Level, LevelScheme, StarRating
 from .shapes import LessonShapes
 from .validators import AssessmentGuard
@@ -23,12 +24,15 @@ class AssessmentRequest:
     prerequisites_to_cover: list[dict] = field(default_factory=list)  # found by the prerequisite quiz
     mastery_choice: str | None = None  # "lesson" when the learner who aced the quiz chose the Expert lesson
     self_rating_halves: int | None = None
+    followup_level: str | None = None  # foundation or advanced, for a lesson made from a test result
 
 
 class AssessmentSource(ABC):
     key: ClassVar[str]
     #: whether `assess` finishes the answer of a model (the node calls the model first) or needs none
     uses_model: ClassVar[bool]
+    #: what the lesson records as the place its level came from (`Lesson.level_source`)
+    level_source: ClassVar[str]
 
     @abstractmethod
     def assess(self, request: AssessmentRequest) -> dict:
@@ -45,6 +49,7 @@ class DiagnosticSource(AssessmentSource):
 
     key = "diagnostic"
     uses_model = True
+    level_source = "diagnostic"
 
     def __init__(self, guard: AssessmentGuard | None = None):
         self.guard = guard or AssessmentGuard()
@@ -64,6 +69,7 @@ class SelfRatingSource(AssessmentSource):
 
     key = "self_rating"
     uses_model = False
+    level_source = "self_rating"
 
     def assess(self, request: AssessmentRequest) -> dict:
         if request.self_rating_halves is None:
@@ -82,8 +88,35 @@ class SelfRatingSource(AssessmentSource):
         return self.stamped(assessment, self.key)
 
 
+class FollowupSource(AssessmentSource):
+    """A lesson made from a test result: the level is fixed by what the follow-up is for (`FollowupTargets`), not asked
+    of the learner and not found by a quiz. Nothing is known about their concepts: the follow-up uses the overall score
+    only (spec 3.4), so it has no known concepts and no gaps, the level's own starting point and notes, and low
+    confidence."""
+
+    key = "followup"
+    uses_model = False
+    level_source = "test_score"
+
+    def assess(self, request: AssessmentRequest) -> dict:
+        if request.followup_level is None:
+            raise ValueError("The follow-up source needs the follow-up level.")
+        level = FollowupTargets.level_for(request.followup_level)
+        shape = LessonShapes.for_level(level)
+        assessment = {
+            "level": level.value,
+            "known_concepts": [],
+            "gaps": [],
+            "prerequisites_to_cover": [],
+            "start_point": shape.start_point,
+            "author_notes": shape.author_notes,
+            "confidence": "low",
+        }
+        return self.stamped(assessment, self.key)
+
+
 class AssessmentSources:
-    _SOURCES: ClassVar[tuple[AssessmentSource, ...]] = (DiagnosticSource(), SelfRatingSource())
+    _SOURCES: ClassVar[tuple[AssessmentSource, ...]] = (DiagnosticSource(), SelfRatingSource(), FollowupSource())
 
     @classmethod
     def for_key(cls, key: str) -> AssessmentSource:

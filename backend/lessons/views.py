@@ -17,6 +17,7 @@ from rest_framework.views import APIView
 
 from .attempts import AttemptService
 from .events import RunEventStream, RunSnapshot
+from .followups import FollowupService
 from .idempotency import IdempotentRequest
 from .media_urls import MediaUrlSigner
 from .models import GraphRun, Lesson, MaterialKind, MediaAsset, Stage
@@ -26,6 +27,7 @@ from .serializers import (
     AttemptHistorySerializer,
     AttemptStartedSerializer,
     AttemptSubmitSerializer,
+    FollowupRequestSerializer,
     LearnerTestSerializer,
     LessonCreatedSerializer,
     LessonCreateSerializer,
@@ -193,6 +195,47 @@ class LessonRetryView(OwnedLessons, APIView):
     def post(self, request, lesson_id):
         run = LessonService().retry(self.lesson_of(request, lesson_id))
         return Response({"run_id": run.id}, status=status.HTTP_202_ACCEPTED)
+
+
+class FollowupView(OwnedLessons, APIView):
+    def get_throttles(self):
+        self.throttle_scope = "lesson_create"  # a follow-up is a lesson
+        return [ScopedRateThrottle()]
+
+    @extend_schema(
+        tags=LESSONS_TAG,
+        summary="Make a follow-up lesson",
+        description=(
+            "A Foundation (the basics again) or Advanced (the next step) lesson from a ready lesson, made once "
+            "for each level: its topic is `Foundations of …` or `Advanced …`, its level is fixed by what it is for "
+            "(Beginner or Expert), and it has no quick check or rating. It counts as a new lesson for the rate limit "
+            "and asks the action gate for `lesson.followup`. If it already exists the answer is `409 already_exists` "
+            "with its `lesson_id`, which the client opens. An optional `Idempotency-Key` header makes a repeated "
+            "request return the first answer."
+        ),
+        parameters=[LESSON_ID, IDEMPOTENCY_KEY],
+        request=FollowupRequestSerializer,
+        responses={
+            202: LessonCreatedSerializer,
+            400: OpenApiResponse(description="An unknown `level`, or an invalid `Idempotency-Key`."),
+            409: OpenApiResponse(
+                description="The lesson is not ready (`wrong_stage`), the follow-up of that level exists "
+                "(`already_exists`, with `lesson_id`), or the same keyed request is still being handled."
+            ),
+            503: OpenApiResponse(description="No model is bound for the first steps (`llm_not_configured`)."),
+        },
+    )
+    def post(self, request, lesson_id):
+        serializer = FollowupRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        parent = self.lesson_of(request, lesson_id)
+
+        def start(client_key: str) -> Response:
+            lesson, run = FollowupService().create(parent, serializer.validated_data["level"], client_key)
+            body = LessonCreatedSerializer({"lesson_id": lesson.id, "run_id": run.id}).data
+            return Response(body, status=status.HTTP_202_ACCEPTED)
+
+        return IdempotentRequest().run(request, f"lessons.followup:{parent.id}", serializer.validated_data, start)
 
 
 class QuizView(OwnedLessons, APIView):

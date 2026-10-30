@@ -25,13 +25,16 @@ Use cases:
 - passing means a score at or above the Fail line, judged on whole marks, so exactly 30% is a pass and one mark less
   is not
 - an offer is stored as plain JSON and read back the same
+- a Foundation follow-up is written for a Beginner and an Advanced one for an Expert, which makes them a low and a
+  high rater
+  so chains of follow-ups stop on their own; any other level is refused
 - only a Fail, a Normal or an Excellent band is understood
 """
 
 import pytest
 
-from graph.followups import FollowupPolicy, Offer, Passes
-from graph.levels import RaterCategory, StarRating
+from graph.followups import FollowupPolicy, FollowupTargets, Offer, Passes
+from graph.levels import Level, RaterCategory, StarRating
 from graph.scoring import ScoreBand
 
 LOW, MID, HIGH = RaterCategory.LOW, RaterCategory.MID, RaterCategory.HIGH
@@ -182,3 +185,23 @@ class TestOffer:
         lesson_id = uuid.uuid4()
 
         assert Offer("advanced", "open", lesson_id).to_json()["lesson_id"] == str(lesson_id)
+
+
+class TestFollowupTargets:
+    @pytest.mark.parametrize(("followup", "level"), [("foundation", Level.BEGINNER), ("advanced", Level.EXPERT)])
+    def test_each_followup_is_written_for_its_level(self, followup, level):
+        assert FollowupTargets.level_for(followup) is level
+
+    @pytest.mark.parametrize(("followup", "rater"), [("foundation", LOW), ("advanced", HIGH)])
+    def test_chains_stop_on_their_own(self, followup, rater):
+        """A Beginner who fails is told to revisit and an Expert who excels is told nothing."""
+        assert RaterCategory.of(FollowupTargets.level_for(followup)) is rater
+        beginner_fails = POLICY.decide(FAIL, LOW, False, {})
+        expert_excels = POLICY.decide(EXCELLENT, HIGH, False, {})
+
+        assert beginner_fails.kind == "inline_suggestion" and expert_excels is None
+
+    @pytest.mark.parametrize("followup", ["", "intermediate", None, "Foundation"])
+    def test_any_other_level_is_refused(self, followup):
+        with pytest.raises(ValueError, match="follow-up level"):
+            FollowupTargets.level_for(followup)

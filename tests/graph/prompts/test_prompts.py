@@ -17,6 +17,8 @@ Use cases:
 - the plan prompt asks for the quantitative flag and says nothing about a test mix
 - the plan prompt describes the lesson shape of the learner's level: the role of each of the three slots, and the level
   the plan must carry
+- the plan prompt of a follow-up asks for a title in the style of its topic, one for the Foundation kind and one for the
+  Advanced kind, and a lesson that is not a follow-up is not told to
 - the page prompt tells the writer what its page is for in this level's lesson
 - the assessment prompt describes what each of the four levels' lessons is like
 - the prerequisites prompt asks for 3 to 6 prerequisites that come before the topic, and describes the lesson ahead
@@ -172,6 +174,16 @@ class TestLessonShapeInThePrompts:
         assert intro in system and f'level: "{level}"' in system
         for key in ("introduction", "core", "advanced"):
             assert f'"{key}"' in system
+
+    def test_the_plan_prompt_of_a_followup_asks_for_a_title_in_the_style_of_the_topic(self, level, intro):
+        plain = PlanLessonPrompt().messages(self.state(level))[0].content
+
+        foundation = PlanLessonPrompt().messages(self.state(level) | {"followup_level": "foundation"})[0].content
+        advanced = PlanLessonPrompt().messages(self.state(level) | {"followup_level": "advanced"})[0].content
+
+        assert "follow-up" not in plain
+        assert 'such as "Foundations of …"' in foundation and "basics" in foundation
+        assert 'such as "Advanced …"' in advanced and "did very well" in advanced
 
     def test_the_page_prompt_says_what_the_page_is_for_in_this_level(self, level, intro):
         system = WritePagePrompt().messages(self.state(level) | {"page_plan": subject()["plan"]["pages"][0]})[0].content

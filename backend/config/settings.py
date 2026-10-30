@@ -265,6 +265,8 @@ SPECTACULAR_SETTINGS = {
     # One name per choice set that appears in several components.
     "ENUM_NAME_OVERRIDES": {
         "RouteEnum": "lessons.stages.Route",
+        "EntryEnum": "lessons.stages.Entry",
+        "FollowupLevelEnum": "lessons.stages.FollowupLevel",
         "StageEnum": "lessons.stages.Stage",
         "MaterialKindEnum": "lessons.stages.MaterialKind",
         "QuizKindEnum": "lessons.models.Quiz.Kind",

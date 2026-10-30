@@ -81,6 +81,17 @@ class TestLoadContext:
         assert update["profile"]["preferred_language"] == "hi"
         assert update["profile"]["notes"] == "I know arrays"
 
+    def test_reads_how_the_lesson_began(self, lesson, runtime):
+        Lesson.objects.filter(pk=lesson.pk).update(
+            entry="followup", intent="lesson", self_rating_halves=None, followup_level="advanced"
+        )
+
+        update = LoadContextNode()({"lesson_id": str(lesson.id)}, runtime)
+
+        assert (update["entry"], update["intent"], update["self_rating_halves"], update["followup_level"]) == (
+            "followup", "lesson", None, "advanced",
+        )  # fmt: skip
+
     def test_never_puts_the_name_or_email_in_the_profile(self, lesson, runtime):
         update = LoadContextNode()({"lesson_id": str(lesson.id)}, runtime)
 

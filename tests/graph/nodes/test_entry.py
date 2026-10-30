@@ -17,6 +17,7 @@ Use cases:
 - the junction nodes change nothing
 - assess_from_source turns the rating into the assessment, records it on the lesson with the level, the level source,
   the lesson route and no prerequisites, and moves the lesson from the quiz stage to building
+- assess_from_source takes a follow-up's level from what it is for and records the test score as the level source
 - assess_from_source recovers a failed lesson to building, and refuses an entry that has no source
 - plan_prerequisites asks the model for a prerequisite list and counts the attempt
 - validate_prerequisites accepts a good list: it becomes the lesson's prerequisites, on the lesson and in the
@@ -85,6 +86,7 @@ class TestLevelGate:
         ("self_rating", "beginner", [{"name": "A"}], "intent_router"),  # already has some
         ("diagnostic", "beginner", [], "intent_router"),  # the quiz found them, or found none
         ("followup", "beginner", [], "plan_prerequisites"),
+        ("followup", "expert", [], "intent_router"),
         ("quiz_result", "beginner", [], "plan_prerequisites"),
     ])  # fmt: skip
     def test_only_a_beginner_who_took_no_quiz_has_prerequisites_planned(self, entry, level, listed, destination):
@@ -146,8 +148,23 @@ class TestAssessFromSource:
         assert (stored.stage, stored.error, stored.level) == (Stage.GENERATING_LESSON, "", "beginner")
 
     def test_an_entry_with_no_source_is_refused(self, lesson_state, runtime):
-        with pytest.raises(KeyError, match="followup"):
-            AssessFromSourceNode()(lesson_state | {"entry": "followup"}, runtime)
+        with pytest.raises(KeyError, match="quiz_result"):
+            AssessFromSourceNode()(lesson_state | {"entry": "quiz_result"}, runtime)
+
+    @pytest.mark.parametrize(("followup", "level"), [("foundation", "beginner"), ("advanced", "expert")])
+    def test_a_followup_gets_its_level_from_what_it_is_for_and_the_test_score_as_the_source(
+        self, lesson, lesson_state, runtime, followup, level
+    ):
+        Lesson.objects.filter(pk=lesson.pk).update(entry="followup", followup_level=followup)
+
+        update = AssessFromSourceNode()(lesson_state | {"entry": "followup", "followup_level": followup}, runtime)
+
+        assert update["assessment"]["level"] == level and update["assessment"]["source"] == "followup"
+        assert update["level_source"] == "test_score" and update["route"] == "lesson"
+        stored = Lesson.objects.get(pk=lesson.pk)
+        assert (stored.level, stored.level_source, stored.route, stored.stage) == (
+            level, "test_score", "lesson", Stage.GENERATING_LESSON,
+        )  # fmt: skip
 
 
 class TestPlanPrerequisites:

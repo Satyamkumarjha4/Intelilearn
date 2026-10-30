@@ -11,7 +11,7 @@ from graph.scoring import AttemptTrend
 
 from .attempts import AttemptQuestions
 from .models import GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt, TestSubmission
-from .stages import Entry, Intent, LevelSource, MasteryOptions, MaterialKind, Origin, Route
+from .stages import Entry, FollowupLevel, Intent, LevelSource, MasteryOptions, MaterialKind, Origin, Route
 
 
 class StarsField(serializers.FloatField):
@@ -81,7 +81,25 @@ class TestScoreSerializer(serializers.Serializer):
     available = serializers.IntegerField()
 
 
+class LessonLinkSerializer(serializers.Serializer):
+    """A lesson this one is linked to, as a link: where to go and what to call it."""
+
+    id = serializers.UUIDField()
+    title = serializers.CharField()
+
+
+class FollowupOfSerializer(LessonLinkSerializer):
+    level = serializers.ChoiceField(choices=FollowupLevel.choices, help_text="What kind of follow-up this lesson is.")
+
+
+class FollowupsSerializer(serializers.Serializer):
+    foundation = LessonLinkSerializer(allow_null=True)
+    advanced = LessonLinkSerializer(allow_null=True)
+
+
 class LessonSummarySerializer(serializers.ModelSerializer):
+    entry = serializers.ChoiceField(choices=Entry.choices, read_only=True)
+    followup_level = serializers.ChoiceField(choices=FollowupLevel.choices, read_only=True)
     test_status = serializers.SerializerMethodField()
     test_score = serializers.SerializerMethodField()
     latest_score = serializers.SerializerMethodField()
@@ -93,7 +111,7 @@ class LessonSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = Lesson
         fields = [
-            "id", "topic", "stage", "route", "title", "level", "created_at", "updated_at",
+            "id", "topic", "stage", "route", "title", "level", "entry", "followup_level", "created_at", "updated_at",
             "test_status", "test_score", "latest_score", "best_score", "attempts_count", "has_open_attempt",
             "material_count",
         ]  # fmt: skip
@@ -182,7 +200,6 @@ class LessonDetailSerializer(LessonSummarySerializer):
     active_run_id = serializers.SerializerMethodField()
     results = serializers.SerializerMethodField()
     materials = serializers.SerializerMethodField()
-    entry = serializers.ChoiceField(choices=Entry.choices, read_only=True)
     intent = serializers.ChoiceField(choices=Intent.choices, read_only=True)
     origin = serializers.ChoiceField(choices=Origin.choices, read_only=True)
     level_source = serializers.ChoiceField(choices=LevelSource.choices, read_only=True)
@@ -193,11 +210,14 @@ class LessonDetailSerializer(LessonSummarySerializer):
         "that was already waiting) the three sheets.",
     )
     self_rating = serializers.SerializerMethodField()
+    followup_of = serializers.SerializerMethodField()
+    followups = serializers.SerializerMethodField()
 
     class Meta(LessonSummarySerializer.Meta):
         fields = [
             *LessonSummarySerializer.Meta.fields,
-            "entry",
+            "followup_of",
+            "followups",
             "intent",
             "origin",
             "level_source",
@@ -217,6 +237,23 @@ class LessonDetailSerializer(LessonSummarySerializer):
     @extend_schema_field(serializers.FloatField(allow_null=True, help_text="Stars, 0.5 to 5; null unless self-rated."))
     def get_self_rating(self, lesson: Lesson) -> float | None:
         return None if lesson.self_rating_halves is None else lesson.self_rating_halves / 2
+
+    @staticmethod
+    def _link(lesson: Lesson) -> dict:
+        return {"id": lesson.pk, "title": lesson.title or lesson.topic}
+
+    @extend_schema_field(FollowupOfSerializer(allow_null=True))
+    def get_followup_of(self, lesson: Lesson) -> dict | None:
+        """The lesson this one was made from, if it still exists. A lesson whose parent was deleted keeps its level
+        (`followup_level`) and has no link."""
+        parent = lesson.created_from_lesson
+        return None if parent is None else self._link(parent) | {"level": lesson.followup_level}
+
+    @extend_schema_field(FollowupsSerializer)
+    def get_followups(self, lesson: Lesson) -> dict:
+        """The follow-up lessons made from this one, by level; null for a level not made yet."""
+        made = {child.followup_level: child for child in lesson.followups.order_by("created_at")}
+        return {level: self._link(made[level]) if level in made else None for level in FollowupLevel.values}
 
     def get_assessment(self, lesson: Lesson) -> dict | None:
         if not lesson.assessment:
@@ -295,6 +332,12 @@ class RunSerializer(serializers.ModelSerializer):
 
 class MaterialKindSerializer(serializers.Serializer):
     kind = serializers.ChoiceField(choices=MaterialKind.choices)
+
+
+class FollowupRequestSerializer(serializers.Serializer):
+    level = serializers.ChoiceField(
+        choices=FollowupLevel.choices, help_text="`foundation` (the basics again) or `advanced` (the next step)."
+    )
 
 
 class MasteryChoiceSerializer(serializers.Serializer):

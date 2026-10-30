@@ -84,6 +84,9 @@ class CompletionPoints:
     TABLE: ClassVar[dict[MeteredAction, CompletionPoint]] = {
         MeteredAction.LESSON_CREATE: CompletionPoint.at_stage(Stage.AWAITING_DIAGNOSTIC),
         MeteredAction.LESSON_CONTINUE: CompletionPoint.at_stage(Stage.READY),
+        MeteredAction.LESSON_FOLLOWUP: CompletionPoint.at_stage(
+            Stage.READY
+        ),  # a follow-up has no quiz stage to finish at
         MeteredAction.SHEET_GENERATE: CompletionPoint.at_run_end(),
         # the `question_bank` run ends exactly when the attempt starts (its last step moves it to in_progress)
         MeteredAction.TEST_RETAKE: CompletionPoint.at_run_end(),
@@ -367,6 +370,7 @@ class RunStarters:
         "MaterialService.choose": MeteredAction.LESSON_CONTINUE,
         "MaterialService.request_extra": MeteredAction.SHEET_GENERATE,
         "AttemptService.start": MeteredAction.TEST_RETAKE,  # attempt 2 onward; attempt 1 is part of the lesson
+        "FollowupService.create": MeteredAction.LESSON_FOLLOWUP,
     }
     #: asks again for the action of the run it resumes
     RESUMING: ClassVar[tuple[str, ...]] = ("LessonService.retry",)

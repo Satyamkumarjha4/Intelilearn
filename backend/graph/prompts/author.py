@@ -18,13 +18,25 @@ The test is a separate screen after the lesson, not a page, and it is not planne
 lesson and is written later from the concepts you outline.
 
 Rules:
-- level: "{shape.level.value}".
+- level: "{shape.level.value}".{self.title_rule(subject)}
 - Every outline "concept" appears on exactly ONE page; pages don't overlap or repeat each other.
 - 3-6 outline parts per page, in teaching order.
 - quantitative: true only when the topic is mainly about calculating numbers (maths, physics, chemistry, statistics, \
 finance); false for any other topic, programming and history included. It decides whether the test has numerical \
 questions.
 {self.language_rule(subject.get("profile"))}"""
+
+    TITLES = {
+        "foundation": "This lesson is a follow-up for a learner whose test showed they need the basics. Give it a "
+        'title in the same style as its topic, such as "Foundations of …" or "Introduction to …".',
+        "advanced": "This lesson is a follow-up for a learner who did very well on a test. Give it a title in the same "
+        'style as its topic, such as "Advanced …" or "Mastering …".',
+    }
+
+    def title_rule(self, subject: dict) -> str:
+        """A follow-up's topic was set from a template; the title the learner sees is written in the same style."""
+        rule = self.TITLES.get(subject.get("followup_level") or "")
+        return f"\n- {rule}" if rule else ""
 
     def user(self, subject: dict) -> str:
         to_cover = subject.get("prerequisites_to_cover") or []

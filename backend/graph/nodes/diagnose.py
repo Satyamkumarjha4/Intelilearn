@@ -38,6 +38,7 @@ class LoadContextNode(Node):
             "entry": lesson.entry,
             "intent": lesson.intent,
             "self_rating_halves": lesson.self_rating_halves,
+            "followup_level": lesson.followup_level,
         }
 
 
@@ -211,7 +212,7 @@ class AssessLearnerNode(LLMNode):
         )
         assessment = self.source.assess(request)
         self.lesson(state).record(
-            assessment=assessment, level=LevelScheme.level_of(assessment).value, level_source=self.source.key
+            assessment=assessment, level=LevelScheme.level_of(assessment).value, level_source=self.source.level_source
         )
-        update = {"assessment": assessment, "level_source": self.source.key}
+        update = {"assessment": assessment, "level_source": self.source.level_source}
         return update | {"route": "lesson"} if state.get("mastery_choice") == "lesson" else update

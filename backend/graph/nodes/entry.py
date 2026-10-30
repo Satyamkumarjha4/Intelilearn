@@ -89,7 +89,10 @@ class AssessFromSourceNode(Node):
 
     def run(self, state: dict, ctx: FlowContext) -> dict:
         source = AssessmentSources.for_key(state["entry"])
-        assessment = source.assess(AssessmentRequest(self_rating_halves=state.get("self_rating_halves")))
+        request = AssessmentRequest(
+            self_rating_halves=state.get("self_rating_halves"), followup_level=state.get("followup_level") or None
+        )
+        assessment = source.assess(request)
         level = LevelScheme.level_of(assessment)
         self.lesson(state).advance_to(
             Stage.GENERATING_LESSON,
@@ -97,9 +100,12 @@ class AssessFromSourceNode(Node):
             prerequisites_to_cover=[],
             assessment=assessment,
             level=level.value,
-            level_source=assessment["source"],
+            level_source=source.level_source,
         )
-        return {"assessment": assessment, "route": "lesson", "prerequisites_to_cover": [], "level_source": source.key}
+        return {
+            "assessment": assessment, "route": "lesson", "prerequisites_to_cover": [],
+            "level_source": source.level_source,
+        }  # fmt: skip
 
 
 class PlanPrerequisitesNode(LLMNode):

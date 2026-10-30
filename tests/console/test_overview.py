@@ -189,8 +189,31 @@ def test_daily_activity_covers_30_days_for_the_long_range(data, now):
 
 
 def test_funnel_follows_the_lessons_started_in_the_range(data, report):
-    assert report["funnel"] == {"started": 4, "quick_check_done": 2, "built": 1, "test_submitted": 1,
-                                "study_sheets": 1, "failed_building": 1, "waiting": 1}  # fmt: skip
+    assert report["funnel"] == {
+        "started": 4, "quick_check_done": 2, "built": 1, "test_submitted": 1, "retested": 0, "followups_started": 0,
+        "study_sheets": 1, "failed_building": 1, "waiting": 1,
+    }  # fmt: skip
+
+
+def test_a_lesson_with_two_attempts_that_are_over_is_retested_and_one_with_a_followup_made_from_it_is_counted(
+    data, now
+):
+    from lessons.models import Lesson, TestSubmission
+
+    lesson, other = list(Lesson.objects.filter(submissions__isnull=True)[:2])
+    for number, status in enumerate(("graded", "failed"), start=1):
+        TestSubmission.objects.create(lesson=lesson, attempt_no=number, status=status)
+    TestSubmission.objects.create(lesson=other, attempt_no=1, status="graded")
+    TestSubmission.objects.create(lesson=other, attempt_no=2, status="in_progress")  # an open attempt is not a retest
+    Lesson.objects.create(
+        owner=lesson.owner, topic="Foundations of X", created_from_lesson=lesson, followup_level="foundation"
+    )
+    Lesson.objects.create(owner=lesson.owner, topic="Advanced X", created_from_lesson=lesson, followup_level="advanced")
+
+    funnel = OverviewReport(health=FakeHealth()).build("7d", now)["funnel"]
+
+    assert funnel["retested"] == 1  # the lesson with two that are over
+    assert funnel["followups_started"] == 1  # a lesson counts once, however many follow-ups came from it
 
 
 def test_slowest_steps_are_the_95th_percentile_of_calls_that_worked_slowest_first(data, report):

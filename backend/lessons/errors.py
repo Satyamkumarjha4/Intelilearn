@@ -74,6 +74,18 @@ class AlreadyExists(LessonError):
     default_detail = "The lesson already has that study sheet."
 
 
+class FollowupExists(LessonError):
+    """The follow-up of this level was already made. The client opens it: `extra.lesson_id` says which."""
+
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "already_exists"
+    default_detail = "That follow-up lesson already exists."
+
+    def __init__(self, lesson_id):
+        super().__init__()
+        self.extra = {"lesson_id": str(lesson_id)}
+
+
 class StaleCodeVersion(LessonError):
     status_code = status.HTTP_409_CONFLICT
     default_code = "stale_code_version"

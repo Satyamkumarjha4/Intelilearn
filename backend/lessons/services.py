@@ -13,6 +13,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.module_loading import import_string
 
+from graph.followups import FollowupTargets
 from graph.grading import AnswerError, AnswerGrader, QuizGrader, RoutingPolicy, Solution
 from graph.levels import Level, StarRating
 from graph.schemas import public_question
@@ -126,8 +127,12 @@ def has_active_run(subject: RunSubject) -> bool:
 
 class LessonService:
     #: the steps that must have a model before a lesson can start, by how its level is found
-    FIRST_NODES = {Entry.DIAGNOSTIC: ("diagnostic.generate",), Entry.SELF_RATING: ("lesson.plan",)}
-    #: what is also needed by a Beginner who rated themselves: nobody tested them, so their prerequisites are planned
+    FIRST_NODES = {
+        Entry.DIAGNOSTIC: ("diagnostic.generate",),
+        Entry.SELF_RATING: ("lesson.plan",),
+        Entry.FOLLOWUP: ("lesson.plan",),
+    }
+    #: what is also needed by a Beginner who took no quick check: nobody tested them, so their prerequisites are planned
     BEGINNER_NODES = ("prerequisites.plan",)
 
     def __init__(
@@ -209,10 +214,16 @@ class LessonService:
             "covers": "all" if entry == Entry.SELF_RATING else "diagnostic",
         }  # fmt: skip
 
-    def require_models(self, snapshot, entry: str, self_rating_halves: int | None) -> None:
+    def require_models(
+        self, snapshot, entry: str, self_rating_halves: int | None = None, followup_level: str | None = None
+    ) -> None:
         """Every step the first stretch of this lesson needs has a model, or the lesson would fail at once."""
         needed = list(self.FIRST_NODES[Entry(entry)])
-        if entry == Entry.SELF_RATING and StarRating(self_rating_halves).level() is Level.BEGINNER:
+        level = {
+            Entry.SELF_RATING: lambda: StarRating(self_rating_halves).level(),
+            Entry.FOLLOWUP: lambda: FollowupTargets.level_for(followup_level),
+        }.get(Entry(entry))
+        if level and level() is Level.BEGINNER:
             needed += self.BEGINNER_NODES
         for key in needed:
             node = snapshot.node(key)

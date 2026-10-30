@@ -15,6 +15,9 @@ Use cases:
   the planner; the other three levels are not asked
 - a prerequisite list that fails its rules is planned again with the problems, and one that stays bad fails the run
   with a reason, and Retry plans it again from fresh counters
+- a lesson made from a test result needs no quiz and no rating: a Foundation follow-up is a Beginner lesson whose
+  prerequisites are planned as usual, an Advanced follow-up an Expert lesson with none, and both record the test score
+  as where the level came from
 - a quick check that ends in Beginner is not asked for prerequisites (the quiz found them) and still reaches the planner
 - a thread checkpointed before self-rating (no entry in its state) is a quick check
 - a perfect score pauses at the choice; the Expert lesson sets the level to Expert whatever the model said, makes the
@@ -178,6 +181,34 @@ class TestSelfRated:
 
         assert run.interrupt["kind"] == "diagnostic"
         assert run.nodes[:3] == ["load_context", "entry_router", "generate_diagnostic"]
+
+
+class TestFollowup:
+    def made_from(self, lesson, level):
+        Lesson.objects.filter(pk=lesson.pk).update(entry="followup", followup_level=level, origin="followup")
+
+    def test_a_foundation_followup_is_a_beginner_lesson_with_its_prerequisites_planned(self, run, gateway, lesson):
+        self.made_from(lesson, "foundation")
+        gateway.script("prerequisites.plan", PLANNED)
+
+        run.start()
+
+        assert run.interrupt is None and run.nodes[:3] == ["load_context", "entry_router", "assess_from_source"]
+        assert "plan_prerequisites" in run.nodes and run.nodes[-1] == "plan_lesson"
+        stored = Lesson.objects.get(pk=lesson.pk)
+        assert (stored.level, stored.level_source, stored.route) == ("beginner", "test_score", "lesson")
+        assert len(stored.prerequisites_to_cover) == 3 and SEEN[0]["entry"] == "followup"
+        assert not gateway.called("diagnostic.generate") and not gateway.called("learner.assess")
+
+    def test_an_advanced_followup_is_an_expert_lesson_with_no_prerequisites(self, run, gateway, lesson):
+        self.made_from(lesson, "advanced")
+
+        run.start()
+
+        assert "plan_prerequisites" not in run.nodes and not gateway.called("prerequisites.plan")
+        stored = Lesson.objects.get(pk=lesson.pk)
+        assert (stored.level, stored.level_source, stored.prerequisites_to_cover) == ("expert", "test_score", [])
+        assert SEEN[0]["assessment"]["source"] == "followup"
 
 
 class TestQuickCheck:

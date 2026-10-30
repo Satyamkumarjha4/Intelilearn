@@ -131,6 +131,8 @@ class TestList:
             "route",
             "title",
             "level",
+            "entry",
+            "followup_level",
             "created_at",
             "updated_at",
             "test_status",
