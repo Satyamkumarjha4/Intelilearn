@@ -14,6 +14,7 @@ from django.utils import timezone
 from django.utils.module_loading import import_string
 
 from graph.grading import AnswerError, AnswerGrader, QuizGrader, RoutingPolicy, Solution
+from graph.levels import Level, StarRating
 from graph.schemas import public_question
 from llm_registry.resolver import RegistryResolver
 
@@ -39,17 +40,21 @@ from .errors import (
 from .events import EventPublisher, RedisEventPublisher, RunEvent
 from .metering import ActionGate, ActionMetering, AuthorizationSettlement, MeteredAction, RunOutcome
 from .models import (
+    Entry,
     FlowSettings,
     GraphRun,
+    Intent,
     Lesson,
     LessonVersion,
     MaterialKind,
+    Origin,
     Quiz,
     QuizAttempt,
     Route,
     Stage,
     StudyMaterial,
 )
+from .origins import OriginVerifier
 from .subjects import RunSubject
 
 
@@ -120,9 +125,10 @@ def has_active_run(subject: RunSubject) -> bool:
 
 
 class LessonService:
-    FIRST_NODE = "diagnostic.generate"
-    #: what `lesson.create` is asked with: the quiz stage of a lesson found by a diagnostic, started by the learner
-    CREATE_SIZE = {"entry": "diagnostic", "covers": "diagnostic", "origin": "direct"}
+    #: the steps that must have a model before a lesson can start, by how its level is found
+    FIRST_NODES = {Entry.DIAGNOSTIC: ("diagnostic.generate",), Entry.SELF_RATING: ("lesson.plan",)}
+    #: what is also needed by a Beginner who rated themselves: nobody tested them, so their prerequisites are planned
+    BEGINNER_NODES = ("prerequisites.plan",)
 
     def __init__(
         self,
@@ -131,29 +137,43 @@ class LessonService:
         events: EventPublisher | None = None,
         erasure: LessonErasure | None = None,
         gate: ActionGate | None = None,
+        origins: OriginVerifier | None = None,
     ):
         self.metering = ActionMetering(gate)
         self.effects = RunEffects(settlement=AuthorizationSettlement(gate))
         self.dispatcher = RunDispatcher(queue, self.effects)
+        self.origins = origins or OriginVerifier()
         self.resolver = resolver or RegistryResolver()
         self.events = events or RedisEventPublisher()
         self.stops = StopPoint()
         self.erasure = erasure or LessonErasure()
 
-    def create(self, user, topic: str, user_context: str = "", idempotency_key: str = "") -> tuple[Lesson, GraphRun]:
-        """A new lesson with its registry and settings snapshotted, and a queued start run. The action gate is asked
-        first (`lesson.create`), so a refusal creates nothing."""
+    def create(
+        self,
+        user,
+        topic: str,
+        user_context: str = "",
+        idempotency_key: str = "",
+        *,
+        entry: str = Entry.DIAGNOSTIC,
+        self_rating_halves: int | None = None,
+        intent: str = Intent.LESSON,
+        origin: str = Origin.DIRECT,
+        recommended_from: dict | None = None,
+    ) -> tuple[Lesson, GraphRun]:
+        """A new lesson with its registry and settings snapshotted, and a queued start run. The origin is verified and
+        the action gate is asked first (`lesson.create`), so a refusal creates nothing. A quick check starts with the
+        quiz; a self-rated lesson has none and goes straight to the plan (`covers: all`)."""
+        if entry == Entry.SELF_RATING and self_rating_halves is None:
+            raise ValueError("A self-rated lesson needs the learner's rating.")
+        verified = self.origins.verify(user, origin, recommended_from)
         snapshot = self.resolver.snapshot()
-        first = snapshot.node(self.FIRST_NODE)
-        if not first.enabled or not first.chain:
-            raise LessonNotConfigured(
-                f"No AI model is bound to '{self.FIRST_NODE}'. An admin must bind one in the model registry first."
-            )
+        self.require_models(snapshot, entry, self_rating_halves)
         lesson_id = uuid.uuid4()
         authorization = self.metering.authorize(
             user,
             MeteredAction.LESSON_CREATE,
-            size=self.CREATE_SIZE,
+            size=self.size_of(entry, intent, verified.origin),
             subject_id=lesson_id,
             client_key=idempotency_key,
         )
@@ -163,6 +183,11 @@ class LessonService:
                 owner=user,
                 topic=topic.strip(),
                 user_context=user_context.strip(),
+                entry=entry,
+                intent=intent,
+                origin=verified.origin,
+                recommended_from=verified.recommended_from,
+                self_rating_halves=self_rating_halves if entry == Entry.SELF_RATING else None,
                 config_snapshot=snapshot.to_json(),
                 settings_snapshot=FlowSettings.load().snapshot(),
             )
@@ -174,6 +199,27 @@ class LessonService:
             )
         self.dispatcher.dispatch(run)
         return lesson, run
+
+    @staticmethod
+    def size_of(entry: str, intent: str, origin: str) -> dict:
+        """What `lesson.create` is asked with. A quick check asks for the quiz stage only; a self-rated lesson has no
+        quiz, so it covers everything."""
+        return {
+            "entry": str(entry), "intent": str(intent), "origin": str(origin),
+            "covers": "all" if entry == Entry.SELF_RATING else "diagnostic",
+        }  # fmt: skip
+
+    def require_models(self, snapshot, entry: str, self_rating_halves: int | None) -> None:
+        """Every step the first stretch of this lesson needs has a model, or the lesson would fail at once."""
+        needed = list(self.FIRST_NODES[Entry(entry)])
+        if entry == Entry.SELF_RATING and StarRating(self_rating_halves).level() is Level.BEGINNER:
+            needed += self.BEGINNER_NODES
+        for key in needed:
+            node = snapshot.node(key)
+            if not node.enabled or not node.chain:
+                raise LessonNotConfigured(
+                    f"No AI model is bound to '{key}'. An admin must bind one in the model registry first."
+                )
 
     def retry(self, lesson: Lesson) -> GraphRun:
         """Resume a failed lesson from its last checkpoint. After a Stop, the lesson first goes back to the stage it was
@@ -346,8 +392,15 @@ class MaterialService:
         self.dispatcher = RunDispatcher(queue, RunEffects(settlement=AuthorizationSettlement(gate)))
         self.grader = grader or AnswerGrader()
 
-    def choose(self, lesson: Lesson, kind: str) -> GraphRun:
-        """The learner's pick after aceing the diagnostic: resume the paused flow with it."""
+    #: what a learner who aced the quiz can choose now (a sheet kind is still taken from a lesson already waiting)
+    CHOICES = ("lesson", "sheets")
+
+    def choose(self, lesson: Lesson, choice: str) -> GraphRun:
+        """The learner's pick after aceing the diagnostic: resume the paused flow with it. `lesson` continues with an
+        Expert lesson that has a test; `sheets` writes the cheat sheet and the revision sheet and ends there (no test).
+        `lesson.continue` is asked with what they chose."""
+        if choice not in (*self.CHOICES, *MaterialKind.values):
+            raise InvalidAnswers(f"Unknown choice {choice!r}.")
         with transaction.atomic():
             lesson = Lesson.objects.select_for_update().get(pk=lesson.pk)
             if lesson.stage != Stage.AWAITING_CHOICE:
@@ -357,7 +410,7 @@ class MaterialService:
             authorization = self.metering.authorize(
                 lesson.owner,
                 MeteredAction.LESSON_CONTINUE,
-                size={"choice": "sheets_only", "perfect": True},
+                size=self.size_of(choice),
                 subject_id=lesson.id,
             )
             with self.metering.guard(authorization):
@@ -365,10 +418,17 @@ class MaterialService:
                     lesson=lesson,
                     graph=GraphRun.Graph.FLOW,
                     trigger=GraphRun.Trigger.RESUME_CHOICE,
-                    payload={"resume": kind, **self.metering.payload(authorization)},
+                    payload={"resume": {"choice": choice}, **self.metering.payload(authorization)},
                 )
         self.dispatcher.dispatch(run)
         return run
+
+    @staticmethod
+    def size_of(choice: str) -> dict:
+        """What `lesson.continue` is asked with after a perfect score: the Expert lesson, or sheets only."""
+        if choice == "lesson":
+            return {"choice": "lesson", "perfect": True}
+        return {"choice": "sheets_only", "perfect": True, "sheets": 2 if choice == "sheets" else 1, "grounding": "quiz"}
 
     def request_extra(self, lesson: Lesson, kind: str, idempotency_key: str = "") -> GraphRun:
         """Another sheet for a ready mastery lesson, written by the small `study_material` graph."""

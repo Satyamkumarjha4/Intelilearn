@@ -33,6 +33,7 @@ from .serializers import (
     LessonDocumentSerializer,
     LessonSummarySerializer,
     LessonVersionSerializer,
+    MasteryChoiceSerializer,
     MaterialKindSerializer,
     PracticeGradeRequestSerializer,
     PracticeGradeSerializer,
@@ -132,9 +133,12 @@ class LessonListCreateView(generics.ListAPIView):
         tags=LESSONS_TAG,
         summary="Start a lesson",
         description=(
-            "Snapshots the model registry and the flow settings, and queues the diagnostic. An optional "
-            "`Idempotency-Key` header makes a repeated request return the first answer (marked "
-            "`Idempotent-Replayed: true`) instead of starting another lesson."
+            "Snapshots the model registry and the flow settings, and queues the first step: the quick check, or (with "
+            "`entry: self_rating` and a `self_rating` of 0.5 to 5 stars) the lesson itself, since a self-rated lesson "
+            "has no quiz. `origin` is checked by the server: `recommendation` needs `recommended_from` to name the "
+            "caller's own graded attempt and one of its topics to revisit. An optional `Idempotency-Key` header makes "
+            "a repeated request return the first answer (marked `Idempotent-Replayed: true`) instead of starting "
+            "another lesson."
         ),
         parameters=[IDEMPOTENCY_KEY],
         request=LessonCreateSerializer,
@@ -239,16 +243,24 @@ class QuizReviewView(OwnedLessons, APIView):
 class MaterialChoiceView(OwnedLessons, APIView):
     @extend_schema(
         tags=MATERIALS_TAG,
-        summary="Choose the first study sheet",
-        description="After a perfect diagnostic. Resumes the lesson's flow. Only when `stage` is `awaiting_choice`.",
+        summary="Choose after a perfect quick check",
+        description=(
+            "`{choice: lesson}` continues with an Expert lesson (it has a test); `{choice: sheets}` writes a cheat "
+            "sheet and a revision sheet and ends there. A lesson that was already waiting at the old three-sheet "
+            "choice may still send `{kind}`. Resumes the lesson's flow. Only when `stage` is `awaiting_choice`."
+        ),
         parameters=[LESSON_ID],
-        request=MaterialKindSerializer,
-        responses={202: RunStartedSerializer, 409: OpenApiResponse(description="Not waiting for the choice.")},
+        request=MasteryChoiceSerializer,
+        responses={
+            202: RunStartedSerializer,
+            400: OpenApiResponse(description="Neither or both of `choice` and `kind`, or an unknown value."),
+            409: OpenApiResponse(description="Not waiting for the choice."),
+        },
     )
     def post(self, request, lesson_id):
-        serializer = MaterialKindSerializer(data=request.data)
+        serializer = MasteryChoiceSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        run = MaterialService().choose(self.lesson_of(request, lesson_id), serializer.validated_data["kind"])
+        run = MaterialService().choose(self.lesson_of(request, lesson_id), serializer.validated_data["choice"])
         return Response({"run_id": run.id}, status=status.HTTP_202_ACCEPTED)
 
 

@@ -10,13 +10,20 @@ Use cases:
 - listing shows only your own lessons, newest first, with search, stage filters (one stage or several, comma-separated)
   and cursor pagination, and says how the test went and how many sheets each has without a query per lesson
 - starting a lesson validates the topic, queues a run, is rate limited, and reports an unconfigured registry
+- starting a lesson can say how its level is found: a quick check (the default; old bodies keep working) or a rating
+  from 0.5 to 5 stars in half steps, stored as halves; a rating without that entry, a missing or odd rating, an intent
+  other than a lesson and an origin the server alone may set are 400s that name the field and create nothing
+- a lesson says where it came from only after the server verified it: a recommendation must name the caller's own graded
+  attempt and a topic it listed
+- a lesson's detail says its entry, intent, origin, level source and (stars) self-rating
 - a lesson's detail hides the page writers' notes, reports the active run and keeps the quiz scores after a reload
 - another user's lesson, quiz or run is a 404, and so is an id that is not a UUID
 - deleting a lesson removes it; retrying is only for failed lessons
 - the quiz has no answers; answering returns the score and route; bad, repeated or early answers get 400 and 409
 - the review is available only after answering
 - a run can be read, followed as an event stream (a browser's EventSource gets 200, not 406) and cancelled once
-- choosing a study sheet resumes the flow and is refused outside the choice
+- the choice after a perfect quick check takes the Expert lesson or the sheets (or, for a lesson already waiting, one
+  sheet kind), needs exactly one known choice, and is refused outside the choice
 - more sheets can be requested for a ready mastery lesson
 - a sheet is served without practice solutions, which a reveal adds
 - practice answers are graded on submit; another user's sheets are a 404
@@ -36,6 +43,7 @@ Use cases:
 """
 
 import json
+import uuid
 
 import pytest
 from asgiref.sync import async_to_sync
@@ -217,6 +225,92 @@ class TestCreate:
         assert response.status_code == 400 and response.json()["code"] == "invalid"
         assert Lesson.objects.count() == 0
 
+    def test_a_body_with_a_rating_starts_a_self_rated_lesson(self, signed_in_client, user, queue, bound_registry):
+        response = signed_in_client.post(
+            "/api/lessons", {"topic": "Binary search", "entry": "self_rating", "self_rating": 3.5}, format="json"
+        )
+
+        assert response.status_code == 202
+        lesson = Lesson.objects.get(owner=user)
+        assert (lesson.entry, lesson.self_rating_halves, lesson.origin, lesson.intent) == (
+            "self_rating", 7, "direct", "lesson",
+        )  # fmt: skip
+
+    @pytest.mark.parametrize(("stars", "halves"), [(0.5, 1), (1, 2), (2.5, 5), (5, 10), ("4.5", 9)])
+    def test_every_half_star_is_stored_as_halves(self, signed_in_client, user, queue, bound_registry, stars, halves):
+        body = {"topic": "Binary search", "entry": "self_rating", "self_rating": stars}
+
+        assert signed_in_client.post("/api/lessons", body, format="json").status_code == 202
+        assert Lesson.objects.get(owner=user).self_rating_halves == halves
+
+    @pytest.mark.parametrize("body", [
+        {"entry": "self_rating"},  # no rating
+        {"entry": "self_rating", "self_rating": 0},
+        {"entry": "self_rating", "self_rating": 5.5},
+        {"entry": "self_rating", "self_rating": 2.3},  # not a half step
+        {"entry": "self_rating", "self_rating": "many"},
+        {"entry": "self_rating", "self_rating": True},
+        {"self_rating": 3},  # a rating goes with its entry
+        {"entry": "diagnostic", "self_rating": 3},
+        {"entry": "followup"}, {"entry": "quiz_result"}, {"entry": "friend"},
+    ])  # fmt: skip
+    def test_a_bad_entry_or_rating_is_a_400_that_creates_nothing(self, signed_in_client, queue, bound_registry, body):
+        response = signed_in_client.post("/api/lessons", {"topic": "Binary search"} | body, format="json")
+
+        assert response.status_code == 400 and response.json()["code"] == "invalid" and response.json()["fields"]
+        assert Lesson.objects.count() == 0 and queue.runs == []
+
+    @pytest.mark.parametrize(("body", "field"), [
+        ({"intent": "sheets"}, "intent"),
+        ({"intent": "poster"}, "intent"),
+        ({"origin": "followup"}, "origin"),
+        ({"origin": "quiz_result"}, "origin"),
+        ({"origin": "friend"}, "origin"),
+        ({"origin": "recommendation"}, "recommended_from"),
+        ({"origin": "recommendation", "recommended_from": {"attempt_id": "x", "topic": "T"}}, "recommended_from"),
+        ({"recommended_from": {"attempt_id": str(uuid.uuid4()), "topic": "T"}}, "recommended_from"),
+    ])  # fmt: skip
+    def test_an_intent_or_origin_that_is_not_allowed_is_a_400_naming_the_field(
+        self, signed_in_client, queue, bound_registry, body, field
+    ):
+        response = signed_in_client.post("/api/lessons", {"topic": "Binary search"} | body, format="json")
+
+        assert response.status_code == 400 and field in response.json()["fields"]
+        assert Lesson.objects.count() == 0 and queue.runs == []
+
+    def test_a_recommendation_for_the_callers_own_graded_attempt_and_topic_is_stored(
+        self, signed_in_client, user, queue, bound_registry, lesson
+    ):
+        attempt = TestSubmission.objects.create(
+            lesson=lesson, status="graded", result={"topics_to_revisit": ["Off by one"], "score": {}}
+        )
+        body = {
+            "topic": "Off by one", "origin": "recommendation",
+            "recommended_from": {"attempt_id": str(attempt.pk), "topic": "Off by one"},
+        }  # fmt: skip
+
+        response = signed_in_client.post("/api/lessons", body, format="json")
+
+        assert response.status_code == 202
+        made = Lesson.objects.get(pk=response.json()["lesson_id"])
+        assert made.origin == "recommendation" and made.recommended_from["attempt_id"] == str(attempt.pk)
+
+    def test_a_recommendation_for_another_learners_attempt_is_a_400_like_a_missing_one(
+        self, signed_in_client, other_user, make_lesson, queue, bound_registry
+    ):
+        theirs = TestSubmission.objects.create(
+            lesson=make_lesson(owner=other_user), status="graded", result={"topics_to_revisit": ["Off by one"]}
+        )
+        body = {
+            "topic": "Off by one", "origin": "recommendation",
+            "recommended_from": {"attempt_id": str(theirs.pk), "topic": "Off by one"},
+        }  # fmt: skip
+
+        response = signed_in_client.post("/api/lessons", body, format="json")
+
+        assert response.status_code == 400 and "recommended_from" in response.json()["fields"]
+        assert not Lesson.objects.filter(topic="Off by one").exists()
+
     def test_says_so_when_no_model_is_bound(self, signed_in_client, queue, db):
         from llm_registry.node_configs import NodeConfigSync
 
@@ -251,6 +345,30 @@ class TestDetail:
         assert body["assessment"]["level"] == "beginner" and "author_notes" not in body["assessment"]
         assert body["prerequisites_to_cover"] == ["Arrays"]
         assert "config_snapshot" not in body and "plan" not in body
+
+    def test_says_how_the_level_was_found(self, signed_in_client, lesson):
+        quick = signed_in_client.get(f"/api/lessons/{lesson.id}").json()
+        Lesson.objects.filter(pk=lesson.pk).update(
+            entry="self_rating", self_rating_halves=7, level="foundation", level_source="self_rating",
+            origin="recommendation",
+        )  # fmt: skip
+
+        rated = signed_in_client.get(f"/api/lessons/{lesson.id}").json()
+
+        assert (quick["entry"], quick["intent"], quick["origin"], quick["self_rating"], quick["level_source"]) == (
+            "diagnostic", "lesson", "direct", None, "",
+        )  # fmt: skip
+        assert (rated["entry"], rated["self_rating"], rated["level"], rated["level_source"], rated["origin"]) == (
+            "self_rating", 3.5, "foundation", "self_rating", "recommendation",
+        )  # fmt: skip
+
+    def test_the_assessment_says_where_it_came_from_when_it_is_known(self, signed_in_client, lesson):
+        Lesson.objects.filter(pk=lesson.pk).update(assessment={
+            "level": "expert", "level_scheme": 2, "source": "self_rating", "known_concepts": [], "gaps": [],
+            "start_point": "s", "confidence": "low",
+        })  # fmt: skip
+
+        assert signed_in_client.get(f"/api/lessons/{lesson.id}").json()["assessment"]["source"] == "self_rating"
 
     def test_an_assessment_written_before_the_level_rename_is_served_in_the_new_names(self, signed_in_client, lesson):
         Lesson.objects.filter(pk=lesson.pk).update(  # no level_scheme: "beginner" meant what is now "foundation"
@@ -509,21 +627,28 @@ class TestMaterials:
     def mastery(self, make_lesson, stage=Stage.READY, **extra):
         return make_lesson(stage=stage, route="mastery", **extra)
 
-    def test_choosing_a_sheet_resumes_the_flow(self, signed_in_client, make_lesson, queue):
-        lesson = self.mastery(make_lesson, Stage.AWAITING_CHOICE)
-
-        response = signed_in_client.post(f"/api/lessons/{lesson.id}/choice", {"kind": "cheat_sheet"}, format="json")
-
-        assert response.status_code == 202 and response.json() == {"run_id": str(queue.runs[0].id)}
-        assert queue.runs[0].payload == {"resume": "cheat_sheet"}
-
-    @pytest.mark.parametrize("body", [{}, {"kind": "poster"}, {"kind": ""}])
-    def test_choosing_needs_a_known_kind(self, signed_in_client, make_lesson, queue, body):
+    @pytest.mark.parametrize(("body", "resume"), [
+        ({"choice": "lesson"}, "lesson"), ({"choice": "sheets"}, "sheets"),
+        ({"kind": "cheat_sheet"}, "cheat_sheet"),  # a lesson already waiting at the old three-sheet choice
+    ])  # fmt: skip
+    def test_choosing_resumes_the_flow(self, signed_in_client, make_lesson, queue, body, resume):
         lesson = self.mastery(make_lesson, Stage.AWAITING_CHOICE)
 
         response = signed_in_client.post(f"/api/lessons/{lesson.id}/choice", body, format="json")
 
-        assert response.status_code == 400 and "kind" in response.json()["fields"] and queue.runs == []
+        assert response.status_code == 202 and response.json() == {"run_id": str(queue.runs[0].id)}
+        assert queue.runs[0].payload == {"resume": {"choice": resume}}
+
+    @pytest.mark.parametrize("body", [
+        {}, {"kind": "poster"}, {"kind": ""}, {"choice": "poster"}, {"choice": "cheat_sheet"},
+        {"choice": "lesson", "kind": "cheat_sheet"},
+    ])  # fmt: skip
+    def test_choosing_needs_exactly_one_known_choice(self, signed_in_client, make_lesson, queue, body):
+        lesson = self.mastery(make_lesson, Stage.AWAITING_CHOICE)
+
+        response = signed_in_client.post(f"/api/lessons/{lesson.id}/choice", body, format="json")
+
+        assert response.status_code == 400 and response.json()["fields"] and queue.runs == []
 
     def test_choosing_outside_the_choice_is_a_conflict(self, signed_in_client, make_lesson, queue):
         lesson = self.mastery(make_lesson, Stage.GENERATING_MATERIAL)

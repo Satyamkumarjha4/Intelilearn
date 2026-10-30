@@ -6,17 +6,63 @@ Responses are built from the services' output.
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from graph.levels import LevelScheme
+from graph.levels import LevelScheme, StarRating
 from graph.scoring import AttemptTrend
 
 from .attempts import AttemptQuestions
 from .models import GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt, TestSubmission
-from .stages import MaterialKind, Route
+from .stages import Entry, Intent, LevelSource, MaterialKind, Origin, Route
+
+
+class StarsField(serializers.FloatField):
+    """A number of stars. `true` is not one star, which a plain float field would make it."""
+
+    def to_internal_value(self, data):
+        if isinstance(data, bool):
+            self.fail("invalid")
+        return super().to_internal_value(data)
+
+
+class RecommendedFromSerializer(serializers.Serializer):
+    attempt_id = serializers.UUIDField()
+    topic = serializers.CharField(max_length=200)
 
 
 class LessonCreateSerializer(serializers.Serializer):
     topic = serializers.CharField(min_length=2, max_length=200)
     user_context = serializers.CharField(max_length=1000, required=False, allow_blank=True, default="")
+    entry = serializers.ChoiceField(
+        choices=[Entry.DIAGNOSTIC, Entry.SELF_RATING],
+        default=Entry.DIAGNOSTIC,
+        help_text="How the learner's level is found: a quick check (`diagnostic`) or their own rating (`self_rating`).",
+    )
+    self_rating = StarsField(
+        required=False, min_value=0.5, max_value=5, help_text="Stars, 0.5 to 5 in half steps. Needed for `self_rating`."
+    )
+    intent = serializers.ChoiceField(
+        choices=[Intent.LESSON], default=Intent.LESSON, help_text="Only a lesson can be asked for for now."
+    )
+    origin = serializers.ChoiceField(
+        choices=Origin.choices,
+        default=Origin.DIRECT,
+        help_text="Checked by the server: `direct` or `recommendation`. The others are refused for now.",
+    )
+    recommended_from = RecommendedFromSerializer(
+        required=False, help_text="For `recommendation`: the learner's own graded attempt and one of its topics."
+    )
+
+    def validate(self, attrs: dict) -> dict:
+        rating = attrs.pop("self_rating", None)
+        if attrs["entry"] == Entry.SELF_RATING:
+            if rating is None:
+                raise serializers.ValidationError({"self_rating": ["Rate yourself from 0.5 to 5 stars."]})
+            try:
+                attrs["self_rating_halves"] = StarRating.from_stars(rating).halves
+            except ValueError:
+                raise serializers.ValidationError({"self_rating": ["Stars go in steps of half a star."]}) from None
+        elif rating is not None:
+            raise serializers.ValidationError({"self_rating": ["A rating goes with `entry: self_rating`."]})
+        return attrs
 
 
 class LessonCreatedSerializer(serializers.Serializer):
@@ -118,6 +164,9 @@ class AssessmentSerializer(serializers.Serializer):
     """What the learner may see of the assessment (not the notes for the page writers)."""
 
     level = serializers.CharField()
+    source = serializers.ChoiceField(
+        choices=LevelSource.choices, required=False, help_text="Where the level came from; absent on an old lesson."
+    )
     known_concepts = serializers.ListField(child=serializers.CharField())
     gaps = serializers.ListField(child=serializers.CharField())
     start_point = serializers.CharField()
@@ -133,10 +182,20 @@ class LessonDetailSerializer(LessonSummarySerializer):
     active_run_id = serializers.SerializerMethodField()
     results = serializers.SerializerMethodField()
     materials = serializers.SerializerMethodField()
+    entry = serializers.ChoiceField(choices=Entry.choices, read_only=True)
+    intent = serializers.ChoiceField(choices=Intent.choices, read_only=True)
+    origin = serializers.ChoiceField(choices=Origin.choices, read_only=True)
+    level_source = serializers.ChoiceField(choices=LevelSource.choices, read_only=True)
+    self_rating = serializers.SerializerMethodField()
 
     class Meta(LessonSummarySerializer.Meta):
         fields = [
             *LessonSummarySerializer.Meta.fields,
+            "entry",
+            "intent",
+            "origin",
+            "level_source",
+            "self_rating",
             "user_context",
             "error",
             "warnings",
@@ -147,6 +206,10 @@ class LessonDetailSerializer(LessonSummarySerializer):
             "materials",
         ]
         read_only_fields = fields
+
+    @extend_schema_field(serializers.FloatField(allow_null=True, help_text="Stars, 0.5 to 5; null unless self-rated."))
+    def get_self_rating(self, lesson: Lesson) -> float | None:
+        return None if lesson.self_rating_halves is None else lesson.self_rating_halves / 2
 
     def get_assessment(self, lesson: Lesson) -> dict | None:
         if not lesson.assessment:
@@ -225,6 +288,19 @@ class RunSerializer(serializers.ModelSerializer):
 
 class MaterialKindSerializer(serializers.Serializer):
     kind = serializers.ChoiceField(choices=MaterialKind.choices)
+
+
+class MasteryChoiceSerializer(serializers.Serializer):
+    """The pick after a perfect quick check: `choice`, or (for a lesson already waiting at the old three-sheet choice)
+    one sheet `kind`."""
+
+    choice = serializers.ChoiceField(choices=["lesson", "sheets"], required=False)
+    kind = serializers.ChoiceField(choices=MaterialKind.choices, required=False)
+
+    def validate(self, attrs: dict) -> dict:
+        if ("choice" in attrs) == ("kind" in attrs):
+            raise serializers.ValidationError({"choice": ["Send `choice`: lesson or sheets."]})
+        return {"choice": attrs.get("choice") or attrs["kind"]}
 
 
 class StudyMaterialSerializer(serializers.Serializer):

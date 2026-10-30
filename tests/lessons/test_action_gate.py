@@ -95,7 +95,7 @@ class TestStartingALesson:
         (asked,) = gate.authorized
         assert (asked.action, asked.user, asked.resume) == (LESSON_CREATE, user, False)
         assert asked.subject_id == lesson.id
-        assert asked.size == {"entry": "diagnostic", "covers": "diagnostic", "origin": "direct"}
+        assert asked.size == {"entry": "diagnostic", "intent": "lesson", "covers": "diagnostic", "origin": "direct"}
         assert run.payload["authorization"]["action"] == "lesson.create"
         assert run.payload["authorization"].get("settled") is None
 
@@ -286,15 +286,22 @@ class TestTheMasteryChoice:
     def mastery(self, make_lesson):
         return make_lesson(stage=Stage.AWAITING_CHOICE, route="mastery")
 
-    def test_the_choice_asks_lesson_continue_for_a_perfect_score_choosing_sheets_only(self, make_lesson, queue):
+    @pytest.mark.parametrize(("choice", "size"), [
+        ("lesson", {"choice": "lesson", "perfect": True}),
+        ("sheets", {"choice": "sheets_only", "perfect": True, "sheets": 2, "grounding": "quiz"}),
+        ("cheat_sheet", {"choice": "sheets_only", "perfect": True, "sheets": 1, "grounding": "quiz"}),
+    ])  # fmt: skip
+    def test_the_choice_asks_lesson_continue_for_a_perfect_score_with_what_was_chosen(
+        self, make_lesson, queue, choice, size
+    ):
         lesson = self.mastery(make_lesson)
         gate = CountingGate()
 
-        run = MaterialService(queue=queue, gate=gate).choose(lesson, "cheat_sheet")
+        run = MaterialService(queue=queue, gate=gate).choose(lesson, choice)
 
         (asked,) = gate.authorized
         assert (asked.action, asked.subject_id) == (LESSON_CONTINUE, lesson.id)
-        assert asked.size == {"choice": "sheets_only", "perfect": True}
+        assert asked.size == size
         assert run.payload["authorization"]["action"] == "lesson.continue"
 
     def test_a_refusal_creates_no_run(self, make_lesson, queue):

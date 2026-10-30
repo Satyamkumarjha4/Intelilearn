@@ -7,6 +7,11 @@ must be complete. Getting any of that wrong either corrupts a lesson's flow or l
 Use cases:
 - creating a lesson snapshots the registry and the flow settings, queues a start run and enqueues it
 - creating a lesson refuses when no model is bound for the first step, and leaves nothing behind
+- creating a self-rated lesson stores the entry and the rating, covers the whole lesson in its one `lesson.create`,
+  needs the planner (and, for a Beginner's stars, the prerequisite planner) bound, and queues the same start run
+- creating a lesson stores its intent and its origin as the server verified them; a refused origin creates nothing and
+  asks nothing
+- a self-rated lesson that is stopped and retried carries on from where it stopped
 - retrying a failed lesson queues a retry run; any other stage, or a run in progress, is refused
 - stopping a run remembers the stage the lesson was in; Retry puts it back there and hands the retry run the answer the
   stopped run was about to give (for that kind of question only); a lesson that failed by itself, or whose stopped run
@@ -45,6 +50,8 @@ Use cases:
 """
 
 import pytest
+from rest_framework.exceptions import ValidationError
+from support.gates import CountingGate, RefusingGate
 from support.lesson_data import make_final_test
 from support.quiz_data import make_prerequisites, make_questions
 from support.study_data import make_cheat_sheet, make_practice_sheet, make_revision_sheet
@@ -68,6 +75,7 @@ from lessons.errors import (
     VersionNotFound,
     WrongStage,
 )
+from lessons.metering import ActionRefused
 from lessons.models import (
     FlowSettings,
     GraphRun,
@@ -121,6 +129,127 @@ class TestCreateLesson:
             LessonService(queue=queue).create(user, "Binary search")
 
         assert Lesson.objects.count() == 0 and queue.runs == []
+
+
+class TestCreateSelfRated:
+    def create(self, user, queue, halves=5, gate=None, **extra):
+        return LessonService(queue=queue, gate=gate).create(
+            user, "Binary search", entry="self_rating", self_rating_halves=halves, **extra
+        )
+
+    def test_stores_the_entry_and_the_rating_and_queues_the_start_run(self, user, queue, bound_registry):
+        lesson, run = self.create(user, queue, halves=7)
+
+        assert (lesson.entry, lesson.self_rating_halves, lesson.intent, lesson.origin) == (
+            "self_rating", 7, "lesson", "direct",
+        )  # fmt: skip
+        assert (lesson.stage, lesson.level, lesson.level_source) == (Stage.PREPARING_DIAGNOSTIC, "", "")
+        assert (run.graph, run.trigger) == (GraphRun.Graph.FLOW, GraphRun.Trigger.START) and queue.runs == [run]
+
+    def test_a_quick_check_has_no_rating_even_if_one_is_passed(self, user, queue, bound_registry):
+        lesson, _ = LessonService(queue=queue).create(user, "Binary search", self_rating_halves=7)
+
+        assert (lesson.entry, lesson.self_rating_halves) == ("diagnostic", None)
+
+    def test_asks_lesson_create_once_for_the_whole_lesson(self, user, queue, bound_registry):
+        gate = CountingGate()
+
+        lesson, run = self.create(user, queue, gate=gate)
+
+        (asked,) = gate.authorized
+        assert asked.size == {"entry": "self_rating", "intent": "lesson", "origin": "direct", "covers": "all"}
+        assert asked.completes_at.to_payload() == {"kind": "stage", "stage": "ready"}
+        assert run.payload["authorization"]["completes_at"] == {"kind": "stage", "stage": "ready"}
+
+    def test_needs_a_rating(self, user, queue, bound_registry):
+        with pytest.raises(ValueError, match="rating"):
+            LessonService(queue=queue).create(user, "Binary search", entry="self_rating")
+
+        assert Lesson.objects.count() == 0 and queue.runs == []
+
+    def test_needs_the_lesson_planner_bound_but_not_the_quiz(self, user, queue, bound_registry):
+        from llm_registry.models import NodeModelBinding
+
+        NodeModelBinding.objects.filter(node__node_key="diagnostic.generate").delete()
+        assert self.create(user, queue)[0].entry == "self_rating"
+        NodeModelBinding.objects.filter(node__node_key="lesson.plan").delete()
+
+        with pytest.raises(LessonNotConfigured, match="lesson.plan"):
+            self.create(user, queue)
+
+    @pytest.mark.parametrize(("halves", "needs_it"), [(2, True), (3, True), (4, False), (8, False), (10, False)])
+    def test_only_a_beginners_stars_need_the_prerequisite_planner(self, user, queue, bound_registry, halves, needs_it):
+        from llm_registry.models import NodeModelBinding
+
+        NodeModelBinding.objects.filter(node__node_key="prerequisites.plan").delete()
+
+        if needs_it:
+            with pytest.raises(LessonNotConfigured, match="prerequisites.plan"):
+                self.create(user, queue, halves=halves)
+            assert Lesson.objects.count() == 0
+        else:
+            assert self.create(user, queue, halves=halves)[0].self_rating_halves == halves
+
+    def test_a_refused_ask_creates_nothing(self, user, queue, bound_registry):
+        with pytest.raises(ActionRefused):
+            self.create(user, queue, gate=RefusingGate())
+
+        assert Lesson.objects.count() == 0 and queue.runs == []
+
+    def test_a_stopped_self_rated_lesson_is_retried_from_where_it_stopped(self, user, queue, bound_registry):
+        class Silent:
+            def publish(self, run_id, event):
+                pass
+
+        service = LessonService(queue=queue, events=Silent())
+        lesson, run = self.create(user, queue)
+        Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.GENERATING_LESSON)
+        GraphRun.objects.filter(pk=run.pk).update(status=GraphRun.Status.RUNNING)
+
+        service.cancel(GraphRun.objects.get(pk=run.pk))
+        lesson.refresh_from_db()
+        assert lesson.stage == Stage.FAILED
+
+        retry = service.retry(lesson)
+        lesson.refresh_from_db()
+
+        assert (retry.trigger, lesson.stage) == (GraphRun.Trigger.RETRY, Stage.GENERATING_LESSON)
+
+
+class TestCreateOrigin:
+    def test_a_direct_lesson_stores_its_origin(self, user, queue, bound_registry):
+        lesson, _ = LessonService(queue=queue).create(user, "Binary search")
+
+        assert (lesson.origin, lesson.recommended_from, lesson.intent) == ("direct", None, "lesson")
+
+    def test_a_verified_recommendation_is_stored_and_sent_to_the_gate(self, user, queue, bound_registry, lesson):
+        attempt = TestSubmission.objects.create(
+            lesson=lesson, status="graded", result={"topics_to_revisit": ["Off by one"], "score": {}}
+        )
+        gate = CountingGate()
+
+        made, _ = LessonService(queue=queue, gate=gate).create(
+            user,
+            "Off by one",
+            origin="recommendation",
+            recommended_from={"attempt_id": attempt.pk, "topic": "off by one"},
+        )
+
+        assert made.origin == "recommendation"
+        assert made.recommended_from == {"attempt_id": str(attempt.pk), "topic": "Off by one"}
+        assert gate.authorized[0].size["origin"] == "recommendation"
+
+    @pytest.mark.parametrize("origin", ["followup", "quiz_result"])
+    def test_an_origin_the_server_alone_can_set_is_refused_before_anything_is_asked_or_created(
+        self, user, queue, bound_registry, origin
+    ):
+        gate = CountingGate()
+
+        with pytest.raises(ValidationError):
+            LessonService(queue=queue, gate=gate).create(user, "Binary search", origin=origin)
+
+        assert gate.authorized == [] and queue.runs == []
+        assert not Lesson.objects.filter(topic="Binary search").exists()
 
 
 class TestRetry:
@@ -446,15 +575,23 @@ def mastery_lesson(make_lesson, stage=Stage.AWAITING_CHOICE):
 
 
 class TestChoose:
-    def test_resumes_the_flow_with_the_chosen_kind(self, make_lesson, queue):
+    @pytest.mark.parametrize("choice", ["lesson", "sheets", "cheat_sheet"])
+    def test_resumes_the_flow_with_the_choice(self, make_lesson, queue, choice):
         lesson = mastery_lesson(make_lesson)
 
-        run = MaterialService(queue=queue).choose(lesson, "cheat_sheet")
+        run = MaterialService(queue=queue).choose(lesson, choice)
 
         assert (run.graph, run.trigger, run.payload) == (
-            GraphRun.Graph.FLOW, GraphRun.Trigger.RESUME_CHOICE, {"resume": "cheat_sheet"},
+            GraphRun.Graph.FLOW, GraphRun.Trigger.RESUME_CHOICE, {"resume": {"choice": choice}},
         )  # fmt: skip
         assert queue.runs == [run]
+
+    @pytest.mark.parametrize("choice", ["poster", "", "practice"])
+    def test_a_choice_that_is_not_offered_is_refused_and_nothing_is_queued(self, make_lesson, queue, choice):
+        with pytest.raises(InvalidAnswers):
+            MaterialService(queue=queue).choose(mastery_lesson(make_lesson), choice)
+
+        assert queue.runs == [] and GraphRun.objects.count() == 0
 
     @pytest.mark.parametrize("stage", [Stage.AWAITING_DIAGNOSTIC, Stage.GENERATING_MATERIAL, Stage.READY])
     def test_is_refused_unless_the_lesson_waits_for_the_choice(self, make_lesson, queue, stage):

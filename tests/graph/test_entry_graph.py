@@ -93,6 +93,11 @@ def run(lesson, ctx, lesson_state):
     return drive(lesson, ctx, lesson_state)
 
 
+def by_kind(messages):
+    """The sheet the prompt asks for."""
+    return make_cheat_sheet() if "CHEAT SHEET" in messages[0].content else make_revision_sheet()
+
+
 def mastery_bundle(valid_bundle):
     questions = [{**q, "concept": CONCEPTS[n % 2] + f" {n}"} for n, q in enumerate(valid_bundle["diagnostic"])]
     return {**valid_bundle, "diagnostic": questions}
@@ -218,7 +223,7 @@ class TestMasteryChoice:
         self, run, gateway, valid_bundle, lesson
     ):
         self.perfect(run, gateway, valid_bundle)
-        gateway.script("study.generate", make_cheat_sheet(), make_revision_sheet())
+        gateway.respond("study.generate", by_kind)  # the two sheets are asked for in no fixed order
 
         run.stream(Command(resume={"choice": "sheets"}))
 

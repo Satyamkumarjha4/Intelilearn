@@ -89,8 +89,15 @@ class CompletionPoints:
         MeteredAction.TEST_RETAKE: CompletionPoint.at_run_end(),
     }
 
+    #: a lesson found by self-rating has no quiz stage to finish at: the one `lesson.create` covers the whole lesson
+    WHOLE_LESSON: ClassVar[CompletionPoint] = CompletionPoint.at_stage(Stage.READY)
+
     @classmethod
-    def of(cls, action: MeteredAction) -> CompletionPoint:
+    def of(cls, action: MeteredAction, size: dict | None = None) -> CompletionPoint:
+        """Where the action is complete. `size` matters for `lesson.create`, whose `covers` hint says whether it covers
+        only the quiz stage or the whole lesson."""
+        if MeteredAction(action) is MeteredAction.LESSON_CREATE and (size or {}).get("covers") == "all":
+            return cls.WHOLE_LESSON
         try:
             return cls.TABLE[MeteredAction(action)]
         except KeyError:
@@ -259,7 +266,8 @@ class ActionMetering:
             key += f":resume{self.ledger.count(subject_id)}"
         if client_key:
             key += f":{client_key}"
-        context = ActionContext(user, action, dict(size), subject_id, key, resume, CompletionPoints.of(action))
+        point = CompletionPoints.of(action, size)
+        context = ActionContext(user, action, dict(size), subject_id, key, resume, point)
         return self.gate.authorize(context)
 
     def payload(self, authorization: Authorization | None) -> dict:

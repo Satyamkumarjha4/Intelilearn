@@ -10,6 +10,8 @@ Use cases:
 - the seven action keys are the ones in the plan, and each is a string
 - a completion point is reached at its stage or when the run ended, never earlier; a run-end point only at the end
 - every action wired today has a completion point; one that is not wired yet says so
+- a lesson created by self-rating covers the whole lesson, so it completes when the lesson is ready, where a quick check
+  completes when the quiz is served
 - an authorization round-trips through the run payload and keeps what it was asked with
 - the open gate allows everything, settles nothing, and is not stored on the run, so payloads stay as they were
 - the gate class comes from the `ACTION_GATE` setting
@@ -108,6 +110,18 @@ class TestCompletionPoint:
     def test_every_action_wired_today_has_a_completion_point(self, action, point):
         assert CompletionPoints.of(action) == point
 
+    @pytest.mark.parametrize(("size", "point"), [
+        ({"covers": "diagnostic"}, CompletionPoint.at_stage(Stage.AWAITING_DIAGNOSTIC)),
+        ({"covers": "all"}, CompletionPoint.at_stage(Stage.READY)),
+        ({}, CompletionPoint.at_stage(Stage.AWAITING_DIAGNOSTIC)),
+    ])  # fmt: skip
+    def test_a_lesson_that_covers_everything_completes_when_it_is_ready(self, size, point):
+        assert CompletionPoints.of(LESSON_CREATE, size) == point
+
+    def test_the_size_changes_no_other_actions_point(self):
+        assert CompletionPoints.of(LESSON_CONTINUE, {"covers": "all"}) == CompletionPoint.at_stage(Stage.READY)
+        assert CompletionPoints.of(SHEET_GENERATE, {"covers": "all"}) == CompletionPoint.at_run_end()
+
     def test_an_action_that_is_not_wired_yet_says_so(self):
         with pytest.raises(LookupError, match="quiz.create"):
             CompletionPoints.of(MeteredAction.QUIZ_CREATE)
@@ -182,6 +196,15 @@ class TestActionMetering:
         assert asked.completes_at == CompletionPoints.of(LESSON_CREATE)
         assert asked.key == f"lesson.create:{lesson.id}"
         assert authorization.action == LESSON_CREATE
+
+    def test_the_gate_is_told_a_self_rated_lessons_point_is_the_whole_lesson(self, lesson, user):
+        gate = CountingGate()
+
+        ActionMetering(gate).authorize(
+            user, LESSON_CREATE, size={"entry": "self_rating", "covers": "all"}, subject_id=lesson.id
+        )
+
+        assert gate.authorized[0].completes_at == CompletionPoint.at_stage(Stage.READY)
 
     def test_the_key_carries_the_clients_idempotency_key(self, lesson, user):
         gate = CountingGate()
