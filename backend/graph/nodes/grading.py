@@ -1,4 +1,4 @@
-"""The `grade_test` graph: the open-ended answers of a submitted lesson test, graded by a model.
+"""The `grade_test` graph: the open-ended answers of a submitted legacy attempt, graded by a model.
 
 load_submission → (nothing open to grade → persist_grade) | grade_open (test.grade) → validate_grade → persist_grade.
 Questions with one right answer and blank answers are marked in code (`ScoreCard`), so the model sees only answers
@@ -6,9 +6,8 @@ that deserve a judgement. There is no Retry: a run that cannot grade ends with i
 failed, and the learner submits again.
 """
 
-from django.utils import timezone
-
 from lessons.models import Lesson, TestSubmission
+from lessons.outcome import AttemptOutcome
 
 from ..context import FlowContext
 from ..errors import RunFailed
@@ -32,9 +31,9 @@ class LoadSubmissionNode(Node):
             "profile": {"preferred_language": profile.preferred_language},
             "snapshot": lesson.config_snapshot,
             "settings": lesson.settings_snapshot,
-            "final_test": lesson.final_test,
+            "final_test": {"questions": submission.questions},  # what this attempt was served, not the lesson's test
             "test_answers": submission.answers,
-            "grading_items": ScoreCard().open_items(lesson.final_test["questions"], submission.answers),
+            "grading_items": ScoreCard().open_items(submission.questions, submission.answers),
         }
 
 
@@ -77,21 +76,26 @@ class ValidateGradeNode(ValidateNode):
 
 
 class PersistGradeNode(Node):
-    """The finished `ScoreCard` goes onto the submission."""
+    """The finished `ScoreCard` goes onto the attempt, with its band and the offer that follows (`AttemptOutcome`, the
+    rule a lesson attempt meets at submit)."""
 
     name = "persist_grade"
 
-    def __init__(self, cards: ScoreCard | None = None, grader: AnswerGrader | None = None):
+    def __init__(
+        self,
+        cards: ScoreCard | None = None,
+        grader: AnswerGrader | None = None,
+        outcome: AttemptOutcome | None = None,
+    ):
         self.cards = cards or ScoreCard()
         self.grader = grader or AnswerGrader()
+        self.outcome = outcome or AttemptOutcome()
 
     def run(self, state: dict, ctx: FlowContext) -> dict:
         questions, answers = state["final_test"]["questions"], state["test_answers"]
         graded = {g["question_id"]: g for g in (state.get("grade_report") or {}).get("grades", [])}
         card = self.cards.build(questions, answers, self.grader.grade_all(questions, answers), graded)
-        TestSubmission.objects.filter(pk=state["submission_id"]).update(
-            result=card, status=TestSubmission.Status.GRADED, error="", graded_at=timezone.now()
-        )
+        self.outcome.graded(TestSubmission.objects.select_related("lesson").get(pk=state["submission_id"]), card)
         return {}
 
 

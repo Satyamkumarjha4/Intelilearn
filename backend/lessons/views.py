@@ -15,11 +15,17 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
+from .attempts import AttemptService
 from .events import RunEventStream, RunSnapshot
 from .idempotency import IdempotentRequest
 from .media_urls import MediaUrlSigner
 from .models import GraphRun, Lesson, MaterialKind, MediaAsset, Stage
 from .serializers import (
+    AnswerRequestSerializer,
+    AnswerSavedSerializer,
+    AttemptHistorySerializer,
+    AttemptStartedSerializer,
+    AttemptSubmitSerializer,
     LearnerTestSerializer,
     LessonCreatedSerializer,
     LessonCreateSerializer,
@@ -43,7 +49,7 @@ from .serializers import (
     TestSubmissionSerializer,
     TestSubmitSerializer,
 )
-from .services import CodeService, LessonService, MaterialService, QuizService, SubmissionService
+from .services import CodeService, LessonService, MaterialService, QuizService
 
 LESSONS_TAG = ["lessons"]
 QUIZZES_TAG = ["quizzes"]
@@ -59,6 +65,7 @@ IDEMPOTENCY_KEY = OpenApiParameter(
     required=False,
     description="1 to 128 printable characters. A repeated request with the same key returns the first answer.",
 )
+ATTEMPT_ID = OpenApiParameter("attempt_id", str, OpenApiParameter.PATH)
 KIND = OpenApiParameter("kind", str, OpenApiParameter.PATH, enum=["diagnostic", "prerequisite"])
 
 
@@ -391,8 +398,9 @@ class LessonTestView(OwnedLessons, APIView):
         tags=TEST_TAG,
         summary="Get the lesson test to take",
         description=(
-            "The final test as its own screen: questions without answers or marking schemes, what it is worth, and "
-            "the one submission once it has been made (`null` before)."
+            "The open attempt's questions without answers or marking schemes, and the answers already saved, or no "
+            "questions (and `next_attempt_no`) when no attempt is open. It never starts anything: start an attempt "
+            "with `POST /lessons/{id}/test/attempts`."
         ),
         parameters=[LESSON_ID],
         responses={
@@ -401,8 +409,179 @@ class LessonTestView(OwnedLessons, APIView):
         },
     )
     def get(self, request, lesson_id):
-        body = SubmissionService().for_learner(self.lesson_of(request, lesson_id))
+        body = AttemptService().for_learner(self.lesson_of(request, lesson_id))
         return Response(LearnerTestSerializer(body).data)
+
+
+class AttemptsView(OwnedLessons, APIView):
+    __test__ = False
+
+    def get_throttles(self):
+        if self.request.method == "POST":
+            self.throttle_scope = "test_attempt"
+            return [ScopedRateThrottle()]
+        return []
+
+    @extend_schema(
+        tags=TEST_TAG,
+        summary="List the attempts and their trend",
+        operation_id="lessons_test_attempts_list",
+        description="Every attempt, oldest first, and the trend of the graded ones (computed here, from whole marks).",
+        parameters=[LESSON_ID],
+        responses={200: AttemptHistorySerializer},
+    )
+    def get(self, request, lesson_id):
+        body = AttemptService().history(self.lesson_of(request, lesson_id))
+        return Response(AttemptHistorySerializer(body).data)
+
+    @extend_schema(
+        tags=TEST_TAG,
+        summary="Start an attempt",
+        operation_id="lessons_test_attempts_start",
+        description=(
+            "Returns the open attempt if there is one, so a refresh resumes. Attempt 1 is part of the lesson: `201` "
+            "with its questions. Attempt 2 and later always generate a fresh set: `202` with a `run_id`, the attempt "
+            'waits as `generating`, and the lesson shows "preparing questions" until it is `in_progress`. An '
+            "optional `Idempotency-Key` header makes a repeated request return the first answer."
+        ),
+        parameters=[LESSON_ID, IDEMPOTENCY_KEY],
+        request=None,
+        responses={
+            200: AttemptStartedSerializer,
+            201: AttemptStartedSerializer,
+            202: AttemptStartedSerializer,
+            409: OpenApiResponse(description="The lesson is not ready, or the same keyed request is still running."),
+            429: OpenApiResponse(description="Too many starts (`TEST_ATTEMPT_THROTTLE_RATE`), or `retakes_per_day`."),
+        },
+    )
+    def post(self, request, lesson_id):
+        lesson = self.lesson_of(request, lesson_id)
+
+        def start(client_key: str) -> Response:
+            service = AttemptService()
+            started = service.start(lesson, client_key)
+            attempt = started.attempt
+            open_questions = started.attempt.status == attempt.Status.IN_PROGRESS
+            body = AttemptStartedSerializer(
+                {
+                    "attempt_id": attempt.id,
+                    "attempt_no": attempt.attempt_no,
+                    "status": attempt.status,
+                    "run_id": started.run.id if started.run else None,
+                    "questions": service.shown_questions(attempt) if open_questions else [],
+                    "total_marks": sum(q["marks"] for q in attempt.questions) if open_questions else 0,
+                    "answers": attempt.answers,
+                    "started_at": attempt.started_at,
+                }
+            ).data
+            if not open_questions:
+                return Response(body, status=status.HTTP_202_ACCEPTED)
+            return Response(body, status=status.HTTP_201_CREATED if started.created else status.HTTP_200_OK)
+
+        return IdempotentRequest().run(request, f"attempts.start:{lesson.id}", {}, start)
+
+
+class AttemptView(OwnedLessons, APIView):
+    __test__ = False
+
+    @extend_schema(
+        tags=TEST_TAG,
+        summary="Get an attempt",
+        operation_id="lessons_test_attempt_retrieve",
+        description=(
+            "One attempt, read-only: what it asked (without answer keys), the learner's answers, the score card "
+            "(with a per-question breakdown for rubric answers) and the offer that followed. The questions of an "
+            "attempt that is still open are not here: they come from `GET /lessons/{id}/test`."
+        ),
+        parameters=[LESSON_ID, ATTEMPT_ID],
+        responses={200: TestSubmissionSerializer, 404: OpenApiResponse(description="No such attempt.")},
+    )
+    def get(self, request, lesson_id, attempt_id):
+        attempt = AttemptService().get(self.lesson_of(request, lesson_id), attempt_id)
+        return Response(TestSubmissionSerializer(attempt).data)
+
+
+class AttemptAnswerView(OwnedLessons, APIView):
+    __test__ = False
+
+    @extend_schema(
+        tags=TEST_TAG,
+        summary="Save one answer and lock the question",
+        description=(
+            "Forward-only, enforced here: once a question is answered (or left blank) it cannot change. "
+            "A refresh resumes from the answers already saved."
+        ),
+        parameters=[LESSON_ID, ATTEMPT_ID, OpenApiParameter("question_id", str, OpenApiParameter.PATH)],
+        request=AnswerRequestSerializer,
+        responses={
+            200: AnswerSavedSerializer,
+            400: OpenApiResponse(description="An unknown question or an answer of the wrong shape."),
+            409: OpenApiResponse(
+                description="`locked` (already answered), `attempt_sealed` (over), or `wrong_stage` (still preparing)."
+            ),
+        },
+    )
+    def put(self, request, lesson_id, attempt_id, question_id):
+        serializer = AnswerRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        attempt = AttemptService().save_answer(
+            self.lesson_of(request, lesson_id), attempt_id, question_id, serializer.validated_data["answer"]
+        )
+        body = {"attempt_id": attempt.id, "question_id": question_id, "locked": True, "answered": len(attempt.answers)}
+        return Response(AnswerSavedSerializer(body).data)
+
+
+class AttemptSubmitView(OwnedLessons, APIView):
+    __test__ = False
+
+    @extend_schema(
+        tags=TEST_TAG,
+        summary="Submit an attempt",
+        description=(
+            "Seals the attempt: missing answers are blank and score 0, and an attempt with every answer blank is "
+            "stored and scores 0. A lesson attempt is objective only, so it is graded in this request: the reply has "
+            "the score, the band and the offer, and no run. Only a legacy attempt with open-ended questions queues a "
+            "grading run."
+        ),
+        parameters=[LESSON_ID, ATTEMPT_ID],
+        request=AttemptSubmitSerializer,
+        responses={
+            200: TestSubmissionCreatedSerializer,
+            202: TestSubmissionCreatedSerializer,
+            409: OpenApiResponse(description="`attempt_sealed` (already over), or `wrong_stage` (still preparing)."),
+        },
+    )
+    def post(self, request, lesson_id, attempt_id):
+        serializer = AttemptSubmitSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        submitted = AttemptService().submit(
+            self.lesson_of(request, lesson_id), attempt_id, serializer.validated_data.get("answers")
+        )
+        code = status.HTTP_202_ACCEPTED if submitted.run else status.HTTP_200_OK
+        return Response(TestSubmissionCreatedSerializer(SubmittedBody(submitted).data).data, status=code)
+
+
+class SubmittedBody:
+    """The reply to a submit, from what the service returned."""
+
+    def __init__(self, submitted):
+        self.submitted = submitted
+
+    @property
+    def data(self) -> dict:
+        attempt, run = self.submitted.attempt, self.submitted.run
+        return {
+            "submission_id": attempt.id,
+            "attempt_id": attempt.id,
+            "attempt_no": attempt.attempt_no,
+            "run_id": run.id if run else None,
+            "status": attempt.status,
+            "awarded": attempt.awarded,
+            "available": attempt.available,
+            "band": attempt.band,
+            "followup": attempt.followup,
+            "result": attempt.result,
+        }
 
 
 class TestSubmissionsView(OwnedLessons, APIView):
@@ -414,12 +593,11 @@ class TestSubmissionsView(OwnedLessons, APIView):
 
     @extend_schema(
         tags=TEST_TAG,
-        summary="Submit the lesson test",
+        summary="Start and submit the first attempt in one call",
         description=(
-            "Multiple-choice and numerical answers are marked at once and blank answers score 0; the other answers "
-            "are graded by a model in a `grade_test` run. Follow `run_id` (or poll the submission) until `status` "
-            "is `graded`. The test can be submitted once: afterwards its answers, score and recommendations are "
-            "read-only for good."
+            "Kept for the old test screen; use the attempts endpoints. Multiple-choice, multiple-select and numerical "
+            "answers are marked at once and blank answers score 0; a legacy test's other answers are graded by a "
+            "model in a `grade_test` run. Only the first attempt: once the lesson has any attempt this is refused."
         ),
         parameters=[LESSON_ID],
         request=TestSubmitSerializer,
@@ -428,8 +606,8 @@ class TestSubmissionsView(OwnedLessons, APIView):
             400: OpenApiResponse(description="Unknown question ids, or an answer that is not a number or text."),
             409: OpenApiResponse(
                 description=(
-                    "The lesson is not ready (`wrong_stage`), or the test was already submitted (`already_submitted`, "
-                    "with the first submission's `submission_id`). Nothing is stored."
+                    "The lesson is not ready (`wrong_stage`), or it already has an attempt (`already_submitted`, "
+                    "with that attempt's `submission_id`). Nothing is stored."
                 )
             ),
         },
@@ -437,11 +615,12 @@ class TestSubmissionsView(OwnedLessons, APIView):
     def post(self, request, lesson_id):
         serializer = TestSubmitSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        submission, run = SubmissionService().submit(
+        submitted = AttemptService().submit_once(
             self.lesson_of(request, lesson_id), serializer.validated_data["answers"]
         )
-        body = {"submission_id": submission.id, "run_id": run.id if run else None, "status": submission.status}
-        return Response(TestSubmissionCreatedSerializer(body).data, status=status.HTTP_202_ACCEPTED)
+        return Response(
+            TestSubmissionCreatedSerializer(SubmittedBody(submitted).data).data, status=status.HTTP_202_ACCEPTED
+        )
 
 
 class TestSubmissionView(OwnedLessons, APIView):
@@ -450,35 +629,35 @@ class TestSubmissionView(OwnedLessons, APIView):
     @extend_schema(
         tags=TEST_TAG,
         summary="Get a test submission",
-        description="`result` holds what has been marked so far; it is `complete` once every answer is graded.",
+        description="The same as getting the attempt by id. `result` holds what has been marked so far.",
         parameters=[LESSON_ID, OpenApiParameter("submission_id", str, OpenApiParameter.PATH)],
         responses={200: TestSubmissionSerializer, 404: OpenApiResponse(description="No such submission.")},
     )
     def get(self, request, lesson_id, submission_id):
-        submission = SubmissionService().get(self.lesson_of(request, lesson_id), submission_id)
-        return Response(TestSubmissionSerializer(submission).data)
+        attempt = AttemptService().get(self.lesson_of(request, lesson_id), submission_id)
+        return Response(TestSubmissionSerializer(attempt).data)
 
 
-class TestSubmissionRegradeView(OwnedLessons, APIView):
+class AttemptRegradeView(OwnedLessons, APIView):
     __test__ = False
 
     @extend_schema(
         tags=TEST_TAG,
-        summary="Grade a failed submission again",
+        summary="Grade a failed attempt again",
         description=(
             "Re-runs the grading on the answers already stored: the learner never answers again. Only when `status` "
-            "is `failed`."
+            "is `failed`, which only a legacy attempt with open-ended answers can be."
         ),
-        parameters=[LESSON_ID, OpenApiParameter("submission_id", str, OpenApiParameter.PATH)],
+        parameters=[LESSON_ID, ATTEMPT_ID],
         request=None,
         responses={
             202: RunStartedSerializer,
-            404: OpenApiResponse(description="No such submission."),
+            404: OpenApiResponse(description="No such attempt."),
             409: OpenApiResponse(description="Not failed (`not_failed`), or a run is active (`run_in_progress`)."),
         },
     )
-    def post(self, request, lesson_id, submission_id):
-        run = SubmissionService().regrade(self.lesson_of(request, lesson_id), submission_id)
+    def post(self, request, lesson_id, attempt_id):
+        run = AttemptService().regrade(self.lesson_of(request, lesson_id), attempt_id)
         return Response({"run_id": run.id}, status=status.HTTP_202_ACCEPTED)
 
 
@@ -487,13 +666,13 @@ class TestSubmissionCurrentView(OwnedLessons, APIView):
 
     @extend_schema(
         tags=TEST_TAG,
-        summary="Get the lesson's test submission",
-        description="The one submission with its result (see the submission by id), or 404 before the test is taken.",
+        summary="Get the lesson's latest attempt",
+        description="The latest attempt with its result (see the attempt by id), or 404 before the test is taken.",
         parameters=[LESSON_ID],
-        responses={200: TestSubmissionSerializer, 404: OpenApiResponse(description="Not submitted yet.")},
+        responses={200: TestSubmissionSerializer, 404: OpenApiResponse(description="Not started yet.")},
     )
     def get(self, request, lesson_id):
-        return Response(TestSubmissionSerializer(SubmissionService().current(self.lesson_of(request, lesson_id))).data)
+        return Response(TestSubmissionSerializer(AttemptService().current(self.lesson_of(request, lesson_id))).data)
 
 
 class OwnedRuns:

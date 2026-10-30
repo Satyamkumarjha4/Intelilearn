@@ -30,7 +30,7 @@ from django.test import override_settings
 from rest_framework.exceptions import APIException
 from support.gates import CountingGate, RefusingGate
 
-from lessons import services
+from lessons import attempts, services
 from lessons.metering import (
     ActionContext,
     ActionGates,
@@ -102,6 +102,7 @@ class TestCompletionPoint:
             (LESSON_CREATE, CompletionPoint.at_stage(Stage.AWAITING_DIAGNOSTIC)),
             (LESSON_CONTINUE, CompletionPoint.at_stage(Stage.READY)),
             (SHEET_GENERATE, CompletionPoint.at_run_end()),
+            (MeteredAction.TEST_RETAKE, CompletionPoint.at_run_end()),  # the retake run ends as the attempt starts
         ],
     )
     def test_every_action_wired_today_has_a_completion_point(self, action, point):
@@ -319,19 +320,20 @@ class TestSettleOpen:
 
 
 class TestEveryRunStarterIsClassified:
-    SERVICES = pathlib.Path(services.__file__)
+    SERVICES = (pathlib.Path(services.__file__), pathlib.Path(attempts.__file__))
 
     def run_starters(self) -> set[str]:
-        """`Class.method` for every method in lessons/services.py that hands a run to the dispatcher."""
+        """`Class.method` for every method in the services that hands a run to the dispatcher."""
         found = set()
-        for node in ast.parse(self.SERVICES.read_text()).body:
-            if isinstance(node, ast.ClassDef) and node.name != "RunDispatcher":
-                for method in [m for m in node.body if isinstance(m, ast.FunctionDef)]:
-                    calls = [
-                        c for c in ast.walk(method) if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute)
-                    ]
-                    if any(call.func.attr == "dispatch" for call in calls):
-                        found.add(f"{node.name}.{method.name}")
+        for path in self.SERVICES:
+            for node in ast.parse(path.read_text()).body:
+                if isinstance(node, ast.ClassDef) and node.name != "RunDispatcher":
+                    for method in [m for m in node.body if isinstance(m, ast.FunctionDef)]:
+                        calls = [
+                            c for c in ast.walk(method) if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute)
+                        ]
+                        if any(call.func.attr == "dispatch" for call in calls):
+                            found.add(f"{node.name}.{method.name}")
         return found
 
     def test_each_service_method_that_queues_a_run_is_metered_resuming_or_never_metered(self):

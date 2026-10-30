@@ -49,6 +49,7 @@ from support.lesson_data import make_final_test
 from support.quiz_data import make_prerequisites, make_questions
 from support.study_data import make_cheat_sheet, make_practice_sheet, make_revision_sheet
 
+from lessons.attempts import AttemptService
 from lessons.errors import (
     AlreadyAttempted,
     AlreadyExists,
@@ -84,7 +85,6 @@ from lessons.services import (
     MaterialService,
     QuizService,
     RunDispatcher,
-    SubmissionService,
 )
 
 pytestmark = pytest.mark.django_db
@@ -719,7 +719,7 @@ class TestSubmitLessonTest:
     def test_the_automatic_answers_are_marked_at_once_and_the_open_ones_queued_for_grading(self, make_lesson, queue):
         lesson = lesson_with_test(make_lesson)
 
-        submission, run = SubmissionService(queue=queue).submit(
+        submission, run = AttemptService(queue=queue).submit_once(
             lesson, {MCQ: 1, NUM: "4", SHORT: "Halve it.", LONG: "Keep the invariant."}
         )
 
@@ -732,7 +732,7 @@ class TestSubmitLessonTest:
     def test_with_nothing_to_grade_the_result_is_final_and_nothing_is_queued(self, make_lesson, queue):
         lesson = lesson_with_test(make_lesson)
 
-        submission, run = SubmissionService(queue=queue).submit(lesson, {MCQ: 1, NUM: "9", SHORT: "  "})
+        submission, run = AttemptService(queue=queue).submit_once(lesson, {MCQ: 1, NUM: "9", SHORT: "  "})
 
         assert run is None and queue.runs == []
         assert submission.status == TestSubmission.Status.GRADED and submission.graded_at is not None
@@ -742,7 +742,7 @@ class TestSubmitLessonTest:
         lesson = lesson_with_test(make_lesson)
         msq = next(q for q in FINAL_TEST["questions"] if q["id"] == MSQ)  # options 0 and 2 are right
 
-        submission, _ = SubmissionService(queue=queue).submit(lesson, {MSQ: [0]})
+        submission, _ = AttemptService(queue=queue).submit_once(lesson, {MSQ: [0]})
 
         assert submission.answers[MSQ] == [0]
         assert submission.result["score"]["awarded"] == msq["marks"] - 1  # half of the right options: full minus 1
@@ -750,12 +750,12 @@ class TestSubmitLessonTest:
     @pytest.mark.parametrize("bad", [["a"], [True], [1.5], list(range(13)), [[0]]])
     def test_a_list_that_is_not_a_short_list_of_option_numbers_is_refused(self, make_lesson, queue, bad):
         with pytest.raises(InvalidAnswers, match="short list of option numbers"):
-            SubmissionService(queue=queue).submit(lesson_with_test(make_lesson), {MSQ: bad})
+            AttemptService(queue=queue).submit_once(lesson_with_test(make_lesson), {MSQ: bad})
 
         assert TestSubmission.objects.count() == 0
 
     def test_an_empty_submission_is_a_zero_not_an_error(self, make_lesson, queue):
-        submission, run = SubmissionService(queue=queue).submit(lesson_with_test(make_lesson), {})
+        submission, run = AttemptService(queue=queue).submit_once(lesson_with_test(make_lesson), {})
 
         assert run is None and submission.result["score"]["awarded"] == 0
 
@@ -772,7 +772,7 @@ class TestSubmitLessonTest:
     )
     def test_answers_that_do_not_fit_are_refused_and_nothing_is_stored(self, make_lesson, queue, answers, message):
         with pytest.raises(InvalidAnswers, match=message):
-            SubmissionService(queue=queue).submit(lesson_with_test(make_lesson), answers)
+            AttemptService(queue=queue).submit_once(lesson_with_test(make_lesson), answers)
 
         assert not TestSubmission.objects.exists() and queue.runs == []
 
@@ -781,7 +781,7 @@ class TestSubmitLessonTest:
         lesson = ready_lesson(make_lesson, **({"final_test": FINAL_TEST} | fields))
 
         with pytest.raises(WrongStage):
-            SubmissionService(queue=queue).submit(lesson, {MCQ: 1})
+            AttemptService(queue=queue).submit_once(lesson, {MCQ: 1})
 
     @pytest.mark.parametrize("status", list(TestSubmission.Status))
     def test_a_second_submission_is_refused_with_the_first_ones_id_and_stores_nothing(self, make_lesson, queue, status):
@@ -789,7 +789,7 @@ class TestSubmitLessonTest:
         first = TestSubmission.objects.create(lesson=lesson, answers={MCQ: 1}, status=status)
 
         with pytest.raises(AlreadySubmitted) as refused:
-            SubmissionService(queue=queue).submit(lesson, {MCQ: 2})
+            AttemptService(queue=queue).submit_once(lesson, {MCQ: 2})
 
         assert refused.value.extra == {"submission_id": str(first.id)}
         assert list(TestSubmission.objects.filter(lesson=lesson)) == [first] and first.answers == {MCQ: 1}
@@ -799,7 +799,7 @@ class TestSubmitLessonTest:
         lesson = lesson_with_test(make_lesson)
         first = TestSubmission.objects.create(lesson=lesson, answers={MCQ: 1}, status=TestSubmission.Status.GRADED)
 
-        class Racing(SubmissionService):
+        class Racing(AttemptService):
             """Looks, finds nothing (the other request has not committed yet), and then meets the constraint."""
 
             looked = 0
@@ -809,7 +809,7 @@ class TestSubmitLessonTest:
                 return None if self.looked == 1 else super()._existing(lesson)
 
         with pytest.raises(AlreadySubmitted) as refused:
-            Racing(queue=queue).submit(lesson, {MCQ: 2})
+            Racing(queue=queue).submit_once(lesson, {MCQ: 2})
 
         assert refused.value.extra == {"submission_id": str(first.id)}
         assert TestSubmission.objects.filter(lesson=lesson).count() == 1 and queue.runs == []
@@ -819,12 +819,12 @@ class TestSubmitLessonTest:
         TestSubmission.objects.create(lesson=lesson)
 
         with pytest.raises(AlreadySubmitted):
-            SubmissionService(queue=queue).submit(lesson, {"nope": 1})
+            AttemptService(queue=queue).submit_once(lesson, {"nope": 1})
 
     def test_another_lessons_submission_does_not_count(self, make_lesson, queue):
         TestSubmission.objects.create(lesson=lesson_with_test(make_lesson))
 
-        submission, _ = SubmissionService(queue=queue).submit(lesson_with_test(make_lesson), {MCQ: 1})
+        submission, _ = AttemptService(queue=queue).submit_once(lesson_with_test(make_lesson), {MCQ: 1})
 
         assert submission.status == TestSubmission.Status.GRADED
 
@@ -832,13 +832,13 @@ class TestSubmitLessonTest:
         lesson = lesson_with_test(make_lesson, route="mastery")
 
         with pytest.raises(WrongStage):
-            SubmissionService(queue=queue).submit(lesson, {MCQ: 1})
+            AttemptService(queue=queue).submit_once(lesson, {MCQ: 1})
 
     def test_a_repair_in_progress_does_not_block_a_submission(self, make_lesson, queue):
         lesson = lesson_with_test(make_lesson)
         GraphRun.objects.create(lesson=lesson, graph="runtime_repair", trigger="repair", status="running")
 
-        submission, _ = SubmissionService(queue=queue).submit(lesson, {MCQ: 1})
+        submission, _ = AttemptService(queue=queue).submit_once(lesson, {MCQ: 1})
 
         assert submission.result["score"]["awarded"] == MARKS[MCQ]
 
@@ -848,18 +848,18 @@ class TestGetSubmission:
         lesson = lesson_with_test(make_lesson)
         submission = TestSubmission.objects.create(lesson=lesson)
 
-        assert SubmissionService().get(lesson, submission.id) == submission
+        assert AttemptService().get(lesson, submission.id) == submission
 
     @pytest.mark.parametrize("wrong", ["not-a-uuid", "00000000-0000-0000-0000-000000000000"])
     def test_an_unknown_id_is_not_found(self, make_lesson, wrong):
         with pytest.raises(SubmissionNotFound):
-            SubmissionService().get(lesson_with_test(make_lesson), wrong)
+            AttemptService().get(lesson_with_test(make_lesson), wrong)
 
     def test_another_lessons_submission_is_not_found(self, make_lesson):
         theirs = TestSubmission.objects.create(lesson=lesson_with_test(make_lesson))
 
         with pytest.raises(SubmissionNotFound):
-            SubmissionService().get(lesson_with_test(make_lesson), theirs.id)
+            AttemptService().get(lesson_with_test(make_lesson), theirs.id)
 
 
 class TestGradingStops:
@@ -867,7 +867,7 @@ class TestGradingStops:
         lesson = lesson_with_test(make_lesson)
 
         with pytest.raises(QueueUnavailable):
-            SubmissionService(queue=TestDispatcher.BrokenQueue()).submit(lesson, {SHORT: "Halve it."})
+            AttemptService(queue=TestDispatcher.BrokenQueue()).submit_once(lesson, {SHORT: "Halve it."})
 
         submission = TestSubmission.objects.get(lesson=lesson)
         assert submission.status == "failed" and "queue" in submission.error
@@ -875,7 +875,7 @@ class TestGradingStops:
 
     def test_cancelling_a_grading_run_fails_its_submission_and_not_the_lesson(self, make_lesson, queue):
         lesson = lesson_with_test(make_lesson)
-        submission, run = SubmissionService(queue=queue).submit(lesson, {SHORT: "Halve it."})
+        submission, run = AttemptService(queue=queue).submit_once(lesson, {SHORT: "Halve it."})
 
         LessonService(queue=queue).cancel(run)
 
@@ -888,8 +888,13 @@ class TestLearnerTest:
     SECRETS = ("correct_index", "correct_indices", "answer", "answer_expr", "tolerance", "model_answer", "criteria",
                "key_points", "rubric", "reference_solution", "test_cases", "concept", "difficulty")  # fmt: skip
 
+    def started(self, make_lesson):
+        lesson = lesson_with_test(make_lesson)
+        AttemptService().start(lesson)
+        return lesson
+
     def test_the_questions_come_without_answers_marking_schemes_or_concepts(self, make_lesson):
-        body = SubmissionService().for_learner(lesson_with_test(make_lesson))
+        body = AttemptService().for_learner(self.started(make_lesson))
 
         by_id = {q["id"]: q for q in body["questions"]}
         assert list(by_id) == [q["id"] for q in FINAL_TEST["questions"]]
@@ -900,20 +905,26 @@ class TestLearnerTest:
         assert set(by_id[LONG]) == {"id", "type", "question", "marks"}
 
     def test_the_total_is_the_sum_of_the_marks(self, make_lesson):
-        body = SubmissionService().for_learner(lesson_with_test(make_lesson))
+        body = AttemptService().for_learner(self.started(make_lesson))
 
         assert body["total_marks"] == sum(q["marks"] for q in FINAL_TEST["questions"])
 
-    def test_before_a_submission_there_is_none(self, make_lesson):
-        assert SubmissionService().for_learner(lesson_with_test(make_lesson))["submission"] is None
+    def test_before_an_attempt_there_are_no_questions_and_the_next_attempt_is_the_first(self, make_lesson):
+        body = AttemptService().for_learner(lesson_with_test(make_lesson))
+
+        assert body["submission"] is None and body["attempt"] is None and body["questions"] == []
+        assert body["next_attempt_no"] == 1 and body["total_marks"] == 0
 
     def test_after_a_submission_it_is_named_with_its_status(self, make_lesson, queue):
         lesson = lesson_with_test(make_lesson)
-        submission, _ = SubmissionService(queue=queue).submit(lesson, {SHORT: "Halve it."})
+        submission, _ = AttemptService(queue=queue).submit_once(lesson, {SHORT: "Halve it."})
 
-        named = SubmissionService().for_learner(lesson)["submission"]
+        named = AttemptService().for_learner(lesson)["submission"]
 
-        assert named == {"id": str(submission.id), "status": "grading", "submitted_at": submission.submitted_at}
+        assert (named["id"], named["status"], named["submitted_at"]) == (
+            str(submission.id), "grading", submission.submitted_at,
+        )  # fmt: skip
+        assert named["attempt_no"] == 1
 
     @pytest.mark.parametrize(
         "fields",
@@ -921,7 +932,7 @@ class TestLearnerTest:
     )
     def test_a_lesson_that_is_not_ready_or_has_no_test_is_refused(self, make_lesson, fields):
         with pytest.raises(WrongStage):
-            SubmissionService().for_learner(lesson_with_test(make_lesson, **fields))
+            AttemptService().for_learner(lesson_with_test(make_lesson, **fields))
 
 
 class TestCurrentSubmission:
@@ -929,11 +940,11 @@ class TestCurrentSubmission:
         lesson = lesson_with_test(make_lesson)
         submission = TestSubmission.objects.create(lesson=lesson)
 
-        assert SubmissionService().current(lesson) == submission
+        assert AttemptService().current(lesson) == submission
 
     def test_without_a_submission_it_is_not_found(self, make_lesson):
         with pytest.raises(SubmissionNotFound):
-            SubmissionService().current(lesson_with_test(make_lesson))
+            AttemptService().current(lesson_with_test(make_lesson))
 
 
 class TestRegrade:
@@ -948,7 +959,7 @@ class TestRegrade:
     def test_a_failed_grading_runs_again_on_the_same_stored_answers(self, make_lesson, queue):
         lesson, submission = self.failed(make_lesson)
 
-        run = SubmissionService(queue=queue).regrade(lesson, submission.id)
+        run = AttemptService(queue=queue).regrade(lesson, submission.id)
 
         submission.refresh_from_db()
         assert (submission.status, submission.error, submission.answers) == ("grading", "", {SHORT: "Halve it."})
@@ -962,7 +973,7 @@ class TestRegrade:
         submission = TestSubmission.objects.create(lesson=lesson, status=status)
 
         with pytest.raises(NotFailed):
-            SubmissionService(queue=queue).regrade(lesson, submission.id)
+            AttemptService(queue=queue).regrade(lesson, submission.id)
 
         submission.refresh_from_db()
         assert submission.status == status and queue.runs == []
@@ -972,7 +983,7 @@ class TestRegrade:
         GraphRun.objects.create(lesson=lesson, graph="grade_test", trigger="grade", status="running")
 
         with pytest.raises(RunInProgress):
-            SubmissionService(queue=queue).regrade(lesson, submission.id)
+            AttemptService(queue=queue).regrade(lesson, submission.id)
 
         submission.refresh_from_db()
         assert submission.status == "failed" and queue.runs == []
@@ -981,13 +992,13 @@ class TestRegrade:
         _, theirs = self.failed(make_lesson)
 
         with pytest.raises(SubmissionNotFound):
-            SubmissionService(queue=queue).regrade(lesson_with_test(make_lesson), theirs.id)
+            AttemptService(queue=queue).regrade(lesson_with_test(make_lesson), theirs.id)
 
     def test_a_run_that_cannot_be_queued_fails_the_submission_again(self, make_lesson):
         lesson, submission = self.failed(make_lesson)
 
         with pytest.raises(QueueUnavailable):
-            SubmissionService(queue=TestDispatcher.BrokenQueue()).regrade(lesson, submission.id)
+            AttemptService(queue=TestDispatcher.BrokenQueue()).regrade(lesson, submission.id)
 
         submission.refresh_from_db()
         assert submission.status == "failed" and "queue" in submission.error

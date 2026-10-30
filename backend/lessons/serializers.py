@@ -7,7 +7,9 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from graph.levels import LevelScheme
+from graph.scoring import AttemptTrend
 
+from .attempts import AttemptQuestions
 from .models import GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt, TestSubmission
 from .stages import MaterialKind, Route
 
@@ -36,35 +38,69 @@ class TestScoreSerializer(serializers.Serializer):
 class LessonSummarySerializer(serializers.ModelSerializer):
     test_status = serializers.SerializerMethodField()
     test_score = serializers.SerializerMethodField()
+    latest_score = serializers.SerializerMethodField()
+    best_score = serializers.SerializerMethodField()
+    attempts_count = serializers.SerializerMethodField()
+    has_open_attempt = serializers.SerializerMethodField()
     material_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Lesson
         fields = [
             "id", "topic", "stage", "route", "title", "level", "created_at", "updated_at",
-            "test_status", "test_score", "material_count",
+            "test_status", "test_score", "latest_score", "best_score", "attempts_count", "has_open_attempt",
+            "material_count",
         ]  # fmt: skip
         read_only_fields = fields
 
     @staticmethod
-    def _submission(lesson: Lesson) -> TestSubmission | None:
-        # `.all()` rather than `.first()`: a list prefetches the submissions, and a lesson has at most one.
-        submissions = list(lesson.submissions.all())
-        return submissions[0] if submissions else None
+    def _attempts(lesson: Lesson) -> list[TestSubmission]:
+        # `.all()` rather than a query: a list prefetches the attempts. Newest first (`TestSubmission.Meta.ordering`).
+        return list(lesson.submissions.all())
+
+    @classmethod
+    def _graded(cls, lesson: Lesson) -> list[TestSubmission]:
+        """Only a finished grading has a score: while it runs, the marks so far are not the result."""
+        return [a for a in cls._attempts(lesson) if a.status == TestSubmission.Status.GRADED and a.result]
+
+    @staticmethod
+    def _score(attempt: TestSubmission) -> dict:
+        score = attempt.result["score"]
+        return {"awarded": score["awarded"], "available": score["available"]}
 
     @extend_schema_field(serializers.ChoiceField(choices=["not_started", *TestSubmission.Status.values]))
     def get_test_status(self, lesson: Lesson) -> str:
-        submission = self._submission(lesson)
-        return "not_started" if submission is None else submission.status
+        """How the latest attempt stands."""
+        attempts = self._attempts(lesson)
+        return "not_started" if not attempts else attempts[0].status
 
     @extend_schema_field(TestScoreSerializer(allow_null=True))
     def get_test_score(self, lesson: Lesson) -> dict | None:
-        """Only a finished grading has a score: while it runs, the marks so far are not the result."""
-        submission = self._submission(lesson)
-        if submission is None or submission.status != TestSubmission.Status.GRADED or not submission.result:
+        return self.get_latest_score(lesson)
+
+    @extend_schema_field(TestScoreSerializer(allow_null=True))
+    def get_latest_score(self, lesson: Lesson) -> dict | None:
+        """The score of the latest graded attempt (a retake that is still open does not hide it)."""
+        graded = self._graded(lesson)
+        return self._score(graded[0]) if graded else None
+
+    @extend_schema_field(TestScoreSerializer(allow_null=True))
+    def get_best_score(self, lesson: Lesson) -> dict | None:
+        """The best graded attempt by percent; of two equal ones the earlier."""
+        graded = self._graded(lesson)
+        if not graded:
             return None
-        score = submission.result["score"]
-        return {"awarded": score["awarded"], "available": score["available"]}
+        best = max(
+            reversed(graded),
+            key=lambda a: AttemptTrend.percent(a.result["score"]["awarded"], a.result["score"]["available"]),
+        )
+        return self._score(best)
+
+    def get_attempts_count(self, lesson: Lesson) -> int:
+        return sum(1 for a in self._attempts(lesson) if a.status != TestSubmission.Status.GENERATING)
+
+    def get_has_open_attempt(self, lesson: Lesson) -> bool:
+        return any(a.is_open for a in self._attempts(lesson))
 
     def get_material_count(self, lesson: Lesson) -> int:
         return len(lesson.materials.all())
@@ -264,18 +300,18 @@ class TestSubmitSerializer(serializers.Serializer):
 
     answers = serializers.DictField(
         child=serializers.JSONField(allow_null=True),
-        help_text="{question_id: option index | number | text}. Unanswered questions may be left out.",
+        help_text="{question_id: option index | list of option indices | number | text}. Unanswered questions may be "
+        "left out.",
     )
 
 
-class TestSubmissionCreatedSerializer(serializers.Serializer):
-    __test__ = False
-
-    submission_id = serializers.UUIDField()
-    run_id = serializers.UUIDField(
-        allow_null=True, help_text="The grading run to follow; null when everything could be marked at once."
+class AttemptSubmitSerializer(serializers.Serializer):
+    answers = serializers.DictField(
+        child=serializers.JSONField(allow_null=True),
+        required=False,
+        help_text="Answers to questions that are not locked yet, sent with the submit (the last card). A locked "
+        "question keeps the answer it was saved with.",
     )
-    status = serializers.ChoiceField(choices=TestSubmission.Status.choices)
 
 
 class TestQuestionSerializer(serializers.Serializer):
@@ -284,13 +320,22 @@ class TestQuestionSerializer(serializers.Serializer):
     __test__ = False
 
     id = serializers.CharField()
-    type = serializers.ChoiceField(choices=["mcq", "numerical", "short_answer", "long_answer", "code"])
+    type = serializers.ChoiceField(choices=["mcq", "msq", "numerical", "short_answer", "long_answer", "code"])
     question = serializers.CharField(help_text="Markdown; LaTeX between $…$ allowed.")
     marks = serializers.IntegerField()
-    options = serializers.ListField(child=serializers.CharField(), required=False, help_text="mcq only.")
+    options = serializers.ListField(child=serializers.CharField(), required=False, help_text="mcq and msq.")
     unit = serializers.CharField(required=False, help_text="numerical only.")
+    decimal_precision = serializers.IntegerField(required=False, help_text="numerical only: a hint, never a rule.")
     language = serializers.CharField(required=False, help_text="code only.")
     starter_code = serializers.CharField(required=False, help_text="code only.")
+
+
+class AttemptRefSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    attempt_no = serializers.IntegerField()
+    status = serializers.ChoiceField(choices=TestSubmission.Status.choices)
+    started_at = serializers.DateTimeField()
+    submitted_at = serializers.DateTimeField(allow_null=True)
 
 
 class TestSubmissionRefSerializer(serializers.Serializer):
@@ -298,21 +343,54 @@ class TestSubmissionRefSerializer(serializers.Serializer):
 
     id = serializers.UUIDField()
     status = serializers.ChoiceField(choices=TestSubmission.Status.choices)
-    submitted_at = serializers.DateTimeField()
+    submitted_at = serializers.DateTimeField(allow_null=True)
 
 
 class LearnerTestSerializer(serializers.Serializer):
     __test__ = False
 
-    questions = TestQuestionSerializer(many=True)
+    questions = TestQuestionSerializer(many=True, help_text="The open attempt's questions; none while there is none.")
     total_marks = serializers.IntegerField()
-    submission = TestSubmissionRefSerializer(allow_null=True, help_text="null until the test has been submitted.")
+    attempt = AttemptRefSerializer(allow_null=True, help_text="The open attempt (generating or in progress).")
+    answers = serializers.DictField(help_text="The open attempt's saved (locked) answers, so a refresh resumes.")
+    next_attempt_no = serializers.IntegerField(help_text="The number the next attempt will have.")
+    submission = TestSubmissionRefSerializer(allow_null=True, help_text="The latest attempt; null before the first.")
+
+
+class AttemptStartedSerializer(serializers.Serializer):
+    attempt_id = serializers.UUIDField()
+    attempt_no = serializers.IntegerField()
+    status = serializers.ChoiceField(choices=[TestSubmission.Status.GENERATING, TestSubmission.Status.IN_PROGRESS])
+    run_id = serializers.UUIDField(allow_null=True, help_text="The run preparing a retake's questions; else null.")
+    questions = TestQuestionSerializer(many=True, help_text="Empty while the questions are being prepared.")
+    total_marks = serializers.IntegerField()
+    answers = serializers.DictField(help_text="Answers already saved (locked) when an open attempt is resumed.")
+    started_at = serializers.DateTimeField()
+
+
+class AnswerSavedSerializer(serializers.Serializer):
+    attempt_id = serializers.UUIDField()
+    question_id = serializers.CharField()
+    locked = serializers.BooleanField()
+    answered = serializers.IntegerField(help_text="How many questions of the attempt are locked.")
+
+
+class AnswerRequestSerializer(serializers.Serializer):
+    answer = serializers.JSONField(
+        allow_null=True, help_text="An option index, a list of option indices, a number or text. null: left blank."
+    )
 
 
 class ScoreSerializer(serializers.Serializer):
     awarded = serializers.IntegerField(help_text="Marks earned so far (open-ended answers count once graded).")
     available = serializers.IntegerField(help_text="Marks the whole test is worth.")
     percent = serializers.IntegerField()
+
+
+class CriterionResultSerializer(serializers.Serializer):
+    text = serializers.CharField()
+    marks = serializers.IntegerField()
+    awarded = serializers.IntegerField()
 
 
 class QuestionResultSerializer(serializers.Serializer):
@@ -325,6 +403,7 @@ class QuestionResultSerializer(serializers.Serializer):
     graded_by = serializers.ChoiceField(choices=["auto", "model", "none"])
     feedback = serializers.CharField(allow_blank=True)
     solution = serializers.DictField(help_text="The answer, for review after submitting.")
+    criteria = CriterionResultSerializer(many=True, required=False, help_text="Open-ended answers graded by a model.")
 
 
 class ScoreCardSerializer(serializers.Serializer):
@@ -334,13 +413,76 @@ class ScoreCardSerializer(serializers.Serializer):
     topics_to_revisit = serializers.ListField(child=serializers.CharField())
 
 
+class TestSubmissionCreatedSerializer(serializers.Serializer):
+    """The reply to a submit. A lesson attempt is graded in full, so its score, band and offer come with it."""
+
+    __test__ = False
+
+    submission_id = serializers.UUIDField()
+    attempt_id = serializers.UUIDField(required=False)
+    attempt_no = serializers.IntegerField(required=False)
+    run_id = serializers.UUIDField(
+        allow_null=True, help_text="The grading run to follow; null when everything could be marked at once."
+    )
+    status = serializers.ChoiceField(choices=TestSubmission.Status.choices)
+    awarded = serializers.IntegerField(allow_null=True, required=False)
+    available = serializers.IntegerField(allow_null=True, required=False)
+    band = serializers.CharField(required=False, allow_blank=True, help_text="fail, normal or excellent once graded.")
+    followup = serializers.DictField(allow_null=True, required=False, help_text="The offer that follows the score.")
+    result = ScoreCardSerializer(allow_null=True, required=False)
+
+
 class TestSubmissionSerializer(serializers.ModelSerializer):
     __test__ = False
 
     result = ScoreCardSerializer(allow_null=True, read_only=True)
     answers = serializers.DictField(read_only=True, help_text="The learner's own answers, {question_id: answer}.")
+    questions = serializers.SerializerMethodField(
+        help_text="What the attempt asked, without answer keys, for the read-only result. Empty while it is open: "
+        "`GET /lessons/{id}/test` serves the open attempt's questions."
+    )
 
     class Meta:
         model = TestSubmission
-        fields = ["id", "status", "error", "answers", "result", "submitted_at", "graded_at"]
+        fields = [
+            "id", "attempt_no", "status", "error", "questions", "answers", "result", "awarded", "available", "band",
+            "duration_s", "followup", "started_at", "submitted_at", "graded_at",
+        ]  # fmt: skip
         read_only_fields = fields
+
+    @extend_schema_field(TestQuestionSerializer(many=True))
+    def get_questions(self, attempt: TestSubmission) -> list[dict]:
+        return AttemptQuestions.of_sealed(attempt)
+
+
+class AttemptSummarySerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    attempt_no = serializers.IntegerField()
+    status = serializers.ChoiceField(choices=TestSubmission.Status.choices)
+    awarded = serializers.IntegerField(allow_null=True)
+    available = serializers.IntegerField(allow_null=True)
+    percent = serializers.IntegerField(allow_null=True)
+    band = serializers.CharField(allow_blank=True)
+    duration_s = serializers.IntegerField(allow_null=True)
+    submitted_at = serializers.DateTimeField(allow_null=True)
+
+
+class TrendPointSerializer(serializers.Serializer):
+    attempt_no = serializers.IntegerField()
+    awarded = serializers.IntegerField()
+    available = serializers.IntegerField()
+    percent = serializers.IntegerField()
+    delta_previous = serializers.IntegerField(
+        allow_null=True, help_text="Percentage points since the previous attempt."
+    )
+    delta_best = serializers.IntegerField(allow_null=True, help_text="Percentage points against the best earlier one.")
+
+
+class TrendSerializer(serializers.Serializer):
+    series = TrendPointSerializer(many=True)
+    best_attempt_no = serializers.IntegerField(allow_null=True)
+
+
+class AttemptHistorySerializer(serializers.Serializer):
+    attempts = AttemptSummarySerializer(many=True)
+    trend = TrendSerializer()

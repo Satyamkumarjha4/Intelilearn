@@ -35,7 +35,9 @@ def submission(lesson, lesson_state):
         settings_snapshot=lesson_state["settings"],
     )  # fmt: skip
     answers = {IDS["mcq"]: 0, SHORT: "Halve it.", LONG: "Keep the invariant."}
-    return TestSubmission.objects.create(lesson=lesson, answers=answers, status=TestSubmission.Status.GRADING)
+    return TestSubmission.objects.create(
+        lesson=lesson, answers=answers, questions=FINAL_TEST["questions"], status=TestSubmission.Status.GRADING
+    )
 
 
 def grading(*pairs):

@@ -28,6 +28,8 @@ class Cell:
 class LessonTestBlueprint:
     """The cells of a lesson's test. Not a setting: changing it would make old and new attempts incomparable."""
 
+    SIZE = 10
+
     #: (difficulty, the types of its two cells) for a quantitative topic and for any other topic
     QUANTITATIVE = (
         ("easy", ("mcq", "mcq")), ("basic", ("mcq", "msq")), ("standard", ("mcq", "numerical")),

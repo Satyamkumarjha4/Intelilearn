@@ -14,7 +14,7 @@ Use cases:
 
 import pytest
 
-from lessons.effects import RunEffects, SubmissionEffect
+from lessons.effects import AttemptGenerationEffect, RunEffects, SubmissionEffect
 from lessons.models import GraphRun, Lesson, TestSubmission
 
 pytestmark = pytest.mark.django_db
@@ -67,3 +67,46 @@ def test_effects_can_be_replaced(lesson):
 
     assert seen == [("runtime_repair", "boom")]
     assert isinstance(RunEffects().effects[GraphRun.Graph.GRADE_TEST], SubmissionEffect)
+
+
+class TestAttemptGenerationEffect:
+    pytestmark = pytest.mark.usefixtures("many_attempts")
+
+    def retake(self, lesson, status="generating"):
+        TestSubmission.objects.create(lesson=lesson, attempt_no=1, status="graded")
+        attempt = TestSubmission.objects.create(lesson=lesson, attempt_no=2, status=status)
+        run = GraphRun.objects.create(
+            lesson=lesson, graph=GraphRun.Graph.QUESTION_BANK, trigger=GraphRun.Trigger.RETAKE,
+            payload={"input": {"attempt_id": str(attempt.id)}},
+        )  # fmt: skip
+        return attempt, run
+
+    def test_a_retake_that_failed_or_was_stopped_leaves_no_attempt_and_no_gap_in_the_numbers(self, lesson):
+        attempt, run = self.retake(lesson)
+
+        RunEffects().on_stopped(run, "Every AI model failed.")
+
+        assert not TestSubmission.objects.filter(pk=attempt.pk).exists()
+        assert list(lesson.submissions.values_list("attempt_no", flat=True)) == [1]
+
+    @pytest.mark.parametrize("status", ["in_progress", "graded"])
+    def test_an_attempt_that_already_has_its_questions_is_left_alone(self, lesson, status):
+        attempt, run = self.retake(lesson, status=status)
+
+        RunEffects().on_stopped(run, "late failure")
+
+        assert TestSubmission.objects.filter(pk=attempt.pk, status=status).exists()
+
+    def test_the_effect_is_registered_for_the_question_bank_graph_and_the_grading_graph_still_has_its_own(self):
+        effects = RunEffects().effects
+
+        assert isinstance(effects[GraphRun.Graph.QUESTION_BANK], AttemptGenerationEffect)
+        assert isinstance(effects[GraphRun.Graph.GRADE_TEST], SubmissionEffect)
+
+    def test_the_run_of_a_retake_that_has_no_attempt_id_has_no_effect(self, lesson):
+        TestSubmission.objects.create(lesson=lesson, attempt_no=1, status="graded")
+        run = GraphRun.objects.create(lesson=lesson, graph=GraphRun.Graph.QUESTION_BANK, trigger="retake")
+
+        RunEffects().on_stopped(run, "x")
+
+        assert TestSubmission.objects.filter(lesson=lesson).count() == 1

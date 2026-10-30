@@ -18,8 +18,9 @@ from django.db.models import Sum
 from live.golden import GOLDEN_TOPICS, LessonChecks
 
 from graph.grading import QuizGrader
+from lessons.attempts import AttemptService
 from lessons.models import GraphRun, Lesson, MediaAsset, Quiz, QuizAttempt, Stage
-from lessons.services import LessonService, QuizService, SubmissionService
+from lessons.services import LessonService, QuizService
 from lessons.tasks import InlineTaskQueue
 from llm_registry.models import ModelCall
 
@@ -70,7 +71,7 @@ def test_a_golden_topic_becomes_a_good_ready_lesson_within_budget(built_lesson, 
     assert not GraphRun.objects.filter(lesson=lesson, status=GraphRun.Status.FAILED).exists()
 
 
-def test_a_submitted_test_is_graded_with_feedback_for_every_question(built_lesson):
+def test_a_submitted_attempt_is_graded_at_once_with_feedback_for_every_question(built_lesson):
     lesson = built_lesson(GOLDEN_TOPICS[0].topic)
     questions = lesson.final_test["questions"]
     answers = {}
@@ -84,7 +85,8 @@ def test_a_submitted_test_is_graded_with_feedback_for_every_question(built_lesso
         else:
             answers[q["id"]] = q.get("model_answer", "")
 
-    submission, _ = SubmissionService(queue=InlineTaskQueue()).submit(lesson, answers)
+    service = AttemptService(queue=InlineTaskQueue())
+    submission, _ = service.submit(lesson, service.start(lesson).attempt.id, answers)
     submission.refresh_from_db()
 
     assert submission.status == "graded", submission.error

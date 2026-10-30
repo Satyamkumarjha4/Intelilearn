@@ -2,8 +2,8 @@
 
 A lesson's main flow fails the lesson (`Lesson.fail`, which leaves a ready lesson alone); a submitted test that was
 being graded must not stay "grading" for ever, so its submission is marked failed and can be graded again (the
-learner never answers twice). Every run, of any graph, also reports its end to the action gate
-(`AuthorizationSettlement`, lessons/metering.py).
+learner never answers twice); a retake whose questions could not be written leaves no attempt behind. Every run, of
+any graph, also reports its end to the action gate (`AuthorizationSettlement`, lessons/metering.py).
 """
 
 from typing import Protocol
@@ -26,11 +26,27 @@ class SubmissionEffect:
         )
 
 
+class AttemptGenerationEffect:
+    """The `question_bank` run for a retake ended without its questions (failed or stopped): the attempt that waited for
+    them goes, so the attempt number is never used up and the learner starts again with a fresh authorization (T17)."""
+
+    def apply(self, run: GraphRun, message: str) -> None:
+        attempt_id = (run.payload.get("input") or {}).get("attempt_id")
+        TestSubmission.objects.filter(pk=attempt_id, status=TestSubmission.Status.GENERATING).delete()
+
+
 class RunEffects:
     """The effect of a run that failed or was cancelled, by the graph it ran, and the report to the action gate."""
 
     def __init__(self, effects: dict[str, RunEffect] | None = None, settlement: AuthorizationSettlement | None = None):
-        self.effects = effects if effects is not None else {GraphRun.Graph.GRADE_TEST: SubmissionEffect()}
+        self.effects = (
+            effects
+            if effects is not None
+            else {
+                GraphRun.Graph.GRADE_TEST: SubmissionEffect(),
+                GraphRun.Graph.QUESTION_BANK: AttemptGenerationEffect(),
+            }
+        )
         self.settlement = settlement or AuthorizationSettlement()
 
     def on_stopped(self, run: GraphRun, message: str) -> None:

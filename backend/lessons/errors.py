@@ -111,12 +111,6 @@ class NotFailed(LessonError):
 class SubmissionNotFound(LessonError):
     status_code = status.HTTP_404_NOT_FOUND
     default_code = "not_found"
-    default_detail = "That test submission does not exist."
-
-
-class AttemptNotFound(LessonError):
-    status_code = status.HTTP_404_NOT_FOUND
-    default_code = "not_found"
     default_detail = "That attempt does not exist."
 
 

@@ -69,7 +69,12 @@ PATHS = [
     ("get", "/api/lessons/{lesson}/test"),
     ("post", "/api/lessons/{lesson}/test/submissions"),
     ("get", "/api/lessons/{lesson}/test/submissions/{run}"),
-    ("post", "/api/lessons/{lesson}/test/submissions/{run}/regrade"),
+    ("get", "/api/lessons/{lesson}/test/attempts"),
+    ("post", "/api/lessons/{lesson}/test/attempts"),
+    ("get", "/api/lessons/{lesson}/test/attempts/{run}"),
+    ("put", "/api/lessons/{lesson}/test/attempts/{run}/answers/t1"),
+    ("post", "/api/lessons/{lesson}/test/attempts/{run}/submit"),
+    ("post", "/api/lessons/{lesson}/test/attempts/{run}/regrade"),
     ("get", "/api/lessons/{lesson}/test/submission"),
     ("get", "/api/lessons/{lesson}/versions"),
     ("post", "/api/lessons/{lesson}/versions/1/restore"),
@@ -122,6 +127,10 @@ class TestList:
             "updated_at",
             "test_status",
             "test_score",
+            "latest_score",
+            "best_score",
+            "attempts_count",
+            "has_open_attempt",
             "material_count",
         }
         assert body["next"] is None and body["previous"] is None
@@ -613,7 +622,10 @@ def test_the_openapi_schema_documents_the_lessons_api(api_client):
                  "/api/lessons/{lesson_id}/materials/{kind}",
                  "/api/lessons/{lesson_id}/materials/practice_sheet/grade", "/api/lessons/{lesson_id}/test",
                  "/api/lessons/{lesson_id}/test/submission",
-                 "/api/lessons/{lesson_id}/test/submissions/{submission_id}/regrade"]:  # fmt: skip
+                 "/api/lessons/{lesson_id}/test/attempts", "/api/lessons/{lesson_id}/test/attempts/{attempt_id}",
+                 "/api/lessons/{lesson_id}/test/attempts/{attempt_id}/answers/{question_id}",
+                 "/api/lessons/{lesson_id}/test/attempts/{attempt_id}/submit",
+                 "/api/lessons/{lesson_id}/test/attempts/{attempt_id}/regrade"]:  # fmt: skip
         assert path in paths
 
 
@@ -727,11 +739,15 @@ class TestLessonTest:
     def url(self, lesson, suffix=""):
         return f"/api/lessons/{lesson.id}/test/submissions{suffix}"
 
+    def regrade(self, lesson, attempt):
+        return f"/api/lessons/{lesson.id}/test/attempts/{attempt.id}/regrade"
+
     def test_the_test_is_served_without_answers_and_with_its_total_marks(self, signed_in_client, ready):
+        signed_in_client.post(f"/api/lessons/{ready.id}/test/attempts")  # attempt 1 starts; the test is its questions
         response = signed_in_client.get(f"/api/lessons/{ready.id}/test")
 
         body = response.json()
-        assert response.status_code == 200 and body["submission"] is None
+        assert response.status_code == 200 and body["submission"]["status"] == "in_progress"
         assert [q["id"] for q in body["questions"]] == [q["id"] for q in self.FINAL["questions"]]
         assert body["total_marks"] == sum(q["marks"] for q in self.FINAL["questions"])
         leaks = (
@@ -850,7 +866,7 @@ class TestLessonTest:
             lesson=ready, answers={self.IDS["short_answer"]: "x"}, status="failed", error="boom"
         )
 
-        response = signed_in_client.post(self.url(ready, f"/{failed.id}/regrade"))
+        response = signed_in_client.post(self.regrade(ready, failed))
 
         assert response.status_code == 202 and response.json() == {"run_id": str(queue.runs[0].id)}
         failed.refresh_from_db()
@@ -860,7 +876,7 @@ class TestLessonTest:
     def test_only_a_failed_grading_can_be_run_again(self, signed_in_client, ready, queue, status):
         submission = TestSubmission.objects.create(lesson=ready, status=status)
 
-        response = signed_in_client.post(self.url(ready, f"/{submission.id}/regrade"))
+        response = signed_in_client.post(self.regrade(ready, submission))
 
         assert (response.status_code, response.json()["code"]) == (409, "not_failed") and queue.runs == []
 
@@ -873,7 +889,7 @@ class TestLessonTest:
             signed_in_client.post(self.url(theirs), {"answers": {}}, format="json").status_code,
             signed_in_client.get(self.url(theirs, f"/{submission.id}")).status_code,
             signed_in_client.get(f"/api/lessons/{theirs.id}/test/submission").status_code,
-            signed_in_client.post(self.url(theirs, f"/{submission.id}/regrade")).status_code,
+            signed_in_client.post(self.regrade(theirs, submission)).status_code,
         ]
 
         assert statuses == [404] * 5 and TestSubmission.objects.get().status == "failed"

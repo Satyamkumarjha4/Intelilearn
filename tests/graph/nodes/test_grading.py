@@ -49,7 +49,9 @@ def submitted(lesson, lesson_state):
         stage=Stage.READY, final_test=FINAL_TEST, config_snapshot=budget_snapshot(),
         settings_snapshot=lesson_state["settings"],
     )  # fmt: skip
-    submission = TestSubmission.objects.create(lesson=lesson, answers=ANSWERS)
+    submission = TestSubmission.objects.create(
+        lesson=lesson, answers=ANSWERS, questions=FINAL_TEST["questions"], status=TestSubmission.Status.GRADING
+    )
     return lesson_state | {"submission_id": str(submission.id)}, submission
 
 
@@ -63,7 +65,7 @@ class TestLoad:
 
         update = LoadSubmissionNode()(state, runtime)
 
-        assert update["test_answers"] == ANSWERS and update["final_test"] == FINAL_TEST
+        assert update["test_answers"] == ANSWERS and update["final_test"] == {"questions": FINAL_TEST["questions"]}
         assert [item["id"] for item in update["grading_items"]] == [
             SHORT,
             SHORT2,
@@ -162,6 +164,28 @@ class TestPersist:
         assert rows[SHORT2]["awarded"] == 3 and rows[SHORT2]["correct"] is True
         assert (rows[LONG]["awarded"], rows[LONG]["feedback"]) == (0, "No answer given.")
         assert stored.result["complete"] is True and stored.result["score"]["available"] == sum(MARKS.values())
+
+    def test_the_band_and_the_marks_are_stored_with_the_card_by_the_same_rule_as_a_submit(
+        self, submitted, runtime, lesson
+    ):
+        state = submitted[0] | LoadSubmissionNode()(submitted[0], runtime)
+        state |= {"grade_report": graded((SHORT, [1, 2]), (SHORT2, [1, 2]))}
+
+        PersistGradeNode()(state, runtime)
+
+        stored = TestSubmission.objects.get(pk=state["submission_id"])
+        assert (stored.awarded, stored.available) == (stored.result["score"]["awarded"], sum(MARKS.values()))
+        assert stored.band in ("fail", "normal", "excellent") and stored.followup is None
+
+    def test_the_questions_graded_are_the_ones_this_attempt_was_served_not_the_lessons_test(
+        self, submitted, runtime, lesson
+    ):
+        state, submission = submitted
+        Lesson.objects.filter(pk=lesson.pk).update(final_test={"title": "T", "questions": []})
+
+        update = LoadSubmissionNode()(state, runtime)
+
+        assert [item["id"] for item in update["grading_items"]] == [SHORT, SHORT2]
 
     def test_with_nothing_to_grade_the_automatic_card_is_saved_alone(self, submitted, runtime, lesson):
         TestSubmission.objects.filter(pk=submitted[0]["submission_id"]).update(answers={MCQ: 1, NUM: "4"})

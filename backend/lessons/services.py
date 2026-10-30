@@ -2,18 +2,18 @@
 
 `LessonService` starts, retries and deletes lessons. `QuizService` serves a quiz to the learner, grades their answers
 (with the same grader the graph uses, so the score they see is the one the graph routes on) and queues the resume.
+The lesson test's attempts are in `attempts.py`.
 """
 
 import uuid
 from typing import Protocol
 
 from django.conf import settings
-from django.core.exceptions import ValidationError
-from django.db import IntegrityError, transaction
+from django.db import transaction
 from django.utils import timezone
 from django.utils.module_loading import import_string
 
-from graph.grading import AnswerError, AnswerGrader, QuizGrader, RoutingPolicy, ScoreCard, Solution
+from graph.grading import AnswerError, AnswerGrader, QuizGrader, RoutingPolicy, Solution
 from graph.schemas import public_question
 from llm_registry.resolver import RegistryResolver
 
@@ -23,19 +23,16 @@ from .erasure import LessonErasure
 from .errors import (
     AlreadyAttempted,
     AlreadyExists,
-    AlreadySubmitted,
     InvalidAnswers,
     LessonNotConfigured,
     MaterialNotFound,
     NotAttempted,
-    NotFailed,
     QueueUnavailable,
     QuizNotFound,
     RepairLimitReached,
     RunEnded,
     RunInProgress,
     StaleCodeVersion,
-    SubmissionNotFound,
     VersionNotFound,
     WrongStage,
 )
@@ -52,7 +49,6 @@ from .models import (
     Route,
     Stage,
     StudyMaterial,
-    TestSubmission,
 )
 from .subjects import RunSubject
 
@@ -517,131 +513,3 @@ class CodeService:
             lesson.code_version += 1
             lesson.save(update_fields=["code", "code_parts", "code_version", "updated_at"])
         return lesson
-
-
-class SubmissionService:
-    """The lesson's final test: serving it, marking the one submission at once, queueing the open-ended answers for
-    grading, and grading again when that failed. The learner never answers twice."""
-
-    MAX_ANSWER_CHARS = 10_000
-    MAX_SELECTED = 12  # a multiple-select question has at most 6 options
-    #: what the test screen needs of `public_question` (the stripping of answers stays there); the concept and
-    #: difficulty are labels for the grader and the report, not for the person answering
-    SHOWN = ("id", "type", "question", "marks", "options", "unit", "decimal_precision", "language", "starter_code")
-
-    def __init__(
-        self, queue: TaskQueue | None = None, grader: AnswerGrader | None = None, cards: ScoreCard | None = None
-    ):
-        self.dispatcher = RunDispatcher(queue)
-        self.grader = grader or AnswerGrader()
-        self.cards = cards or ScoreCard()
-
-    def for_learner(self, lesson: Lesson) -> dict:
-        """The test to take: questions without answers or marking schemes, what it is worth, and the submission if
-        one was made."""
-        questions = self._questions(lesson)
-        submission = TestSubmission.objects.filter(lesson=lesson).first()
-        return {
-            "questions": [self._shown(q) for q in questions],
-            "total_marks": sum(q["marks"] for q in questions),
-            "submission": None
-            if submission is None
-            else {"id": str(submission.id), "status": submission.status, "submitted_at": submission.submitted_at},
-        }
-
-    def submit(self, lesson: Lesson, answers) -> tuple[TestSubmission, GraphRun | None]:
-        """Mark what can be marked now. Open-ended answers get a `grade_test` run; with none, the result is final.
-        Only the first submission is accepted: a second one stores nothing."""
-        questions = self._questions(lesson)
-        with transaction.atomic():
-            lesson = Lesson.objects.select_for_update().get(pk=lesson.pk)  # two submits at once queue up here
-            if (existing := self._existing(lesson)) is not None:
-                raise AlreadySubmitted(existing.id)
-            clean = self._clean(questions, answers)
-            pending = bool(self.cards.open_items(questions, clean))
-            sheet = self.grader.grade_all(questions, clean)
-            card = self.cards.build(questions, clean, sheet, None if pending else {})
-            try:
-                # A savepoint: the constraint's refusal must not poison the outer transaction.
-                with transaction.atomic():
-                    submission = TestSubmission.objects.create(
-                        lesson=lesson,
-                        answers=clean,
-                        result=card,
-                        status=TestSubmission.Status.GRADING if pending else TestSubmission.Status.GRADED,
-                        graded_at=None if pending else timezone.now(),
-                    )
-            except IntegrityError:  # the lock above makes this rare, but the constraint is the real guarantee
-                raise AlreadySubmitted(self._existing(lesson).id) from None
-            run = self._grading_run(lesson, submission) if pending else None
-        if run:
-            self.dispatcher.dispatch(run)
-        return submission, run
-
-    @staticmethod
-    def _existing(lesson: Lesson) -> TestSubmission | None:
-        return TestSubmission.objects.filter(lesson=lesson).first()
-
-    def regrade(self, lesson: Lesson, submission_id) -> GraphRun:
-        """Grade a failed submission again on the answers it already has."""
-        with transaction.atomic():
-            lesson = Lesson.objects.select_for_update().get(pk=lesson.pk)
-            submission = self.get(lesson, submission_id)
-            if submission.status != TestSubmission.Status.FAILED:
-                raise NotFailed()
-            if has_active_run(lesson):
-                raise RunInProgress()
-            TestSubmission.objects.filter(pk=submission.pk).update(status=TestSubmission.Status.GRADING, error="")
-            run = self._grading_run(lesson, submission)
-        self.dispatcher.dispatch(run)
-        return run
-
-    def get(self, lesson: Lesson, submission_id) -> TestSubmission:
-        try:
-            return TestSubmission.objects.get(pk=submission_id, lesson=lesson)
-        except (TestSubmission.DoesNotExist, ValueError, ValidationError):
-            raise SubmissionNotFound() from None
-
-    def current(self, lesson: Lesson) -> TestSubmission:
-        """The lesson's one submission."""
-        submission = TestSubmission.objects.filter(lesson=lesson).first()
-        if submission is None:
-            raise SubmissionNotFound()
-        return submission
-
-    def _shown(self, question: dict) -> dict:
-        public = public_question(question)
-        return {key: public[key] for key in self.SHOWN if key in public}
-
-    @staticmethod
-    def _grading_run(lesson: Lesson, submission: TestSubmission) -> GraphRun:
-        return GraphRun.objects.create(
-            lesson=lesson,
-            graph=GraphRun.Graph.GRADE_TEST,
-            trigger=GraphRun.Trigger.GRADE,
-            payload={"input": {"submission_id": str(submission.id)}},
-        )
-
-    @staticmethod
-    def _questions(lesson: Lesson) -> list[dict]:
-        questions = (lesson.final_test or {}).get("questions")
-        if lesson.stage != Stage.READY or lesson.route == Route.MASTERY or not questions:
-            raise WrongStage("The test can be taken once the lesson is ready.")
-        return questions
-
-    def _clean(self, questions: list[dict], answers) -> dict:
-        if not isinstance(answers, dict):
-            raise InvalidAnswers("Send the answers as an object of question id → answer.")
-        unknown = sorted(set(answers) - {q["id"] for q in questions})
-        if unknown:
-            raise InvalidAnswers(f"Unknown question ids: {', '.join(unknown)}.")
-        for qid, value in answers.items():
-            if isinstance(value, list):  # the options picked in a multiple-select question
-                if len(value) > self.MAX_SELECTED or not all(type(item) is int for item in value):
-                    raise InvalidAnswers(f"The answer to {qid} must be a short list of option numbers.")
-                continue
-            if isinstance(value, bool) or not (value is None or isinstance(value, (int, float, str))):
-                raise InvalidAnswers(f"The answer to {qid} must be a number or text.")
-            if isinstance(value, str) and len(value) > self.MAX_ANSWER_CHARS:
-                raise InvalidAnswers(f"The answer to {qid} is longer than {self.MAX_ANSWER_CHARS} characters.")
-        return dict(answers)

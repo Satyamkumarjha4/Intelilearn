@@ -234,14 +234,14 @@ class ScoreCard:
         return [
             LegacyQuestionAdapter.normalise(q) | {"answer": answers[q["id"]]}
             for q in questions
-            if not QuestionTypes.of(q).auto_scored and not self._blank(answers.get(q["id"]))
+            if not QuestionTypes.of(q).auto_scored and not self.is_blank(answers.get(q["id"]))
         ]
 
     def _row(self, question: dict, answer, grade: QuestionGrade, model: dict[str, dict] | None) -> dict:
         question = LegacyQuestionAdapter.normalise(question)
         row = {"id": question["id"], "type": question["type"], "concept": question["concept"], "marks": grade.marks}
         row["solution"] = Solution.of(question)
-        if self._blank(answer):
+        if self.is_blank(answer):
             return row | {"awarded": 0, "correct": False, "graded_by": "auto", "feedback": self.NO_ANSWER}
         if grade.correct is not None:
             return row | {
@@ -262,7 +262,7 @@ class ScoreCard:
         }  # fmt: skip
 
     @staticmethod
-    def _blank(answer) -> bool:
+    def is_blank(answer) -> bool:
         return answer is None or (isinstance(answer, str) and not answer.strip()) or answer == []
 
     @staticmethod
