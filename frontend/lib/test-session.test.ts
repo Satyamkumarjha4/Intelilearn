@@ -1,36 +1,24 @@
 /**
- * Unit under test: `TestResultView`, `AlreadySubmitted` and `TestSubmitFlow`, how a submitted lesson test is followed
- * and shown.
+ * Unit under test: `TestResultView`, how an attempt's result is told.
  *
  * Why: the score is what a learner takes from the test. A card that says "70%" while answers are still being graded
- * misleads them; a flow that never ends when the grading run fails leaves a spinner for ever; and one that keeps
- * reporting after the page was left updates something that is gone.
+ * misleads them, and a question must say who marked it so a model's mark is never mistaken for a person's.
  *
  * Use cases:
  * - the summary says marks and percent, and "so far" while grading is incomplete
  * - each question is full, partial, none or pending, with a label that says so, and who marked it
  * - topics to revisit are listed
- * - a second try at the test is recognised from its 409, with the id of the submission already there
- * - a test marked at once is reported once and never follows a run
- * - a test with open-ended answers is reported at once, followed to the end of its run, then read again
- * - a failed grading is reported as failed with its reason
- * - an API error rejects the flow
- * - leaving the page stops following the run and silences updates
  */
 import { describe, expect, test } from "bun:test";
 
-import { ApiError } from "./api";
-import { AlreadySubmitted, TestResultView, TestSubmitFlow } from "./test-session";
-import type { QuestionResult, ScoreCard, TestSubmission } from "./types";
+import { TestResultView } from "./test-session";
+import type { QuestionResult, ScoreCard } from "./types";
 
 const row = (over: Partial<QuestionResult> = {}): QuestionResult => ({
   id: "t1", type: "mcq", concept: "Halving", marks: 4, awarded: 4, correct: true, graded_by: "auto", feedback: "Correct.", solution: {}, ...over,
 });
 const card = (over: Partial<ScoreCard> = {}): ScoreCard => ({
   complete: true, score: { awarded: 14, available: 20, percent: 70 }, questions: [row()], topics_to_revisit: ["Halving", "Cost"], ...over,
-});
-const submission = (over: Partial<TestSubmission> = {}): TestSubmission => ({
-  id: "S1", status: "graded", error: "", answers: {}, result: card(), submitted_at: "2026-01-01T00:00:00Z", graded_at: "2026-01-01T00:00:05Z", ...over,
 });
 
 describe("TestResultView", () => {
@@ -59,111 +47,5 @@ describe("TestResultView", () => {
   test("lists the topics to revisit", () => {
     expect(TestResultView.topics(card())).toBe("Halving, Cost");
     expect(TestResultView.topics(card({ topics_to_revisit: [] }))).toBe("");
-  });
-});
-
-function fakes(reads: TestSubmission[], created = { submission_id: "S1", run_id: "R1" as string | null, status: "grading" as const }) {
-  const calls: string[] = [];
-  const api = {
-    submitTest: async (_id: string, answers: Record<string, unknown>) => {
-      calls.push(`submit ${JSON.stringify(answers)}`);
-      return created;
-    },
-    submission: async () => {
-      calls.push("read");
-      return reads.shift()!;
-    },
-  };
-  const followed: { runId: string; end: () => void; stopped: boolean }[] = [];
-  const follow = (runId: string, end: () => void) => {
-    const entry = { runId, end, stopped: false };
-    followed.push(entry);
-    return () => {
-      entry.stopped = true;
-    };
-  };
-  return { api, follow, followed, calls };
-}
-
-describe("AlreadySubmitted", () => {
-  test("names the submission that is already there", () => {
-    const error = new ApiError(409, "already_submitted", "Already submitted.", {}, { submission_id: "S1" });
-
-    expect(AlreadySubmitted.idOf(error)).toBe("S1");
-  });
-
-  test.each([
-    ["another conflict", new ApiError(409, "wrong_stage", "No.", {}, { submission_id: "S1" })],
-    ["another status", new ApiError(400, "already_submitted", "No.", {}, { submission_id: "S1" })],
-    ["no id", new ApiError(409, "already_submitted", "No.")],
-    ["an id that is not text", new ApiError(409, "already_submitted", "No.", {}, { submission_id: 7 })],
-    ["an empty id", new ApiError(409, "already_submitted", "No.", {}, { submission_id: "" })],
-    ["not an API error", new Error("boom")],
-    ["nothing", undefined],
-  ])("is null for %s", (_, error) => {
-    expect(AlreadySubmitted.idOf(error)).toBeNull();
-  });
-});
-
-describe("TestSubmitFlow", () => {
-  test("a test marked at once is reported once and no run is followed", async () => {
-    const { api, follow, followed } = fakes([submission()], { submission_id: "S1", run_id: null, status: "graded" as never });
-    const seen: string[] = [];
-
-    const result = await new TestSubmitFlow(api, follow).run("L1", { t1: 1 }, (s) => seen.push(s.status));
-
-    expect(result.status).toBe("graded");
-    expect([seen, followed.length]).toEqual([["graded"], 0]);
-  });
-
-  test("open-ended answers are shown at once, followed to the end of the run, then read again", async () => {
-    const pending = submission({ status: "grading", graded_at: null, result: card({ complete: false }) });
-    const { api, follow, followed, calls } = fakes([pending, submission()]);
-    const seen: string[] = [];
-
-    const flow = new TestSubmitFlow(api, follow).run("L1", { t1: 1 }, (s) => seen.push(`${s.status}:${s.result?.complete}`));
-    await Promise.resolve();
-    await new Promise((r) => setTimeout(r, 0));
-    expect(seen).toEqual(["grading:false"]);
-    followed[0].end();
-    const result = await flow;
-
-    expect(followed.map((f) => f.runId)).toEqual(["R1"]);
-    expect(seen).toEqual(["grading:false", "graded:true"]);
-    expect([result.status, calls.filter((c) => c === "read").length]).toEqual(["graded", 2]);
-  });
-
-  test("a failed grading is reported as failed with its reason", async () => {
-    const pending = submission({ status: "grading", graded_at: null });
-    const failed = submission({ status: "failed", error: "Every AI model failed.", result: card({ complete: false }) });
-    const { api, follow, followed } = fakes([pending, failed]);
-
-    const flow = new TestSubmitFlow(api, follow).run("L1", {}, () => {});
-    await new Promise((r) => setTimeout(r, 0));
-    followed[0].end();
-
-    expect(await flow).toMatchObject({ status: "failed", error: "Every AI model failed." });
-  });
-
-  test("an API error rejects the flow", async () => {
-    const api = { submitTest: async () => Promise.reject(new Error("409")), submission: async () => submission() };
-
-    await expect(new TestSubmitFlow(api, () => () => {}).run("L1", {}, () => {})).rejects.toThrow("409");
-  });
-
-  test("leaving the page stops following the run and silences updates", async () => {
-    const pending = submission({ status: "grading", graded_at: null });
-    const { api, follow, followed } = fakes([pending, submission()]);
-    const seen: string[] = [];
-    const flow = new TestSubmitFlow(api, follow);
-
-    const done = flow.run("L1", {}, (s) => seen.push(s.status));
-    await new Promise((r) => setTimeout(r, 0));
-    flow.dispose();
-    followed[0].end();
-    await done;
-
-    expect(followed[0].stopped).toBe(true);
-    expect(seen).toEqual(["grading"]);
   });
 });

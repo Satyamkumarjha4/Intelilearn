@@ -9,8 +9,10 @@
  * - a lesson that is not ready has no tabs
  * - a ready lesson has Lesson, Test and Quick check answers; a ready mastery lesson has Study sheets and Quick check
  *   answers
- * - before the test is submitted its tab says "1 attempt"; while grading "Grading…"; when grading failed
- *   "Needs another go at grading"; once graded "<score>% · final" with the rounded percent
+ * - before the test is taken its tab says "To do"; while its questions are being written "Getting ready…"; while it is
+ *   being taken "In progress"; while grading "Grading…"; when grading failed "Needs another go at grading"; once graded
+ *   "<latest score>% · attempt <n>" with the rounded percent
+ * - a retake in progress keeps the score of the last attempt: "<score>% · trying again"
  * - the address picks a tab, and an unknown, missing or unavailable tab falls back to the first one
  */
 import { describe, expect, test } from "bun:test";
@@ -21,7 +23,8 @@ const lesson = (over: Partial<TabsInput> = {}): TabsInput => ({
   stage: "ready",
   route: "lesson",
   test_status: "not_started",
-  test_score: null,
+  latest_score: null,
+  attempts_count: 0,
   ...over,
 });
 
@@ -49,19 +52,23 @@ describe("LessonTabs.of", () => {
   });
 
   test.each([
-    [lesson(), { text: "1 attempt", tone: "marigold" }],
+    [lesson(), { text: "To do", tone: "marigold" }],
+    [lesson({ test_status: "generating" }), { text: "Getting ready…", tone: "marigold" }],
+    [lesson({ test_status: "in_progress" }), { text: "In progress", tone: "marigold" }],
     [lesson({ test_status: "grading" }), { text: "Grading…", tone: "marigold" }],
     [lesson({ test_status: "failed" }), { text: "Needs another go at grading", tone: "destructive" }],
-    [lesson({ test_status: "graded", test_score: { awarded: 14, available: 20 } }), { text: "70% · final", tone: "success" }],
-    [lesson({ test_status: "graded", test_score: { awarded: 2, available: 3 } }), { text: "67% · final", tone: "success" }],
+    [lesson({ test_status: "graded", attempts_count: 1, latest_score: { awarded: 14, available: 20 } }), { text: "70% · attempt 1", tone: "success" }],
+    [lesson({ test_status: "graded", attempts_count: 3, latest_score: { awarded: 2, available: 3 } }), { text: "67% · attempt 3", tone: "success" }],
+    [lesson({ test_status: "in_progress", attempts_count: 1, latest_score: { awarded: 14, available: 20 } }), { text: "70% · trying again", tone: "marigold" }],
+    [lesson({ test_status: "generating", attempts_count: 2, latest_score: { awarded: 18, available: 20 } }), { text: "90% · trying again", tone: "marigold" }],
   ] as const)("the test tab badge follows the test", (input, badge) => {
     expect(LessonTabs.of(input).find((t) => t.id === "test")?.badge).toEqual(badge);
   });
 
-  test("a graded test without a score still says it is final", () => {
-    const tabs = LessonTabs.of(lesson({ test_status: "graded", test_score: null }));
+  test("a graded test without a score says how many attempts there have been", () => {
+    const tabs = LessonTabs.of(lesson({ test_status: "graded", latest_score: null, attempts_count: 2 }));
 
-    expect(tabs.find((t) => t.id === "test")?.badge).toEqual({ text: "Final", tone: "success" });
+    expect(tabs.find((t) => t.id === "test")?.badge).toEqual({ text: "Attempt 2", tone: "success" });
   });
 
   test("the other tabs have no badge", () => {

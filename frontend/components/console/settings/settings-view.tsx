@@ -5,7 +5,7 @@ import { Fragment, useState } from "react";
 import { toast } from "sonner";
 
 import { ErrorState } from "@/components/console/error-state";
-import { errorId, FieldRow, NumberBox } from "@/components/console/field-row";
+import { FieldRow, NumberBox } from "@/components/console/field-row";
 import { PageHeader } from "@/components/console/page-header";
 import { SaveBar } from "@/components/console/save-bar";
 import { WhereLearnersGo } from "@/components/console/settings/where-learners-go";
@@ -103,7 +103,6 @@ export function SettingsView() {
       <Switch aria-labelledby={`${id}-label`} checked={checked} onCheckedChange={onChange} />
     </FieldRow>
   );
-  const testError = problems.final_test_min ?? problems.final_test_max;
   const bands = FlowBands.of(FlowSettingsForm.numbers(saved, form));
 
   return (
@@ -119,12 +118,16 @@ export function SettingsView() {
           </Section>
 
           <Section title="Lesson">
-            <FieldRow htmlFor="final_test_min" label="Final test questions" help="Minimum and maximum" error={testError}>
-              <NumberBox id="final_test_min" ariaLabel="Minimum test questions" width="w-[70px]" value={form.final_test_min} invalid={!!problems.final_test_min} errorFor={errorId("final_test_min")} onChange={(value) => change({ final_test_min: value })} />
-              <span aria-hidden="true">–</span>
-              <NumberBox id="final_test_max" ariaLabel="Maximum test questions" width="w-[70px]" value={form.final_test_max} invalid={!!problems.final_test_max} errorFor={errorId("final_test_min")} onChange={(value) => change({ final_test_max: value })} />
-            </FieldRow>
             {numberRow("max_interactives_per_page", "Interactives per page", "Graphs, simulations, diagrams, code")}
+          </Section>
+
+          <Section title="Test and retakes">
+            {numberRow("retakes_per_day", "Retakes per lesson per day", "Each retake writes a fresh set of ten questions")}
+            {numberRow("band_fail_below", "Fail below (%)", "An attempt under this percent is a Fail")}
+            {numberRow("band_excellent_above", "Excellent above (%)", "An attempt over this percent is Excellent")}
+            {numberRow("question_batch_size", "Questions per model call", "5 to 10; the test is ten questions, written in batches")}
+            {numberRow("batch_max_short", "Short answers per batch", "At most this many in one call, unless only short answers are asked")}
+            {numberRow("batch_max_long", "Long answers per batch", "At most this many in one call, unless only long answers are asked")}
           </Section>
 
           <Section title="Quality checks">

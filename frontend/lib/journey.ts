@@ -2,7 +2,7 @@ import type { LessonDetail } from "@/lib/types";
 
 export type JourneyStepState = "done" | "now" | "todo";
 export type JourneyStep = { label: string; state: JourneyStepState; failed: boolean };
-export type JourneyInput = Pick<LessonDetail, "stage" | "route" | "assessment" | "results" | "test_status" | "active_run_id">;
+export type JourneyInput = Pick<LessonDetail, "stage" | "route" | "assessment" | "results" | "test_status" | "latest_score" | "active_run_id">;
 
 const LESSON_STEPS = ["Diagnose", "Your level", "Learn", "Test", "Revisit"] as const;
 const MASTERY_STEPS = ["Diagnose", "Mastered", "Pick a sheet", "Study"] as const;
@@ -43,6 +43,8 @@ export class Journey {
         return lesson.assessment ? LEARN : LEVEL;
       case "ready":
         if (lesson.test_status === "grading" || lesson.test_status === "graded") return REVISIT;
+        // A test being prepared or taken is the Test step; a retake after a graded test stays on Revisit.
+        if (lesson.test_status === "generating" || lesson.test_status === "in_progress") return lesson.latest_score ? REVISIT : TEST;
         return lesson.test_status === "failed" ? TEST : LEARN;
       case "failed":
         // The lesson does not say where it failed, but what it holds does: no answered quiz, no assessment, or both.

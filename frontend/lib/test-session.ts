@@ -1,6 +1,4 @@
-import { ApiError } from "@/lib/api";
-import type { LessonsApi } from "@/lib/lessons-api";
-import type { QuestionResult, ScoreCard, TestSubmission } from "@/lib/types";
+import type { QuestionResult, ScoreCard } from "@/lib/types";
 
 /** How one question went, for colouring and wording. */
 export type Tone = "full" | "partial" | "none" | "pending";
@@ -37,55 +35,5 @@ export class TestResultView {
 
   static topics(card: ScoreCard): string {
     return card.topics_to_revisit.join(", ");
-  }
-}
-
-/** The reply to a second try at the test: it can be taken once, and the answer names the submission that is there. */
-export class AlreadySubmitted {
-  /** The id of the existing submission, or null when `error` is not that refusal. */
-  static idOf(error: unknown): string | null {
-    if (!(error instanceof ApiError) || error.status !== 409 || error.code !== "already_submitted") return null;
-    const id = error.extra.submission_id;
-    return typeof id === "string" && id ? id : null;
-  }
-}
-
-export type FollowRun = (runId: string, onEnd: () => void) => () => void;
-
-/**
- * Submits the lesson test and follows the grading to its end: the answers that could be marked at once are shown
- * straight away, and the card is updated when the open-ended ones are graded. The API and the way a run is followed
- * are constructor parameters, so a test drives it without a network.
- */
-export class TestSubmitFlow {
-  private stop: (() => void) | null = null;
-  private disposed = false;
-
-  constructor(
-    private readonly api: Pick<LessonsApi, "submitTest" | "submission">,
-    private readonly follow: FollowRun,
-  ) {}
-
-  /** Resolves with the submission as it ended (graded, or failed with its reason). `onUpdate` sees every state. */
-  async run(lessonId: string, answers: Record<string, unknown>, onUpdate: (submission: TestSubmission) => void): Promise<TestSubmission> {
-    const created = await this.api.submitTest(lessonId, answers);
-    let submission = await this.api.submission(lessonId, created.submission_id);
-    if (!this.disposed) onUpdate(submission);
-    if (submission.status !== "grading" || !created.run_id) return submission;
-    await new Promise<void>((resolve) => {
-      if (this.disposed) return resolve();
-      this.stop = this.follow(created.run_id!, resolve);
-    });
-    this.stop = null;
-    submission = await this.api.submission(lessonId, created.submission_id);
-    if (!this.disposed) onUpdate(submission);
-    return submission;
-  }
-
-  /** Stop following (the page was left). Nothing more is reported. */
-  dispose(): void {
-    this.disposed = true;
-    this.stop?.();
-    this.stop = null;
   }
 }

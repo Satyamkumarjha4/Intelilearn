@@ -91,7 +91,7 @@ export class LessonBook {
   /** The button on the right of the footer: the next page, or on the last page the way to the test. */
   nextAction(test: TestStatus): NextAction {
     if (!this.isLast) return { kind: "page", label: "Next page →" };
-    return { kind: "test", label: test === "not_started" ? "Go to the test →" : "See your test results →" };
+    return { kind: "test", label: test === "not_started" || test === "generating" || test === "in_progress" ? "Go to the test →" : "See your test results →" };
   }
 
   private nameOf(index: number): string {

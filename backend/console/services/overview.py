@@ -13,7 +13,7 @@ from django.utils import timezone
 
 from console.outcomes import CallOutcomes, PercentileCont
 from console.periods import Period, Periods
-from lessons.models import Lesson, Quiz
+from lessons.models import Lesson, Quiz, TestSubmission
 from lessons.stages import Route, Stage
 from llm_registry.models import ModelCall
 
@@ -126,8 +126,9 @@ class DailyActivity:
 
 class Funnel:
     """Where the lessons started in the range have got to. The counts overlap (a built lesson also answered its quick
-    check); `failed_building` and `waiting` are where the rest stopped. Joins would repeat a lesson, so each count
-    is distinct."""
+    check); `test_submitted` is a lesson with an attempt that is over, not one still in progress or being prepared;
+    `failed_building` and `waiting` are where the rest stopped. Joins would repeat a lesson, so each count is
+    distinct."""
 
     WAITING = (Stage.AWAITING_DIAGNOSTIC, Stage.AWAITING_PREREQUISITE, Stage.AWAITING_CHOICE)
 
@@ -141,7 +142,7 @@ class Funnel:
             started=count(),
             quick_check_done=count(quizzes__kind=Quiz.Kind.DIAGNOSTIC, quizzes__attempt__isnull=False),
             built=Count("id", filter=ready & ~Q(route=Route.MASTERY), distinct=True),
-            test_submitted=count(submissions__isnull=False),
+            test_submitted=count(submissions__status__in=TestSubmission.SEALED),
             study_sheets=Count("id", filter=ready & Q(route=Route.MASTERY), distinct=True),
             failed_building=count(stage=Stage.FAILED),
             waiting=count(stage__in=self.WAITING),

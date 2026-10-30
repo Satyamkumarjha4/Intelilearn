@@ -8,10 +8,10 @@
  * Use cases:
  * - every stage has a pill written as what is going on or what to do, with a tone, a spinner while it is being worked
  *   on, and a link text
- * - a ready lesson says whether its test is waiting, being marked, done (with the percent) or could not be marked, and a
- *   ready mastery lesson counts its sheets
+ * - a ready lesson says whether its test is waiting, being prepared, in progress, being marked, done (with the best
+ *   percent) or could not be marked, and a ready mastery lesson counts its sheets
  * - a ready lesson says "Ready" until all three of its pages have been read here, then "Take the test"; once the test is
- *   marked it says "Test done · 77%", whatever was read
+ *   marked it says "Test done · best 77%", whatever was read; a retake in progress keeps the best score in view
  * - the kind line is "Lesson · <level>", "Study sheets · Mastered" or "Quick check" before the route is known
  * - a lesson needs the learner when it waits for an answer, or is a ready lesson whose test is not taken
  * - the filter chips map to stages (several at once), and All to none
@@ -25,7 +25,8 @@ import type { LessonSummary } from "./types";
 
 const lesson = (over: Partial<LessonSummary> = {}): LessonSummary => ({
   id: "1", topic: "T", stage: "ready", route: "lesson", title: "", level: "beginner", created_at: "2026-10-20T10:00:00Z",
-  updated_at: "2026-10-20T10:00:00Z", test_status: "not_started", test_score: null, material_count: 0, ...over,
+  updated_at: "2026-10-20T10:00:00Z", test_status: "not_started", test_score: null, latest_score: null, best_score: null,
+  attempts_count: 0, has_open_attempt: false, material_count: 0, ...over,
 });
 
 describe("pill", () => {
@@ -42,15 +43,30 @@ describe("pill", () => {
   });
 
   test("a ready lesson says where its test is", () => {
-    const of = (test_status: LessonSummary["test_status"], test_score: LessonSummary["test_score"] = null) =>
-      LessonStatus.of(lesson({ test_status, test_score }));
+    const of = (test_status: LessonSummary["test_status"], best_score: LessonSummary["best_score"] = null) =>
+      LessonStatus.of(lesson({ test_status, best_score, test_score: best_score, latest_score: best_score, attempts_count: best_score ? 1 : 0 }));
 
     expect(of("not_started")).toEqual({ label: "Ready", tone: "success", spinner: false, action: "Open" });
+    expect(of("generating")).toEqual({ label: "Getting your questions ready", tone: "primary", spinner: true, action: "Open" });
+    expect(of("in_progress")).toEqual({ label: "Test in progress", tone: "marigold", spinner: false, action: "Open" });
     expect(of("grading")).toEqual({ label: "Marking your test", tone: "primary", spinner: true, action: "Open" });
-    expect(of("graded", { awarded: 77, available: 100 })).toEqual({ label: "Test done · 77%", tone: "success", spinner: false, action: "Open" });
-    expect(of("graded", { awarded: 2, available: 3 }).label).toBe("Test done · 67%");
+    expect(of("graded", { awarded: 77, available: 100 })).toEqual({ label: "Test done · best 77%", tone: "success", spinner: false, action: "Open" });
+    expect(of("graded", { awarded: 2, available: 3 }).label).toBe("Test done · best 67%");
     expect(of("graded").label).toBe("Test done");
     expect(of("failed")).toEqual({ label: "Test needs marking again", tone: "destructive", spinner: false, action: "Open" });
+  });
+
+  test("a retake in progress keeps the best score in view, and says best, not latest", () => {
+    const retaking = lesson({ test_status: "in_progress", best_score: { awarded: 16, available: 20 }, latest_score: { awarded: 10, available: 20 }, attempts_count: 2 });
+
+    expect(LessonStatus.of(retaking).label).toBe("Test in progress · best 80%");
+    expect(LessonStatus.of({ ...retaking, test_status: "generating" }).label).toBe("Getting your questions ready · best 80%");
+  });
+
+  test("the best score is the one shown when the latest attempt was worse", () => {
+    const worse = lesson({ test_status: "graded", best_score: { awarded: 18, available: 20 }, latest_score: { awarded: 10, available: 20 }, attempts_count: 2 });
+
+    expect(LessonStatus.of(worse).label).toBe("Test done · best 90%");
   });
 
   test("a ready lesson says Ready until every page is read, then Take the test", () => {
@@ -101,6 +117,8 @@ describe("needs the learner", () => {
     [{ stage: "ready" }, true],
     [{ stage: "ready", test_status: "graded" }, false],
     [{ stage: "ready", test_status: "grading" }, false],
+    [{ stage: "ready", test_status: "in_progress" }, true],
+    [{ stage: "ready", test_status: "generating" }, false],
     [{ stage: "ready", route: "mastery" }, false],
     [{ stage: "generating_lesson" }, false],
     [{ stage: "failed" }, false],

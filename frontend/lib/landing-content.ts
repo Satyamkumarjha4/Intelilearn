@@ -116,7 +116,7 @@ export const PATH_SLIDES: PathSlide[] = [
     ifYouScore: "0–2",
     heading: "We build your foundations first",
     text: "No point rushing ahead. A short check finds which basics are missing, and your lesson teaches those before the main topic.",
-    steps: ["Quick check", "5-question foundations check", "Lesson: basics first, then the topic", "Final test"],
+    steps: ["Quick check", "5-question foundations check", "Lesson: basics first, then the topic", "Test you can retake"],
     example: {
       initial: "P",
       name: "Priya",
@@ -134,7 +134,7 @@ export const PATH_SLIDES: PathSlide[] = [
     ifYouScore: "3–9",
     heading: "You get a lesson that starts at your level",
     text: "We skip what you already know and start where your gaps begin. Higher score, deeper starting point.",
-    steps: ["Quick check", "Your starting point", "3-page interactive lesson", "Final test"],
+    steps: ["Quick check", "Your starting point", "3-page interactive lesson", "Test you can retake"],
     example: {
       initial: "A",
       name: "Arjun",

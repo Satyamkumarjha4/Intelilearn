@@ -52,7 +52,7 @@ export class LessonStatus {
   /** It waits for an answer, or it is a ready lesson whose test has not been taken. */
   static needsLearner(lesson: LessonSummary): boolean {
     if (lesson.stage.startsWith("awaiting_")) return true;
-    return lesson.stage === "ready" && lesson.route !== "mastery" && lesson.test_status === "not_started";
+    return lesson.stage === "ready" && lesson.route !== "mastery" && ["not_started", "in_progress"].includes(lesson.test_status);
   }
 
   /** The lesson to offer first: the most recently updated one that needs the learner. */
@@ -80,18 +80,26 @@ export class LessonStatus {
       const sheets = lesson.material_count;
       return pill(sheets ? `You aced the check · ${sheets} ${sheets === 1 ? "sheet" : "sheets"}` : "You aced the check", "insight", "Open");
     }
+    const best = LessonStatus.bestText(lesson);
     switch (lesson.test_status) {
+      case "generating":
+        return pill(`Getting your questions ready${best}`, "primary", "Open", true);
+      case "in_progress":
+        return pill(`Test in progress${best}`, "marigold", "Open");
       case "grading":
         return pill("Marking your test", "primary", "Open", true);
       case "failed":
         return pill("Test needs marking again", "destructive", "Open");
-      case "graded": {
-        const score = lesson.test_score;
-        const percent = score && score.available ? ` · ${Math.round((100 * score.awarded) / score.available)}%` : "";
-        return pill(`Test done${percent}`, "success", "Open");
-      }
+      case "graded":
+        return pill(`Test done${best}`, "success", "Open");
       default:
         return pagesRead >= LessonStatus.PAGES ? pill("Take the test", "marigold", "Take the test") : pill("Ready", "success", "Open");
     }
+  }
+
+  /** " · best 82%": the best graded attempt, or nothing before there is one. */
+  private static bestText(lesson: LessonSummary): string {
+    const best = lesson.best_score ?? lesson.test_score;
+    return best && best.available ? ` · best ${Math.round((100 * best.awarded) / best.available)}%` : "";
   }
 }

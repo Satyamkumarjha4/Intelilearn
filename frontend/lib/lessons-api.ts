@@ -1,5 +1,9 @@
 import { apiClient, type ApiClient } from "@/lib/api";
 import type {
+  AnswerSaved,
+  AttemptHistory,
+  AttemptStarted,
+  AttemptSubmitted,
   Answer,
   LearnerTest,
   LessonDetail,
@@ -17,7 +21,6 @@ import type {
   Stage,
   StudyMaterial,
   TestSubmission,
-  TestSubmissionCreated,
 } from "@/lib/types";
 
 export type LessonQuery = { q?: string; stage?: Stage | Stage[] | ""; cursor?: string | null; pageSize?: number };
@@ -94,28 +97,42 @@ export class LessonsApi {
     return this.client.request(`/lessons/${id}/repair`, { method: "POST", body: { error, code_version: codeVersion } });
   }
 
-  /** The test as its own screen: no answers, and the one submission once it has been made. */
+  /** The test as its own screen: the open attempt's questions and saved answers, or none. It never starts anything. */
   test(id: string): Promise<LearnerTest> {
     return this.client.request(`/lessons/${id}/test`);
   }
 
-  /** The test can be submitted once: a second try is refused with 409 `already_submitted`. */
-  submitTest(id: string, answers: Record<string, unknown>): Promise<TestSubmissionCreated> {
-    return this.client.request(`/lessons/${id}/test/submissions`, { method: "POST", body: { answers } });
+  /** Opens the next attempt, or returns the one that is open. The first has its questions; a retake is `generating`. */
+  startAttempt(id: string): Promise<AttemptStarted> {
+    return this.client.request(`/lessons/${id}/test/attempts`, { method: "POST" });
   }
 
-  submission(id: string, submissionId: string): Promise<TestSubmission> {
-    return this.client.request(`/lessons/${id}/test/submissions/${submissionId}`);
+  /** Saves one answer and locks the question: it cannot change afterwards (409 `locked`). `null` leaves it blank. */
+  saveAnswer(id: string, attemptId: string, questionId: string, answer: Answer | number[] | string | null): Promise<AnswerSaved> {
+    return this.client.request(`/lessons/${id}/test/attempts/${attemptId}/answers/${questionId}`, { method: "PUT", body: { answer } });
   }
 
-  /** The lesson's one submission with its result; 404 before the test is taken. */
-  currentSubmission(id: string): Promise<TestSubmission> {
-    return this.client.request(`/lessons/${id}/test/submission`);
+  /** Seals the attempt. `answers` fills questions that are not locked yet (the last card). */
+  submitAttempt(id: string, attemptId: string, answers?: Record<string, unknown>): Promise<AttemptSubmitted> {
+    return this.client.request(`/lessons/${id}/test/attempts/${attemptId}/submit`, {
+      method: "POST",
+      body: answers === undefined ? {} : { answers },
+    });
   }
 
-  /** Grades a failed submission again on the answers it already has (never new ones). */
-  regradeTest(id: string, submissionId: string): Promise<{ run_id: string }> {
-    return this.client.request(`/lessons/${id}/test/submissions/${submissionId}/regrade`, { method: "POST" });
+  /** Every attempt, oldest first, and the trend of the graded ones. */
+  attempts(id: string): Promise<AttemptHistory> {
+    return this.client.request(`/lessons/${id}/test/attempts`);
+  }
+
+  /** One attempt, read-only, with its card; the latest one has the highest `attempt_no`. */
+  attempt(id: string, attemptId: string): Promise<TestSubmission> {
+    return this.client.request(`/lessons/${id}/test/attempts/${attemptId}`);
+  }
+
+  /** Grades a failed attempt again on the answers it already has (never new ones). */
+  regradeAttempt(id: string, attemptId: string): Promise<{ run_id: string }> {
+    return this.client.request(`/lessons/${id}/test/attempts/${attemptId}/regrade`, { method: "POST" });
   }
 
   versions(id: string): Promise<LessonVersion[]> {

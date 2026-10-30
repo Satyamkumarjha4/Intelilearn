@@ -72,9 +72,17 @@ export type LessonSummary = {
   level: string;
   created_at: string;
   updated_at: string;
+  /** How the latest attempt at the test stands. */
   test_status: TestStatus;
-  /** Only once the test is graded; null before that. */
+  /** The score of the latest graded attempt (a retake that is still open does not hide it); null before any. */
   test_score: TestScore | null;
+  latest_score: TestScore | null;
+  /** The best graded attempt by percent. */
+  best_score: TestScore | null;
+  /** Attempts that have their questions (one that is still being prepared is not counted). */
+  attempts_count: number;
+  /** An attempt is being prepared or taken. */
+  has_open_attempt: boolean;
   /** How many study sheets a mastery lesson has. */
   material_count: number;
 };
@@ -104,9 +112,6 @@ export type LessonDetail = LessonSummary & {
   active_run_id: string | null;
   results: Record<QuizKind, QuizResultSummary | null>;
   materials: MaterialKind[];
-  test_status: TestStatus;
-  /** Only once the grading has finished; null before that. */
-  test_score: TestScore | null;
 };
 
 export type Page<T> = { results: T[]; next: string | null; previous: string | null };
@@ -283,18 +288,32 @@ export type ScoreCard = {
   questions: QuestionResult[];
   topics_to_revisit: string[];
 };
+/** An attempt at the lesson's test (the model is still called `TestSubmission` on the server). */
+export type AttemptStatus = "generating" | "in_progress" | "grading" | "graded" | "failed";
+export type ScoreBand = "" | "fail" | "normal" | "excellent";
 export type TestSubmission = {
   id: string;
-  status: "grading" | "graded" | "failed";
+  attempt_no: number;
+  status: AttemptStatus;
   error: string;
+  /** What it asked, without answer keys, once the attempt is over; empty while it is open. */
+  questions: LearnerTestQuestion[];
   /** The learner's own answers, {question_id: answer}. */
   answers: Record<string, unknown>;
   result: ScoreCard | null;
-  submitted_at: string;
+  awarded: number | null;
+  available: number | null;
+  band: ScoreBand;
+  /** Seconds, measured by the server. */
+  duration_s: number | null;
+  /** The offer that followed the score (none until follow-up lessons exist). */
+  followup: Record<string, unknown> | null;
+  started_at: string;
+  submitted_at: string | null;
   graded_at: string | null;
 };
 
-export type TestStatus = "not_started" | TestSubmission["status"];
+export type TestStatus = "not_started" | AttemptStatus;
 export type TestScore = { awarded: number; available: number };
 
 /** A question of the test screen (`GET /lessons/{id}/test`): no answer, marking scheme or concept. */
@@ -309,13 +328,65 @@ export type LearnerTestQuestion = {
   language?: string;
   starter_code?: string;
 };
-/** `GET /lessons/{id}/test`. The test can be submitted once; `submission` is set after that. */
+export type AttemptRef = { id: string; attempt_no: number; status: AttemptStatus; started_at: string; submitted_at: string | null };
+/** `GET /lessons/{id}/test`: the open attempt's questions and saved answers, or none. It never starts anything. */
 export type LearnerTest = {
   questions: LearnerTestQuestion[];
   total_marks: number;
-  submission: { id: string; status: TestSubmission["status"]; submitted_at: string } | null;
+  attempt: AttemptRef | null;
+  /** Answers already saved (locked) in the open attempt, so a refresh resumes. */
+  answers: Record<string, unknown>;
+  next_attempt_no: number;
+  /** The latest attempt. */
+  submission: { id: string; status: AttemptStatus; submitted_at: string | null } | null;
 };
-export type TestSubmissionCreated = { submission_id: string; run_id: string | null; status: TestSubmission["status"] };
+/** `POST /lessons/{id}/test/attempts`. A retake is `generating` (with a `run_id`) and has no questions yet. */
+export type AttemptStarted = {
+  attempt_id: string;
+  attempt_no: number;
+  status: "generating" | "in_progress";
+  run_id: string | null;
+  questions: LearnerTestQuestion[];
+  total_marks: number;
+  answers: Record<string, unknown>;
+  started_at: string;
+};
+export type AnswerSaved = { attempt_id: string; question_id: string; locked: boolean; answered: number };
+/** The reply to a submit: a lesson attempt comes back graded, with its score and band. */
+export type AttemptSubmitted = {
+  submission_id: string;
+  attempt_id?: string;
+  attempt_no?: number;
+  run_id: string | null;
+  status: AttemptStatus;
+  awarded?: number | null;
+  available?: number | null;
+  band?: ScoreBand;
+  followup?: Record<string, unknown> | null;
+  result?: ScoreCard | null;
+};
+export type AttemptSummary = {
+  id: string;
+  attempt_no: number;
+  status: AttemptStatus;
+  awarded: number | null;
+  available: number | null;
+  percent: number | null;
+  band: ScoreBand;
+  duration_s: number | null;
+  submitted_at: string | null;
+};
+export type TrendPoint = {
+  attempt_no: number;
+  awarded: number;
+  available: number;
+  percent: number;
+  /** Percentage points since the previous attempt; null for the first. */
+  delta_previous: number | null;
+  /** Percentage points against the best earlier attempt; null for the first. */
+  delta_best: number | null;
+};
+export type AttemptHistory = { attempts: AttemptSummary[]; trend: { series: TrendPoint[]; best_attempt_no: number | null } };
 
 
 // --- The console (staff only, /api/console; docs/reference/api.md) -------------------------------------------------------------
@@ -607,9 +678,19 @@ export type FlowSettingsValues = {
   prerequisite_question_count: number;
   prereq_trigger_max_correct: number;
   mastery_requires_all_correct: boolean;
+  /** Retired: the test is fixed at ten questions. Still sent, never edited. */
   final_test_min: number;
   final_test_max: number;
   max_interactives_per_page: number;
+  /** Percent under which an attempt is a Fail, and over which it is Excellent. */
+  band_fail_below: number;
+  band_excellent_above: number;
+  /** Questions written per model call (5 to 10), and the caps on written answers per batch. */
+  question_batch_size: number;
+  batch_max_long: number;
+  batch_max_short: number;
+  /** Retakes of one lesson in 24 hours. */
+  retakes_per_day: number;
   alignment_min_score: number;
   alignment_max_rounds: number;
   render_check_max_rounds: number;

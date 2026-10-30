@@ -80,7 +80,7 @@ def data(lesson_at, make_call, now):
     for name in ("built", "mastery"):  # the quick check was answered
         quiz = Quiz.objects.create(lesson=lessons[name], kind=Quiz.Kind.DIAGNOSTIC, questions=[])
         QuizAttempt.objects.create(quiz=quiz, answers={}, result={})
-    TestSubmission.objects.create(lesson=lessons["built"])
+    TestSubmission.objects.create(lesson=lessons["built"], status="graded")
 
     def call(lesson, **fields):
         return make_call(lesson_id=lesson.id if lesson else None, **fields)
@@ -469,3 +469,14 @@ def test_money_is_a_decimal_string(staff_client, data, fake_health):
     spend = staff_client.get("/api/console/overview?range=7d").json()["spend"]
 
     assert spend["range_total"] == "0.035000" and Decimal(spend["range_total"]) == Decimal("0.035")
+
+
+def test_a_lesson_with_only_an_attempt_still_open_is_not_counted_as_a_test_submitted(data, now):
+    from lessons.models import Lesson, TestSubmission
+
+    lesson = Lesson.objects.filter(submissions__isnull=True).first()
+    TestSubmission.objects.create(lesson=lesson, status="in_progress")
+
+    funnel = OverviewReport(health=FakeHealth()).build("7d", now)["funnel"]
+
+    assert funnel["test_submitted"] == 1  # only the lesson with an attempt that is over

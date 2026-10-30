@@ -12,7 +12,8 @@
  * - reads the review and cancels a run
  * - chooses a sheet, asks for another, reads one (with revealed solutions) and grades practice answers
  * - reads the lesson document, reports a crash for repair, lists versions and restores one
- * - reads the test to take, submits it, reads the submission (by id, or the lesson's one) and grades a failed one again
+ * - reads the test to take, starts an attempt, saves an answer, submits, reads the attempts and one attempt, and grades a
+ *   failed one again
  * - extracts the cursor from a `next` link, and handles no link
  */
 import { describe, expect, test } from "bun:test";
@@ -136,24 +137,32 @@ describe("LessonsApi", () => {
     expect(calls[1].options?.body).toEqual({ error: { message: "boom", page: "core" }, code_version: 3 });
   });
 
-  test("reads the test to take, submits it, reads the submission and grades a failed one again", async () => {
+  test("reads the test to take, starts an attempt, saves an answer, submits it and reads the attempts", async () => {
     const { api, calls } = fakeClient();
 
     await api.test("L1");
-    await api.submitTest("L1", { t1: 2, t2: "text" });
-    await api.submission("L1", "S1");
-    await api.currentSubmission("L1");
-    await api.regradeTest("L1", "S1");
+    await api.startAttempt("L1");
+    await api.saveAnswer("L1", "A1", "t1", [0, 2]);
+    await api.submitAttempt("L1", "A1", { t2: "text" });
+    await api.submitAttempt("L1", "A1");
+    await api.attempts("L1");
+    await api.attempt("L1", "A1");
+    await api.regradeAttempt("L1", "A1");
 
     expect(calls.map((c) => [c.path, c.options?.method])).toEqual([
       ["/lessons/L1/test", undefined],
-      ["/lessons/L1/test/submissions", "POST"],
-      ["/lessons/L1/test/submissions/S1", undefined],
-      ["/lessons/L1/test/submission", undefined],
-      ["/lessons/L1/test/submissions/S1/regrade", "POST"],
+      ["/lessons/L1/test/attempts", "POST"],
+      ["/lessons/L1/test/attempts/A1/answers/t1", "PUT"],
+      ["/lessons/L1/test/attempts/A1/submit", "POST"],
+      ["/lessons/L1/test/attempts/A1/submit", "POST"],
+      ["/lessons/L1/test/attempts", undefined],
+      ["/lessons/L1/test/attempts/A1", undefined],
+      ["/lessons/L1/test/attempts/A1/regrade", "POST"],
     ]);
-    expect(calls[1].options?.body).toEqual({ answers: { t1: 2, t2: "text" } });
-    expect(calls[4].options?.body).toBeUndefined();
+    expect(calls[2].options?.body).toEqual({ answer: [0, 2] });
+    expect(calls[3].options?.body).toEqual({ answers: { t2: "text" } });
+    expect(calls[4].options?.body).toEqual({});
+    expect(calls[7].options?.body).toBeUndefined();
   });
 
   test("extracts the cursor from a next link", () => {

@@ -135,6 +135,8 @@ describe("the next button", () => {
 
   test.each([
     ["not_started", "Go to the test →"],
+    ["generating", "Go to the test →"],
+    ["in_progress", "Go to the test →"],
     ["grading", "See your test results →"],
     ["graded", "See your test results →"],
     ["failed", "See your test results →"],

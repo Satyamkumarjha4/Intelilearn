@@ -1,24 +1,24 @@
 "use client";
 
-import { CheckCircle2Icon, ChevronDownIcon, CircleDashedIcon, LockIcon, MinusCircleIcon, XCircleIcon } from "lucide-react";
+import { CheckCircle2Icon, ChevronDownIcon, CircleDashedIcon, MinusCircleIcon, RotateCcwIcon, XCircleIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Markdown } from "@/components/markdown";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { AttemptHistory } from "@/components/lessons/attempt-history";
 import { ApiError } from "@/lib/api";
+import { AttemptHistoryView } from "@/lib/attempt-history";
 import { DateText } from "@/lib/format";
 import { lessonsApi } from "@/lib/lessons-api";
 import { TestResultView } from "@/lib/test-session";
 import { TestReport, type AnswerText, type Status } from "@/lib/test-report";
 import { QuestionInputs } from "@/lib/question-inputs";
-import type { LearnerTestQuestion, QuestionResult, TestSubmission } from "@/lib/types";
+import type { AttemptHistory as History, LearnerTestQuestion, QuestionResult, TestSubmission } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const POLL_MS = 3000;
@@ -26,55 +26,47 @@ const POLL_MS = 3000;
 type Props = {
   lessonId: string;
   lessonTitle: string;
-  questions: LearnerTestQuestion[];
-  /** The submission just made, if any (otherwise it is read from the server). */
-  first?: TestSubmission | null;
+  /** The attempt on show: just handed in, or chosen from the history. */
+  attempt: TestSubmission;
+  history: History | null;
+  /** Asking for another try is on its way. */
+  trying: boolean;
+  onTryAgain: () => void;
+  onSelect: (attemptId: string) => void;
   onOpenLesson: () => void;
 };
 
 /**
- * The submitted test, read-only: nothing here can be changed and nothing offers another go. While the written answers
- * are being marked it shows that (and asks again every few seconds); if that failed it says so and offers to mark again
- * on the answers already given.
+ * One attempt's result, read-only: its answers and score cannot change, but the learner can always try again with new
+ * questions. While a written answer of an older lesson is being marked it shows that (and asks again every few
+ * seconds); if that failed it says so and offers to mark again on the answers already given. Below, the history of
+ * every try.
  */
-export function TestResults({ lessonId, lessonTitle, questions, first, onOpenLesson }: Props) {
-  const [submission, setSubmission] = useState<TestSubmission | null>(first ?? null);
-  const [loadFailed, setLoadFailed] = useState(false);
+export function TestResults({ lessonId, lessonTitle, attempt: shown, history, trying, onTryAgain, onSelect, onOpenLesson }: Props) {
+  const [attempt, setAttempt] = useState<TestSubmission>(shown);
   const [regrading, setRegrading] = useState(false);
-  const grading = submission?.status === "grading";
+  const grading = attempt.status === "grading";
 
   useEffect(() => {
+    if (!grading) return;
     let active = true;
-    const load = () =>
+    const timer = setInterval(() => {
       lessonsApi
-        .currentSubmission(lessonId)
-        .then((data) => active && setSubmission(data))
-        .catch(() => active && setLoadFailed(true));
-    if (!submission) void load();
-    const timer = grading ? setInterval(load, POLL_MS) : undefined;
+        .attempt(lessonId, attempt.id)
+        .then((data) => active && setAttempt(data))
+        .catch(() => undefined);
+    }, POLL_MS);
     return () => {
       active = false;
       clearInterval(timer);
     };
-    // Loading again is only about whether we have a submission and whether it is still being marked.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lessonId, submission === null, grading]);
-
-  if (!submission) {
-    return loadFailed ? (
-      <Alert variant="destructive">
-        <AlertDescription>We couldn&apos;t load your test result. Please refresh the page.</AlertDescription>
-      </Alert>
-    ) : (
-      <Skeleton className="h-72 rounded-[22px]" />
-    );
-  }
+  }, [lessonId, attempt.id, grading]);
 
   const regrade = async () => {
     setRegrading(true);
     try {
-      await lessonsApi.regradeTest(lessonId, submission.id);
-      setSubmission({ ...submission, status: "grading", error: "" });
+      await lessonsApi.regradeAttempt(lessonId, attempt.id);
+      setAttempt({ ...attempt, status: "grading", error: "" });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "We couldn't start marking again.");
     } finally {
@@ -82,17 +74,16 @@ export function TestResults({ lessonId, lessonTitle, questions, first, onOpenLes
     }
   };
 
-  const card = submission.result;
-  const when = DateText.day(submission.submitted_at);
+  const card = attempt.result;
+  const row = history ? AttemptHistoryView.rows(history).find((r) => r.attemptNo === attempt.attempt_no) : undefined;
+  const facts = [
+    `Attempt ${attempt.attempt_no}`,
+    attempt.submitted_at ? DateText.day(attempt.submitted_at) : "",
+    AttemptHistoryView.duration(attempt.duration_s) && `took ${AttemptHistoryView.duration(attempt.duration_s)}`,
+  ].filter(Boolean);
   return (
     <div className="flex flex-col gap-5">
-      <p className="flex items-start gap-2 rounded-xl border border-border bg-muted/50 px-3 py-2.5 text-sm text-muted-foreground">
-        <LockIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-        <span>
-          <strong className="text-foreground">Your test is final.</strong> Your answers, score and suggestions are saved and can&apos;t be changed.
-          {when && ` Submitted ${when}.`}
-        </span>
-      </p>
+      <p className="text-sm text-muted-foreground">{facts.join(" · ")}</p>
 
       {grading && (
         <Card>
@@ -104,7 +95,7 @@ export function TestResults({ lessonId, lessonTitle, questions, first, onOpenLes
         </Card>
       )}
 
-      {submission.status === "failed" && (
+      {attempt.status === "failed" && (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 px-6 py-6 text-center">
             <h2 className="font-heading text-2xl font-semibold">We couldn&apos;t mark your written answers</h2>
@@ -116,13 +107,23 @@ export function TestResults({ lessonId, lessonTitle, questions, first, onOpenLes
         </Card>
       )}
 
-      {card && submission.status === "graded" && <Hero card={card} />}
-      {card && submission.status === "graded" && card.topics_to_revisit.length > 0 && (
+      {card && attempt.status === "graded" && <Hero card={card} changes={row?.changes ?? []} />}
+      {attempt.status === "graded" && (
+        <Card>
+          <CardContent className="flex flex-wrap items-center justify-between gap-3">
+            <p className="max-w-prose text-sm text-muted-foreground">Want a better score? Try again with new questions. Your best result is kept.</p>
+            <Button variant="marigold" onClick={onTryAgain} disabled={trying}>
+              <RotateCcwIcon className="size-4" aria-hidden="true" />
+              {trying ? "Getting ready…" : "Try again"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+      {card && attempt.status === "graded" && card.topics_to_revisit.length > 0 && (
         <Revisit topics={card.topics_to_revisit} lessonTitle={lessonTitle} />
       )}
-      {card && (
-        <QuestionList rows={card.questions} questions={questions} answers={submission.answers} />
-      )}
+      {history && history.attempts.length > 1 && <AttemptHistory history={history} selectedId={attempt.id} onSelect={onSelect} />}
+      {card && <QuestionList rows={card.questions} questions={attempt.questions} answers={attempt.answers} />}
 
       <div className="flex flex-wrap gap-3">
         <Button variant="outline" onClick={onOpenLesson}>
@@ -136,7 +137,7 @@ export function TestResults({ lessonId, lessonTitle, questions, first, onOpenLes
   );
 }
 
-function Hero({ card }: { card: NonNullable<TestSubmission["result"]> }) {
+function Hero({ card, changes }: { card: NonNullable<TestSubmission["result"]>; changes: string[] }) {
   const { percent, awarded, available } = card.score;
   const stats = TestReport.stats(card.questions);
   const radius = 52;
@@ -163,6 +164,7 @@ function Hero({ card }: { card: NonNullable<TestSubmission["result"]> }) {
         </div>
         <div className="flex flex-col items-center gap-3 text-center sm:items-start sm:text-left">
           <h2 className="font-heading text-2xl font-semibold tracking-tight">{TestReport.headline(percent)}</h2>
+          {changes.length > 0 && <p className="text-sm font-semibold text-muted-foreground">{changes.join(" · ")}</p>}
           <ul className="flex flex-wrap justify-center gap-2 sm:justify-start">
             <li><Badge variant="success">{stats.correct} correct</Badge></li>
             {stats.partial > 0 && <li><Badge variant="marigold">{stats.partial} partly right</Badge></li>}

@@ -2,9 +2,14 @@ import { ApiError } from "@/lib/api";
 import { FlowBands, type BandSettings } from "@/lib/flow-bands";
 import type { FlowSettingsValues } from "@/lib/types";
 
-type NumberField = {
-  [K in keyof FlowSettingsValues]: FlowSettingsValues[K] extends number ? K : never;
-}[keyof FlowSettingsValues];
+/** The test is fixed now (ten questions), so its old size settings are no longer edited, shown or sent. */
+type RetiredField = "final_test_min" | "final_test_max";
+type NumberField = Exclude<
+  {
+    [K in keyof FlowSettingsValues]: FlowSettingsValues[K] extends number ? K : never;
+  }[keyof FlowSettingsValues],
+  RetiredField
+>;
 type ListField = "media_sources" | "allowed_media_licenses";
 
 /** What the boxes hold: text for the numbers (it is not a number while someone types), the rest as it is. */
@@ -17,9 +22,13 @@ const RANGES: Record<NumberField, [min: number, max: number]> = {
   diagnostic_questions_per_band: [1, 4],
   prerequisite_question_count: [1, 10],
   prereq_trigger_max_correct: [0, SMALL_INT_MAX],
-  final_test_min: [1, SMALL_INT_MAX],
-  final_test_max: [1, SMALL_INT_MAX],
   max_interactives_per_page: [0, SMALL_INT_MAX],
+  band_fail_below: [0, 100],
+  band_excellent_above: [0, 100],
+  question_batch_size: [5, 10],
+  batch_max_long: [0, 10],
+  batch_max_short: [0, 10],
+  retakes_per_day: [1, 50],
   alignment_min_score: [1, 5],
   alignment_max_rounds: [0, SMALL_INT_MAX],
   render_check_max_rounds: [0, SMALL_INT_MAX],
@@ -45,9 +54,9 @@ export class FlowSettingsForm {
     }
     const value = (field: NumberField) => FlowSettingsForm.parse(form[field]);
 
-    const [min, max] = [value("final_test_min"), value("final_test_max")];
-    if (!errors.final_test_min && !errors.final_test_max && min !== null && max !== null && max < min) {
-      errors.final_test_max = `Must be at least the minimum (${min}).`;
+    const [fail, excellent] = [value("band_fail_below"), value("band_excellent_above")];
+    if (!errors.band_fail_below && !errors.band_excellent_above && fail !== null && excellent !== null && fail >= excellent) {
+      errors.band_fail_below = `Must be below the Excellent line (${excellent}%).`;
     }
     const perBand = value("diagnostic_questions_per_band");
     const cutoff = value("prereq_trigger_max_correct");

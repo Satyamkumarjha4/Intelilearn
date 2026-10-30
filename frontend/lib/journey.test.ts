@@ -11,8 +11,9 @@
  * - while the quizzes are prepared or answered, Diagnose is the current step
  * - while the lesson is built, Diagnose is done, Your level is done once the assessment exists (else current), and
  *   Learn is current
- * - a ready lesson is on Learn until the test is submitted; once it is graded or being graded, Test is done and
- *   Revisit is current; a test that could not be graded keeps Test current
+ * - a ready lesson is on Learn until the test is started; while its first attempt is being prepared or taken Test is
+ *   current; once it is graded or being graded, Test is done and Revisit is current, and a retake after that keeps
+ *   Revisit current; a test that could not be graded keeps Test current
  * - the mastery route waits on Pick a sheet, then Study is current while the sheet is written and once it is ready
  * - a failed lesson keeps the step it failed on as current with the failed flag: Diagnose before the quiz was
  *   answered, Your level after, Learn once the assessment exists, Study on the mastery route
@@ -29,6 +30,7 @@ const lesson = (over: Partial<JourneyInput> = {}): JourneyInput => ({
   assessment: null,
   results: { diagnostic: null, prerequisite: null },
   test_status: "not_started",
+  latest_score: null,
   active_run_id: null,
   ...over,
 });
@@ -74,6 +76,18 @@ describe("Journey.of", () => {
     expect(states(lesson({ stage: "ready", route: "lesson", assessment, test_status }))).toEqual([
       "Diagnose:done", "Your level:done", "Learn:done", "Test:done", "Revisit:now",
     ]);
+  });
+
+  test.each(["generating", "in_progress"] as const)("the first test, %s, makes Test current", (test_status) => {
+    expect(states(lesson({ stage: "ready", route: "lesson", assessment, test_status }))).toEqual([
+      "Diagnose:done", "Your level:done", "Learn:done", "Test:now", "Revisit:todo",
+    ]);
+  });
+
+  test.each(["generating", "in_progress"] as const)("a retake, %s, after a graded test keeps Revisit current", (test_status) => {
+    const retaking = lesson({ stage: "ready", route: "lesson", assessment, test_status, latest_score: { awarded: 14, available: 20 } });
+
+    expect(states(retaking)).toEqual(["Diagnose:done", "Your level:done", "Learn:done", "Test:done", "Revisit:now"]);
   });
 
   test("a test that could not be graded keeps Test current", () => {
