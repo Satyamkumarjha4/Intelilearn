@@ -127,7 +127,7 @@ class NodeSpec:
 | `study.generate` | diagnose | structured → `CheatSheet` / `RevisionSheet` / `PracticeSheet` | structured_output | 16k | medium | |
 | `lesson.plan` | author | structured → `LessonPlan` | structured_output | 8k | **high** | |
 | `page.generate` | author | structured → `PageContent` | structured_output | 16k | medium | |
-| `test.generate` | author | structured → `FinalTest` | structured_output | 16k | medium | A model writes no marks and no numerical answer: `answer_expr` and criteria; code sets the rest (`QuestionFinisher`) |
+| `test.generate` | author | structured → `QuestionBatch` | structured_output | 16k | medium | **One batch** of the lesson test, a retake or (later) a quiz: one question for each cell it is given (type and difficulty named in the prompt, 5 per call by default). A model writes no marks and no numerical answer: `answer_expr` and criteria; code sets the rest (`QuestionFinisher`, which also rebalances criteria that do not add up) |
 | `interactive.plan` | author | structured → `InteractivePlan` | structured_output | 4k | medium | |
 | `media.search` | author | tools → `MediaSelection` (via `submit_media`) | **tool_calling** | 2k | low | |
 | `media.verify` | author | structured → `MediaVerdict` | **vision**, structured_output | 1k | none | ✓ |

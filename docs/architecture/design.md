@@ -35,6 +35,7 @@ Legend for status columns: ✅ in code · ◐ partly (functions still to wrap in
   - [4.16 `console`: the staff API](#416-console-the-staff-api)
   - [4.17 `graph`: levels, difficulties and score bands (Phase 9, modular lessons)](#417-graph-levels-difficulties-and-score-bands-phase-9-modular-lessons)
   - [4.18 `lessons`: the action gate (Phase 9, metering seam)](#418-lessons-the-action-gate-phase-9-metering-seam)
+  - [4.19 `lessons` and `graph`: attempts and the questions pipeline (Phase 9.2)](#419-lessons-and-graph-attempts-and-the-questions-pipeline-phase-92)
 - [5. How to extend](#5-how-to-extend)
 - [Refactor backlog](#refactor-backlog)
 
@@ -1513,12 +1514,15 @@ classDiagram
         +validate(report, questions) list~str~
     }
     class GradeTestPrompt
-    class SubmissionService {
-        +for_learner(lesson) dict
-        +submit(lesson, answers) tuple
-        +regrade(lesson, submission_id) GraphRun
-        +get(lesson, submission_id) TestSubmission
-        +current(lesson) TestSubmission
+    class AttemptService {
+        +start(lesson, key) Started
+        +save_answer(lesson, attempt_id, qid, value)
+        +submit(lesson, attempt_id, answers) Submitted
+        +regrade(lesson, attempt_id) GraphRun
+    }
+    class AttemptOutcome {
+        +decide(lesson, attempt_no, card, all_blank) Decision
+        +graded(attempt, card)
     }
     class RunEffects {
         +on_stopped(run, message)
@@ -1552,8 +1556,10 @@ classDiagram
         +total() Usage
     }
 
-    SubmissionService o-- AnswerGrader
-    SubmissionService o-- ScoreCard
+    AttemptService o-- AnswerGrader
+    AttemptService o-- ScoreCard
+    AttemptService o-- AttemptOutcome
+    PersistGradeNode o-- AttemptOutcome
     ScoreCard ..> Solution
     GradeTestGraphBuilder o-- LoadSubmissionNode
     GradeTestGraphBuilder o-- GradeOpenNode
@@ -1572,7 +1578,7 @@ classDiagram
     TracingProviders ..> CallbackProvider
 ```
 
-- **One grader for every score.** `AnswerGrader` marks practice sheets and the lesson test; `ScoreCard` adds blank answers, the model's capped marks, topics to revisit and each question's solution.
+- **One grader for every score.** `AnswerGrader` marks practice sheets and the lesson test (`AttemptService`, section 4.19, replaced `SubmissionService`: a lesson attempt is graded in the request that submits it, and `grade_test` serves only legacy attempts with written answers); `ScoreCard` adds blank answers, the model's capped marks, topics to revisit and each question's solution.
 - **Strategy**: `CallbackProvider` (tracing; none, LangSmith, Langfuse, chosen by `LLM_TRACING` through `TracingProviders`) and `RunEffect` (what a run that did not finish leaves behind, per graph). `SafeTracing` is a Decorator that makes tracing unable to fail a model call.
 - `UsageReport` is a read model over the `ModelCall` log, with no side effects, behind the admin's usage page.
 - The optional judges (`diagnostic.review`, `media.verify`) degrade instead of failing: see [lesson-graph.md](lesson-graph.md).
@@ -2023,6 +2029,114 @@ classDiagram
 - **Carry:** the prerequisite quiz continues the work the diagnostic's `lesson.continue` authorized, so `ActionMetering.carry` copies that open authorization into its resume run instead of asking again.
 - **The open gate stores nothing:** its authorization is `tracked=False`, so run payloads (and every test that compares them) are exactly as before the seam existed.
 - **Idempotency:** `IdempotentRequest` wraps the two creation views. The key is the header made specific to the learner, endpoint and body (`IdempotencyKey`), kept in the cache (Redis) for `IDEMPOTENCY_TTL_S`; a `claim` makes a concurrent repeat a `409 request_in_progress`. The service passes the header on as `ActionContext.key`, so a gate can dedupe on its side too.
+
+### 4.19 `lessons` and `graph`: attempts and the questions pipeline (Phase 9.2)
+
+The lesson test is a fixed blueprint of ten objective questions, written in batches, and can be taken any number of times. The pure pieces are in `graph/questions/`, the use cases in `lessons/attempts.py`, the record in `lessons/bank.py`, the graph nodes in `graph/nodes/questions.py` and `bank.py`.
+
+```mermaid
+classDiagram
+    direction LR
+    class LessonTestBlueprint {
+        +for_topic(quantitative)$ LessonTestBlueprint
+        +for_old_test(questions)$ LessonTestBlueprint
+        +cells tuple~Cell~
+        +total_marks int
+        +missing(accepted) tuple~Cell~
+        +to_json() / from_json()
+    }
+    class Cell {
+        +index int
+        +type str
+        +difficulty str
+        +marks int
+        +question_id str
+    }
+    class BatchPlanner {
+        +plan(cells, round_no) list~Batch~
+        +cap_applies(picked_types)$ bool
+        +from_settings(settings)$ BatchPlanner
+    }
+    class BlueprintSampler {
+        +draw(cells, candidates, seed) Draw
+    }
+    class QuestionDeduper {
+        +fresh(candidates, excluded) DedupeResult
+    }
+    class StemHash {
+        +of(text)$ str
+    }
+    class CriteriaRebalancer {
+        +rebalance(criteria, marks) tuple
+    }
+    class QuestionRound {
+        +close(state, ctx) RoundResult
+        +retry_ids(state) tuple
+    }
+    class PlanBatchesNode
+    class GenerateQuestionsNode
+    class AuthoredJoinNode
+    class BankJoinNode
+    class PersistAttemptNode
+    class QuestionBank {
+        +add(lesson_id, batch, questions) list
+        +retire(lesson_id, question_id)
+        +exclusions(lesson) list
+        +leftovers(lesson) list
+    }
+    class AttemptService {
+        +start(lesson, key) Started
+        +save_answer(lesson, attempt_id, qid, value)
+        +submit(lesson, attempt_id, answers) Submitted
+        +submit_once(lesson, answers) Submitted
+        +regrade(lesson, attempt_id) GraphRun
+        +for_learner(lesson) dict
+        +history(lesson) dict
+    }
+    class AttemptOutcome {
+        +decide(lesson, attempt_no, card, all_blank) Decision
+        +graded(attempt, card)
+    }
+    class FollowupHook {
+        <<interface>>
+        +offer(lesson, facts) dict
+    }
+    class NoFollowup
+    class AttemptTrend {
+        +of(attempts) Trend
+    }
+    class AttemptGenerationEffect {
+        +apply(run, message)
+    }
+    class ActionMetering
+
+    LessonTestBlueprint o-- Cell
+    BatchPlanner ..> Cell
+    BlueprintSampler ..> Cell
+    QuestionDeduper ..> StemHash
+    QuestionRound o-- QuestionDeduper
+    QuestionRound ..> LessonTestBlueprint
+    PlanBatchesNode ..> BatchPlanner
+    PlanBatchesNode ..> LessonTestBlueprint
+    GenerateQuestionsNode ..> CriteriaRebalancer : via QuestionFinisher
+    AuthoredJoinNode o-- QuestionRound
+    AuthoredJoinNode o-- QuestionBank
+    BankJoinNode o-- QuestionRound
+    PersistAttemptNode o-- QuestionBank
+    AttemptService o-- AttemptOutcome
+    AttemptService o-- ActionMetering
+    AttemptService ..> AttemptTrend
+    AttemptOutcome o-- FollowupHook
+    FollowupHook <|.. NoFollowup
+    AttemptGenerationEffect ..|> RunEffect
+```
+
+- **Template Method / pipeline.** `plan_batches` and `generate_questions` are real nodes shared by the author stage and the `question_bank` graph; each graph has its own join (the author stage's also waits for the pages), but both decide through `QuestionRound`. A new graph that writes questions (the quick quiz of phase 9.6) adds its own entry and exit, not another pipeline.
+- **Strategy**: `FollowupHook` is the seam for phase 9.4's `FollowupPolicy`; `NoFollowup` returns no offer, and `AttemptOutcome` stores whatever a hook returns on the attempt. `AttemptFacts` carries `all_blank`, so an empty attempt can be left out of the Foundation offer without changing a caller.
+- **Value classes** (frozen, pure): `Cell`, `Batch`, `Draw`, `DedupeResult`, `Trend`/`TrendPoint`, `Started`, `Submitted`, `Decision`, `AttemptFacts`. The blueprint is **code, not a setting**: changing it would make old and new attempts incomparable.
+- **Only one writer.** `QuestionBank` writes `Question` rows; `AttemptService` and `TestSubmission.seal` write an attempt's answers; `PersistAttemptNode` fills a waiting attempt once. A test scans the code for any other writer.
+- **Metering.** `AttemptService.start` is the only new costly entry point, classified in `RunStarters.METERED` as `test.retake` (attempt 2 onward; attempt 1 is part of the lesson and never asks). Its `CompletionPoint` is the end of the `question_bank` run, which is when the attempt starts. `AttemptGenerationEffect` deletes a waiting attempt whose run failed or was stopped, then `AuthorizationSettlement` settles `failed`/`cancelled`. Submitting asks nothing: the lesson attempt is graded in full, no run.
+- **Dependency rule.** `lessons/outcome.py` is apart from `attempts.py` because the `grade_test` graph (in `graph/`) needs `AttemptOutcome` and `attempts.py` imports the services, which import the runner, which imports the graphs.
 
 ## 5. How to extend
 

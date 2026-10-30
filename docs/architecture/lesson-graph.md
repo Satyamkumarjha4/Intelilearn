@@ -187,13 +187,15 @@ A guard ensures `prerequisites_to_cover` equals the deterministic result. The LL
 flowchart TD
     A([from assess_learner]) --> plan_lesson --> validate_plan
     validate_plan -->|retry| plan_lesson
-    validate_plan -->|ok| fan_pages{{"Send ×4"}}
-    fan_pages --> generate_page_intro & generate_page_core & generate_page_advanced & generate_final_test
-    generate_page_intro & generate_page_core & generate_page_advanced --> validate_page
-    generate_final_test --> validate_final_test
-    validate_page -->|retry that page| fan_pages
-    validate_page & validate_final_test -->|ok| authored_join
-    authored_join --> plan_interactives --> validate_interactive_plan
+    validate_plan -->|ok| plan_batches["plan_batches (code)"]
+    plan_batches --> fan_pages{{"Send: 3 pages + one per batch of questions"}}
+    fan_pages --> generate_page_intro & generate_page_core & generate_page_advanced & generate_questions
+    generate_page_intro & generate_page_core & generate_page_advanced --> authored_join
+    generate_questions --> authored_join
+    authored_join -->|retry only what failed| fan_pages
+    authored_join -->|cells still empty, rounds left| plan_batches
+    authored_join -->|cells still empty, no rounds left| fail_run
+    authored_join -->|everything settled| plan_interactives --> validate_interactive_plan
     validate_interactive_plan -->|ok| fan_widgets{{"Send per spec"}}
     fan_widgets -->|image / gif| media_agent[[media subgraph]]
     fan_widgets -->|graph / simulation / animation / diagram| generate_interactive --> check_interactive
@@ -210,118 +212,53 @@ flowchart TD
 
 ### `plan_lesson` (`lesson.plan`)
 
-This step produces a `LessonPlan` with a title, the level, and for each of the three content pages: goals, outline, and which gaps and prerequisites it covers. It also includes a `FinalTestSpec`: the number of questions (10–15), the type mix (mcq, msq, numerical, short answer, long answer), and the difficulty mix (easy, basic, standard, difficult, expert), all derived from the level. The node stamps the plan and the assessment with `level_scheme: 2`, which says they use the level names beginner, foundation, proficient and expert; a document without it (a graph checkpoint from before the rename) is read by `LevelScheme.level_of` as the old names, where "beginner" meant what is now foundation.
+This step produces a `LessonPlan` with a title, the level, and for each of the three content pages: goals, outline, and which gaps and prerequisites it covers. It also says whether the topic is `quantitative` (mainly about calculating numbers). It no longer plans the test: the test is the same for every lesson and every level (the fixed blueprint, below), and the flag only chooses between its two variants. A plan made before this still carries its `final_test` spec, which nothing reads any more. The node stamps the plan and the assessment with `level_scheme: 2`, which says they use the level names beginner, foundation, proficient and expert; a document without it (a graph checkpoint from before the rename) is read by `LevelScheme.level_of` as the old names, where "beginner" meant what is now foundation.
 
 | Page | Content |
 |---|---|
 | 1. Introduction | Hook, why it matters, and the **prerequisites to cover** (all, some, or none per Stage A), then an overview of the topic |
 | 2. Core concepts | Starts at `assessment.start_point` and emphasises `gaps` |
 | 3. Advanced concepts | Depth, edge cases, complexity, and real-world use, scaled to the level |
-| 4. Test | 10–15 questions: MCQ, multiple select (MSQ), numerical, short answer, long answer |
+| 4. Test | Ten objective questions, two for each difficulty: MCQ, multiple select (MSQ), numerical (the fixed blueprint, below) |
 
-`validate_plan` checks that each page's outline lists concepts that are distinct from the other pages (no overlap), that every required prerequisite appears on page 1, and that the test spec matches the settings.
+`validate_plan` checks that each page's outline lists concepts that are distinct from the other pages (no overlap), that every required prerequisite appears on page 1, (and nothing about the test, which is not planned here).
 
 ### Page writers and the test writer: parallel `Send`
 
 - `generate_page` (`page.generate`, run ×3 in parallel) → `PageContent`: sections with Markdown body, key points, worked examples, formulas (LaTeX), code snippets, and callouts. Each writer gets the *whole* plan, so the pages don't overlap or contradict each other.
-- `generate_final_test` (`test.generate`) → `FinalTest`. A model writes `type`, `concept` and `difficulty` for each question, plus type-specific fields (`graph/questions/`, one `QuestionType` per kind):
+- `generate_questions` (`test.generate`, one per batch, in parallel with the pages) → `QuestionBatch`: one question for each cell it was given, in order. A model writes `type`, `concept` and `difficulty` for each question, plus type-specific fields (`graph/questions/`, one `QuestionType` per kind):
   - `mcq`: options (exactly 4), correct_index
   - `msq`: options (4 to 6), correct_indices (at least two)
   - `numerical`: answer_expr, tolerance, decimal_precision (0 to 6), unit
-  - `short_answer` / `long_answer`: model_answer, criteria (`[{text, marks}]`, whole marks that add up to the question's)
-  - **Marks are not written by the model.** `QuestionFinisher` sets them from `MarksPolicy` (MCQ 1 / 2, MSQ 2 / 3, numerical 2 / 3, short 2 / 3, long 5 / 6: the first number for easy, basic and standard, the second for difficult and expert) and computes a numerical question's `answer` from `answer_expr` with `ExpressionEvaluator` (an `ast` walk: numbers, `+ - * / **`, parentheses, `pi`, `e`, `sqrt sin cos tan asin acos atan log ln exp abs`; never `eval`), rounded to `decimal_precision`. An expression that cannot be computed, or criteria that do not add up, are validator problems and go back to the model. A lesson from before these keeps the marks and fields it was stored with (`code` questions, `key_points`, `rubric`); `LegacyQuestionAdapter` derives criteria for them when they are graded.
-- The schema uses one flat model with a `type` field and optional fields, enforced by a `model_validator`, instead of a JSON-Schema `oneOf` union. Several providers handle unions poorly in structured-output mode.
-- The validators are deterministic: lengths, LaTeX parses (a KaTeX check in `sandbox/`), code snippets parse, the test's type and difficulty mix matches the spec, and questions are unique. When a page fails validation, **only that page** is re-sent.
+  - `short_answer` / `long_answer`: model_answer, criteria (`[{text, marks}]`) (not used by a lesson test; quizzes ask for them in phase 9.6)
+  - **Marks are not written by the model.** `QuestionFinisher` sets them from `MarksPolicy` (MCQ 1 / 2, MSQ 2 / 3, numerical 2 / 3, short 2 / 3, long 5 / 6: the first number for easy, basic and standard, the second for difficult and expert), computes a numerical question's `answer` from `answer_expr` with `ExpressionEvaluator` (an `ast` walk; never `eval`), rounded to `decimal_precision`, and, for a short or long answer, **rebalances** criteria that do not add up to the marks (`CriteriaRebalancer`: proportional, largest remainder, at least one mark each). Only an expression that cannot be computed, or more criteria than marks, is a problem for the model. A lesson from before these keeps the marks and fields it was stored with (`code` questions, `key_points`, `rubric`); `LegacyQuestionAdapter` derives criteria for them when they are graded.
 
-### Interactives: `plan_interactives` (`interactive.plan`)
+### The fixed test and the questions pipeline
 
-For each page, this decides what would *teach* better than text. It produces `InteractiveSpec(id, page, anchor_section, kind, purpose, description, media_query?)`:
+The test is **fixed in code** (`graph/questions/blueprint.py`, `LessonTestBlueprint`): ten cells, two for each of the five difficulties, objective types only, and the same for every lesson at every level, so the marks of every attempt of a lesson add up to the same total and attempts can be compared.
 
-| kind | Example | Produced by |
+| Difficulty | Quantitative topic | Other topics |
 |---|---|---|
-| `interactive_graph` | Coordinate geometry: drag points, see the line equation update | `generate_interactive` using `Mafs` |
-| `simulation` | Binary search stepping through an array with low/mid/high pointers | `generate_interactive` |
-| `css_animation` / `svg_diagram` | A self-made animation of amoeba binary fission, labelled cell parts | `generate_interactive` using `motion` / SVG |
-| `image` / `gif` | A real micrograph or animation of amoeba splitting | media subgraph |
-| `code_playground` | An editable JS snippet with a Run button (sandboxed) | `generate_interactive` |
+| easy | MCQ, MCQ | MCQ, MCQ |
+| basic | MCQ, MSQ | MCQ, MSQ |
+| standard | MCQ, numerical | MCQ, MSQ |
+| difficult | MSQ, numerical | MSQ, MCQ |
+| expert | MSQ, numerical | MSQ, MCQ |
+| **Marks** | **20** (2 + 3 + 3 + 6 + 6) | **18** (2 + 3 + 3 + 5 + 5) |
 
-The rules: at least one interactive on pages 1–3, at most `FlowSettings.max_interactives_per_page`, and every spec's `purpose` names the concept it teaches.
+`plan_lesson` records the blueprint on the state and `validate_plan` on `Lesson.test_blueprint`. Writing it is one pipeline shared by the author stage and the retake graph (`graph/nodes/questions.py`):
 
-### Media subgraph (tool-calling agent)
-
-```mermaid
-flowchart LR
-    s([spec]) --> media_agent
-    media_agent -->|tool calls| tools[ToolNode: search_wikimedia · search_openverse · search_gifs]
-    tools --> media_agent
-    media_agent -->|submit_media| download_and_store --> verify_media
-    verify_media -->|approved| out([MediaRef])
-    verify_media -->|rejected, attempts left| media_agent
-    verify_media -->|exhausted| fallback_to_svg[convert spec to svg_diagram → generate_interactive]
-    media_agent -->|"max tool steps hit"| fallback_to_svg
-```
-
-- **`media_agent`** (`media.search`, requires **tool calling**) searches with its tools and finishes by calling `submit_media(candidates)`. The arguments of that final tool are a Pydantic schema, so the result is structured. The loop is capped at `NodeConfig.max_tool_steps`.
-- **Sources** are Wikimedia Commons and Openverse, both openly licensed with no key needed, plus optionally Giphy for GIFs (needs a key). Only licences on an allow-list are accepted, and attribution is stored.
-- **`download_and_store`** is deterministic. It checks MIME type by sniffing the file, and enforces size and dimension limits. It saves the file to local media storage as a `MediaAsset`. **Generated code never contains external URLs.** It refers to media by asset ID.
-- **`verify_media`** (`media.verify`, requires **vision**, optional) checks: does the image actually show what the spec describes, and is it appropriate for teaching? It also writes the alt text.
-- **Fallback:** if no suitable media is found, the spec becomes an `svg_diagram` and is drawn instead. The lesson never has an empty slot.
-
-### Widget code: `generate_interactive` (`interactive.generate`)
-
-- The output is `InteractiveComponent(spec_id, component_name, tsx)`: one self-contained React component using only the **sandbox scope** (see [frontend.md](../reference/frontend.md)).
-- `check_interactive` runs the same static and security check as Stage C, on this component alone. It retries with the errors fed back. If it keeps failing, the spec is **degraded**: dropped, with a warning.
-
-### Content validation: `alignment_judge` (`alignment.judge`)
-
-This is the gate before any document code is written. The judge gets the topic, `LearnerAssessment`, plan, pages, test, interactive specs, and media captions. It returns:
-
-```python
-class AlignmentIssue(BaseModel):
-    target: Literal["page", "final_test", "interactive", "media"]
-    target_id: str                    # page key / question id / spec id
-    severity: Literal["minor", "major"]
-    problem: str
-    fix_instruction: str
-
-class AlignmentReport(BaseModel):
-    topic_relevance: int = Field(ge=1, le=5)
-    level_fit: int = Field(ge=1, le=5)          # right depth for this learner
-    prerequisite_coverage: int = Field(ge=1, le=5)
-    factual_accuracy: int = Field(ge=1, le=5)
-    interactive_relevance: int = Field(ge=1, le=5)
-    issues: list[AlignmentIssue]
-    passed: bool
-```
-
-- `passed` is recomputed in code: every score must be at least `FlowSettings.alignment_min_score` and there must be no `major` issues. The LLM's own `passed` value is not trusted.
-- Issues are routed with `Send` **only to the items flagged**, and the `fix_instruction` becomes their feedback. The judge then re-runs, up to `alignment.judge.max_attempts` rounds.
-- If only minor issues remain when the rounds run out, the flow continues and records warnings. If a major issue remains, the run fails.
-
-## Stage C: Build and verify the document
-
-```mermaid
-flowchart TD
-    B([alignment passed]) --> prepare_build --> fan_compile{{"Send ×3"}}
-    fan_compile --> compile_page["compile_page (page.compile → code_fix_loop)"]
-    compile_page -->|fixed| assemble_document
-    compile_page -->|code keeps failing: standard layout + warning| assemble_document
-    assemble_document -->|clash between parts: standard layout once| assemble_document
-    assemble_document --> render_check
-    assemble_document -->|still fails| fail_run
-    render_check -->|pass| persist_lesson --> END([END: show to learner])
-    render_check -->|errors, rounds left| fan_repair{{"Send per broken part"}}
-    fan_repair --> repair_page[repair_page] --> assemble_document
-    fan_repair --> repair_component[repair_component] --> assemble_document
-    render_check -->|rounds spent| fallback["standard layout for broken pages, broken interactive dropped (+ warning)"] --> assemble_document
-    render_check -->|still broken after the fallback| fail_run
-```
+- `plan_batches` (code, `BatchPlanner`) splits the cells that have no question yet into batches of `question_batch_size` (5 to 10, default 5, so two batches), with the subjective cap (at most `batch_max_long` long and `batch_max_short` short answers per batch; off when only short or long are asked) and an id per batch that names the round.
+- `generate_questions` writes one batch. Ids are the cell's (`t1`…`t10`), set by code. The batch is checked by `QuestionBatchValidator` (the right type and difficulty for each cell, then the rules of each type); it is kept even with problems, and the join decides.
+- The join (`QuestionRound`, called by `authored_join` and by the retake graph's `questions_join`) **retries only the batches with problems** (up to `test.generate.max_attempts`), then accepts the questions that fit their cell, are usable (a numerical question has its answer…) and are new (`QuestionDeduper`: the same text after normalising, or almost the same words, as anything already asked or already in the set). Cells still empty are **planned again** as a new round, and when the rounds are used up **a lesson test fails the run** (`failed_node: plan_batches`, so Retry starts the test again) rather than keep a test that is not the blueprint. Problems that do not stop a question being used are shown as a warning, as before.
+- A review fix (`fix_item`, target `final_test`) writes **one question again** as a batch of one cell, with the other questions of the test given as ones not to repeat; the old question is retired on the record, the new one added.
+- Every accepted question goes on the record (`Question`, written only by `QuestionBank`), and `Lesson.final_test` keeps the ten questions of attempt 1, each with its `question_id`.
 
 ### `compile_page` (`page.compile`)
 
 - Writes the TSX for one page, as `function Page_core() { ... }`, laying out that page's content and placing its interactive components and `<Figure asset="...">` at their anchor sections.
 - **Content is injected as data, not retyped.** The validated `PageContent` is available in scope as `LESSON.pages.core`, so the compiler writes code that *renders* the text. This stops the compile step from changing, cutting, or hallucinating content that already passed the alignment judge. It also saves a large number of output tokens.
-- **The test is not a page.** It is generated by `write_test` and stored as `Lesson.final_test`, but `assemble_document` does not put it in the document: it is served by `GET /lessons/{id}/test` and taken on its own screen, once. (Lessons made before this change still declare a `test` page in their code; `GET /document` flags them with `has_embedded_test`, and a repair rebuilds the document from the three content pages, which drops it.)
+- **The test is not a page.** Its questions are written by the batched pipeline above and stored as `Lesson.final_test`, but `assemble_document` does not put it in the document: it is served by `GET /lessons/{id}/test` and taken on its own screen, as many times as the learner likes. (Lessons made before this change still declare a `test` page in their code; `GET /document` flags them with `has_embedded_test`, and a repair rebuilds the document from the three content pages, which drops it.)
 
 ### `assemble_document` (deterministic)
 
@@ -367,7 +304,8 @@ This writes pages, the test, media links, the assembled code and its parts (`cod
 | Graph | Trigger | Nodes |
 |---|---|---|
 | `runtime_repair` | The browser iframe reports an error the sandbox check missed | `load_repair` → `repair_runtime` (`runtime.repair` → code-fix loop) → `assemble_repaired` → `regression_check` → `verify_repair` (render check) → `save_repair` (a new `code_version`) |
-| `grade_test` | The learner submits the final test | `load_submission` → `grade_open` (`test.grade`) → `validate_grade` → `persist_grade`, or straight to `persist_grade` when nothing needs a judgement. Produces a `ScoreCard` with feedback per question and topics to revisit. |
+| `question_bank` | The learner starts attempt 2 or later (a retake) | `load_bank` → `plan_batches` → `generate_questions` ×batches → `questions_join` → `persist_attempt`; `fail_attempt` ends the run with the reason when the test cannot be filled. See below. |
+| `grade_test` | A **legacy** attempt with open-ended questions is submitted | `load_submission` → `grade_open` (`test.grade`) → `validate_grade` → `persist_grade`, or straight to `persist_grade` when nothing needs a judgement. Produces a `ScoreCard` with feedback per question and topics to revisit. A lesson attempt is objective and is graded at submit, so it never runs this graph. |
 | `study_material` | The learner requests another sheet type | `generate_study_material` → validate → persist |
 
 
@@ -382,13 +320,21 @@ This writes pages, the test, media links, the assembled code and its parts (`cod
 
 `diagnostic.review` (a judge of the diagnostic quiz) and `media.verify` (a vision check of a found picture) are on in the default registry, but they are bonuses on top of rules that already passed. A judge whose models all fail is skipped with a warning. A quiz that passes every rule is kept, with a warning, when only the reviewer still objects after the last attempt (a rule that fails still fails the run). A picture the vision models cannot check is kept unchecked. Their effect on real lessons has not been measured: see the roadmap.
 
-### How `grade_test` is built
+### How `question_bank` is built (a retake)
 
-- **The request marks what it can.** `SubmissionService` marks multiple-choice, multiple-select (partial marks, in whole marks) and numerical answers with `AnswerGrader` (the grader practice sheets use, so a score never depends on where the test was taken) and gives blank answers 0, then stores a first `ScoreCard` with the open-ended answers still `awarded: null`. Only if some open-ended answer has something to judge is a `grade_test` run queued.
+- **Input** `{lesson_id, attempt_id}`, in its own thread (`<lesson id>:<run id>`), queued by `AttemptService.start` after the action gate has said yes to `test.retake`. The lesson stays `ready`; the learner sees "Getting your questions ready" while the run works.
+- `load_bank` reads the lesson and the waiting attempt (a missing attempt fails the run with "That retake was cancelled"), gets the blueprint (a lesson made before the blueprint gets the one its old test implies, quantitative if the old test had a numerical question, and keeps it), gives the **exclusion list** (every stem the lesson has asked: the record, retired rows included, the lesson's own test and every attempt's snapshot), and draws any question written but never served for its cell (`BlueprintSampler`, seeded with the lesson and the attempt number, so it needs no model call). Because every retake needs ten new questions, this usually draws nothing.
+- Then the same pipeline as the author stage. `persist_attempt` writes the new questions on the record and moves the attempt `generating` → `in_progress` with the set as its snapshot, in one transaction; if the attempt is gone (Stop) nothing is written.
+- **No Retry.** A run that fails or is stopped deletes the waiting attempt (`AttemptGenerationEffect`), so the attempt number is never used up and the learner starts again; the authorization is settled `failed` or `cancelled`. `test.retake` is complete when the run ends, which is exactly when the attempt starts.
+
+### How an attempt is graded
+
+- **A lesson attempt is graded in the request that submits it.** Its questions are objective, so `AttemptService.submit` marks multiple-choice, multiple-select (partial marks, in whole marks) and numerical answers with `AnswerGrader` (the grader practice sheets use, so a score never depends on where the test was taken), gives blank answers 0, builds the finished `ScoreCard`, and stores the score, the band (`AttemptOutcome`, whole marks against `band_fail_below` and `band_excellent_above`), the follow-up offer (none until phase 9.4) and whether every answer was blank. No run is queued.
+- **Only a legacy attempt with open-ended questions queues `grade_test`.** The request marks what it can, stores a first `ScoreCard` with the open-ended answers still `awarded: null`, and queues the run only if some open-ended answer has something to judge. `persist_grade` then stores the finished card through the same `AttemptOutcome`.
 - **The model sees only what needs a judgement**, with its model answer and its criteria (derived by `LegacyQuestionAdapter` for questions from before criteria; code is read, not run). It returns one whole award per criterion. The learner's answer is delimited as data and the prompt says to ignore any instruction inside it.
 - **Its marks are checked** (`GradeReportValidator`): every question once, one whole-number award per criterion in order, none above its criterion, with feedback; a bad grading goes back with the problems, up to `test.grade.max_attempts`, then the run fails with the reason. The card keeps the per-criterion breakdown and caps marks again when it is built.
-- **One attempt.** A lesson has at most one `TestSubmission` (a unique constraint, and `SubmissionService.submit` refuses a second with `409 already_submitted` and the first one's id, whatever its status). Answers, score and recommendations are read-only from then on.
-- **No Retry of the learner's answers, but of the grading.** A run that cannot grade (or is cancelled, or cannot be queued) marks its submission `failed` through `RunEffects`; the lesson stays ready. The learner never answers again: `POST …/regrade` runs `grade_test` once more on the stored answers, and only for a `failed` submission.
+- **Many attempts, each immutable.** A lesson has any number of attempts (`TestSubmission`, numbered from 1) but at most one open one (`generating` or `in_progress`, a partial unique constraint). The attempt stores a snapshot of the questions it was served; `PUT …/answers/{qid}` locks a question on the server (forward-only); `TestSubmission.seal` is the only way out of `in_progress`, and nothing else writes `answers` or `questions` (a test scans the code for it). Answers, score and recommendations of a sealed attempt are read-only.
+- **No Retry of the learner's answers, but of the grading.** A run that cannot grade (or is cancelled, or cannot be queued) marks its attempt `failed` through `RunEffects`; the lesson stays ready. The learner never answers again: `POST …/regrade` runs `grade_test` once more on the stored answers, and only for a `failed` attempt.
 
 ### How `runtime_repair` is built
 
@@ -404,7 +350,7 @@ This writes pages, the test, media links, the assembled code and its parts (`cod
 
 - **Segments.** The flow graph is assembled from segments (diagnose, mastery, author, build); the author segment provides the `lesson` exit, which leads to the build segment's `prepare_build`.
 - **Parallel items and joins.** `Send` branches carry the shared context (`BranchBuilder`) and write under keys with reducers (`pages`, `final_test`, `interactives`, `media`, `feedback`, `attempts`). `authored_join` and `widgets_join` read each item's problems and attempts: items under their attempt budget are sent again *alone* (the router builds the `Send`s), items out of attempts are kept with a warning (pages, test) or dropped with a warning (widgets).
-- **One writer for first drafts and fixes.** `ContentWriter` asks for a page, the test or a component and checks it (`PageValidator`, `FinalTestValidator`, the sandbox's `check.mjs`), so a fix after the alignment judge is held to the same rules.
+- **One writer for first drafts and fixes.** `ContentWriter` asks for a page, a batch of test questions or a component and checks it (`PageValidator`, `QuestionBatchValidator`, the sandbox's `check.mjs`), so a fix after the alignment judge is held to the same rules.
 - **Alignment is decided in code** (`AlignmentPolicy`): pass, fix (only flagged items that exist, one issue per item), accept with a warning (rounds spent, nothing major) or fail (rounds spent, a major issue). A fix that fails its own checks keeps the old version.
 - **The media agent** is a subgraph run inside `find_media` (`MediaFinder`): search tools per allowed source, bounded by `max_tool_steps`; `submit_media` is a tool whose arguments are the structured result; only URLs a tool returned in this session are downloaded (`UrlGuard`: https only, never a private address, redirects re-checked; size, type and dimensions read from the bytes); the optional `media.verify` vision check writes the alt text and can reject; out of rounds, the spec is drawn as an SVG diagram.
 - **Media is served** by `GET /api/media/{asset_id}?exp=&sig=` ([api.md](../reference/api.md)); generated code never sees a URL.
@@ -439,7 +385,7 @@ class FlowState(TypedDict, total=False):
     # Stage B (parallel writers → reducers required)
     plan: LessonPlan
     pages: Annotated[dict[str, PageContent], merge_dicts]            # intro / core / advanced
-    final_test: FinalTest
+    final_test: FinalTest  # the ten questions of attempt 1
     interactive_plan: InteractivePlan
     media: Annotated[dict[str, MediaRef], merge_dicts]               # spec_id → asset
     interactives: Annotated[dict[str, InteractiveComponent], merge_dicts]

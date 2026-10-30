@@ -1,7 +1,7 @@
 # Implementation plan: Modular Lesson Parts
 
 **Spec:** [modular-lessons.md](modular-lessons.md) (finalized 2026-10-26)
-**Status:** Plan. Phases 9.0 (branches `refactor/levels`, `refactor/run-subject`, `refactor/action-gate`) and 9.1 (`phase-9/questions`) are built; phases 9.2 to 9.8 are not started.
+**Status:** Plan. Phases 9.0 (branches `refactor/levels`, `refactor/run-subject`, `refactor/action-gate`), 9.1 (`phase-9/questions`) and 9.2 (`phase-9/retest`) are built; phases 9.3 to 9.8 are not started.
 **Last updated:** 2026-10-30 (third pass: doc fixes before phase 9.0, see the [changelog](#changelog))
 **Checked against:** the code and docs on branch `refactor/docs-layout` (Phases 0 to 8 built).
 
@@ -14,6 +14,8 @@ Phase 9.2 (branch `phase-9/retest`, from `main` after the 9.0 and 9.1 branches w
 | # | Change | Sections touched |
 |---|---|---|
 | C30 | **Criteria are rebalanced in code.** Short and long answers whose criteria do not add up to the question's marks are scaled in proportion with largest-remainder rounding (ties to the earlier criterion), and every criterion keeps at least one mark (`CriteriaRebalancer`, run by `QuestionFinisher` before validation). Only a question with more criteria than marks goes back to the model, with the reason. This replaces the validator-only rule of C29 for the case of a wrong sum; `OpenEndedType.problems` still checks what reaches it | 10.5, 9.1, C29 |
+| C31 | **Phase 9.2 built** (branch `phase-9/retest`, from `main` after the 9.0 and 9.1 branches were fast-forwarded into it). Where the build differs from, or adds to, this plan: (a) **`AttemptOutcome` is in `lessons/outcome.py`**, not `attempts.py`, because the `grade_test` graph needs it and `attempts.py` imports the services, which import the runner, which imports the graphs; (b) **`test.retake` completes at the end of the `question_bank` run** (`CompletionPoint.at_run_end`), which is exactly when the attempt starts, instead of a new "attempt status" kind of point; (c) **the blueprint is not read from `lesson.plan`**: `plan_lesson` returns `quantitative`, the blueprint is built in code from it and kept on the state and on `Lesson.test_blueprint`; a lesson made before it gets the blueprint its old test implies (quantitative if the old test had a numerical question) when it first retakes; (d) **the shared pipeline is two nodes plus a decision class**, not one set of nodes: `plan_batches` and `generate_questions` are shared, and each graph has its own join (`authored_join` also waits for the pages; `questions_join` for the retake) that decides through `QuestionRound`; (e) a review fix (`fix_item` on the test) writes **one question again** as a one-cell batch and retires the old row, instead of the whole test; (f) `Question` rows are written when a question is accepted (at the join for attempt 1, at `persist_attempt` for a retake), and the exclusion list is the union of the record, `Lesson.final_test` and every attempt snapshot; (g) `GET /lessons/{id}/test/attempts/{aid}` carries the attempt's **questions without keys** once it is over, because the result screen needs the question text; (h) `POST /test/submissions` keeps working for the first attempt only (a later call is `409 already_submitted`), and its regrade route was replaced by `…/attempts/{aid}/regrade`; (i) the lesson summary's `test_status` describes the **latest attempt** (and may be `generating` or `in_progress`), `test_score` and `latest_score` the latest *graded* one, `best_score` the best; (j) the console funnel counts a test only once an attempt is over; (k) the old test-size settings are retired (the columns stay, the console row is gone) and `FlowSettings.clean()` now checks the band lines and the batch size; (l) the follow-up hook is `FollowupHook` with `NoFollowup`, taking `AttemptFacts` that include `all_blank`; (m) the one-submission constraint was dropped in the last commit of the phase (migration 0010), and the tests that need two attempts use the `many_attempts` fixture until then | 5.5, 6.5, 6.6, 7.2, 7.3, 8.2, 9.3, 12.1, 14 (9.2) |
+
 
 Third pass, 2026-10-30 (branch `docs/spec-fixes`, before phase 9.0 starts). Docs only.
 
@@ -1209,7 +1211,7 @@ Branch `phase-9/questions`.
 
 *Exit:* a lesson built on the fake LLM has marks from the table, an MSQ question, and an expression-based numerical question; every stored `medium`/`hard` is migrated and old lessons still open and re-render; the scan test finds no old difficulty name.
 
-### Phase 9.2: Attempts and retest — XL
+### Phase 9.2: Attempts and retest — XL ✅ built (see C30 and C31)
 
 Branch `phase-9/retest`.
 

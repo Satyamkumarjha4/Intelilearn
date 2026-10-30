@@ -78,9 +78,10 @@ A lesson is a learner's request to learn one topic, from the diagnostic quiz thr
 | assessment | JSON, null | `LearnerAssessment`, stamped `level_scheme: 2`: which level names the document uses (see below) |
 | prerequisites_to_cover | JSON list | |
 | title / level | char | From the plan. `level` is beginner, foundation, proficient or expert (migration 0006 renamed novice … advanced) |
-| plan | JSON, null | `LessonPlan`, stamped `level_scheme: 2`; `final_test.difficulty_mix` has the five difficulties |
+| plan | JSON, null | `LessonPlan`, stamped `level_scheme: 2`, with `quantitative` (whether the topic is mainly calculating). A plan from before the fixed test also has `final_test` (its own mix), which nothing reads now |
+| test_blueprint | JSON, null | The fixed `LessonTestBlueprint` of the lesson's test: `{quantitative, total_marks, cells: [{index, type, difficulty, marks}]}` (ten cells, 20 or 18 marks). Written when the plan is saved; null for a lesson made before it, until its first retake |
 | pages | JSON, null | `{introduction, core, advanced}` → `PageContent` |
-| final_test | JSON, null | `FinalTest` (answers kept server-side, see below). Each question has `marks` from `MarksPolicy`, a `difficulty` of easy, basic, standard, difficult or expert, and the fields of its type; a numerical question also has the computed `answer`. Lessons from before the modular parts may hold `medium`/`hard` (migration 0006 renamed them), `code` questions, and `key_points`/`rubric` |
+| final_test | JSON, null | `FinalTest`: **the questions of attempt 1**, each with the `question_id` of its row in `Question` (answers kept server-side, see below). Each question has `marks` from `MarksPolicy`, a `difficulty` of easy, basic, standard, difficult or expert, and the fields of its type; a numerical question also has the computed `answer`. Lessons from before the modular parts may hold `medium`/`hard` (migration 0006 renamed them), `code` questions, and `key_points`/`rubric` |
 | interactive_plan | JSON, null | |
 | code | text, blank | Assembled TSX document |
 | code_parts | JSON | The pages' and interactives' TSX the document was assembled from, for targeted runtime repairs |
@@ -155,18 +156,52 @@ A lesson is a learner's request to learn one topic, from the diagnostic quiz thr
 | verified | bool | Passed `media.verify` |
 | created_at | datetime | |
 
-### `TestSubmission`
+### `Question` (the record of questions)
+
+The record of every question a lesson has asked. It feeds the exclusion list of a retake, holds any question written but not served, and is written **only** by `lessons.bank.QuestionBank`. Questions are immutable: a retake only adds rows, and a question is withdrawn (`retired`), never edited or deleted.
+
+| Field | Type | Notes |
+|---|---|---|
+| id | UUID | |
+| lesson | FK | cascade |
+| type / difficulty / concept | char | `mcq`, `msq`, `numerical`, … ; one of the five difficulties; the concept the question tests |
+| marks | smallint | From `MarksPolicy`, fixed at creation |
+| payload | JSON | The full question **with** its answer key; never sent to a client as it is |
+| stem_hash | char(64) | Hash of the normalised question text (`graph.questions.StemHash`). `UniqueConstraint(lesson, stem_hash)`: one row per stem |
+| batch | UUID, null | The run that wrote it; none for a question of an old test |
+| retired | bool | Withdrawn. **Every question of a lesson's old test is backfilled as retired** (migration 0008), so a retake never repeats an old stem |
+| created_at | datetime | |
+
+Indexes on `(lesson, type, difficulty)` and `(lesson, concept)`.
+
+### `TestSubmission` (an attempt)
+
+The model, table and URL names stay from when a lesson had one submission; in prose and in the app it is an **attempt**.
 
 | Field | Type | Notes |
 |---|---|---|
 | lesson | FK | |
-| answers | JSON | `{question_id: answer}` |
-| result | JSON, null | The `ScoreCard` (`graph/grading.py`): score, per-question marks, feedback and solution (for a model-graded answer also its `criteria` with what each earned), topics to revisit. At first only what could be marked at once (`complete: false`) |
-| status | enum `grading` \| `graded` \| `failed` | |
+| attempt_no | smallint | Per lesson, from 1. `UniqueConstraint(lesson, attempt_no)` |
+| questions | JSON | The snapshot of the questions served, answer keys included. What makes the attempt immutable and gradable whatever happens to the record later. Empty while `generating` |
+| answers | JSON | `{question_id: answer}`. A question that has an answer is **locked**: `PUT …/answers/{qid}` is forward-only on the server |
+| result | JSON, null | The `ScoreCard` (`graph/grading.py`): score, per-question marks, feedback and solution (for a model-graded answer also its `criteria` with what each earned), topics to revisit. For a legacy attempt with written answers, at first only what could be marked at once (`complete: false`) |
+| status | enum | `generating` (a retake waits for its questions) \| `in_progress` \| `grading` (legacy attempts with open-ended questions only) \| `graded` \| `failed` (grading) |
 | error | text | Why grading failed (blank otherwise) |
-| submitted_at / graded_at | datetime | |
+| started_at | datetime | When the attempt started; for a retake, when its questions were ready |
+| submitted_at / graded_at | datetime, null | `submitted_at` is null while the attempt is open |
+| awarded / available | smallint, null | Whole marks, filled when graded: trends and bands need no JSON |
+| band | char | `fail`, `normal` or `excellent` once graded (blank before) |
+| duration_s | int, null | Measured by the server, `started_at` to `submitted_at` |
+| followup | JSON, null | The offer decided with the band (none until phase 9.4) |
+| all_blank | bool | Every answer was blank: stored and scored 0, but not counted toward the Foundation offer (phase 9.4) |
 
-A lesson has at most one submission (`UniqueConstraint(lesson)`): the test is taken once, and a failed grading is run again on the stored `answers`. The migration `0003` kept the most recent graded submission per lesson (else the most recent) and deleted the rest before the constraint of `0004` was added.
+**One open attempt at a time**: a partial unique constraint on `lesson` where `status in ('generating', 'in_progress')`, so a double click cannot draw two sets or authorize twice.
+
+**Immutability.** `TestSubmission.seal()` is the only way out of `in_progress`; it stores the answers, the result and everything that follows from them in one conditional update, and a second call changes nothing. The answer endpoint is the only other writer of `answers`, and the retake graph the only writer of `questions` (once, while the attempt is `generating`). A test scans the code for any other update of those two fields.
+
+**Attempt 1** is part of the lesson: it starts at once, with a copy of `Lesson.final_test` as its snapshot. **Attempt 2 and later** always generate a fresh set (the `question_bank` graph). A lesson made before the fixed test can retake too: its attempt 1 keeps its old questions and total, and the trend compares percents.
+
+Migrations: `0007` adds the table and columns and the constraints below; `0008` makes every existing submission attempt 1 (questions copied from the lesson's old test, `started_at` = `submitted_at`, marks and band from its card when graded) and writes every question of every old test as a retired `Question`; `0009` adds the `question_bank` graph and the `retake` trigger to `GraphRun`. The one-submission constraint `UniqueConstraint(lesson)` was **dropped last** (`0010`), in the release that ships the retest screens; undoing it keeps the first attempt of each lesson.
 
 ### `LessonVersion`
 
@@ -199,12 +234,16 @@ There is one row per Celery execution segment of any graph, for example start, e
 | prerequisite_question_count | 5 |
 | prereq_trigger_max_correct | 2 |
 | mastery_requires_all_correct | true |
-| final_test_min / final_test_max | 10 / 15 |
+| final_test_min / final_test_max | 10 / 15 (retired: the test is fixed at ten questions in code; the columns stay for old snapshots and are not read, edited or shown) |
 | max_interactives_per_page | 3 |
 | alignment_min_score | 3 (out of 5) |
 | alignment_max_rounds | 2 |
 | render_check_max_rounds | 2 |
 | max_auto_runtime_repairs | 2 |
+| band_fail_below / band_excellent_above | 30 / 90 (percent: under the first is a Fail, over the second Excellent; the first must be below the second) |
+| question_batch_size | 5 (5 to 10: questions written per model call) |
+| batch_max_long / batch_max_short | 1 / 2 (written answers per batch; off when only short or long answers were asked) |
+| retakes_per_day | 3 (per lesson, in 24 hours; attempt 1 does not count) |
 | media_sources | `["wikimedia", "openverse"]` |
 | allowed_media_licenses | `["cc0", "pdm", "cc-by", "cc-by-sa"]` |
 
@@ -253,7 +292,7 @@ Difficulties were easy, medium, hard; they are now **easy, basic, standard, diff
 
 ## Deleting a lesson
 
-`DELETE /api/lessons/{id}` (`LessonService.delete`) cancels any active run, then deletes the `Lesson` row. Django cascades to its `Quiz`, `QuizAttempt`, `StudyMaterial`, `MediaAsset` (the files go with them), `LessonVersion`, `TestSubmission` and `GraphRun` rows.
+`DELETE /api/lessons/{id}` (`LessonService.delete`) cancels any active run, then deletes the `Lesson` row. Django cascades to its `Quiz`, `QuizAttempt`, `StudyMaterial`, `MediaAsset` (the files go with them), `LessonVersion`, `TestSubmission` (every attempt), `Question` and `GraphRun` rows.
 
 Two more things hold learner data and are not reached by the cascade, so `LessonErasure` (`lessons/erasure.py`) removes them first, before the lesson row:
 
