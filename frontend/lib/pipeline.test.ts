@@ -12,7 +12,7 @@
  * - the percentage is the steps done out of all of them, and nothing is measurable until a step of this run is done (the
  *   quiz a lesson build begins after does not count: the bar just moves, with no "13%")
  * - the run's start time is read from the snapshot ("Started 2 min ago"), and is unknown until it arrives
- * - while the foundations check is being prepared its steps say so
+ * - while the basics check is being prepared its steps say so
  * - a retry starts while the lesson still reads "failed": one calm step, not a single "Preparing your quiz" for the whole
  *   rebuild, and once the lesson's real stage is known the model switches to its steps and keeps what it has seen
  * - a lesson the learner rated themselves into has no quick check to prepare: its first step is setting the starting
@@ -53,7 +53,7 @@ describe("steps", () => {
       "Getting to know you", "Writing your questions", "Checking the questions", "Getting your quick check ready",
     ]);
     expect(labels(new PipelineModel("preparing_diagnostic", Date.now, "prerequisite"))).toEqual([
-      "Getting to know you", "Writing your foundations questions", "Checking the questions", "Getting your foundations check ready",
+      "Getting to know you", "Writing your basics questions", "Checking the questions", "Getting your basics check ready",
     ]);
     expect(labels(new PipelineModel("generating_material"))).toEqual([
       "Writing your study sheet", "Checking it", "Putting it together",

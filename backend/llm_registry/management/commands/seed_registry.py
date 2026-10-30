@@ -24,16 +24,33 @@ class Command(BaseCommand):
             "--force", action="store_true", help="Apply the defaults even if bindings already exist (overwrites them)."
         )
 
+    def fill_unbound(self, data: dict) -> None:
+        """An existing registry is left alone, except that a node with no binding (one a release added) is bound."""
+        filled = RegistrySerializer().fill_unbound(data)
+        if filled["bound"]:
+            self.stdout.write(self.style.SUCCESS("Bound " + ", ".join(filled["bound"]) + " from the profile."))
+        if filled["skipped"]:
+            self.stdout.write(
+                self.style.WARNING(
+                    "Could not bind "
+                    + ", ".join(filled["skipped"])
+                    + ": none of the profile's models is on this install. "
+                    "Bind a model in the admin."
+                )
+            )
+        if not filled["bound"] and not filled["skipped"]:
+            self.stdout.write("Registry already has bindings; leaving it alone (use --force to reset to defaults).")
+
     def handle(self, *args, file=None, force=False, profile="default", **options):
         if file:
             data = json.loads(file.read_text())
         else:
             if profile not in SEED_PROFILES:
                 raise CommandError(f"Unknown profile {profile!r}; choose one of: {', '.join(SEED_PROFILES)}")
-            if NodeModelBinding.objects.exists() and not force:
-                self.stdout.write("Registry already has bindings; leaving it alone (use --force to reset to defaults).")
-                return
             data = SEED_PROFILES[profile]().build()
+            if NodeModelBinding.objects.exists() and not force:
+                self.fill_unbound(data)
+                return
 
         try:
             counts = RegistrySerializer().load(data)

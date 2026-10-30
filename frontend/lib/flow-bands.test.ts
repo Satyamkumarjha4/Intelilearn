@@ -1,7 +1,7 @@
 /**
  * Unit under test: `FlowBands`, which works out where each quick-check score sends a learner from the lesson settings.
  *
- * Why: three settings (questions per level, the "foundations first" cut-off, whether mastery needs a perfect score)
+ * Why: three settings (questions per level, the "basics first" cut-off, whether mastery needs a perfect score)
  * decide the learner's route, and no one can see what they add up to from the numbers alone. The Lesson settings page
  * shows the result live from the unsaved form, so a cut-off that overlaps mastery, or one that leaves no score for the
  * regular lesson, is seen before it is saved. The zones must follow `RoutingPolicy` on the server exactly.
@@ -61,7 +61,7 @@ describe("legend", () => {
 
   test("states each range in words", () => {
     expect(legend()).toEqual([
-      { zone: "foundations", range: "0–2", text: "Foundations check (5 questions), then a lesson that starts with the basics" },
+      { zone: "foundations", range: "0–2", text: "Basics check (5 questions), then a lesson that starts with the basics" },
       { zone: "lesson", range: "3–9", text: "Lesson at their level" },
       { zone: "study", range: "10", text: "Study sheets, no lesson" },
     ]);
@@ -83,7 +83,7 @@ describe("legend", () => {
     expect(legend({ prereq_trigger_max_correct: 9 })[0].range).toBe("0–9");
   });
 
-  test("uses the length of the foundations check", () => {
+  test("uses the length of the basics check", () => {
     expect(legend({ prerequisite_question_count: 8 })[0].text).toContain("(8 questions)");
   });
 });

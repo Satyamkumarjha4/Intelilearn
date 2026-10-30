@@ -8,7 +8,7 @@ type StepDef = {
   nodes: string[]; // graph nodes that belong to the step
   doneWhen: string; // the node whose completion finishes the step
   registry: string[]; // model-registry node keys (prefixes) whose retries/fallbacks are shown on the step
-  /** The words for the foundations (prerequisite) check, where they differ. */
+  /** The words for the basics (prerequisite) check, where they differ. */
   foundations?: { doing: string; done: string };
   /** A sub-line while the step runs: how many times `node` has finished, said in words. */
   progress?: { node: string; text: (count: number) => string };
@@ -33,7 +33,7 @@ const STEPS: Record<string, StepDef> = {
     nodes: ["generate_diagnostic"],
     doneWhen: "generate_diagnostic",
     registry: ["diagnostic.generate"],
-    foundations: { doing: "Writing your foundations questions", done: "Wrote your foundations questions" },
+    foundations: { doing: "Writing your basics questions", done: "Wrote your basics questions" },
   },
   quiz_check: {
     doing: "Checking the questions",
@@ -48,7 +48,7 @@ const STEPS: Record<string, StepDef> = {
     nodes: ["publish_diagnostic"],
     doneWhen: "publish_diagnostic",
     registry: [],
-    foundations: { doing: "Getting your foundations check ready", done: "Your foundations check is ready" },
+    foundations: { doing: "Getting your basics check ready", done: "Your basics check is ready" },
   },
   // ... and all of it as one step, for the build that comes after (it is already done by then).
   quiz: {
@@ -249,7 +249,7 @@ export class PipelineModel {
   constructor(
     stage: Stage,
     private readonly clock: () => number = Date.now,
-    /** The route, which tells a foundations check from a quick check while it is being prepared. */
+    /** The route, which tells a basics check from a quick check while it is being prepared. */
     private readonly route: Route | "" = "",
     /** How the level was found, which decides whether there is a quick check to prepare and prerequisites to choose. */
     private readonly path: PipelinePath = PipelinePaths.QUICK_CHECK,

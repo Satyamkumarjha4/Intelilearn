@@ -49,7 +49,7 @@ We do not use advertising, analytics or social-media tracking cookies.
 - **To reply to you** when you contact us.
 
 We do not use your personal data for automated decisions with legal or similarly significant effects. Lesson routes
-(for example "foundations first") only change what Socra teaches you next.
+(for example "basics first") only change what Socra teaches you next.
 
 ### 4. AI providers and other services
 To create content, Socra sends **lesson requests** to AI model providers. A lesson request contains your topic, any

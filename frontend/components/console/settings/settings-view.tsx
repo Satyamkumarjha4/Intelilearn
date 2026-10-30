@@ -112,8 +112,8 @@ export function SettingsView() {
         <div className="grid min-w-0 gap-4 max-[1000px]:order-2">
           <Section title="Quick check">
             {numberRow("diagnostic_questions_per_band", "Questions per difficulty level", `${FlowBands.LEVELS} levels, so the quick check has ${FlowBands.LEVELS} × this many questions`)}
-            {numberRow("prereq_trigger_max_correct", 'Send to "foundations first" at or below', "Correct answers out of the total")}
-            {numberRow("prerequisite_question_count", "Foundations check length", "Questions in the prerequisite check")}
+            {numberRow("prereq_trigger_max_correct", 'Send to "basics first" at or below', "Correct answers out of the total")}
+            {numberRow("prerequisite_question_count", "Basics check length", "Questions in the prerequisite check")}
             {switchRow("mastery", "Study sheets only for a perfect score", "Off: a score of total − 1 also counts as mastered", form.mastery_requires_all_correct, (next) => change({ mastery_requires_all_correct: next }))}
           </Section>
 

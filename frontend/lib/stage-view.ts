@@ -49,7 +49,7 @@ export class StageView {
   static nextStep(route: Route | undefined, level = ""): string {
     switch (route) {
       case "prerequisite":
-        return "We'll check a few foundations first.";
+        return "We'll check a few basics first.";
       case "mastery":
         return "You already know this well. Pick a study sheet next.";
       case "lesson":

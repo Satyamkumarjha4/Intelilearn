@@ -6,7 +6,7 @@
  * different things.
  *
  * Use cases:
- * - the first check is the "Quick check" and the second is the "Foundations check"
+ * - the first check is the "Quick check" and the second is the "Basics check"
  * - the done card says which one is done
  * - nothing a learner reads contains the API's own words
  */
@@ -17,12 +17,12 @@ import { QuizNames } from "./quiz-names";
 describe("QuizNames", () => {
   test("names the two checks the way learners do", () => {
     expect(QuizNames.of("diagnostic")).toBe("Quick check");
-    expect(QuizNames.of("prerequisite")).toBe("Foundations check");
+    expect(QuizNames.of("prerequisite")).toBe("Basics check");
   });
 
   test("says which check is done", () => {
     expect(QuizNames.done("diagnostic")).toBe("Quick check done!");
-    expect(QuizNames.done("prerequisite")).toBe("Foundations check done!");
+    expect(QuizNames.done("prerequisite")).toBe("Basics check done!");
   });
 
   test("a score's label for a screen reader never says diagnostic or prerequisite", () => {

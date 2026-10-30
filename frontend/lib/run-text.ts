@@ -21,7 +21,7 @@ const STATUSES: Record<RunStatus, { label: string; tone: StatusTone }> = {
 const STAGES: Record<Stage, string> = {
   preparing_diagnostic: "Preparing quick check",
   awaiting_diagnostic: "Waiting for quick check",
-  awaiting_prerequisite: "Waiting for foundations check",
+  awaiting_prerequisite: "Waiting for basics check",
   awaiting_choice: "Waiting for sheet choice",
   generating_material: "Writing study sheet",
   generating_lesson: "Building lesson",

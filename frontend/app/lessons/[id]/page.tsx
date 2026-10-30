@@ -40,11 +40,11 @@ const BUILDING_TITLES: Partial<Record<Stage, string>> = {
   generating_lesson: "Building your lesson",
 };
 
-/** The small line above the heading: the foundations check has its own words while it is being prepared, and a lesson
+/** The small line above the heading: the basics check has its own words while it is being prepared, and a lesson
  *  with no quick check is not getting one ready. */
 function buildingTitle(stage: Stage, route: string, entry: Entry): string {
   if (stage === "preparing_diagnostic" && entry === "self_rating") return "Getting your lesson started";
-  if (stage === "preparing_diagnostic" && route === "prerequisite") return "Preparing your foundations check";
+  if (stage === "preparing_diagnostic" && route === "prerequisite") return "Preparing your basics check";
   return BUILDING_TITLES[stage] ?? "Working on your lesson";
 }
 

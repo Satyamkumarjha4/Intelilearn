@@ -114,9 +114,9 @@ export const PATH_SLIDES: PathSlide[] = [
     tab: "0–2 correct",
     scores: [0, 2],
     ifYouScore: "0–2",
-    heading: "We build your foundations first",
+    heading: "We build your basics first",
     text: "No point rushing ahead. A short check finds which basics are missing, and your lesson teaches those before the main topic.",
-    steps: ["Quick check", "5-question foundations check", "Lesson: basics first, then the topic", "Test you can retake"],
+    steps: ["Quick check", "5-question basics check", "Lesson: basics first, then the topic", "Test you can retake"],
     example: {
       initial: "P",
       name: "Priya",

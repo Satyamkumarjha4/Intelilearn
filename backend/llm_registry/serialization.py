@@ -93,6 +93,37 @@ class RegistrySerializer:
                 counts["bindings"] += self._replace_bindings(node, item["bindings"])
         return counts
 
+    @transaction.atomic
+    def fill_unbound(self, data: dict) -> dict[str, list[str]]:
+        """For an install that already has a registry: give each node that has **no binding at all** (a node a release
+        added) the chain `data` describes, using only the models this install already has, in the order given. A node
+        that has any binding is not touched, and no provider or model is created. → {"bound": [...], "skipped": [...]}:
+        a node is skipped when none of the chain's models exists here, or the models it has cannot serve it."""
+        NodeConfigSync().ensure()
+        result: dict[str, list[str]] = {"bound": [], "skipped": []}
+        for item in data.get("nodes", []):
+            node = NodeConfig.objects.filter(node_key=item["node_key"]).first()
+            if node is None or node.bindings.exists():
+                continue
+            chain = [
+                b
+                for b in item.get("bindings", [])
+                if LLMModel.objects.filter(provider__key=b["provider"], name=b["model"]).exists()
+            ]
+            if not chain:
+                result["skipped"].append(node.node_key)
+                continue
+            try:
+                with transaction.atomic():
+                    self._assign(node, item, self.NODE_FIELDS)
+                    self._save(node)
+                    self._replace_bindings(node, chain)
+            except ValidationError:
+                result["skipped"].append(node.node_key)
+                continue
+            result["bound"].append(node.node_key)
+        return result
+
     def _replace_bindings(self, node: NodeConfig, bindings: list[dict]) -> int:
         node.bindings.all().delete()
         for b in bindings:

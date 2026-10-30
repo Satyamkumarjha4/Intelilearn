@@ -30,7 +30,7 @@ const REASSURANCE: Record<QuizKind, string> = {
   prerequisite: "A few basics this topic builds on. “I don't know” is a fine answer here too.",
 };
 
-/** The quick check (and the foundations check): one card per question, forward only, all answers sent at the end. */
+/** The quick check (and the basics check): one card per question, forward only, all answers sent at the end. */
 export function QuickCheck(props: Props) {
   const [quiz, setQuiz] = useState<QuizForLearner | null>(null);
   const [error, setError] = useState<string | null>(null);

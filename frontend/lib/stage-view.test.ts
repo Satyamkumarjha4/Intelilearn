@@ -61,7 +61,7 @@ describe("StageView.of", () => {
 
 describe("StageView.nextStep", () => {
   test("follows the route", () => {
-    expect(StageView.nextStep("prerequisite")).toBe("We'll check a few foundations first.");
+    expect(StageView.nextStep("prerequisite")).toBe("We'll check a few basics first.");
     expect(StageView.nextStep("mastery")).toContain("already know this well");
     expect(StageView.nextStep("lesson", "intermediate")).toBe("Building your lesson at intermediate level.");
     expect(StageView.nextStep("lesson")).toBe("Building your lesson.");

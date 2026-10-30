@@ -42,7 +42,7 @@ export class FlowBands {
 
     const legend: BandLegend[] = [];
     const texts: Record<Zone, string> = {
-      foundations: `Foundations check (${settings.prerequisite_question_count} questions), then a lesson that starts with the basics`,
+      foundations: `Basics check (${settings.prerequisite_question_count} questions), then a lesson that starts with the basics`,
       lesson: "Lesson at their level",
       study: settings.mastery_requires_all_correct ? "Study sheets, no lesson" : "Study sheets, no lesson (the hardest questions must all be right)",
     };

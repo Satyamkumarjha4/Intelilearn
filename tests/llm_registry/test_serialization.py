@@ -15,7 +15,9 @@ Use cases:
   one attempt, a 4 second timeout and no retries on a model (the next model is tried instead), in both profiles
 - export then import round-trips to the same JSON
 - an invalid import rolls back everything
-- seed_registry leaves an existing registry alone unless forced
+- seed_registry leaves an existing registry alone unless forced, except that a node with no binding at all (a node a
+  release added) is bound from the profile, using only models the install already has, never touching a binding that
+  exists, and saying which nodes it bound and which it could not
 - seed_registry loads an exported file
 - seed_registry --profile cheap loads the cheap profile; an unknown profile is refused
 """
@@ -130,6 +132,90 @@ def test_seed_command_is_idempotent(capsys):
 
     assert NodeModelBinding.objects.count() == count
     assert "leaving it alone" in capsys.readouterr().out
+
+
+class TestUnboundNodes:
+    """An install that already has a registry meets a release that adds a node: the node has no binding."""
+
+    def unbind(self, node_key):
+        NodeModelBinding.objects.filter(node__node_key=node_key).delete()
+
+    def test_an_unbound_node_is_bound_from_the_profile_and_nothing_else_changes(self, capsys):
+        call_command("seed_registry")
+        self.unbind("prerequisites.plan")
+        NodeModelBinding.objects.filter(node__node_key="lesson.plan", priority=0).update(priority=7)
+        before = {
+            (b.node.node_key, b.priority) for b in NodeModelBinding.objects.exclude(node__node_key="prerequisites.plan")
+        }
+
+        call_command("seed_registry")
+
+        bound = list(NodeModelBinding.objects.filter(node__node_key="prerequisites.plan").order_by("priority"))
+        assert [(b.model.provider.key, b.model.name) for b in bound] == [
+            ("groq", "openai/gpt-oss-20b"), ("gemini", "gemini-3.5-flash")
+        ]  # fmt: skip
+        after = {
+            (b.node.node_key, b.priority) for b in NodeModelBinding.objects.exclude(node__node_key="prerequisites.plan")
+        }
+        assert after == before  # a tuned binding is never overwritten
+        out = capsys.readouterr().out
+        assert "prerequisites.plan" in out and "Bound" in out
+
+    def test_it_follows_the_chosen_profile(self):
+        call_command("seed_registry", profile="cheap")
+        self.unbind("prerequisites.plan")
+
+        call_command("seed_registry", profile="cheap")
+
+        names = set(
+            NodeModelBinding.objects.filter(node__node_key="prerequisites.plan").values_list("model__name", flat=True)
+        )
+        assert names and names <= CHEAP_MODELS
+
+    def test_only_models_the_install_has_are_used(self):
+        call_command("seed_registry")
+        self.unbind("prerequisites.plan")
+        LLMModel.objects.filter(name="gemini-3.5-flash").exclude(
+            pk__in=NodeModelBinding.objects.values("model")
+        ).delete()
+        NodeModelBinding.objects.filter(model__name="openai/gpt-oss-20b").delete()
+        LLMModel.objects.filter(name="openai/gpt-oss-20b").delete()
+
+        call_command("seed_registry")
+
+        names = list(
+            NodeModelBinding.objects.filter(node__node_key="prerequisites.plan").values_list("model__name", flat=True)
+        )
+        assert names == ["gemini-3.5-flash"]
+
+    def test_a_node_the_install_has_no_model_for_is_reported_not_guessed(self, capsys):
+        call_command("seed_registry")
+        self.unbind("prerequisites.plan")
+        NodeModelBinding.objects.filter(model__name__in=["openai/gpt-oss-20b", "gemini-3.5-flash"]).delete()
+        LLMModel.objects.filter(name__in=["openai/gpt-oss-20b", "gemini-3.5-flash"]).delete()
+        capsys.readouterr()
+
+        call_command("seed_registry")
+
+        assert not NodeModelBinding.objects.filter(node__node_key="prerequisites.plan").exists()
+        assert "prerequisites.plan" in capsys.readouterr().out
+
+    def test_a_registry_with_every_node_bound_is_left_alone(self, capsys):
+        call_command("seed_registry")
+        count = NodeModelBinding.objects.count()
+        capsys.readouterr()
+
+        call_command("seed_registry")
+
+        assert NodeModelBinding.objects.count() == count and "leaving it alone" in capsys.readouterr().out
+
+    def test_force_still_resets_everything(self):
+        call_command("seed_registry")
+        NodeModelBinding.objects.filter(node__node_key="lesson.plan", priority=0).update(priority=7)
+
+        call_command("seed_registry", force=True)
+
+        assert not NodeModelBinding.objects.filter(priority=7).exists()
 
 
 def test_seed_command_loads_a_file(tmp_path):
