@@ -9,6 +9,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from ..questions import QuestionTypes
+
 PageKey = Literal["introduction", "core", "advanced"]
 PAGE_KEYS: tuple[str, ...] = ("introduction", "core", "advanced")
 QuestionType = Literal["mcq", "numerical", "short_answer", "long_answer", "code"]
@@ -138,34 +140,7 @@ class TestQuestion(BaseModel):
 
     @model_validator(mode="after")
     def _fields_for_type(self):
-        missing = []
-        if self.type == "mcq":
-            if not self.options or len(self.options) != 4:
-                missing.append("options (exactly 4)")
-            if self.correct_index is None or not 0 <= self.correct_index <= 3:
-                missing.append("correct_index (0-3)")
-        elif self.type == "numerical":
-            if self.answer is None:
-                missing.append("answer")
-            if self.tolerance is None or self.tolerance < 0:
-                missing.append("tolerance (>= 0)")
-        elif self.type == "short_answer":
-            if not self.model_answer:
-                missing.append("model_answer")
-            if not self.key_points:
-                missing.append("key_points")
-        elif self.type == "long_answer":
-            if not self.model_answer:
-                missing.append("model_answer")
-            if not self.rubric:
-                missing.append("rubric")
-        elif self.type == "code":
-            for name in ("language", "reference_solution"):
-                if not getattr(self, name):
-                    missing.append(name)
-            if not self.test_cases:
-                missing.append("test_cases")
-        if missing:
+        if missing := QuestionTypes.get(self.type).missing_fields(self.model_dump()):
             raise ValueError(f"{self.type} question {self.id} needs {', '.join(missing)}")
         return self
 
@@ -175,10 +150,6 @@ class FinalTest(BaseModel):
     questions: list[TestQuestion]
 
 
-# Everything the learner may see before submitting, per type.
-PUBLIC_QUESTION_FIELDS = ("id", "type", "concept", "difficulty", "marks", "question", "options", "unit", "language",
-                          "starter_code")  # fmt: skip
-
-
 def public_question(question: dict) -> dict:
-    return {key: question.get(key) for key in PUBLIC_QUESTION_FIELDS if question.get(key) is not None}
+    """Everything the learner may see before submitting: an allowlist per kind of question (`QuestionType`)."""
+    return QuestionTypes.of(question).public(question)

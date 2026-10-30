@@ -4,11 +4,10 @@ Answers are {question_id: option_index | "dont_know"}. "I don't know" scores as 
 from inflating the learner's level (10 four-option questions give ~2.5 correct by chance).
 """
 
-import math
-import re
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
+from .questions import QuestionTypes
 from .schemas.diagnostic import BANDS
 
 DONT_KNOW = "dont_know"
@@ -183,56 +182,24 @@ class SheetGrade:
 class AnswerGrader:
     """Marks the answers that have exactly one right answer; open-ended ones get no verdict.
 
-    One grader for practice sheets and the lesson test, so a learner's score never depends on where they took it.
+    One grader for practice sheets and the lesson test, so a learner's score never depends on where they took it. How
+    an answer is marked belongs to its kind of question (`QuestionType.score`).
     """
 
-    NUMBER = re.compile(r"^\s*([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\s*([^\d\s.+-].*)?$")
-
     def grade(self, question: dict, answer: Any) -> QuestionGrade:
-        marks = question["marks"]
-        kind = question["type"]
-        if kind == "mcq":
-            right = self._is_int(answer) and answer == question["correct_index"]
-        elif kind == "numerical":
-            right = self._numerical(question, answer)
-        else:
-            return QuestionGrade(question["id"], marks, None, None)
-        return QuestionGrade(question["id"], marks, right, marks if right else 0)
+        score = QuestionTypes.of(question).score(question, answer)
+        return QuestionGrade(question["id"], question["marks"], score.correct, score.awarded)
 
     def grade_all(self, questions: list[dict], answers: dict) -> SheetGrade:
         return SheetGrade([self.grade(q, answers.get(q["id"])) for q in questions])
-
-    @staticmethod
-    def _is_int(value: Any) -> bool:
-        return isinstance(value, int) and not isinstance(value, bool)
-
-    def _numerical(self, question: dict, answer: Any) -> bool:
-        value = self._number(answer)
-        if value is None or not math.isfinite(value):
-            return False
-        return abs(value - question["answer"]) <= question["tolerance"] + 1e-9
-
-    def _number(self, answer: Any) -> float | None:
-        if isinstance(answer, bool):
-            return None
-        if isinstance(answer, (int, float)):
-            return float(answer)
-        if isinstance(answer, str) and (match := self.NUMBER.match(answer)):
-            return float(match.group(1))
-        return None
 
 
 class Solution:
     """What a question's answer is made of, for showing after the learner has answered (never before)."""
 
-    FIELDS = (
-        "correct_index", "answer", "tolerance", "unit", "model_answer", "key_points", "rubric", "reference_solution",
-        "test_cases",
-    )  # fmt: skip
-
     @classmethod
     def of(cls, question: dict) -> dict:
-        return {key: question[key] for key in cls.FIELDS if question.get(key) is not None}
+        return QuestionTypes.of(question).solution(question)
 
 
 class ScoreCard:
@@ -267,7 +234,7 @@ class ScoreCard:
         return [
             q | {"answer": answers[q["id"]]}
             for q in questions
-            if q["type"] not in ("mcq", "numerical") and not self._blank(answers.get(q["id"]))
+            if not QuestionTypes.of(q).auto_scored and not self._blank(answers.get(q["id"]))
         ]
 
     def _row(self, question: dict, answer, grade: QuestionGrade, model: dict[str, dict] | None) -> dict:
@@ -278,7 +245,7 @@ class ScoreCard:
         if grade.correct is not None:
             return row | {
                 "awarded": grade.awarded, "correct": grade.correct, "graded_by": "auto",
-                "feedback": "Correct." if grade.correct else self._expected(question),
+                "feedback": "Correct." if grade.correct else QuestionTypes.of(question).expected_text(question),
             }  # fmt: skip
         given = (model or {}).get(question["id"])
         if given is None:
@@ -291,13 +258,6 @@ class ScoreCard:
     @staticmethod
     def _blank(answer) -> bool:
         return answer is None or (isinstance(answer, str) and not answer.strip())
-
-    @staticmethod
-    def _expected(question: dict) -> str:
-        if question["type"] == "mcq":
-            return f'The correct answer is "{question["options"][question["correct_index"]]}".'
-        unit = f" {question['unit']}" if question.get("unit") else ""
-        return f"The expected answer is {question['answer']:g}{unit} (accepted within ±{question['tolerance']:g})."
 
     @staticmethod
     def _topics(rows: list[dict]) -> list[str]:

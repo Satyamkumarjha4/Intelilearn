@@ -2,6 +2,7 @@
 
 import ast
 
+from ..questions import QuestionTypes
 from .base import TextRules
 
 
@@ -14,10 +15,7 @@ class QuestionRules:
         if dupes := TextRules.duplicates(TextRules.norm(q["question"]) for q in questions):
             problems.append(f"Questions must not repeat ({len(dupes)} repeated).")
         for q in questions:
-            if q["type"] == "mcq":
-                problems += TextRules.option_problems(f"{label} {q['id']}", q["options"])
-            if q["type"] == "code" and (q.get("language") or "").lower() == "python" and q.get("reference_solution"):
-                problems += cls.python_problems(f"{label} {q['id']} reference solution", q["reference_solution"])
+            problems += QuestionTypes.of(q).problems(q, f"{label} {q['id']}")
         return problems
 
     @staticmethod

@@ -1022,6 +1022,60 @@ classDiagram
 - Validators are pure: no ORM, no network. They depend only on `LatexChecker` (implemented by `SandboxRunner`, faked in tests).
 - `Prompt` subclasses hold no state between calls; one class per node key in `graph/prompts/`.
 
+**Question types (`graph/questions/`, Phase 9.1).** What differs between kinds of question lives in one class per kind
+(Strategy), found by name in `QuestionTypes`, instead of `if kind ==` ladders in six places:
+
+```mermaid
+classDiagram
+    direction LR
+    class QuestionType {
+        <<abstract>>
+        +key str
+        +own_public_fields tuple
+        +solution_fields tuple
+        +auto_scored bool
+        +public(question) dict
+        +solution(question) dict
+        +missing_fields(question)* list
+        +problems(question, label) list
+        +score(question, answer)* Score
+        +expected_text(question) str
+    }
+    class McqType
+    class NumericalType
+    class OpenEndedType {
+        <<abstract>>
+    }
+    class ShortAnswerType
+    class LongAnswerType
+    class CodeType {
+        legacy lessons only
+    }
+    class Score {
+        <<frozen>>
+        +bool correct
+        +int awarded
+    }
+    class QuestionTypes {
+        +get(key)$ QuestionType
+        +of(question)$ QuestionType
+        +keys()$ tuple
+    }
+    QuestionType <|-- McqType
+    QuestionType <|-- NumericalType
+    QuestionType <|-- OpenEndedType
+    OpenEndedType <|-- ShortAnswerType
+    OpenEndedType <|-- LongAnswerType
+    OpenEndedType <|-- CodeType
+    QuestionTypes o-- QuestionType
+    QuestionType ..> Score
+```
+
+- Who asks: `TestQuestion`'s validator (`missing_fields`), `QuestionRules.problems` (`problems`), `public_question` and
+  `Quiz`-style views (`public`), `Solution.of` (`solution`), `AnswerGrader.grade` (`score`), `ScoreCard` (`expected_text`,
+  `auto_scored`). The flat Pydantic model a model writes is unchanged; these classes use its `type` to look up behaviour.
+- A new kind is a new class in `types.py` and one entry in the registry; no other file gets a branch.
+
 ### 4.9 `graph`: media and sandbox adapters
 
 ```mermaid
@@ -1988,4 +2042,5 @@ Every row below is done: the registry, core, accounts and frontend code of phase
 | ~~`frontend/lib/api.ts`~~ | ~~module functions + `ApiError`~~ | `ApiClient` + the shared `apiClient` instance | ✅ Done |
 | ~~`frontend/lib/safe-redirect.ts`~~ | ~~`safeNext()`~~ | `RedirectPolicy.safeNext` | ✅ Done |
 | `graph/schemas/lesson.py`, `graph/schemas/interactive.py`, `graph/nodes/mastery.py`, `graph/nodes/media_agent.py`, `graph/media/sources.py`, `lessons/services.py`, `lessons/views.py`, `lessons/events.py`, `console/services/attention.py`, `console/services/overview.py`, `onboarding/prompts.py` | module-level helper functions that hold logic: `public_question`, `component_name`, `diagnostic_concepts`, `sources_of`, `strip_html`, `has_active_run`, `parse_id`, `channel`, `plural`, `money`, `language_name` | a method on the class or value object that owns the data (the rules above allow only framework hooks at module level) | ☐ Open |
-| `lessons/events.py`, `lessons/reports.py`, `graph/grading.py`, `graph/schemas/lesson.py` | `if kind ==` chains over event kinds, sheet kinds and question types | one registered variant class per kind (Open/Closed) | ☐ Open |
+| ~~`graph/grading.py`, `graph/schemas/lesson.py`, `graph/validators/questions.py`~~ | ~~`if kind ==` chains over question types~~ | `QuestionType` classes and `QuestionTypes` (`graph/questions/`, §4.8) | ✅ Done |
+| `lessons/events.py`, `lessons/reports.py` | `if kind ==` chains over event kinds and sheet kinds | one registered variant class per kind (Open/Closed) | ☐ Open |
