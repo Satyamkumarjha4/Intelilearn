@@ -47,12 +47,16 @@ class AwaitChoiceNode(AwaitNode):
         return choice
 
 
-def diagnostic_concepts(state: dict) -> list[str]:
-    """What the sheet must cover: the diagnostic's concepts, from the state or (an extra sheet) the stored quiz."""
-    if bundle := state.get("bundle"):
-        return [q["concept"] for q in bundle["diagnostic"]]
-    quiz = Quiz.objects.filter(lesson_id=state["lesson_id"], kind=Quiz.Kind.DIAGNOSTIC).first()
-    return [q["concept"] for q in quiz.questions] if quiz else []
+class DiagnosticConcepts:
+    """What a sheet must cover: the diagnostic's concepts."""
+
+    @staticmethod
+    def of(state: dict) -> list[str]:
+        """From the state, or (an extra sheet, a branch of the two-sheet fan-out) from the stored quiz."""
+        if bundle := state.get("bundle"):
+            return [q["concept"] for q in bundle["diagnostic"]]
+        quiz = Quiz.objects.filter(lesson_id=state["lesson_id"], kind=Quiz.Kind.DIAGNOSTIC).first()
+        return [q["concept"] for q in quiz.questions] if quiz else []
 
 
 class GenerateStudyMaterialNode(LLMNode):
@@ -70,7 +74,7 @@ class GenerateStudyMaterialNode(LLMNode):
             self.lesson(state).advance_to(Stage.GENERATING_MATERIAL)
 
     def subject(self, state: dict) -> dict:
-        return state | {"kind": state["mastery_choice"], "concepts": diagnostic_concepts(state)}
+        return state | {"kind": state["mastery_choice"], "concepts": DiagnosticConcepts.of(state)}
 
     def to_state(self, output: BaseModel, state: dict, ctx: FlowContext) -> dict:
         material = output.model_dump(mode="json")
@@ -94,7 +98,7 @@ class ValidateStudyMaterialNode(ValidateNode):
         return state["study_material"]
 
     def context(self, state: dict) -> dict:
-        return {"kind": state["mastery_choice"], "concepts": diagnostic_concepts(state)}
+        return {"kind": state["mastery_choice"], "concepts": DiagnosticConcepts.of(state)}
 
     def label_of(self, state: dict) -> str:
         return f"The {MaterialKind(state['mastery_choice']).label.lower()}"

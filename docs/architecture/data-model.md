@@ -74,7 +74,14 @@ A lesson is a learner's request to learn one topic, from the diagnostic quiz thr
 | topic | char | "Binary search" |
 | user_context | text, blank | Optional extra context from the learner ("for my DSA exam, I know arrays") |
 | stage | enum | See the stage table below |
-| route | enum `prerequisite` \| `lesson` \| `mastery`, blank | Blank until the diagnostic sets it |
+| route | enum `prerequisite` \| `lesson` \| `mastery`, blank | Blank until the diagnostic (or a self-rating) sets it. A learner who aced the quick check and chose the Expert lesson goes from `mastery` to `lesson`, so the lesson has a test |
+| entry | enum `diagnostic` \| `self_rating` (\| `followup` \| `quiz_result` in later phases), default `diagnostic` | How the level is found: the quick check, or the learner's own rating |
+| intent | enum `lesson` \| `sheets`, default `lesson` | What was asked for. Only a lesson can be asked for until study sheets from a topic arrive (9.5) |
+| origin | enum `direct` \| `recommendation` \| `followup` \| `quiz_result`, default `direct` | Why the lesson was made. **Set and verified by the server**: a client may ask for `direct` or `recommendation`, and a recommendation must name the learner's own graded attempt and a topic it listed (`lessons/origins.py`) |
+| recommended_from | JSON, null | For `recommendation`: `{attempt_id, topic}` as verified |
+| level_source | enum `diagnostic` \| `self_rating` \| `test_score` \| `quiz_result`, blank | Where `level` came from. Migration 0012 credits `diagnostic` to every lesson that already had a level |
+| self_rating_halves | smallint, null | The learner's stars times two (1 to 10; a check constraint refuses others). The API shows stars (`self_rating`, 0.5 to 5) |
+| mastery_options | enum `three_sheets` \| `lesson_or_sheets`, default `three_sheets` | Which choice a learner who aced the quick check was shown. The default is what a lesson already waiting at the choice had (migration 0013), so it keeps its three cards; `publish_mastery_options` records `lesson_or_sheets` from now on |
 | assessment | JSON, null | `LearnerAssessment`, stamped `level_scheme: 2`: which level names the document uses (see below) |
 | prerequisites_to_cover | JSON list | |
 | title / level | char | From the plan. `level` is beginner, foundation, proficient or expert (migration 0006 renamed novice … advanced) |
@@ -97,11 +104,11 @@ A lesson is a learner's request to learn one topic, from the diagnostic quiz thr
 
 | stage | Meaning | UI shows |
 |---|---|---|
-| `preparing_diagnostic` | Generating the quizzes | Spinner with progress |
+| `preparing_diagnostic` | Generating the quizzes (a self-rated lesson leaves this stage at once: it has no quiz) | Spinner with progress |
 | `awaiting_diagnostic` | Paused at `interrupt()` | Diagnostic quiz |
 | `awaiting_prerequisite` | Paused | Prerequisite quiz |
-| `awaiting_choice` | Paused (mastery) | "You know this well" and three sheet options |
-| `generating_material` | Writing the chosen sheet | Progress |
+| `awaiting_choice` | Paused (mastery) | "You know this well" and the choice: an Expert lesson, or the cheat sheet and revision sheet only (three sheet options for a lesson that was already waiting) |
+| `generating_material` | Writing the chosen sheet, or the two sheets together | Progress |
 | `generating_lesson` | Stages B and C | Pipeline progress |
 | `ready` | Done | Lesson viewer or sheet viewer |
 | `failed` | Unrecoverable error | Error and **Retry** (resumes from the last checkpoint) |
@@ -287,6 +294,8 @@ The tables `checkpoints`, `checkpoint_blobs`, `checkpoint_writes` and `checkpoin
 ## Level names and difficulties (migration 0006)
 
 Levels were novice, beginner, intermediate, advanced; they are now **beginner, foundation, proficient, expert**, and "beginner" is in both with different meanings. A stored document therefore says which it uses: `assessment` and `plan` carry `level_scheme: 2` when they use the new names, and `graph.levels.LevelScheme.level_of` reads one with `Level.parse` if it has the stamp and with `Level.parse_legacy` (old names by position) if it does not. The same marker is on the flow state of a new lesson. Migration `lessons/0006_level_and_difficulty_names` rewrites every lesson row once (`Lesson.level`, `assessment`, `plan`, and the difficulties below) and stamps the documents; **graph checkpoints are not rewritten**, and a checkpoint without the stamp is read as legacy. Undoing the migration is lossy for the two new difficulties (basic reads as easy, expert as hard).
+
+**Stage moves added with self-rating.** `preparing_diagnostic → generating_lesson` (a self-rated lesson has no quiz) and `awaiting_choice → generating_lesson` (the Expert lesson), next to the existing `awaiting_choice → generating_material` (sheets).
 
 Difficulties were easy, medium, hard; they are now **easy, basic, standard, difficult, expert** (medium became standard, hard became difficult). The migration renames every `difficulty` value and every `difficulty_mix` in `Lesson.final_test`, `Lesson.plan` and `StudyMaterial.content`; a test lists every JSON column of the app and fails when one is neither rewritten nor known to hold neither name. `ModelCall.quiz_id`, `GraphRun.subject` and the rest of phase 9 are described in the plan.
 

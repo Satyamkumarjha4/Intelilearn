@@ -36,6 +36,7 @@ Legend for status columns: ✅ in code · ◐ partly (functions still to wrap in
   - [4.17 `graph`: levels, difficulties and score bands (Phase 9, modular lessons)](#417-graph-levels-difficulties-and-score-bands-phase-9-modular-lessons)
   - [4.18 `lessons`: the action gate (Phase 9, metering seam)](#418-lessons-the-action-gate-phase-9-metering-seam)
   - [4.19 `lessons` and `graph`: attempts and the questions pipeline (Phase 9.2)](#419-lessons-and-graph-attempts-and-the-questions-pipeline-phase-92)
+  - [4.20 `graph` and `lessons`: the way in, lesson shapes and the mastery choice (Phase 9.3)](#420-graph-and-lessons-the-way-in-lesson-shapes-and-the-mastery-choice-phase-93)
 - [5. How to extend](#5-how-to-extend)
 - [Refactor backlog](#refactor-backlog)
 
@@ -2138,6 +2139,79 @@ classDiagram
 - **Metering.** `AttemptService.start` is the only new costly entry point, classified in `RunStarters.METERED` as `test.retake` (attempt 2 onward; attempt 1 is part of the lesson and never asks). Its `CompletionPoint` is the end of the `question_bank` run, which is when the attempt starts. `AttemptGenerationEffect` deletes a waiting attempt whose run failed or was stopped, then `AuthorizationSettlement` settles `failed`/`cancelled`. Submitting asks nothing: the lesson attempt is graded in full, no run.
 - **Dependency rule.** `lessons/outcome.py` is apart from `attempts.py` because the `grade_test` graph (in `graph/`) needs `AttemptOutcome` and `attempts.py` imports the services, which import the runner, which imports the graphs.
 
+### 4.20 `graph` and `lessons`: the way in, lesson shapes and the mastery choice (Phase 9.3)
+
+A learner can rate themselves instead of taking the quick check, what a lesson's pages are for depends on the learner's level, and a learner who aced the quick check chooses between an Expert lesson and two sheets. The pure classes are `graph/shapes.py` and `graph/assessment.py`; the graph pieces are `graph/nodes/entry.py` and `sheets.py` with `EntrySegment` and `SheetsSegment` in `graph/builders.py`; the use cases are in `lessons/services.py`, `lessons/origins.py` and `lessons/stranded.py`.
+
+```mermaid
+classDiagram
+    direction LR
+    class LessonShape {
+        <<abstract>>
+        +level Level
+        +requires_prerequisites bool
+        +roles dict~str, PageRole~
+        +start_point str
+        +author_notes str
+        +page_keys tuple
+        +role(key) PageRole
+        +describe() str
+    }
+    LessonShape <|-- BeginnerShape
+    LessonShape <|-- FoundationShape
+    LessonShape <|-- ProficientShape
+    LessonShape <|-- ExpertShape
+    class LessonShapes {
+        +for_level(level)$ LessonShape
+        +of(document)$ LessonShape
+        +all()$ tuple
+    }
+    LessonShapes o-- LessonShape
+    class AssessmentSource {
+        <<abstract>>
+        +key str
+        +uses_model bool
+        +assess(request) dict
+    }
+    AssessmentSource <|-- DiagnosticSource
+    AssessmentSource <|-- SelfRatingSource
+    class AssessmentSources {
+        +for_key(key)$ AssessmentSource
+        +keys()$ tuple
+    }
+    AssessmentSources o-- AssessmentSource
+    SelfRatingSource ..> LessonShapes
+    SelfRatingSource ..> StarRating
+    DiagnosticSource o-- AssessmentGuard
+    class EntryRouter
+    class LevelGate
+    class IntentRouter
+    class ChoiceRouter
+    class SheetsRouter
+    class OriginVerifier {
+        +verify(user, origin, recommended_from) VerifiedOrigin
+    }
+    class StrandedThreads {
+        +find() list~StrandedThread~
+        +mark_failed(stranded) int
+    }
+    StrandedThreads o-- PendingNodes
+    LessonService o-- OriginVerifier
+    AssessFromSourceNode ..> AssessmentSources
+    AssessLearnerNode o-- DiagnosticSource
+    PlanValidator ..> LessonShape
+    SheetWriter ..> StudyMaterialValidator
+```
+
+- **Strategy**: `LessonShape` (four classes, one registry line each) and `AssessmentSource` (`DiagnosticSource`, `SelfRatingSource`; follow-ups, the calibration quiz and a quiz result arrive later as one class and one line). A source returns the one stored assessment dict, stamped with `level_scheme: 2` and `source`. `uses_model` says whether the node must call a model first: `AssessLearnerNode` does and hands the draft to `DiagnosticSource`, which applies `AssessmentGuard` and clamps the level to Expert for a learner who chose the Expert lesson; `AssessFromSourceNode` needs none.
+- **Routers are classes, hung on junction nodes.** `EntryRouter`, `LevelGate` and `IntentRouter` are table-tested without a graph; `entry_router`, `level_gate` and `intent_router` are pass-through nodes so segments join through named exits (`begin`, `assessed`, `assess`, `sheets`), and a graph built without `EntrySegment` keeps the quick check as its only way in.
+- **Template Method** is unchanged for the new LLM node: `plan_prerequisites` is an `LLMNode` and `validate_prerequisites` a `ValidateNode` whose `outcome` also saves a good list as the lesson's prerequisites.
+- **Parallel sheets.** `PlanSheetsNode` clears the counters (so Retry starts both sheets again), `PlanSheetsRouter` sends one `generate_sheet` branch per sheet, and `SheetsJoinNode` saves both or neither; `SheetStatus` is the counterpart of `AuthoringStatus`. `SheetWriter` asks for a sheet and checks it, the way `ContentWriter` does for a page.
+- **The server decides the origin.** `OriginVerifier` turns what a client claims into what the server verified; a recommendation must name the caller's own graded attempt and a topic it listed, with one message for a missing and for another learner's attempt. `LessonService.create` verifies before it asks the gate, so a refusal creates nothing.
+- **Metering.** A self-rated `lesson.create` is asked with `covers: all`, so `CompletionPoints.of(action, size)` completes it when the lesson is `ready` rather than when a quiz is served; the mastery choice asks `lesson.continue` with `choice` (`lesson` or `sheets_only`) and `perfect: true`.
+- **Operations.** `StrandedThreads` reads the raw checkpoint (the compiled graph hides a thread waiting at a node it no longer has) and `manage.py stranded_threads` lists such lessons and, with `--mark-failed`, ends them with a message that tells the learner to start a new lesson.
+- **Frontend** (`frontend/lib/`, all pure and tested): `StarScale` (the ten half-star values with their approved sentences and the keys that move along them), `NewLesson` (the two ways in, the request), `MasteryOptions` (the two cards, the button, the words for a refusal; `legacy` for a lesson that was waiting at the old cards), `ActionRefusedMessage` (the one place a refused action becomes words), `PipelinePaths` (the steps of a lesson with no quick check, and the Beginner's extra step), and `AttemptPreparation.cancel` (stops the wait for a retake's questions).
+
 ## 5. How to extend
 
 | You are adding | Do this |
@@ -2185,6 +2259,6 @@ Every row below is done: the registry, core, accounts and frontend code of phase
 | ~~`lessons/document.py`~~ | ~~functions~~ | `LessonSource`, `LessonData`, `LessonDocumentBuilder`, with `MediaUrlSigner` (`lessons/media_urls.py`) | ✅ Done |
 | ~~`frontend/lib/api.ts`~~ | ~~module functions + `ApiError`~~ | `ApiClient` + the shared `apiClient` instance | ✅ Done |
 | ~~`frontend/lib/safe-redirect.ts`~~ | ~~`safeNext()`~~ | `RedirectPolicy.safeNext` | ✅ Done |
-| `graph/schemas/lesson.py`, `graph/schemas/interactive.py`, `graph/nodes/mastery.py`, `graph/nodes/media_agent.py`, `graph/media/sources.py`, `lessons/services.py`, `lessons/views.py`, `lessons/events.py`, `console/services/attention.py`, `console/services/overview.py`, `onboarding/prompts.py` | module-level helper functions that hold logic: `public_question`, `component_name`, `diagnostic_concepts`, `sources_of`, `strip_html`, `has_active_run`, `parse_id`, `channel`, `plural`, `money`, `language_name` | a method on the class or value object that owns the data (the rules above allow only framework hooks at module level) | ☐ Open |
+| `graph/schemas/lesson.py`, `graph/schemas/interactive.py`, `graph/nodes/media_agent.py`, `graph/media/sources.py`, `lessons/services.py`, `lessons/views.py`, `lessons/events.py`, `console/services/attention.py`, `console/services/overview.py`, `onboarding/prompts.py` | module-level helper functions that hold logic: `public_question`, `component_name`, `sources_of`, `strip_html`, `has_active_run`, `parse_id`, `channel`, `plural`, `money`, `language_name` | a method on the class or value object that owns the data (the rules above allow only framework hooks at module level) | ☐ Open |
 | ~~`graph/grading.py`, `graph/schemas/lesson.py`, `graph/validators/questions.py`~~ | ~~`if kind ==` chains over question types~~ | `QuestionType` classes and `QuestionTypes` (`graph/questions/`, §4.8) | ✅ Done |
 | `lessons/events.py`, `lessons/reports.py` | `if kind ==` chains over event kinds and sheet kinds | one registered variant class per kind (Open/Closed) | ☐ Open |

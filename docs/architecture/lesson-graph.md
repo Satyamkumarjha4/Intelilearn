@@ -3,7 +3,7 @@
 The whole experience, from "I want to learn binary search" to a rendered three-page lesson (with its final test as a separate screen) or a study sheet, is **one LangGraph `StateGraph` per lesson**. It is not a chain. The graph:
 
 - **pauses for the learner** with `interrupt()` while they take a quiz or choose a sheet, and resumes when they answer;
-- **branches** on how the learner did (prerequisite path, full lesson, or mastery);
+- **branches** on how the learner got in (a quick check or their own rating) and on how they did (prerequisite path, full lesson, or mastery, where they choose an Expert lesson or two sheets);
 - **fans out** with `Send` to write pages, fetch media, and compile code in parallel;
 - follows every LLM step with **validation**, and routes on the result: retry with feedback, targeted regeneration, degrade, fall back, or fail.
 
@@ -22,6 +22,32 @@ assess learner level   ─┘   plan interactives                sandbox render 
          │                  media agent ‖ widget code        repair loop
          └─ mastery ─▶ cheat / revision / practice sheet    alignment judge (end of B)
 ```
+
+## The way in
+
+A learner either takes the quick check (Stage A, below) or **rates themselves** (0.5 to 5 stars) and goes straight to the lesson. Both ways end in the same `plan_lesson`; they meet at the **level gate**. The `EntrySegment` owns the decisions (each is a small router class, hung on a pass-through "junction" node so the segments can be joined):
+
+```mermaid
+flowchart TD
+    load_context --> entry_router{entry}
+    entry_router -->|diagnostic| generate_diagnostic["Stage A: the quick check"]
+    entry_router -->|self_rating| assess_from_source["assess_from_source (code, no model)"]
+    generate_diagnostic --> assess_learner["... assess_learner"]
+    assess_learner --> level_gate
+    assess_from_source --> level_gate{"Beginner, no quick check,\nno prerequisites yet?"}
+    level_gate -->|yes| plan_prerequisites["plan_prerequisites (prerequisites.plan)"]
+    level_gate -->|no| intent_router
+    plan_prerequisites --> validate_prerequisites
+    validate_prerequisites -->|ok| intent_router{intent}
+    validate_prerequisites -->|"bad, attempts left"| plan_prerequisites
+    intent_router -->|lesson| plan_lesson["plan_lesson (Stage B)"]
+```
+
+- **`entry_router`** sends `entry=self_rating` (any entry but the quick check) to `assess_from_source`; a thread checkpointed before self-rating has no `entry` and is a quick check.
+- **`assess_from_source`** asks `AssessmentSources.for_key(entry)` for the one `LearnerAssessment`. For a rating that is `SelfRatingSource`: the level of the stars (0.5 to 1.5 Beginner, 2 to 3.5 Foundation, 4 Proficient, 4.5 to 5 Expert), no known concepts or gaps, the level's own start point and author notes (from its `LessonShape`), and low confidence, stamped `source: self_rating`. It moves the lesson from preparing to building (`PREPARING_DIAGNOSTIC → GENERATING_LESSON`), sets the route to `lesson` (so the test works) and the level source.
+- **`level_gate`** plans prerequisites only for a **Beginner who took no quick check and has none yet**: nobody tested them, so what they lack is chosen for them. A quick check already found theirs.
+- **`plan_prerequisites`** (`prerequisites.plan`, a small required node) returns a `PrerequisiteList` of 3 to 6; `validate_prerequisites` checks the count, the names and reasons, repeats, and that the topic itself is not one. A good list becomes the lesson's `prerequisites_to_cover` (on the lesson, in the state and as the names in the assessment), which the plan must then teach on page 1. Retry resumes at `plan_prerequisites`.
+- **`intent_router`** sends a lesson on to `plan_lesson`. The intent is stored for study sheets from a topic (phase 9.5); only a lesson is wired, and any other intent fails the run with a reason.
 
 ## Stage A: Diagnose
 
@@ -44,12 +70,15 @@ flowchart TD
     publish_prerequisite --> await_prerequisite{{"interrupt: prerequisite answers"}}
     await_prerequisite --> grade_prerequisite --> assess_learner
 
-    publish_mastery_options --> await_choice{{"interrupt: cheat / revision / practice"}}
-    await_choice --> generate_study_material --> validate_study_material
+    publish_mastery_options --> await_choice{{"interrupt: Expert lesson or sheets"}}
+    await_choice --> choice_router{choice}
+    choice_router -->|lesson| assess_learner
+    choice_router -->|sheets| plan_sheets["plan_sheets, cheat ‖ revision (below)"]
+    choice_router -->|"a sheet kind (lessons already waiting)"| generate_study_material --> validate_study_material
     validate_study_material -->|invalid, attempts left| generate_study_material
     validate_study_material -->|ok| persist_study_material --> END([END])
 
-    assess_learner --> StageB[[Stage B]]
+    assess_learner --> level_gate[[level gate, then Stage B]]
     fail_run --> END
 ```
 
@@ -169,11 +198,18 @@ class LearnerAssessment(BaseModel):
     confidence: Literal["low", "medium", "high"]
 ```
 
-A guard ensures `prerequisites_to_cover` equals the deterministic result. The LLM may *explain* the gaps but may not change them.
+A guard ensures `prerequisites_to_cover` equals the deterministic result. The LLM may *explain* the gaps but may not change them. This is `DiagnosticSource` in the assessment registry: it applies the guard, stamps `level_scheme: 2` and `source: diagnostic` on the stored document (the model is not asked for the source), and, for a learner who chose the Expert lesson after a perfect score, sets the level to **Expert** whatever the model said. The prompt describes what each level's lesson is like (`LessonShape.summary`), so the model chooses the level whose lesson would suit the learner.
 
 ### Mastery path
 
-- `await_choice` interrupts, and the learner picks `cheat_sheet`, `revision_sheet`, or `practice_sheet`.
+A perfect score (or one wrong non-hard answer, if the setting allows) pauses at `await_choice`, which takes `{choice: "lesson" | "sheets"}` (a bare string, or one of the three sheet kinds a lesson already waiting may send, is accepted too). `publish_mastery_options` records which options were shown (`Lesson.mastery_options`), so a lesson that was waiting at the old three-sheet choice keeps its cards. A `ChoiceRouter` follows it:
+
+- **`lesson`**: on to `assess_learner` with the level set to Expert. Before the call, the lesson moves from the choice to building and its route becomes `lesson`, so it has a test like any other; after it, the flow goes through the level gate (a quick check, so no prerequisites are planned) to `plan_lesson`.
+- **`sheets`**: the `SheetsSegment` writes the **cheat sheet and the revision sheet in parallel**, grounded in the diagnostic's concepts. `plan_sheets` moves the lesson to writing, reads the concepts and clears the counters; one `generate_sheet` branch per sheet (`SheetWriter`: `study.generate`, then `StudyMaterialValidator`) keeps its sheet with its problems; `sheets_join` saves both and makes the lesson `ready` (route `mastery`, no test), sends back **only the sheet that failed** while it has attempts, or gives up with the problems (`failed_node=plan_sheets`, so Retry writes both again). Nothing is saved unless both pass.
+- **a sheet kind**: the original single-sheet path, below, unchanged.
+
+The single-sheet path:
+
 - `generate_study_material` (`study.generate`) produces one of three schemas:
   - **Cheat sheet**: short notes. For quantitative topics, it gives formulas with variable definitions and when to use each. For theoretical topics, it gives key terms, facts, and one-line rules. It fits on one or two screens.
   - **Revision sheet**: longer notes covering *every* subtopic, with key points, worked examples, and common mistakes.
@@ -212,6 +248,8 @@ flowchart TD
 
 ### `plan_lesson` (`lesson.plan`)
 
+The three page slots keep their keys; what each is *for* depends on the learner's level, and that is the **lesson shape** (`graph/shapes.py`: `BeginnerShape`, `FoundationShape`, `ProficientShape`, `ExpertShape`, found by `LessonShapes.of(assessment)`). The plan prompt describes the shape's roles ("Prerequisites and introduction", "Core", "A taste of what is next" for a Beginner; a short overview, depth and nuance, and hard cases for an Expert), the page prompt tells the writer what its page is for, and `validate_plan` asks the shape for the slots. The plan's `level` is always the learner's: the node overwrites whatever the model wrote with the assessment's level.
+
 This step produces a `LessonPlan` with a title, the level, and for each of the three content pages: goals, outline, and which gaps and prerequisites it covers. It also says whether the topic is `quantitative` (mainly about calculating numbers). It no longer plans the test: the test is the same for every lesson and every level (the fixed blueprint, below), and the flag only chooses between its two variants. A plan made before this still carries its `final_test` spec, which nothing reads any more. The node stamps the plan and the assessment with `level_scheme: 2`, which says they use the level names beginner, foundation, proficient and expert; a document without it (a graph checkpoint from before the rename) is read by `LevelScheme.level_of` as the old names, where "beginner" meant what is now foundation.
 
 | Page | Content |
@@ -221,7 +259,7 @@ This step produces a `LessonPlan` with a title, the level, and for each of the t
 | 3. Advanced concepts | Depth, edge cases, complexity, and real-world use, scaled to the level |
 | 4. Test | Ten objective questions, two for each difficulty: MCQ, multiple select (MSQ), numerical (the fixed blueprint, below) |
 
-`validate_plan` checks that each page's outline lists concepts that are distinct from the other pages (no overlap), that every required prerequisite appears on page 1, (and nothing about the test, which is not planned here).
+`validate_plan` checks that the plan has the shape's slots, that each page's outline lists concepts that are distinct from the other pages (no overlap), and that every prerequisite the lesson was given appears on page 1 at any level (a quiz that found a gap made the promise; the shape does not relax it). It checks nothing about the test, which is not planned here.
 
 ### Page writers and the test writer: parallel `Send`
 
@@ -348,7 +386,7 @@ This writes pages, the test, media links, the assembled code and its parts (`cod
 
 ## How Stage B is built
 
-- **Segments.** The flow graph is assembled from segments (diagnose, mastery, author, build); the author segment provides the `lesson` exit, which leads to the build segment's `prepare_build`.
+- **Segments.** The flow graph is assembled from segments (diagnose, entry, mastery, sheets, author, build); the author segment provides the `lesson` exit, which leads to the build segment's `prepare_build`. Segments are joined through named exits: the entry segment provides `begin` (where `load_context` goes) and `assessed` (where an assessment goes: the level gate); the diagnose segment provides `assess`; the mastery segment provides `mastery`; the sheets segment provides `sheets`. A graph built without the entry segment (a test) keeps the quick check as the only way in.
 - **Parallel items and joins.** `Send` branches carry the shared context (`BranchBuilder`) and write under keys with reducers (`pages`, `final_test`, `interactives`, `media`, `feedback`, `attempts`). `authored_join` and `widgets_join` read each item's problems and attempts: items under their attempt budget are sent again *alone* (the router builds the `Send`s), items out of attempts are kept with a warning (pages, test) or dropped with a warning (widgets).
 - **One writer for first drafts and fixes.** `ContentWriter` asks for a page, a batch of test questions or a component and checks it (`PageValidator`, `QuestionBatchValidator`, the sandbox's `check.mjs`), so a fix after the alignment judge is held to the same rules.
 - **Alignment is decided in code** (`AlignmentPolicy`): pass, fix (only flagged items that exist, one issue per item), accept with a warning (rounds spent, nothing major) or fail (rounds spent, a major issue). A fix that fails its own checks keeps the old version.
@@ -378,9 +416,19 @@ class FlowState(TypedDict, total=False):
     prerequisite_result: QuizResult | None
     prerequisites_to_cover: list[Prerequisite]
     route: Literal["prerequisite", "lesson", "mastery"]
-    assessment: LearnerAssessment
-    mastery_choice: Literal["cheat_sheet", "revision_sheet", "practice_sheet"] | None
+    assessment: LearnerAssessment                       # stored with `source` and `level_scheme: 2`
+    mastery_choice: Literal["lesson", "sheets", "cheat_sheet", "revision_sheet", "practice_sheet"] | None
     study_material: dict | None
+    sheets: Annotated[dict[str, dict], merge_dicts]     # cheat_sheet / revision_sheet, written in parallel
+    concepts: list[str]                                 # what the sheets must cover
+    sheets_outcome: str                                 # the sheets' join: retry, failed or complete
+
+    # the way in (all optional: a thread from before self-rating has none, and means a quick check)
+    entry: str                                          # diagnostic | self_rating
+    intent: str                                         # lesson
+    self_rating_halves: int | None
+    level_source: str
+    prerequisite_plan: dict                             # PrerequisiteList, planned for a Beginner who took no quiz
 
     # Stage B (parallel writers → reducers required)
     plan: LessonPlan

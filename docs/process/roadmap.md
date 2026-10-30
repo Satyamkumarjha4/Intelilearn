@@ -139,7 +139,12 @@ Specified in [modular-lessons.md](../to_be_developed/modular-lessons.md) and pla
   - [ ] Decisions answered and the mockup extended with the new screens
 - [x] 9.1 `QuestionTypes` (neutral), then five-level `Difficulty` and its migration, marks, MSQ, expressions, criteria; levels renamed behind a `level_scheme` marker; the question-input registry (MSQ checkboxes, number input) in the frontend
 - [x] 9.2 Question record, fixed 10-question objective test, attempts graded at submit, retakes (always generate, `test.retake`), trend, forward-only on the server
-- [ ] 9.3 Self-rating entry, `AssessmentSources`, lesson shapes, verified `origin`, the two-option mastery choice (Expert lesson or two sheets)
+- [x] 9.3 Self-rating entry, `AssessmentSources`, lesson shapes, verified `origin`, the two-option mastery choice (Expert lesson or two sheets):
+  - [x] `AssessmentSources` (`DiagnosticSource`, `SelfRatingSource`), `LessonShape` for the four levels, `EntrySegment` (entry router, `assess_from_source`, level gate, `prerequisites.plan`, intent router), `ChoiceRouter` and the two-sheet `SheetsSegment`
+  - [x] `Lesson` columns `intent`, `origin`, `recommended_from`, `entry`, `level_source`, `self_rating_halves` (1 to 10 check), and `mastery_options` (so a lesson waiting at the old choice keeps its cards)
+  - [x] `POST /lessons` takes `entry`, `self_rating`, `intent` and a server-verified `origin`; `POST /lessons/{id}/choice` takes `{choice}`
+  - [x] `manage.py stranded_threads` lists (and with `--mark-failed` ends) lessons stuck at a node a release removed; Cancel on the "getting your questions ready" state
+  - [x] New-lesson toggle and `StarRating`, journey and starting-point variants, `MasteryChoice` with two options, "Basics first", one handler for a refused action
 - [ ] 9.4 Follow-up lessons and the pop-up policy
 - [ ] 9.5 Modular sheets, any ready lesson, once per kind (`409` on repeat), no versions
 - [ ] 9.6 Quick quiz: presets, calibration, up to 10 sources, difficulty mix, graphs, screens, code editor

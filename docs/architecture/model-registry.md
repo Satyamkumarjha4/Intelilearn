@@ -124,6 +124,7 @@ class NodeSpec:
 | `diagnostic.generate` | diagnose | structured → `DiagnosticBundle` | structured_output | 8k | medium | |
 | `diagnostic.review` | diagnose | structured → `QuizReview` | structured_output | 2k | low | ✓ |
 | `learner.assess` | diagnose | structured → `LearnerAssessment` | structured_output | 2k | medium | |
+| `prerequisites.plan` | diagnose | structured → `PrerequisiteList` | structured_output | 2k | low | |
 | `study.generate` | diagnose | structured → `CheatSheet` / `RevisionSheet` / `PracticeSheet` | structured_output | 16k | medium | |
 | `lesson.plan` | author | structured → `LessonPlan` | structured_output | 8k | **high** | |
 | `page.generate` | author | structured → `PageContent` | structured_output | 16k | medium | |
@@ -138,6 +139,8 @@ class NodeSpec:
 | `runtime.repair` | post | text (TSX) | n/a | 32k | medium | |
 | `test.grade` | post | structured → `GradeReport` | structured_output | 4k | medium | One whole award per criterion per question; `GradeReportValidator` checks them |
 | `onboarding.suggest_topics` | onboarding | structured → `TopicSuggestions` | structured_output, context ≥ 8k | 2k | **low** | ✓ |
+
+`prerequisites.plan` is new in phase 9.3: a required, light node that lists 3 to 6 prerequisites for a Beginner who rated themselves (nobody tested them), and runs only on that path. It is bound on every profile like the other light diagnose steps (gpt-oss-20b, then Gemini Flash), and `lessons.create` refuses to start a Beginner's self-rated lesson while it has no model (a lesson for any other level needs `lesson.plan`, and a quick check needs `diagnostic.generate`). `study.generate` is also asked once for each of the cheat sheet and the revision sheet when a learner who aced the quick check chooses "sheets".
 
 Adding a node takes three steps: add a `NodeSpec`, write the node, and run `migrate`, which creates its `NodeConfig`. Then bind models in the admin or add them to `llm_registry/seed.py`.
 

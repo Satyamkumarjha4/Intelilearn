@@ -17,7 +17,7 @@ from ..context import FlowContext, NodeBudget
 from ..sheets import SheetKinds, SheetWriter
 from .base import Node
 from .branches import BranchBuilder
-from .mastery import diagnostic_concepts
+from .mastery import DiagnosticConcepts
 from .routers import Router
 
 LESSON, SHEETS = "lesson", "sheets"
@@ -48,7 +48,7 @@ class PlanSheetsNode(Node):
         self.lesson(state).advance_to(Stage.GENERATING_MATERIAL)
         keys = {SheetKinds.feedback_key(kind): None for kind in SheetKinds.CHOICE}
         return {
-            "concepts": diagnostic_concepts(state),
+            "concepts": DiagnosticConcepts.of(state),
             "sheets": dict.fromkeys(SheetKinds.CHOICE),
             "feedback": keys,
             "attempts": dict(keys),
