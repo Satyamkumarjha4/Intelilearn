@@ -43,3 +43,47 @@ class ScoreBand(StrEnum):
         if awarded * 100 > thresholds.excellent_above * available:
             return cls.EXCELLENT
         return cls.NORMAL
+
+
+@dataclass(frozen=True)
+class TrendPoint:
+    attempt_no: int
+    awarded: int
+    available: int
+    percent: int
+    delta_previous: int | None  # in percentage points; none for the first attempt
+    delta_best: int | None  # against the best of the earlier attempts; none for the first attempt
+
+
+@dataclass(frozen=True)
+class Trend:
+    series: tuple[TrendPoint, ...]
+    best_attempt_no: int | None  # the earliest attempt that reached the highest percent
+
+
+class AttemptTrend:
+    """The graded attempts of a lesson in order, each with its change since the previous attempt and since the best
+    earlier one. Percents are compared rather than marks, because the first attempt of a lesson made before the fixed
+    test may have another total."""
+
+    def of(self, attempts: list[dict]) -> Trend:
+        """`attempts`: dicts with `attempt_no`, `awarded` and `available`, in any order."""
+        points: list[TrendPoint] = []
+        for attempt in sorted(attempts, key=lambda a: a["attempt_no"]):
+            percent = self.percent(attempt["awarded"], attempt["available"])
+            previous = points[-1].percent if points else None
+            best = max((p.percent for p in points), default=None)
+            points.append(
+                TrendPoint(
+                    attempt["attempt_no"], attempt["awarded"], attempt["available"], percent,
+                    None if previous is None else percent - previous,
+                    None if best is None else percent - best,
+                )
+            )  # fmt: skip
+        top = max((p.percent for p in points), default=None)
+        best_no = next((p.attempt_no for p in points if p.percent == top), None)
+        return Trend(tuple(points), best_no)
+
+    @staticmethod
+    def percent(awarded: int, available: int) -> int:
+        return round(100 * awarded / available) if available else 0
