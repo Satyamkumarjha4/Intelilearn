@@ -9,6 +9,7 @@ Use cases:
 - publish_mastery_options moves the lesson to awaiting_choice and has no other effect
 - await_choice accepts the three sheet kinds and refuses anything else
 - generate_study_material asks for the chosen kind's schema, passes the diagnostic's concepts and counts the attempt
+- a practice sheet's marks and numerical answers are set by code, never taken from the model
 - generate_study_material takes the concepts from the stored quiz when the state has no bundle (an extra sheet later)
 - generate_study_material moves the lesson to generating_material, except for an extra sheet on a ready lesson
 - validate_study_material accepts a good sheet, asks for another attempt with the problems, and gives up with a readable
@@ -30,6 +31,7 @@ from graph.nodes.mastery import (
     PublishMasteryOptionsNode,
     ValidateStudyMaterialNode,
 )
+from graph.questions import MarksPolicy
 from graph.schemas import CheatSheet, PracticeSheet, RevisionSheet
 from lessons.models import Lesson, Quiz, Stage, StudyMaterial
 
@@ -85,6 +87,20 @@ class TestGenerate:
 
         assert update == {"study_material": make(), "attempts": {"material": 1}}
         assert gateway.called("study.generate")[0].schema is schema
+
+    def test_a_practice_sheet_gets_its_marks_and_numerical_answers_from_code_not_from_the_model(
+        self, lesson, lesson_state, gateway, runtime
+    ):
+        Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.AWAITING_CHOICE)
+        written = make_practice_sheet()  # the schema drops marks and the computed answer from what a model writes
+        gateway.script("study.generate", written)
+
+        update = GenerateStudyMaterialNode()(with_choice(lesson_state, "practice_sheet"), runtime)
+
+        for question in update["study_material"]["questions"]:
+            assert question["marks"] == MarksPolicy.marks(question["type"], question["difficulty"])
+        numerical = next(q for q in update["study_material"]["questions"] if q["type"] == "numerical")
+        assert numerical["answer"] == 4.0
 
     def test_gives_the_model_the_diagnostic_concepts_and_the_feedback(self, lesson, lesson_state, gateway, runtime):
         Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.AWAITING_CHOICE)

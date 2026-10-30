@@ -1,5 +1,7 @@
 """Mastery path prompt: one of the three study sheets."""
 
+from ..questions import QuestionTypes
+from ..schemas.lesson import QUESTION_TYPES
 from .base import Prompt
 
 STUDY_INSTRUCTIONS = {
@@ -12,22 +14,27 @@ STUDY_INSTRUCTIONS = {
 - 4-10 subtopics, each with a real paragraph summary, 3-6 key points, worked examples where useful, and the
   common mistakes learners make.
 - End with a few final tips for revising.""",
-    "practice_sheet": """Write a PRACTICE SHEET of 15-25 questions, ordered easy → medium → hard.
-- Mix at least 3 types: mcq (exactly 4 options + correct_index), numerical (answer + tolerance + unit),
-  short_answer (model_answer + key_points), long_answer (model_answer + rubric), code (language, starter_code,
-  reference_solution, 1-5 test_cases). Use only the types that suit the topic.
-- Every question has a concept, difficulty and marks. Ids "t1", "t2"…""",
+    "practice_sheet": """Write a PRACTICE SHEET of 15-25 questions, ordered from easy to expert (easy, basic, standard,
+difficult, expert).
+- Mix at least 3 types. Use only the types that suit the topic. How to write each, and what it is worth (marks are
+  set by the system, never by you):
+{guidance}
+- Every question has a concept and a difficulty. Ids "t1", "t2"…""",
 }
 
 
 class StudyMaterialPrompt(Prompt):
     """Subject also carries `kind` (the sheet to write) and `concepts` (what it must cover)."""
 
+    @staticmethod
+    def instructions(kind: str) -> str:
+        return STUDY_INSTRUCTIONS[kind].replace("{guidance}", QuestionTypes.guidance(QUESTION_TYPES))
+
     def system(self, subject: dict) -> str:
         return f"""You write study material for a learner who ALREADY KNOWS this topic well (they aced a \
 diagnostic quiz). Consolidate and sharpen; don't teach from scratch.
 
-{STUDY_INSTRUCTIONS[subject["kind"]]}
+{self.instructions(subject["kind"])}
 
 Use Markdown; LaTeX between $…$ for inline maths (in Markdown fields). Be accurate and exam-ready.
 {self.language_rule(subject.get("profile"))}"""

@@ -5,35 +5,40 @@ The default topic is "Binary search". Page bodies are long enough, and mention e
 `PageValidator`.
 """
 
+from graph.levels import LevelScheme
 from graph.schemas import (
     FinalTest,
     InteractivePlan,
     LearnerAssessment,
     LessonPlan,
     PageContent,
-    TestQuestion,
 )
 from graph.schemas.lesson import PAGE_KEYS
+
+from .question_data import make_question
 
 CONCEPTS = {
     "introduction": ["Searching a list", "Sorted data", "Why halving helps"],
     "core": ["Halving the range", "The loop invariant", "Returning the index"],
     "advanced": ["Time complexity", "Off-by-one pitfalls", "Searching on answers"],
 }
-TYPE_MIX = {"mcq": 4, "numerical": 2, "short_answer": 2, "long_answer": 1, "code": 1}
-DIFFICULTY_MIX = {"easy": 4, "medium": 4, "hard": 2}
+TYPE_MIX = {"mcq": 3, "msq": 2, "numerical": 2, "short_answer": 2, "long_answer": 1}
+DIFFICULTY_MIX = {"easy": 2, "basic": 2, "standard": 2, "difficult": 2, "expert": 2}
 
 
 def make_assessment(to_cover: list[str] = ()) -> dict:
-    return LearnerAssessment(
-        level="beginner",
-        known_concepts=["Searching a list"],
-        gaps=["The loop invariant"],
-        prerequisites_to_cover=list(to_cover),
-        start_point="Halving the range",
-        author_notes="Short sentences, concrete examples.",
-        confidence="medium",
-    ).model_dump(mode="json")
+    """As the graph stores it: stamped with the level names it uses."""
+    return LevelScheme.stamp(
+        LearnerAssessment(
+            level="beginner",
+            known_concepts=["Searching a list"],
+            gaps=["The loop invariant"],
+            prerequisites_to_cover=list(to_cover),
+            start_point="Halving the range",
+            author_notes="Short sentences, concrete examples.",
+            confidence="medium",
+        ).model_dump(mode="json")
+    )
 
 
 def make_plan(prerequisites: list[str] = ()) -> dict:
@@ -48,13 +53,15 @@ def make_plan(prerequisites: list[str] = ()) -> dict:
         }
         for key in PAGE_KEYS
     ]
-    return LessonPlan(
-        title="Binary search",
-        level="beginner",
-        summary="Find a value in sorted data by halving the range. For beginners.",
-        pages=pages,
-        final_test={"question_count": 10, "type_mix": TYPE_MIX, "difficulty_mix": DIFFICULTY_MIX},
-    ).model_dump(mode="json")
+    return LevelScheme.stamp(
+        LessonPlan(
+            title="Binary search",
+            level="beginner",
+            summary="Find a value in sorted data by halving the range. For beginners.",
+            pages=pages,
+            final_test={"question_count": 10, "type_mix": TYPE_MIX, "difficulty_mix": DIFFICULTY_MIX},
+        ).model_dump(mode="json")
+    )
 
 
 def make_page(key: str, plan: dict | None = None) -> dict:
@@ -83,34 +90,15 @@ def make_pages(plan: dict | None = None) -> dict:
 
 
 def make_final_test(spec: dict | None = None) -> dict:
+    """A stored test for the plan's spec: questions of the right kinds and difficulties, as the graph stores them."""
     spec = spec or make_plan()["final_test"]
     difficulties = [d for d, n in spec["difficulty_mix"].items() for _ in range(n)]
     questions, number = [], 0
     for kind, count in spec["type_mix"].items():
         for _ in range(count):
             number += 1
-            base = {
-                "id": f"t{number}",
-                "type": kind,
-                "concept": f"Concept {number}",
-                "difficulty": difficulties[number - 1],
-                "marks": 2,
-                "question": f"Question number {number} about binary search?",
-            }
-            extra = {
-                "mcq": {"options": [f"Choice {c} {number}" for c in "ABCD"], "correct_index": 1},
-                "numerical": {"answer": 4.0, "tolerance": 0.01, "unit": "steps"},
-                "short_answer": {"model_answer": "Halve the range.", "key_points": ["halving"]},
-                "long_answer": {"model_answer": "A full explanation.", "rubric": ["states the invariant"]},
-                "code": {
-                    "language": "python",
-                    "starter_code": "def search(items, target):\n    pass\n",
-                    "reference_solution": "def search(items, target):\n    return items.index(target)\n",
-                    "test_cases": [{"input": "[1, 2, 3], 2", "expected_output": "1"}],
-                },
-            }[kind]
-            questions.append(TestQuestion(**base, **extra))
-    return FinalTest(questions=questions).model_dump(mode="json")
+            questions.append(make_question(kind, number, difficulties[number - 1]))
+    return {"title": FinalTest(questions=[]).title, "questions": questions}
 
 
 def make_interactive_plan(pages: dict | None = None) -> dict:

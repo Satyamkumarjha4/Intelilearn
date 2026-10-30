@@ -20,9 +20,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from support.quiz_data import make_prerequisites, make_questions
 
 try:
-    from .canned_lesson import LessonCanned
+    from .canned_lesson import LessonCanned, canned_question
 except ImportError:  # run as a script (python /tests/e2e/fake_llm_server.py)
-    from canned_lesson import LessonCanned
+    from canned_lesson import LessonCanned, canned_question
 from graph.schemas.diagnostic import BANDS
 
 
@@ -79,7 +79,7 @@ class Canned(LessonCanned):
 
     def build_LearnerAssessment(self) -> dict:
         return {
-            "level": "intermediate",
+            "level": "proficient",
             "known_concepts": [f"{self.topic}: idea 1"],
             "gaps": [f"{self.topic}: idea 9"],
             "prerequisites_to_cover": [],
@@ -132,23 +132,18 @@ class Canned(LessonCanned):
                 "final_tips": ["Explain each idea aloud.", "Redo the mistakes."]}  # fmt: skip
 
     def build_PracticeSheet(self) -> dict:
-        kinds = ["mcq", "numerical", "short_answer"]
-        levels = ["easy"] * 5 + ["medium"] * 5 + ["hard"] * 5
-        questions = []
-        for n in range(1, 16):
-            kind = kinds[(n - 1) % 3]
-            q = {"id": f"t{n}", "type": kind, "concept": self._concept_text(n), "difficulty": levels[n - 1], "marks": 2,
-                 "question": f"Practice {n}: {self._concept_text(n)} in {self.topic}?"}  # fmt: skip
-            if kind == "mcq":
-                q |= {"options": [f"Wrong {n}-{c}" for c in "ABC"] + [f"Right {n}"], "correct_index": 3}
-            elif kind == "numerical":
-                q |= {"answer": float(n), "tolerance": 0.01, "unit": ""}
-            else:
-                q |= {
-                    "model_answer": f"A good answer explains {self._concept_text(n)}.",
-                    "key_points": ["clear", "correct"],
-                }
-            questions.append(q)
+        kinds = ["mcq", "msq", "numerical", "short_answer"]
+        levels = ["easy"] * 3 + ["basic"] * 3 + ["standard"] * 3 + ["difficult"] * 3 + ["expert"] * 3
+        questions = [
+            canned_question(
+                kinds[(n - 1) % 4],
+                n,
+                levels[n - 1],
+                self._concept_text(n),
+                f"Practice {n}: {self._concept_text(n)} in {self.topic}?",
+            )
+            for n in range(1, 16)
+        ]
         return {"title": f"{self.topic}: practice", "instructions": "Answer, then check.", "questions": questions}
 
 

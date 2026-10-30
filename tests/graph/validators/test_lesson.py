@@ -12,7 +12,9 @@ Use cases:
 - plan: the test spec is within the configured count and its type and difficulty mixes add up, with 3+ types
 - page: the key matches the plan, 2 to 8 sections, unique ids and headings, a real body, every outline concept taught
 - page: a Python snippet must parse, and LaTeX the checker cannot parse is reported
-- final test: the question, type and difficulty counts match the spec; questions are unique and mcq options sane
+- final test: the question, type and difficulty counts match the spec (a plan from before msq is still read); questions
+  are unique and mcq and msq options sane; short and long criteria add up to the marks; a numerical expression computes
+  and its answer was stored
 - interactive plan: unique valid ids, anchors that exist, a media_query for images and GIFs, a purpose that names the
   concept, at least one per page and no more than the maximum
 """
@@ -95,7 +97,7 @@ class TestPlan:
 
     def test_at_least_three_question_types(self):
         def change(plan):
-            plan["final_test"]["type_mix"] = {"mcq": 6, "numerical": 4, "short_answer": 0, "long_answer": 0, "code": 0}
+            plan["final_test"]["type_mix"] = {"mcq": 6, "msq": 0, "numerical": 4, "short_answer": 0, "long_answer": 0}
 
         assert any("Mix at least 3 question types" in p for p in self.problems(mutated(make_plan(), change)))
 
@@ -191,17 +193,53 @@ class TestFinalTest:
 
     def test_the_type_mix_must_match(self):
         def change(test):
-            test["questions"][0].update(type="short_answer", model_answer="a", key_points=["p"])
+            test["questions"][0].update(type="short_answer", model_answer="a", criteria=[{"text": "p", "marks": 1}])
 
         found = self.problems(mutated(make_final_test(), change))
 
-        assert any("exactly 4 mcq questions; there are 3" in p for p in found)
+        assert any("exactly 3 mcq questions; there are 2" in p for p in found)
         assert any("exactly 2 short_answer questions; there are 3" in p for p in found)
 
     def test_the_difficulty_mix_must_match(self):
-        test = mutated(make_final_test(), lambda t: t["questions"][0].update(difficulty="hard"))
+        test = mutated(make_final_test(), lambda t: t["questions"][0].update(difficulty="expert"))
 
-        assert any("exactly 4 easy questions; there are 3" in p for p in self.problems(test))
+        assert any("exactly 2 easy questions; there are 1" in p for p in self.problems(test))
+        assert any("exactly 2 expert questions; there are 3" in p for p in self.problems(test))
+
+    def test_a_plan_from_before_multiple_select_and_code_is_still_checked_against_its_own_kinds(self):
+        spec = {**self.SPEC, "type_mix": {"mcq": 10, "code": 0}}
+
+        found = FinalTestValidator().validate(make_final_test(), spec=spec)
+
+        assert any("exactly 10 mcq questions; there are 3" in p for p in found)
+
+    def test_a_multiple_select_question_needs_different_options(self):
+        def change(test):
+            msq = next(q for q in test["questions"] if q["type"] == "msq")
+            msq["options"][1] = msq["options"][0]
+
+        assert any("options must all be different" in p for p in self.problems(mutated(make_final_test(), change)))
+
+    def test_criteria_that_do_not_add_up_to_the_questions_marks_are_reported(self):
+        def change(test):
+            short = next(q for q in test["questions"] if q["type"] == "short_answer")
+            short["criteria"][0]["marks"] += 1
+
+        assert any("criteria are worth" in p for p in self.problems(mutated(make_final_test(), change)))
+
+    def test_a_numerical_expression_that_cannot_be_computed_is_reported(self):
+        def change(test):
+            numerical = next(q for q in test["questions"] if q["type"] == "numerical")
+            numerical["answer_expr"] = "1 / 0"
+
+        assert any("answer_expr cannot be computed" in p for p in self.problems(mutated(make_final_test(), change)))
+
+    def test_a_numerical_answer_that_was_never_computed_is_reported(self):
+        def change(test):
+            numerical = next(q for q in test["questions"] if q["type"] == "numerical")
+            del numerical["answer"]
+
+        assert any("answer was not computed" in p for p in self.problems(mutated(make_final_test(), change)))
 
     def test_questions_must_not_repeat_and_ids_must_be_unique(self):
         def change(test):

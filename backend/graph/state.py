@@ -38,6 +38,7 @@ class FlowState(TypedDict, total=False):
     profile: dict  # LearnerProfile
     snapshot: dict  # resolved model registry (Lesson.config_snapshot)
     settings: dict  # FlowSettings snapshot
+    level_scheme: int  # which level names this flow's documents use; a checkpoint from before the rename lacks it
 
     # Stage A
     bundle: dict  # DiagnosticBundle

@@ -7,6 +7,7 @@ serves: the code, its version and that data, with the media as signed URLs.
 import re
 from collections.abc import Callable
 
+from graph.levels import LevelScheme
 from graph.schemas import public_question
 
 from .media_urls import MediaUrlSigner
@@ -76,7 +77,7 @@ class LessonData:
         return {
             "title": plan.get("title") or source.get("title") or source.get("topic") or "",
             "topic": source.get("topic") or "",
-            "level": plan.get("level") or source.get("level") or "",
+            "level": LevelScheme.level_of(plan).value if plan.get("level") else source.get("level") or "",
             "pages": source.get("pages") or {},
             "final_test": {
                 "title": final_test.get("title") or "Test your understanding",

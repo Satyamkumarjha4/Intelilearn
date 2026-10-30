@@ -1,7 +1,7 @@
 """Finds the `QuestionType` of a question by its `type`."""
 
 from .base import QuestionType
-from .types import CodeType, LongAnswerType, McqType, NumericalType, ShortAnswerType
+from .types import CodeType, LongAnswerType, McqType, MsqType, NumericalType, ShortAnswerType
 
 
 class UnknownQuestionType(KeyError):
@@ -10,7 +10,7 @@ class UnknownQuestionType(KeyError):
 
 class QuestionTypes:
     _BY_KEY: dict[str, QuestionType] = {
-        t.key: t for t in (McqType(), NumericalType(), ShortAnswerType(), LongAnswerType(), CodeType())
+        t.key: t for t in (McqType(), MsqType(), NumericalType(), ShortAnswerType(), LongAnswerType(), CodeType())
     }
 
     @classmethod
@@ -23,6 +23,11 @@ class QuestionTypes:
     @classmethod
     def keys(cls) -> tuple[str, ...]:
         return tuple(cls._BY_KEY)
+
+    @classmethod
+    def guidance(cls, keys) -> str:
+        """The generator's instructions for the kinds a prompt asks for, one line each."""
+        return "\n".join(f"- {cls.get(key).generator_guidance()}" for key in keys)
 
     @classmethod
     def of(cls, question: dict) -> QuestionType:

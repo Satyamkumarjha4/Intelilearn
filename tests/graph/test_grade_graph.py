@@ -5,7 +5,8 @@ judge, that a grading it got wrong is asked again with the problems, and that a 
 reason instead of saving a half-finished score as final.
 
 Use cases:
-- open-ended answers are graded by the model and the finished card is saved on the submission
+- open-ended answers are graded by the model, one whole award per criterion, and the finished card is saved on the
+  submission
 - a grading the validator refuses is asked again with the problems, then saved
 - a grading that keeps failing ends the run with the reason, and nothing is saved as graded
 - a submission with nothing to judge (only automatic questions, or blank answers) never calls the model
@@ -24,7 +25,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 FINAL_TEST = make_final_test()
 IDS = {q["type"]: q["id"] for q in FINAL_TEST["questions"]}
-SHORT, CODE = IDS["short_answer"], IDS["code"]
+SHORT, LONG = IDS["short_answer"], IDS["long_answer"]  # 3 marks in two criteria (1 + 2), 6 marks in three (4 + 1 + 1)
 
 
 @pytest.fixture
@@ -33,12 +34,12 @@ def submission(lesson, lesson_state):
         stage=Stage.READY, final_test=FINAL_TEST, config_snapshot=budget_snapshot(),
         settings_snapshot=lesson_state["settings"],
     )  # fmt: skip
-    answers = {IDS["mcq"]: 0, SHORT: "Halve it.", CODE: "def f(): pass"}
+    answers = {IDS["mcq"]: 0, SHORT: "Halve it.", LONG: "Keep the invariant."}
     return TestSubmission.objects.create(lesson=lesson, answers=answers)
 
 
 def grading(*pairs):
-    return {"grades": [{"question_id": q, "awarded": a, "feedback": f"About {q}."} for q, a in pairs]}
+    return {"grades": [{"question_id": q, "awards": awards, "feedback": f"About {q}."} for q, awards in pairs]}
 
 
 def grade(submission, ctx):
@@ -51,28 +52,30 @@ def grade(submission, ctx):
 
 
 def test_open_ended_answers_are_graded_and_the_card_saved(submission, ctx, gateway):
-    gateway.script("test.grade", grading((SHORT, 1), (CODE, 2)))
+    gateway.script("test.grade", grading((SHORT, [1, 0]), (LONG, [3, 1, 0])))
 
     nodes = grade(submission, ctx)
 
     assert nodes == ["load_submission", "grade_open", "validate_grade", "persist_grade"]
     stored = TestSubmission.objects.get(pk=submission.pk)
     assert stored.status == "graded" and stored.result["complete"] is True
-    assert stored.result["score"]["awarded"] == 3 and stored.result["topics_to_revisit"] != []
+    assert stored.result["score"]["awarded"] == 5 and stored.result["topics_to_revisit"] != []
 
 
 def test_a_grading_the_validator_refuses_is_asked_again_with_the_problems(submission, ctx, gateway):
-    gateway.script("test.grade", grading((SHORT, 9), (CODE, 2)), grading((SHORT, 2), (CODE, 2)))
+    gateway.script(
+        "test.grade", grading((SHORT, [1, 9]), (LONG, [4, 1, 1])), grading((SHORT, [1, 2]), (LONG, [4, 1, 1]))
+    )
 
     nodes = grade(submission, ctx)
 
     assert nodes.count("grade_open") == 2 and nodes[-1] == "persist_grade"
-    assert "awarded 9 but the question is worth 2" in gateway.called("test.grade")[1].messages[1].content
-    assert TestSubmission.objects.get(pk=submission.pk).result["score"]["awarded"] == 4
+    assert "award 2 is 9 but that criterion is worth 2" in gateway.called("test.grade")[1].messages[1].content
+    assert TestSubmission.objects.get(pk=submission.pk).result["score"]["awarded"] == 9
 
 
 def test_a_grading_that_keeps_failing_ends_the_run_with_the_reason(submission, ctx, gateway):
-    gateway.script("test.grade", grading((SHORT, 9)), grading((SHORT, 9)))
+    gateway.script("test.grade", grading((SHORT, [9, 9])), grading((SHORT, [9, 9])))
 
     with pytest.raises(RunFailed, match="The grading still failed its checks after 2 attempts"):
         grade(submission, ctx)
@@ -80,7 +83,7 @@ def test_a_grading_that_keeps_failing_ends_the_run_with_the_reason(submission, c
     assert TestSubmission.objects.get(pk=submission.pk).status == "grading"  # the runner marks it failed
 
 
-@pytest.mark.parametrize("answers", [{IDS["mcq"]: 1, IDS["numerical"]: "4"}, {SHORT: "  ", CODE: ""}])
+@pytest.mark.parametrize("answers", [{IDS["mcq"]: 1, IDS["numerical"]: "4"}, {SHORT: "  ", LONG: ""}])
 def test_nothing_to_judge_means_the_model_is_never_called(submission, ctx, gateway, answers):
     TestSubmission.objects.filter(pk=submission.pk).update(answers=answers)
 

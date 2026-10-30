@@ -14,6 +14,9 @@ Use cases:
 - the score adds up marks, with the percentage of all the marks the test is worth
 - topics to revisit are the concepts of questions that lost marks, biggest loss first, each once
 - each question carries its solution (the fields a learner may see after answering)
+- a model's awards are per criterion: each is capped at its criterion, the total at the question, and the card keeps the
+  breakdown; questions from before criteria are graded against criteria derived from their key points or rubric
+- a multiple-select question earns partial marks, an empty selection is blank, and feedback names the right options
 """
 
 import pytest
@@ -115,7 +118,8 @@ class TestOpenItems:
         items = ScoreCard().open_items(QUESTIONS, {"m1": 1, "s1": "halve it", "c1": "def f(): pass"})
 
         assert [(i["id"], i["answer"]) for i in items] == [("s1", "halve it"), ("c1", "def f(): pass")]
-        assert items[0]["key_points"] == ["k"]
+        assert items[0]["key_points"] == ["k"]  # old fields stay; criteria are derived for the grader
+        assert items[0]["criteria"] == [{"text": "k", "marks": 4}] and items[1]["criteria"][0]["marks"] == 5
 
     def test_a_test_of_only_automatic_questions_has_nothing_to_grade(self):
         assert ScoreCard().open_items([mcq(), numerical()], {"m1": 1, "n1": "4"}) == []
@@ -126,8 +130,8 @@ class TestModelGrades:
 
     def test_the_models_marks_and_feedback_are_used(self):
         model = {
-            "s1": {"awarded": 3, "feedback": "Good, but name the invariant."},
-            "c1": {"awarded": 5, "feedback": "Works."},
+            "s1": {"awards": [3], "feedback": "Good, but name the invariant."},
+            "c1": {"awards": [5], "feedback": "Works."},
         }
 
         result = card(self.ANSWERS, model)
@@ -138,9 +142,29 @@ class TestModelGrades:
         assert result["complete"] is True
 
     def test_marks_above_the_questions_worth_are_capped(self):
-        result = card(self.ANSWERS, {"s1": {"awarded": 99, "feedback": "x"}, "c1": {"awarded": 0, "feedback": "y"}})
+        result = card(self.ANSWERS, {"s1": {"awards": [99], "feedback": "x"}, "c1": {"awards": [0], "feedback": "y"}})
 
         assert row(result, "s1")["awarded"] == 4
+
+    def test_awards_are_per_criterion_capped_and_kept_as_a_breakdown(self):
+        question = short("s2", marks=3) | {"criteria": [{"text": "a", "marks": 1}, {"text": "b", "marks": 2}]}
+        del question["key_points"]
+        answers = {"s2": "my answer"}
+
+        result = card(answers, {"s2": {"awards": [5, 1], "feedback": "f"}}, [question])
+
+        assert row(result, "s2")["awarded"] == 2  # 5 is capped at the first criterion's 1; then 1 of 2
+        assert row(result, "s2")["criteria"] == [
+            {"text": "a", "marks": 1, "awarded": 1},
+            {"text": "b", "marks": 2, "awarded": 1},
+        ]
+
+    def test_a_negative_award_counts_as_zero(self):
+        question = short("s2", marks=2) | {"criteria": [{"text": "a", "marks": 1}, {"text": "b", "marks": 1}]}
+
+        result = card({"s2": "x"}, {"s2": {"awards": [-3, 1], "feedback": "f"}}, [question])
+
+        assert row(result, "s2")["awarded"] == 1
 
     def test_while_grades_are_pending_the_card_is_not_complete_and_does_not_count_them(self):
         result = card(self.ANSWERS, None)
@@ -151,7 +175,7 @@ class TestModelGrades:
         assert result["topics_to_revisit"] == []
 
     def test_a_grade_the_model_left_out_stays_pending(self):
-        result = card(self.ANSWERS, {"s1": {"awarded": 4, "feedback": "ok"}})
+        result = card(self.ANSWERS, {"s1": {"awards": [4], "feedback": "ok"}})
 
         assert row(result, "c1")["awarded"] is None and result["complete"] is False
 
@@ -159,7 +183,7 @@ class TestModelGrades:
 class TestScoreAndTopics:
     def test_the_score_is_marks_over_all_the_marks_the_test_is_worth(self):
         result = card({"m1": 1, "n1": "4", "s1": "x", "c1": "y"},
-                      {"s1": {"awarded": 2, "feedback": "a"}, "c1": {"awarded": 5, "feedback": "b"}})  # fmt: skip
+                      {"s1": {"awards": [2], "feedback": "a"}, "c1": {"awards": [5], "feedback": "b"}})  # fmt: skip
 
         assert result["score"] == {"awarded": 12, "available": 14, "percent": 86}
 
@@ -172,13 +196,13 @@ class TestScoreAndTopics:
         ]
         answers = {"m1": 0, "m2": 0, "s1": "x", "n1": "4"}
 
-        result = card(answers, {"s1": {"awarded": 3, "feedback": "f"}}, questions)
+        result = card(answers, {"s1": {"awards": [3], "feedback": "f"}}, questions)
 
         assert result["topics_to_revisit"] == ["Halving", "Invariant"]  # Halving lost 4, Invariant lost 1, Cost none
 
     def test_a_perfect_test_has_no_topics(self):
         result = card({"m1": 1, "n1": "4", "s1": "x", "c1": "y"},
-                      {"s1": {"awarded": 4, "feedback": "a"}, "c1": {"awarded": 5, "feedback": "b"}})  # fmt: skip
+                      {"s1": {"awards": [4], "feedback": "a"}, "c1": {"awards": [5], "feedback": "b"}})  # fmt: skip
 
         assert result["topics_to_revisit"] == [] and result["score"]["percent"] == 100
 
@@ -195,4 +219,25 @@ class TestSolution:
         result = card({"m1": 1}, {})
 
         assert row(result, "m1")["solution"] == {"correct_index": 1}
-        assert row(result, "s1")["solution"] == {"model_answer": "m", "key_points": ["k"]}
+        assert row(result, "s1")["solution"] == {"model_answer": "m", "criteria": [{"text": "k", "marks": 4}]}
+
+
+class TestMultipleSelect:
+    def msq(self, marks=3):
+        return {"id": "q1", "type": "msq", "concept": "Sets", "marks": marks, "options": ["a", "b", "c", "d", "e"],
+                "correct_indices": [0, 1, 2]}  # fmt: skip
+
+    def test_a_partly_right_selection_earns_partial_marks_and_says_what_was_right(self):
+        result = card({"q1": [0, 1]}, {}, [self.msq()])
+
+        assert (row(result, "q1")["awarded"], row(result, "q1")["correct"]) == (2, False)
+        assert row(result, "q1")["feedback"] == 'The correct answers are "a", "b" and "c".'
+        assert row(result, "q1")["solution"] == {"correct_indices": [0, 1, 2]}
+
+    def test_the_full_selection_is_correct(self):
+        assert row(card({"q1": [2, 1, 0]}, {}, [self.msq()]), "q1")["feedback"] == "Correct."
+
+    def test_an_empty_selection_is_a_blank_answer(self):
+        result = card({"q1": []}, {}, [self.msq()])
+
+        assert (row(result, "q1")["awarded"], row(result, "q1")["feedback"]) == (0, ScoreCard.NO_ANSWER)

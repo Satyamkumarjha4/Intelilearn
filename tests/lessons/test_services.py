@@ -564,11 +564,14 @@ class TestGradePractice:
         result = MaterialService().grade_practice(lesson, answers)
 
         by_id = {r["id"]: r for r in result["results"]}
-        assert by_id["t1"]["correct"] is True and by_id["t1"]["awarded"] == 2
+        sheet = {q["id"]: q for q in make_practice_sheet()["questions"]}
+        assert by_id["t1"]["correct"] is True and by_id["t1"]["awarded"] == sheet["t1"]["marks"]
         assert by_id["t2"]["correct"] is True
         assert by_id["t3"]["correct"] is None and by_id["t3"]["solution"]["model_answer"] == "Halve the range."
-        assert by_id["t4"]["correct"] is False and by_id["t4"]["solution"]["correct_index"] == 0
-        assert result["score"]["awarded"] == 4 and result["score"]["open_marks"] == 10
+        assert [c["marks"] for c in by_id["t3"]["solution"]["criteria"]] == [1, sheet["t3"]["marks"] - 1]
+        assert by_id["t4"]["correct"] is False and by_id["t4"]["solution"]["correct_index"] == 1
+        assert result["score"]["awarded"] == sheet["t1"]["marks"] + sheet["t2"]["marks"]
+        assert result["score"]["open_marks"] == sum(q["marks"] for q in sheet.values() if q["type"] == "short_answer")
 
     def test_unanswered_questions_are_wrong_for_the_kinds_that_can_be_marked(self, lesson):
         StudyMaterial.objects.create(lesson=lesson, kind="practice_sheet", content=make_practice_sheet())
@@ -704,7 +707,8 @@ class TestRestore:
 
 FINAL_TEST = make_final_test()
 TEST_IDS = {q["type"]: q["id"] for q in FINAL_TEST["questions"]}
-MCQ, NUM, SHORT, CODE = TEST_IDS["mcq"], TEST_IDS["numerical"], TEST_IDS["short_answer"], TEST_IDS["code"]
+MCQ, MSQ, NUM, SHORT, LONG = (TEST_IDS[t] for t in ("mcq", "msq", "numerical", "short_answer", "long_answer"))
+MARKS = {q["id"]: q["marks"] for q in FINAL_TEST["questions"]}
 
 
 def lesson_with_test(make_lesson, **fields):
@@ -716,11 +720,12 @@ class TestSubmitLessonTest:
         lesson = lesson_with_test(make_lesson)
 
         submission, run = SubmissionService(queue=queue).submit(
-            lesson, {MCQ: 1, NUM: "4", SHORT: "Halve it.", CODE: "def f(): pass"}
+            lesson, {MCQ: 1, NUM: "4", SHORT: "Halve it.", LONG: "Keep the invariant."}
         )
 
         assert submission.status == TestSubmission.Status.GRADING and submission.graded_at is None
-        assert submission.result["complete"] is False and submission.result["score"]["awarded"] == 4
+        assert submission.result["complete"] is False
+        assert submission.result["score"]["awarded"] == MARKS[MCQ] + MARKS[NUM]
         assert (run.graph, run.trigger) == (GraphRun.Graph.GRADE_TEST, GraphRun.Trigger.GRADE)
         assert run.payload == {"input": {"submission_id": str(submission.id)}} and queue.runs == [run]
 
@@ -731,7 +736,23 @@ class TestSubmitLessonTest:
 
         assert run is None and queue.runs == []
         assert submission.status == TestSubmission.Status.GRADED and submission.graded_at is not None
-        assert submission.result["complete"] is True and submission.result["score"]["awarded"] == 2
+        assert submission.result["complete"] is True and submission.result["score"]["awarded"] == MARKS[MCQ]
+
+    def test_a_multiple_select_answer_is_a_list_of_options_and_earns_partial_marks(self, make_lesson, queue):
+        lesson = lesson_with_test(make_lesson)
+        msq = next(q for q in FINAL_TEST["questions"] if q["id"] == MSQ)  # options 0 and 2 are right
+
+        submission, _ = SubmissionService(queue=queue).submit(lesson, {MSQ: [0]})
+
+        assert submission.answers[MSQ] == [0]
+        assert submission.result["score"]["awarded"] == msq["marks"] - 1  # half of the right options: full minus 1
+
+    @pytest.mark.parametrize("bad", [["a"], [True], [1.5], list(range(13)), [[0]]])
+    def test_a_list_that_is_not_a_short_list_of_option_numbers_is_refused(self, make_lesson, queue, bad):
+        with pytest.raises(InvalidAnswers, match="short list of option numbers"):
+            SubmissionService(queue=queue).submit(lesson_with_test(make_lesson), {MSQ: bad})
+
+        assert TestSubmission.objects.count() == 0
 
     def test_an_empty_submission_is_a_zero_not_an_error(self, make_lesson, queue):
         submission, run = SubmissionService(queue=queue).submit(lesson_with_test(make_lesson), {})
@@ -744,7 +765,7 @@ class TestSubmitLessonTest:
             (["x"], "object of question id"),
             ({"nope": 1}, "Unknown question ids: nope"),
             ({MCQ: True}, "must be a number or text"),
-            ({SHORT: ["a"]}, "must be a number or text"),
+            ({SHORT: ["a"]}, "short list of option numbers"),
             ({SHORT: {"a": 1}}, "must be a number or text"),
             ({SHORT: "x" * 10_001}, "longer than 10000"),
         ],
@@ -819,7 +840,7 @@ class TestSubmitLessonTest:
 
         submission, _ = SubmissionService(queue=queue).submit(lesson, {MCQ: 1})
 
-        assert submission.result["score"]["awarded"] == 2
+        assert submission.result["score"]["awarded"] == MARKS[MCQ]
 
 
 class TestGetSubmission:
@@ -864,8 +885,8 @@ class TestGradingStops:
 
 
 class TestLearnerTest:
-    SECRETS = ("correct_index", "answer", "tolerance", "model_answer", "key_points", "rubric", "reference_solution",
-               "test_cases", "concept", "difficulty")  # fmt: skip
+    SECRETS = ("correct_index", "correct_indices", "answer", "answer_expr", "tolerance", "model_answer", "criteria",
+               "key_points", "rubric", "reference_solution", "test_cases", "concept", "difficulty")  # fmt: skip
 
     def test_the_questions_come_without_answers_marking_schemes_or_concepts(self, make_lesson):
         body = SubmissionService().for_learner(lesson_with_test(make_lesson))
@@ -874,8 +895,9 @@ class TestLearnerTest:
         assert list(by_id) == [q["id"] for q in FINAL_TEST["questions"]]
         assert not [key for q in body["questions"] for key in self.SECRETS if key in q]
         assert set(by_id[MCQ]) == {"id", "type", "question", "options", "marks"}
-        assert by_id[NUM]["unit"] == "steps"
-        assert {"language", "starter_code"} <= set(by_id[CODE])
+        assert set(by_id[MSQ]) == {"id", "type", "question", "options", "marks"}
+        assert (by_id[NUM]["unit"], by_id[NUM]["decimal_precision"]) == ("steps", 0)
+        assert set(by_id[LONG]) == {"id", "type", "question", "marks"}
 
     def test_the_total_is_the_sum_of_the_marks(self, make_lesson):
         body = SubmissionService().for_learner(lesson_with_test(make_lesson))

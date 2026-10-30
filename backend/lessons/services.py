@@ -524,9 +524,10 @@ class SubmissionService:
     grading, and grading again when that failed. The learner never answers twice."""
 
     MAX_ANSWER_CHARS = 10_000
+    MAX_SELECTED = 12  # a multiple-select question has at most 6 options
     #: what the test screen needs of `public_question` (the stripping of answers stays there); the concept and
     #: difficulty are labels for the grader and the report, not for the person answering
-    SHOWN = ("id", "type", "question", "marks", "options", "unit", "language", "starter_code")
+    SHOWN = ("id", "type", "question", "marks", "options", "unit", "decimal_precision", "language", "starter_code")
 
     def __init__(
         self, queue: TaskQueue | None = None, grader: AnswerGrader | None = None, cards: ScoreCard | None = None
@@ -635,6 +636,10 @@ class SubmissionService:
         if unknown:
             raise InvalidAnswers(f"Unknown question ids: {', '.join(unknown)}.")
         for qid, value in answers.items():
+            if isinstance(value, list):  # the options picked in a multiple-select question
+                if len(value) > self.MAX_SELECTED or not all(type(item) is int for item in value):
+                    raise InvalidAnswers(f"The answer to {qid} must be a short list of option numbers.")
+                continue
             if isinstance(value, bool) or not (value is None or isinstance(value, (int, float, str))):
                 raise InvalidAnswers(f"The answer to {qid} must be a number or text.")
             if isinstance(value, str) and len(value) > self.MAX_ANSWER_CHARS:

@@ -119,6 +119,34 @@ class StarRating:
 _OLD_DIFFICULTIES = {"medium": "standard", "hard": "difficult"}
 
 
+class LevelScheme:
+    """Which level names a stored document uses. The first scheme had novice, beginner, intermediate and advanced; the
+    second has beginner, foundation, proficient and expert, and "beginner" is in both with different meanings. A
+    document written under the second scheme carries `level_scheme: 2`; one without it is legacy, however it got here
+    (a database row from before the rename, a graph checkpoint that was never rewritten)."""
+
+    KEY = "level_scheme"
+    CURRENT = 2
+
+    @classmethod
+    def stamp(cls, document: dict) -> dict:
+        """A copy that says it uses the current names."""
+        return {**document, cls.KEY: cls.CURRENT}
+
+    @classmethod
+    def level_of(cls, document: dict) -> Level:
+        """The document's `level`, read the way it was written."""
+        raw = document.get("level")
+        return Level.parse(raw) if document.get(cls.KEY) == cls.CURRENT else Level.parse_legacy(raw)
+
+    @classmethod
+    def upgraded(cls, document: dict) -> dict:
+        """The document with its level in the current names and the marker; a current one comes back as it is."""
+        if document.get(cls.KEY) == cls.CURRENT:
+            return document
+        return cls.stamp({**document, "level": cls.level_of(document).value})
+
+
 class MarkTier(StrEnum):
     """Which column of the marks table a question is in."""
 

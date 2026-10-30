@@ -29,7 +29,7 @@ from graph.builders import DiagnoseSegment, FlowGraphBuilder, MasterySegment, St
 from lessons.models import Lesson, Quiz, QuizAttempt, Stage, StudyMaterial
 
 ASSESSMENT = {
-    "level": "intermediate",
+    "level": "proficient",
     "known_concepts": ["a"],
     "gaps": ["b"],
     "prerequisites_to_cover": ["the model made this up"],
@@ -64,7 +64,7 @@ def test_a_middling_score_goes_to_the_lesson_route_and_saves_the_assessment(run,
         "await_diagnostic", "grade_diagnostic", "assess_learner",
     ]  # fmt: skip
     stored = Lesson.objects.get(pk=lesson.pk)
-    assert (stored.route, stored.stage, stored.level) == ("lesson", Stage.GENERATING_LESSON, "intermediate")
+    assert (stored.route, stored.stage, stored.level) == ("lesson", Stage.GENERATING_LESSON, "proficient")
     assert stored.assessment["start_point"] == "Halving the range"
     assert not Quiz.objects.filter(lesson=lesson, kind="prerequisite").exists()
 

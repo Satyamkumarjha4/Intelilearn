@@ -6,6 +6,8 @@ Responses are built from the services' output.
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
+from graph.levels import LevelScheme
+
 from .models import GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt, TestSubmission
 from .stages import MaterialKind, Route
 
@@ -113,7 +115,7 @@ class LessonDetailSerializer(LessonSummarySerializer):
     def get_assessment(self, lesson: Lesson) -> dict | None:
         if not lesson.assessment:
             return None
-        return AssessmentSerializer(lesson.assessment).data
+        return AssessmentSerializer(LevelScheme.upgraded(lesson.assessment)).data
 
     def get_prerequisites_to_cover(self, lesson: Lesson) -> list[str]:
         return [p["name"] for p in lesson.prerequisites_to_cover]

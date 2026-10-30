@@ -1042,6 +1042,7 @@ classDiagram
         +expected_text(question) str
     }
     class McqType
+    class MsqType
     class NumericalType
     class OpenEndedType {
         <<abstract>>
@@ -1050,6 +1051,18 @@ classDiagram
     class LongAnswerType
     class CodeType {
         legacy lessons only
+    }
+    class MarksPolicy {
+        +marks(kind, difficulty)$ int
+    }
+    class QuestionFinisher {
+        +finish(questions) tuple
+    }
+    class ExpressionEvaluator {
+        +evaluate(expression) float
+    }
+    class LegacyQuestionAdapter {
+        +normalise(question)$ dict
     }
     class Score {
         <<frozen>>
@@ -1062,6 +1075,7 @@ classDiagram
         +keys()$ tuple
     }
     QuestionType <|-- McqType
+    QuestionType <|-- MsqType
     QuestionType <|-- NumericalType
     QuestionType <|-- OpenEndedType
     OpenEndedType <|-- ShortAnswerType
@@ -1069,12 +1083,21 @@ classDiagram
     OpenEndedType <|-- CodeType
     QuestionTypes o-- QuestionType
     QuestionType ..> Score
+    MarksPolicy ..> QuestionTypes
+    QuestionFinisher --> MarksPolicy
+    QuestionFinisher --> ExpressionEvaluator
+    NumericalType ..> ExpressionEvaluator
+    LegacyQuestionAdapter ..> QuestionTypes
 ```
 
 - Who asks: `TestQuestion`'s validator (`missing_fields`), `QuestionRules.problems` (`problems`), `public_question` and
   `Quiz`-style views (`public`), `Solution.of` (`solution`), `AnswerGrader.grade` (`score`), `ScoreCard` (`expected_text`,
   `auto_scored`). The flat Pydantic model a model writes is unchanged; these classes use its `type` to look up behaviour.
 - A new kind is a new class in `types.py` and one entry in the registry; no other file gets a branch.
+- **What a model writes and what is stored differ** (`graph/schemas/lesson.py` `TestQuestion`, then `QuestionFinisher`). A model writes no `marks` and no numerical `answer`: it writes `answer_expr`, `tolerance` and `decimal_precision`, and for short and long answers `criteria` (`[{text, marks}]`). The finisher, called by `ContentWriter.final_test` and the practice-sheet node, sets `marks` from `MarksPolicy` (the table is in the kinds: `QuestionType.marks`, by `MarkTier`) and computes `answer` with `ExpressionEvaluator`; `QuestionRules.problems` (through each kind's `problems`) re-checks the expression and that the criteria add up, so a bad question goes back to the generator. `QuestionType.generator_guidance` is what the prompts tell a model about each kind, marks included.
+- **`ExpressionEvaluator`** parses with `ast` and walks only numbers, `+ - * / **`, unary signs, parentheses, `pi`, `e` and eleven one-argument functions. It is bounded (200 characters, nesting 20, exponent 1000, every result finite) and refuses everything else with a reason; nothing reaches `eval`.
+- **`MsqType.score`** follows the spec's order: nothing picked or any wrong option is 0, all the right options is full, at least half of them is full minus 1, fewer is 1. A repeated option counts once; anything that is not a list of whole numbers is a wrong answer.
+- **`LegacyQuestionAdapter.normalise`** gives a question from before criteria the `criteria` it never had (key points, a rubric, or one criterion for a code question; marks split evenly, the remainder one each to the first; more points than marks are grouped). The grader and the score card use it, stored data is never rewritten.
 
 ### 4.9 `graph`: media and sandbox adapters
 
@@ -1787,7 +1810,7 @@ classDiagram
 
 Pure value classes in `graph/levels.py` and `graph/scoring.py`: no ORM, no I/O, no settings lookups. They are the
 vocabulary of the modular-lesson plan ([plan §6.1](../to_be_developed/modular-lessons-implementation-plan.md#61-value-objects-pure-in-graph)).
-Phase 9.0 only adds them; nothing reads them yet, and the existing level and difficulty names are migrated in 9.1 and 9.2.
+Phase 9.0 added them. Phase 9.1 wired `Level`, `LevelScheme` and `Difficulty` into the flow (the schemas, prompts, nodes and a data migration); `ScoreBand` and `Thresholds` are wired in 9.2.
 
 ```mermaid
 classDiagram
@@ -1802,6 +1825,11 @@ classDiagram
         +parse_legacy(raw)$ Level
         +shifted(by) Level
         +label str
+    }
+    class LevelScheme {
+        +stamp(document)$ dict
+        +level_of(document)$ Level
+        +upgraded(document)$ dict
     }
     class StarRating {
         <<frozen>>
@@ -1850,6 +1878,7 @@ classDiagram
         +of(awarded, available, thresholds)$ ScoreBand
     }
 
+    LevelScheme ..> Level
     StarRating --> Level
     StarRating --> RaterCategory
     RaterCategory ..> Level
@@ -1858,6 +1887,7 @@ classDiagram
     ScoreBand ..> Thresholds
 ```
 
+- **Settled in 9.1** (plan C28, T19): `LevelScheme` (`graph/levels.py`) reads a stored document's `level` by its `level_scheme` marker, `Level.parse` with the stamp and `Level.parse_legacy` without it. Nodes stamp what they write (`LevelScheme.stamp`), `LoadContextNode` puts `level_scheme: 2` on the flow state, and the API reads through `LevelScheme.upgraded`. `lessons/renames.py` holds the data migration's logic.
 - Patterns: value objects with a tolerant reader (`parse`), and an explicit bridge (`BandDifficulty`) between two
   vocabularies that overlap in words only. The diagnostic's bands (`basic`, `easy_moderate`, `moderate`, `moderate_hard`,
   `hard`) are never renamed; `hard` the band is `expert` the difficulty.

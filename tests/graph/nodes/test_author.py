@@ -8,8 +8,11 @@ a fix must be held to the same rules as a first draft and must never make things
 an item that does not exist.
 
 Use cases:
-- plan_lesson asks for a LessonPlan; validate_plan saves a valid plan (and its title and level) or asks again, and
-  gives up with a readable error when attempts run out
+- plan_lesson asks for a LessonPlan and stamps it with the level names it uses; validate_plan saves a valid plan (and
+  its title and level, a plan from before the rename read as it was written) or asks again, and gives up with a readable
+  error when attempts run out
+- the test's marks and numerical answers are set by code, and an expression that cannot be computed goes back as a
+  problem
 - the plan router fans out three page writers and the test writer, each with the shared context; or retries, or fails
 - a page and the test are kept even when they have problems, and the join node decides: wait for a retry, or accept
   with a warning once attempts run out, saving what there is
@@ -49,6 +52,7 @@ from graph.nodes.author_routers import (
     PlanRouter,
     WidgetRouter,
 )
+from graph.questions import MarksPolicy
 from graph.schemas import InteractivePlan, LessonPlan
 from lessons.models import Lesson, MediaAsset, Stage
 
@@ -79,7 +83,7 @@ class TestPlan:
 
         update = PlanLessonNode()(state, runtime)
 
-        assert update == {"plan": make_plan(), "attempts": {"plan": 1}}
+        assert update == {"plan": make_plan(), "attempts": {"plan": 1}}  # stamped with the level names
         call = gateway.called("lesson.plan")[0]
         assert call.schema is LessonPlan and "Plan exactly three pages." in call.messages[1].content
         assert "Halving the range" in call.messages[1].content  # the assessment's start point
@@ -92,6 +96,18 @@ class TestPlan:
         assert update == {"feedback": {"plan": []}}
         stored = Lesson.objects.get(pk=lesson.pk)
         assert (stored.title, stored.level, stored.plan) == ("Binary search", "beginner", make_plan())
+
+    def test_a_plan_from_before_the_level_rename_is_saved_with_the_level_it_was_written_in(
+        self, lesson, lesson_state, runtime
+    ):
+        Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.GENERATING_LESSON)
+        legacy = {
+            k: v for k, v in make_plan().items() if k != "level_scheme"
+        }  # a checkpoint's plan: "beginner" meant foundation
+
+        ValidatePlanNode()(authored(lesson_state, plan=legacy), runtime)
+
+        assert Lesson.objects.get(pk=lesson.pk).level == "foundation"
 
     def test_an_invalid_plan_is_not_saved_and_the_problems_are_kept(self, lesson, lesson_state, runtime, events):
         plan = make_plan()
@@ -166,6 +182,32 @@ class TestWriters:
         WritePageNode()(self.branch(lesson_state, "core", ["Write longer sections."]), runtime)
 
         assert "- Write longer sections." in gateway.called("page.generate")[0].messages[1].content
+
+    def test_marks_and_numerical_answers_are_set_by_code_not_by_the_model(self, lesson_state, gateway, runtime):
+        written = make_final_test()
+        for question in written["questions"]:
+            question["marks"] = 20  # a model may write anything: the schema does not read it
+            question.pop("answer", None)
+        gateway.script("test.generate", written)
+
+        update = WriteTestNode()(self.branch(lesson_state, "test"), runtime)
+
+        questions = update["final_test"]["questions"]
+        assert update["feedback"] == {"test": []}
+        assert all(q["marks"] == MarksPolicy.marks(q["type"], q["difficulty"]) for q in questions)
+        assert {q["type"] for q in questions} >= {"msq", "numerical"}
+        assert next(q for q in questions if q["type"] == "numerical")["answer"] == 4.0
+
+    def test_a_numerical_expression_that_cannot_be_computed_goes_back_to_the_model_as_a_problem(
+        self, lesson_state, gateway, runtime
+    ):
+        written = make_final_test()
+        next(q for q in written["questions"] if q["type"] == "numerical")["answer_expr"] = "1 / 0"
+        gateway.script("test.generate", written)
+
+        update = WriteTestNode()(self.branch(lesson_state, "test"), runtime)
+
+        assert any("answer_expr cannot be computed" in p for p in update["feedback"]["test"])
 
     def test_the_test_is_written_and_checked_against_the_plans_spec(self, lesson_state, gateway, runtime):
         test = make_final_test()

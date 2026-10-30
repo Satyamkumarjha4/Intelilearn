@@ -52,7 +52,7 @@ class QuizReview(BaseModel):
 
 
 class LearnerAssessment(BaseModel):
-    level: Literal["novice", "beginner", "intermediate", "advanced"]
+    level: Literal["beginner", "foundation", "proficient", "expert"]
     known_concepts: list[str] = Field(description="Concepts the learner has shown they know.")
     gaps: list[str] = Field(description="Concepts to emphasise in the lesson.")
     prerequisites_to_cover: list[str] = Field(description="Copy exactly from the input; do not add or remove.")

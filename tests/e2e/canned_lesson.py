@@ -8,6 +8,7 @@ import json
 import re
 
 from graph.codegen import DocumentAssembler
+from graph.questions import MarksPolicy
 
 TOPICS_WITH_PICTURES = re.compile(r"reproduction|cell|amoeba|biology|photosynthesis|organism|anatomy|ecosystem", re.I)
 
@@ -71,6 +72,37 @@ SVG_TSX = """function {name}() {{
 """
 
 
+def canned_question(kind: str, number: int, difficulty: str, concept: str, text: str) -> dict:
+    """One question as a model writes it (no marks, no computed answer), for any kind. The criteria add up to the marks
+    the table gives that kind and difficulty, as the validator demands."""
+    marks = MarksPolicy.marks(kind, difficulty)
+    base = {"id": f"t{number}", "type": kind, "concept": concept, "difficulty": difficulty, "question": text}
+    extra = {
+        "mcq": {
+            "options": [f"Wrong {number}{c}" for c in "AB"] + [f"Right {number}", f"Wrong {number}C"],
+            "correct_index": 2,
+        },
+        "msq": {
+            "options": [f"Right {number}A", f"Wrong {number}B", f"Right {number}C", f"Wrong {number}D"],
+            "correct_indices": [0, 2],
+        },
+        "numerical": {"answer_expr": f"sqrt({number * number})", "tolerance": 0.01, "decimal_precision": 0, "unit": ""},
+        "short_answer": {
+            "model_answer": f"A good answer to {number}.",
+            "criteria": [{"text": "names the idea", "marks": 1}, {"text": "says why it holds", "marks": marks - 1}],
+        },
+        "long_answer": {
+            "model_answer": f"A full answer to {number}.",
+            "criteria": [
+                {"text": "states the idea", "marks": marks - 2},
+                {"text": "explains it", "marks": 1},
+                {"text": "gives an example", "marks": 1},
+            ],
+        },
+    }[kind]
+    return base | extra
+
+
 class LessonCanned:
     """Mixed into `Canned`: expects `self.topic`, `self.text` (all prompt text) and `self.messages`."""
 
@@ -108,11 +140,11 @@ class LessonCanned:
             for key, concepts in parts.items()
         ]
         return {
-            "title": topic, "level": "intermediate", "summary": f"A lesson on {topic} for this learner.", "pages": pages,
+            "title": topic, "level": "proficient", "summary": f"A lesson on {topic} for this learner.", "pages": pages,
             "final_test": {
                 "question_count": 10,
-                "type_mix": {"mcq": 4, "numerical": 2, "short_answer": 2, "long_answer": 1, "code": 1},
-                "difficulty_mix": {"easy": 4, "medium": 4, "hard": 2},
+                "type_mix": {"mcq": 3, "msq": 2, "numerical": 2, "short_answer": 2, "long_answer": 1},
+                "difficulty_mix": {"easy": 2, "basic": 2, "standard": 2, "difficult": 2, "expert": 2},
             },
         }  # fmt: skip
 
@@ -154,21 +186,15 @@ class LessonCanned:
         for kind, count in spec["type_mix"].items():
             for _ in range(count):
                 number += 1
-                base = {
-                    "id": f"t{number}", "type": kind, "concept": f"{self.topic}: part {number}", "difficulty": levels[number - 1],
-                    "marks": 2, "question": f"Test question {number} about {self.topic}?",
-                }  # fmt: skip
-                extra = {
-                    "mcq": {"options": [f"Wrong {number}{c}" for c in "AB"] + [f"Right {number}", f"Wrong {number}C"],
-                            "correct_index": 2},
-                    "numerical": {"answer": float(number), "tolerance": 0.01, "unit": ""},
-                    "short_answer": {"model_answer": f"A good answer to {number}.", "key_points": ["clear"]},
-                    "long_answer": {"model_answer": f"A full answer to {number}.", "rubric": ["states the idea"]},
-                    "code": {"language": "python", "starter_code": "def solve(xs, target):\n    pass\n",
-                             "reference_solution": "def solve(xs, target):\n    return xs.index(target)\n",
-                             "test_cases": [{"input": "[1, 2, 3], 2", "expected_output": "1"}]},
-                }[kind]  # fmt: skip
-                questions.append(base | extra)
+                questions.append(
+                    canned_question(
+                        kind,
+                        number,
+                        levels[number - 1],
+                        f"{self.topic}: part {number}",
+                        f"Test question {number} about {self.topic}?",
+                    )
+                )
         return {"title": f"Test your understanding of {self.topic}", "questions": questions}
 
     def build_InteractivePlan(self) -> dict:
@@ -215,9 +241,9 @@ class LessonCanned:
         grades = []
         for item in self._json_after("Questions to grade:"):
             full = len(str(item["learner_answer"]).strip()) >= 25
-            awarded = item["marks"] if full else item["marks"] // 2
+            awards = [c["marks"] if full else c["marks"] // 2 for c in item["criteria"]]
             feedback = "A complete answer." if full else "Right direction; say more about how and why."
-            grades.append({"question_id": item["id"], "awarded": awarded, "feedback": feedback})
+            grades.append({"question_id": item["id"], "awards": awards, "feedback": feedback})
         return {"grades": grades}
 
     # --- Stage C (text output: no schema, so chosen by the prompt) ---

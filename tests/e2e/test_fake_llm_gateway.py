@@ -44,6 +44,7 @@ from graph.prompts import (
     WritePagePrompt,
     WriteTestPrompt,
 )
+from graph.questions import MarksPolicy, QuestionFinisher
 from graph.sandbox import SandboxRunner
 from graph.schemas import (
     MATERIAL_SCHEMAS,
@@ -131,7 +132,7 @@ def test_the_assessment_schema_is_served(server, monkeypatch):
     result = Gateway().invoke("learner.assess", DiagnosticPrompt().messages(STATE), snapshot=snapshot,
                               schema=LearnerAssessment)  # fmt: skip
 
-    assert result.output.level == "intermediate"
+    assert result.output.level == "proficient"
 
 
 @pytest.mark.parametrize("kind", ["cheat_sheet", "revision_sheet", "practice_sheet"])
@@ -144,6 +145,9 @@ def test_a_study_sheet_is_valid_and_covers_the_concepts_in_the_prompt(server, mo
                               schema=MATERIAL_SCHEMAS[kind])  # fmt: skip
 
     content = result.output.model_dump(mode="json")
+    if kind == "practice_sheet":  # the graph sets marks and computes answers before the validator sees the questions
+        content["questions"], problems = QuestionFinisher().finish(content["questions"])
+        assert problems == []
     assert StudyMaterialValidator().validate(content, kind=kind, concepts=concepts) == []
 
 
@@ -172,6 +176,10 @@ def test_the_plan_the_page_and_the_test_pass_the_real_validators(server, monkeyp
     assert PageValidator().validate(page, plan_page=page_plan) == [] and page["key"] == "core"
 
     test = call(snapshot, "test.generate", FinalTest, WriteTestPrompt().messages(state))
+    test["questions"], finishing = QuestionFinisher().finish(test["questions"])
+    assert finishing == []
+    assert {q["type"] for q in test["questions"]} >= {"msq", "numerical"}  # the canned lesson has the new kinds
+    assert all(q["marks"] == MarksPolicy.marks(q["type"], q["difficulty"]) for q in test["questions"])
     assert FinalTestValidator().validate(test, spec=plan["final_test"]) == []
 
 
@@ -249,20 +257,28 @@ def test_a_crashed_interactive_is_replaced_by_code_that_passes_the_real_check(se
 def test_a_grading_prompt_gets_one_valid_grade_per_question(server, monkeypatch):
     snapshot = bind_fake(server, "json_schema", monkeypatch)
     items = [
-        {"id": "t7", "type": "short_answer", "marks": 2, "question": "Why?", "answer": "Because."},
+        {
+            "id": "t7",
+            "type": "short_answer",
+            "marks": 3,
+            "question": "Why?",
+            "answer": "Because.",
+            "criteria": [{"text": "names it", "marks": 1}, {"text": "explains it", "marks": 2}],
+        },
         {
             "id": "t9",
-            "type": "code",
-            "marks": 4,
+            "type": "long_answer",
+            "marks": 5,
             "question": "Write it",
-            "answer": "def search(items, t):\n    return 0",
+            "answer": "def search(items, t):\n    return 0" * 2,
+            "criteria": [{"text": "states it", "marks": 3}, {"text": "shows it", "marks": 2}],
         },
     ]
     messages = GradeTestPrompt().messages({"topic": "Binary search", "items": items, "profile": {}})
 
     report = call(snapshot, "test.grade", GradeReport, messages)
 
-    assert [(g["question_id"], g["awarded"]) for g in report["grades"]] == [("t7", 1), ("t9", 4)]
+    assert [(g["question_id"], g["awards"]) for g in report["grades"]] == [("t7", [0, 1]), ("t9", [3, 2])]
     assert GradeReportValidator().validate(report, questions=items) == []
 
 

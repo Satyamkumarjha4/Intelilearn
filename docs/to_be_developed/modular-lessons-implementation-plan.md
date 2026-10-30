@@ -1,7 +1,7 @@
 # Implementation plan: Modular Lesson Parts
 
 **Spec:** [modular-lessons.md](modular-lessons.md) (finalized 2026-10-26)
-**Status:** Plan. Phase 9.0 is built (branches `refactor/levels`, `refactor/run-subject`, `refactor/action-gate`); phases 9.1 to 9.8 are not started.
+**Status:** Plan. Phases 9.0 (branches `refactor/levels`, `refactor/run-subject`, `refactor/action-gate`) and 9.1 (`phase-9/questions`) are built; phases 9.2 to 9.8 are not started.
 **Last updated:** 2026-10-30 (third pass: doc fixes before phase 9.0, see the [changelog](#changelog))
 **Checked against:** the code and docs on branch `refactor/docs-layout` (Phases 0 to 8 built).
 
@@ -19,10 +19,11 @@ Third pass, 2026-10-30 (branch `docs/spec-fixes`, before phase 9.0 starts). Docs
 | C22 | Calibration starts at **standard**, not "medium" (the level was renamed in D14) | Spec 5.1 |
 | C23 | **Star sentences approved.** 0.5 is "This is completely new to me." and 1 is "I've heard the name, but I don't know what it means."; every other sentence is approved as drafted and the "draft" markers are removed. The spec now carries the full table | Spec 2.2, 11.1, D23, C11 |
 | C24 | **Blank-attempt rule decided:** an attempt with every answer blank is stored and scores 0, but does not count toward the Foundation offer | 8.2, 13, 15.1 |
-| C28 | **Decisions from the 9.0 report.** (a) T19/C26 is settled with a **version marker**: every newly written assessment and plan, and the flow state, carries `level_scheme: 2`; with it `Level.parse` is used, without it the data is legacy and `Level.parse_legacy` is. The data migration rewrites database rows to the new names and adds the marker; graph checkpoints are not rewritten, so their missing marker routes them to `parse_legacy`. (b) `ActionRefused` stays `403`; a credits feature will use `402`. (c) Star sentence 1.5 is now "I have a rough idea what it is, but I couldn't explain it." (spec 2.2, 11.1) | D24 T19, 6.1, 7.1, 11.1 |
 | C25 | Phase 9.0 deferral, recorded here so it is not forgotten: the `GraphRun.quick_quiz` foreign key and making `GraphRun.lesson` nullable land with the `quizzes` app in 9.6, not in 9.0. In 9.0 `RunSubject` is a property over the existing `lesson` column | 5.3, 7.6, 14 (9.0) |
 | C26 | Found while building 9.0: `beginner` is ambiguous between the old and new level names. `Level.parse` and `Level.parse_legacy` are separate readers; how 9.1 tells old data from new is open (D24 T19) | R2, D24, 6.1 |
 | C27 | **Phase 9.0 built.** Where the build differs from, or adds to, this plan: (a) the open gate's authorization is `tracked=False` and is **not stored** on the run, so payloads are unchanged with the default gate (a stored one would have changed every existing payload assertion); (b) `ActionContext` carries `completes_at`, and `CompletionPoint.reached(stage, ended)` takes whether the run ended, so the check stays pure; (c) `IdempotencyStore` gained `claim` and `release`, so two simultaneous requests with one key give `409 request_in_progress` instead of both running; the key is scoped to learner, endpoint and body; (d) an open authorization is **carried** into the prerequisite quiz's resume run (`ActionMetering.carry`) instead of being asked again, because the diagnostic's `lesson.continue` is not complete until the lesson is ready; (e) `ActionRefused` answers `403` for now (the plan left the status open); (f) only the three wired actions have completion points; `CompletionPoints.of` raises for the other four until their phases; (g) `RunSubject` gained `error`; (h) delete erases checkpoints and model calls **before** the lesson row, so a failed erasure can be repeated; (i) `Level.parse` and `Level.parse_legacy` are separate readers (T19) | 5.3, 5.5, 6.1, 6.7, D24 |
+| C28 | **Decisions from the 9.0 report.** (a) T19/C26 is settled with a **version marker**: every newly written assessment and plan, and the flow state, carries `level_scheme: 2`; with it `Level.parse` is used, without it the data is legacy and `Level.parse_legacy` is. The data migration rewrites database rows to the new names and adds the marker; graph checkpoints are not rewritten, so their missing marker routes them to `parse_legacy`. (b) `ActionRefused` stays `403`; a credits feature will use `402`. (c) Star sentence 1.5 is now "I have a rough idea what it is, but I couldn't explain it." (spec 2.2, 11.1) | D24 T19, 6.1, 7.1, 11.1 |
+| C29 | **Phase 9.1 built** (branch `phase-9/questions`, from `refactor/action-gate`: the 9.0 branches were not merged). (a) Part A moved the `if kind ==` ladders into `graph/questions/` with existing tests unchanged; the `LegacyQuestionAdapter` arrived in part B, where it has behaviour, and the legacy `code` kind is `CodeType`. (b) **Level marker**: `LevelScheme.stamp/level_of/upgraded`; `AssessLearnerNode` and `PlanLessonNode` stamp what they write, `LoadContextNode` puts `level_scheme: 2` on the flow state, the API reads through `upgraded`, and migration `lessons/0006` rewrites database rows (levels and difficulties) and stamps the documents; checkpoints are not rewritten. T19 is closed. (c) **Five difficulties** end to end: schemas, `DifficultyMix`, validators, prompts, the migration and its scan test (every JSON column must be rewritten or known to hold neither name). (d) **Marks** come from `MarksPolicy` only: a model writes no `marks`; `QuestionFinisher` sets them. (e) `MsqType`, `NumericalType` with `answer_expr`/`decimal_precision` and `ExpressionEvaluator`, criteria for short and long answers, `GradedAnswer.awards` per criterion. (f) The `code` question type is gone from what a model may write; `TypeMix` has `msq` and no `code`. (g) Frontend: `QuestionInputs` registry, MSQ and number inputs. (h) **`BandDifficulty` has no meeting point yet** in the flow (the diagnostic's bands and the test's difficulties never touch in today's code), so it is built and tested but not called; the calibration pool (9.6) is its first user | 6.1, 6.4, 7.1, 7.7, 9.1, 10, 11.1, 14 (9.1), D24 T19 |
 
 Second pass, 2026-10-29. The confirmed decisions below replace what the first pass assumed. Superseded decisions keep their number and say which decision replaced them.
 
@@ -334,7 +335,7 @@ Adopted as a `BatchPlanner` rule: at most **1 long and 2 short answers per batch
 | T16 | The data migration rewrites a stored `difficulty` wherever it is found (test, plan mix, practice sheets, stored results), with a scan test that fails on any leftover old name | A missed spot would break a legacy page |
 | T17 | A failed or stopped `generating` attempt is **deleted** by a `RunEffect`, so the attempt number is never consumed | No gaps in the history |
 | T18 | The diagnostic submit refuses before it stores anything; the learner's answers stay in the browser (session storage) until they resubmit | "Refusal creates nothing", and the one-attempt rule stays intact |
-| T19 | **`beginner` is both an old and a new level name** (old: the second of four, now Foundation; new: the first). `Level.parse` takes it as the **new** Beginner; `Level.parse_legacy` maps the old four by position and is used only where the data is known to predate the rename. Found while building 9.0, and R2's "tolerant reader" cannot be one function. **Open for 9.1:** how a checkpointed value is known to be old (a one-off rewrite of the checkpoint state at deploy, a state version marker, or finishing every in-flight thread first) | One rule per vocabulary, and no silent change of level for a lesson mid-flight |
+| T19 | **`beginner` is both an old and a new level name** (old: the second of four, now Foundation; new: the first). `Level.parse` takes it as the **new** Beginner; `Level.parse_legacy` maps the old four by position and is used only where the data is known to predate the rename. Found while building 9.0, and R2's "tolerant reader" cannot be one function. **Settled in 9.1 (C28, C29): a version marker.** Documents written under the new names carry `level_scheme: 2`; without it they are legacy | One rule per vocabulary, and no silent change of level for a lesson mid-flight |
 
 ---
 
@@ -1192,7 +1193,7 @@ Branch `refactor/run-subject`, `refactor/delete-cleanup`.
 
 **Every later phase wires the actions it adds** (the table in 5.5) through the gate in the same change that adds them, so no costly entry point ever ships unclassified.
 
-### Phase 9.1: Questions and marking — L
+### Phase 9.1: Questions and marking — L ✅ built (see C28 and C29)
 
 Branch `phase-9/questions`.
 
@@ -1357,7 +1358,7 @@ The rules in [testing.md](../process/testing.md) apply: test first, a header wit
 ### Roadmap checklist to copy into `roadmap.md` when work starts
 
 - [x] 9.0 `RunSubject`, delete clean-up (and settle on delete), `Level` family, the metering seam with completion points, resume-on-Retry and `Idempotency-Key`
-- [ ] 9.1 `QuestionTypes` (neutral), then five-level `Difficulty` and its migration, marks, MSQ, expressions, criteria
+- [x] 9.1 `QuestionTypes` (neutral), then five-level `Difficulty` and its migration, marks, MSQ, expressions, criteria
 - [ ] 9.2 Question record, fixed 10-question objective test, attempts graded at submit, retakes (always generate, `test.retake`), trend, forward-only on the server
 - [ ] 9.3 Self-rating entry, `AssessmentSources`, lesson shapes, verified `origin`, the two-option mastery choice (Expert lesson or two sheets)
 - [ ] 9.4 Follow-up lessons and the pop-up policy

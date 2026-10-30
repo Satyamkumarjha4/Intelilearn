@@ -1,5 +1,7 @@
 """Stage B prompts: the plan, pages, test, interactives and the alignment judge."""
 
+from ..questions import QuestionTypes
+from ..schemas.lesson import QUESTION_TYPES
 from .base import Prompt
 from .scope import SCOPE_REFERENCE
 
@@ -21,8 +23,9 @@ Rules:
 - 3-6 outline parts per page, in teaching order.
 - final_test: {settings.get("final_test_min", 10)}-{settings.get("final_test_max", 15)} questions. type_mix and \
 difficulty_mix must each add up to question_count. Use at least 3 question types, choosing ones that suit the \
-topic (code only for programming topics; numerical for quantitative topics). A novice gets mostly easy \
-questions; an advanced learner mostly medium and hard.
+topic (mcq, msq (choose all that apply), short_answer, long_answer; numerical only for quantitative topics). The \
+difficulties are easy, basic, standard, difficult and expert. A beginner gets mostly easy and basic questions; an \
+expert mostly difficult and expert ones.
 {self.language_rule(subject.get("profile"))}"""
 
     def user(self, subject: dict) -> str:
@@ -74,11 +77,10 @@ class WriteTestPrompt(Prompt):
 
 - Exactly this many of each type: {self.to_json(spec["type_mix"])}
 - Exactly this many of each difficulty: {self.to_json(spec["difficulty_mix"])}
-- Types: mcq (exactly 4 different options + correct_index), numerical (answer + tolerance + unit), short_answer \
-(model_answer + key_points), long_answer (model_answer + rubric), code (language, starter_code, \
-reference_solution, 1-5 test_cases).
+- How to write each type, and what it is worth (marks are set by the system, never by you):
+{QuestionTypes.guidance(QUESTION_TYPES)}
 - Test the concepts taught across the three pages; every question names its concept. No repeated questions.
-- Ids "t1", "t2"… Marks: easy 1-2, medium 2-4, hard 4-8.
+- Ids "t1", "t2"…
 {self.language_rule(subject.get("profile"))}"""
 
     def user(self, subject: dict) -> str:

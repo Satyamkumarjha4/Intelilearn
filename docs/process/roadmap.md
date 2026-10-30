@@ -137,7 +137,7 @@ Specified in [modular-lessons.md](../to_be_developed/modular-lessons.md) and pla
   - [x] Delete clean-up: checkpoints and model calls go with the lesson
   - [x] The metering seam: `ActionGate`, `OpenGate`, `ActionRefused`, completion points, settlement, resume-on-Retry, `IdempotencyStore` and the `Idempotency-Key` header; wired for `lesson.create`, `lesson.continue` and `sheet.generate`
   - [ ] Decisions answered and the mockup extended with the new screens
-- [ ] 9.1 `QuestionTypes` (neutral), then five-level `Difficulty` and its migration, marks, MSQ, expressions, criteria
+- [x] 9.1 `QuestionTypes` (neutral), then five-level `Difficulty` and its migration, marks, MSQ, expressions, criteria; levels renamed behind a `level_scheme` marker; the question-input registry (MSQ checkboxes, number input) in the frontend
 - [ ] 9.2 Question record, fixed 10-question objective test, attempts graded at submit, retakes (always generate, `test.retake`), trend, forward-only on the server
 - [ ] 9.3 Self-rating entry, `AssessmentSources`, lesson shapes, verified `origin`, the two-option mastery choice (Expert lesson or two sheets)
 - [ ] 9.4 Follow-up lessons and the pop-up policy

@@ -127,7 +127,7 @@ class NodeSpec:
 | `study.generate` | diagnose | structured → `CheatSheet` / `RevisionSheet` / `PracticeSheet` | structured_output | 16k | medium | |
 | `lesson.plan` | author | structured → `LessonPlan` | structured_output | 8k | **high** | |
 | `page.generate` | author | structured → `PageContent` | structured_output | 16k | medium | |
-| `test.generate` | author | structured → `FinalTest` | structured_output | 16k | medium | |
+| `test.generate` | author | structured → `FinalTest` | structured_output | 16k | medium | A model writes no marks and no numerical answer: `answer_expr` and criteria; code sets the rest (`QuestionFinisher`) |
 | `interactive.plan` | author | structured → `InteractivePlan` | structured_output | 4k | medium | |
 | `media.search` | author | tools → `MediaSelection` (via `submit_media`) | **tool_calling** | 2k | low | |
 | `media.verify` | author | structured → `MediaVerdict` | **vision**, structured_output | 1k | none | ✓ |
@@ -136,7 +136,7 @@ class NodeSpec:
 | `page.compile` | build | text (TSX) | n/a | **32k** | medium | |
 | `code.repair` | build | text (TSX) | n/a | 32k | medium | |
 | `runtime.repair` | post | text (TSX) | n/a | 32k | medium | |
-| `test.grade` | post | structured → `GradeReport` | structured_output | 4k | medium | |
+| `test.grade` | post | structured → `GradeReport` | structured_output | 4k | medium | One whole award per criterion per question; `GradeReportValidator` checks them |
 | `onboarding.suggest_topics` | onboarding | structured → `TopicSuggestions` | structured_output, context ≥ 8k | 2k | **low** | ✓ |
 
 Adding a node takes three steps: add a `NodeSpec`, write the node, and run `migrate`, which creates its `NodeConfig`. Then bind models in the admin or add them to `llm_registry/seed.py`.

@@ -33,11 +33,12 @@ from graph.questions import (
 MCQ = {"id": "t1", "type": "mcq", "concept": "c", "difficulty": "easy", "marks": 2, "question": "Q?",
        "options": ["a", "b", "c", "d"], "correct_index": 2, "explanation": "private"}  # fmt: skip
 NUMERICAL = {"id": "t2", "type": "numerical", "concept": "c", "difficulty": "easy", "marks": 3, "question": "Q?",
-             "answer": 4.0, "tolerance": 0.5, "unit": "steps"}  # fmt: skip
+             "answer_expr": "2 ** 2", "answer": 4.0, "tolerance": 0.5, "decimal_precision": 1,
+             "unit": "steps"}  # fmt: skip
 SHORT = {"id": "t3", "type": "short_answer", "concept": "c", "difficulty": "easy", "marks": 2, "question": "Q?",
-         "model_answer": "m", "key_points": ["k"]}  # fmt: skip
+         "model_answer": "m", "criteria": [{"text": "k", "marks": 2}]}  # fmt: skip
 LONG = {"id": "t4", "type": "long_answer", "concept": "c", "difficulty": "easy", "marks": 5, "question": "Q?",
-        "model_answer": "m", "rubric": ["r"]}  # fmt: skip
+        "model_answer": "m", "criteria": [{"text": "r", "marks": 5}]}  # fmt: skip
 CODE = {"id": "t5", "type": "code", "concept": "c", "difficulty": "easy", "marks": 5, "question": "Q?",
         "language": "python", "starter_code": "def f(): ...", "reference_solution": "def f(): return 1",
         "test_cases": [{"input": "", "expected_output": "1"}]}  # fmt: skip
@@ -45,7 +46,7 @@ CODE = {"id": "t5", "type": "code", "concept": "c", "difficulty": "easy", "marks
 
 class TestRegistry:
     def test_every_kind_is_registered_by_its_key(self):
-        assert QuestionTypes.keys() == ("mcq", "numerical", "short_answer", "long_answer", "code")
+        assert QuestionTypes.keys() == ("mcq", "msq", "numerical", "short_answer", "long_answer", "code")
         assert isinstance(QuestionTypes.get("mcq"), McqType)
         assert isinstance(QuestionTypes.get("numerical"), NumericalType)
         assert isinstance(QuestionTypes.get("short_answer"), ShortAnswerType)
@@ -71,13 +72,16 @@ class TestShape:
             (MCQ, {"options": ["a", "b"]}, "options (exactly 4)"),
             (MCQ, {"correct_index": 4}, "correct_index (0-3)"),
             (MCQ, {"correct_index": None}, "correct_index (0-3)"),
-            (NUMERICAL, {"answer": None}, "answer"),
+            (NUMERICAL, {"answer_expr": None}, "answer_expr"),
+            (NUMERICAL, {"answer_expr": "  "}, "answer_expr"),
+            (NUMERICAL, {"decimal_precision": 7}, "decimal_precision (0-6)"),
+            (NUMERICAL, {"decimal_precision": None}, "decimal_precision (0-6)"),
             (NUMERICAL, {"tolerance": -1}, "tolerance (>= 0)"),
             (NUMERICAL, {"tolerance": None}, "tolerance (>= 0)"),
             (SHORT, {"model_answer": ""}, "model_answer"),
-            (SHORT, {"key_points": []}, "key_points"),
+            (SHORT, {"criteria": []}, "criteria"),
             (LONG, {"model_answer": None}, "model_answer"),
-            (LONG, {"rubric": None}, "rubric"),
+            (LONG, {"criteria": None}, "criteria"),
             (CODE, {"language": ""}, "language"),
             (CODE, {"reference_solution": None}, "reference_solution"),
             (CODE, {"test_cases": []}, "test_cases"),
@@ -92,7 +96,7 @@ class TestWhatIsShown:
         ("question", "shown"),
         [
             (MCQ, {"id", "type", "concept", "difficulty", "marks", "question", "options"}),
-            (NUMERICAL, {"id", "type", "concept", "difficulty", "marks", "question", "unit"}),
+            (NUMERICAL, {"id", "type", "concept", "difficulty", "marks", "question", "unit", "decimal_precision"}),
             (SHORT, {"id", "type", "concept", "difficulty", "marks", "question"}),
             (LONG, {"id", "type", "concept", "difficulty", "marks", "question"}),
             (CODE, {"id", "type", "concept", "difficulty", "marks", "question", "language", "starter_code"}),
@@ -110,9 +114,9 @@ class TestWhatIsShown:
         [
             (MCQ, {"correct_index"}),
             (NUMERICAL, {"answer", "tolerance", "unit"}),
-            (SHORT, {"model_answer", "key_points"}),
-            (LONG, {"model_answer", "rubric"}),
-            (CODE, {"reference_solution", "test_cases"}),
+            (SHORT, {"model_answer", "criteria"}),
+            (LONG, {"model_answer", "criteria"}),
+            (CODE, {"reference_solution", "test_cases"}),  # criteria appear once the adapter has run
         ],
     )
     def test_the_solution_holds_the_answer_key_fields_of_the_kind(self, question, fields):

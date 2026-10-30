@@ -3,6 +3,8 @@ produced, section by section. Each section is a small class, so a stage adds its
 
 from abc import ABC, abstractmethod
 
+from graph.levels import LevelScheme
+
 from .models import Lesson, QuizAttempt
 
 
@@ -45,7 +47,7 @@ class AssessmentSection(ReportSection):
         assessment = lesson.assessment
         if not assessment:
             return []
-        lines = [f"  assessment: {assessment['level']} (confidence {assessment['confidence']})"]
+        lines = [f"  assessment: {LevelScheme.level_of(assessment).value} (confidence {assessment['confidence']})"]
         lines.append(f"    start at: {assessment['start_point']}")
         for label, key in (("knows", "known_concepts"), ("gaps", "gaps")):
             if assessment[key]:
@@ -61,7 +63,7 @@ class PlanSection(ReportSection):
         if not plan:
             return []
         spec = plan["final_test"]
-        lines = [f"  plan: {plan['title']} ({plan['level']}); {plan['summary']}"]
+        lines = [f"  plan: {plan['title']} ({LevelScheme.level_of(plan).value}); {plan['summary']}"]
         for page in plan["pages"]:
             concepts = ", ".join(item["concept"] for item in page["outline"])
             covers = (

@@ -92,7 +92,8 @@ class FinalTestValidator:
         problems = []
         if len(questions) != spec["question_count"]:
             problems.append(f"Write exactly {spec['question_count']} questions; there are {len(questions)}.")
-        problems += self._mix(Counter(q["type"] for q in questions), spec["type_mix"], QUESTION_TYPES)
+        kinds = QUESTION_TYPES + tuple(k for k in spec["type_mix"] if k not in QUESTION_TYPES)  # a plan from before msq
+        problems += self._mix(Counter(q["type"] for q in questions), spec["type_mix"], kinds)
         problems += self._mix(Counter(q["difficulty"] for q in questions), spec["difficulty_mix"], DIFFICULTIES)
         problems += QuestionRules.problems(questions)
         return problems + self.latex.problems([m for q in questions for m in TextRules.math_in(q["question"])])

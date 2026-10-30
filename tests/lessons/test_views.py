@@ -230,7 +230,8 @@ class TestDetail:
     def test_reports_the_stage_the_active_run_and_hides_the_writers_notes(self, signed_in_client, lesson):
         run = GraphRun.objects.create(lesson=lesson, trigger=GraphRun.Trigger.START, status=GraphRun.Status.RUNNING)
         Lesson.objects.filter(pk=lesson.pk).update(
-            assessment={"level": "beginner", "known_concepts": ["a"], "gaps": ["b"], "start_point": "s",
+            assessment={"level": "beginner", "level_scheme": 2, "known_concepts": ["a"], "gaps": ["b"],
+                        "start_point": "s",
                         "confidence": "high", "author_notes": "secret guidance", "prerequisites_to_cover": []},
             prerequisites_to_cover=[{"name": "Arrays", "why_needed": "x"}],
         )  # fmt: skip
@@ -241,6 +242,15 @@ class TestDetail:
         assert body["assessment"]["level"] == "beginner" and "author_notes" not in body["assessment"]
         assert body["prerequisites_to_cover"] == ["Arrays"]
         assert "config_snapshot" not in body and "plan" not in body
+
+    def test_an_assessment_written_before_the_level_rename_is_served_in_the_new_names(self, signed_in_client, lesson):
+        Lesson.objects.filter(pk=lesson.pk).update(  # no level_scheme: "beginner" meant what is now "foundation"
+            assessment={"level": "beginner", "known_concepts": [], "gaps": [], "start_point": "s", "confidence": "low"}
+        )
+
+        body = signed_in_client.get(f"/api/lessons/{lesson.id}").json()
+
+        assert body["assessment"]["level"] == "foundation"
 
     def test_keeps_the_quiz_scores_after_a_reload(self, signed_in_client, lesson):
         quiz = waiting(lesson)
@@ -559,7 +569,7 @@ class TestMaterials:
 
         body = response.json()
         assert response.status_code == 200
-        assert body["score"]["awarded"] == 4 and body["score"]["open_marks"] == 10
+        assert body["score"]["awarded"] == 3 and body["score"]["open_marks"] == 12  # 1 + 2; the short answers are open
         assert body["results"][0]["solution"]["correct_index"] == 1
 
     def test_grading_without_answers_is_a_400(self, signed_in_client, lesson):
@@ -706,6 +716,10 @@ class TestLessonTest:
     FINAL = make_final_test()
     IDS = {q["type"]: q["id"] for q in FINAL["questions"]}
 
+    @property
+    def mcq_marks(self) -> int:
+        return next(q["marks"] for q in self.FINAL["questions"] if q["id"] == self.IDS["mcq"])
+
     @pytest.fixture
     def ready(self, make_lesson):
         return make_lesson(stage=Stage.READY, code="x", code_version=1, final_test=self.FINAL)
@@ -760,7 +774,7 @@ class TestLessonTest:
         assert body["run_id"] == str(queue.runs[0].id)
         submission = signed_in_client.get(self.url(ready, f"/{body['submission_id']}")).json()
         assert submission["status"] == "grading" and submission["result"]["complete"] is False
-        assert submission["result"]["score"]["awarded"] == 2 and submission["graded_at"] is None
+        assert submission["result"]["score"]["awarded"] == self.mcq_marks and submission["graded_at"] is None
 
     def test_a_test_with_nothing_to_grade_is_final_and_has_no_run(self, signed_in_client, ready, queue):
         response = signed_in_client.post(self.url(ready), {"answers": {self.IDS["mcq"]: 1}}, format="json")
@@ -805,7 +819,7 @@ class TestLessonTest:
 
         stored = signed_in_client.get(self.url(ready, f"/{first['submission_id']}")).json()
 
-        assert stored["result"]["score"]["awarded"] == 2
+        assert stored["result"]["score"]["awarded"] == self.mcq_marks
 
     def test_submissions_are_rate_limited(self, signed_in_client, make_lesson, queue, monkeypatch):
         monkeypatch.setitem(SimpleRateThrottle.THROTTLE_RATES, "test_submit", "2/hour")
@@ -829,7 +843,7 @@ class TestLessonTest:
         body = response.json()
         assert response.status_code == 200 and body["id"] == made["submission_id"] and body["status"] == "graded"
         assert body["answers"] == {self.IDS["mcq"]: 1}  # the learner's own answers, for the read-only result
-        assert body["result"]["complete"] is True and body["result"]["score"]["awarded"] == 2
+        assert body["result"]["complete"] is True and body["result"]["score"]["awarded"] == self.mcq_marks
 
     def test_a_failed_grading_is_run_again_on_the_same_answers(self, signed_in_client, ready, queue):
         failed = TestSubmission.objects.create(

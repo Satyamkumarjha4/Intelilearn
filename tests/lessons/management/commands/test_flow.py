@@ -33,7 +33,7 @@ from lessons.runner import FlowRunner
 pytestmark = pytest.mark.django_db(transaction=True)
 
 ASSESSMENT = {
-    "level": "intermediate", "known_concepts": ["Searching a list"], "gaps": ["Halving the range"],
+    "level": "proficient", "known_concepts": ["Searching a list"], "gaps": ["Halving the range"],
     "prerequisites_to_cover": [], "start_point": "Halving the range", "author_notes": "Brisk.", "confidence": "medium",
 }  # fmt: skip
 
@@ -121,7 +121,7 @@ def test_answer_takes_the_quiz_and_runs_on_to_the_assessment(inline, valid_bundl
 
     assert "5/10 correct → route lesson" in output
     lesson.refresh_from_db()
-    assert lesson.stage == Stage.GENERATING_LESSON and lesson.assessment["level"] == "intermediate"
+    assert lesson.stage == Stage.GENERATING_LESSON and lesson.assessment["level"] == "proficient"
 
 
 def test_answer_accepts_explicit_answers_as_json(inline, valid_bundle, user):

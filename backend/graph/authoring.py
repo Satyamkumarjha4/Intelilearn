@@ -6,6 +6,7 @@ fixed item is held to exactly the rules of a fresh one.
 
 from .context import FlowContext
 from .prompts import GenerateInteractivePrompt, WritePagePrompt, WriteTestPrompt
+from .questions import QuestionFinisher
 from .sanitizer import CodeSanitizer
 from .schemas import FinalTest, InteractiveComponent, PageContent, component_name
 from .validators import FinalTestValidator, PageValidator
@@ -28,6 +29,9 @@ class ContentWriter:
         messages = WriteTestPrompt().messages(data, feedback)
         output = self.ctx.invoke(data, "test.generate", messages, schema=FinalTest).output
         test = output.model_dump(mode="json")
+        test["questions"], _ = QuestionFinisher().finish(
+            test["questions"]
+        )  # marks and answers, by code; the validator re-checks
         return test, FinalTestValidator(self.ctx.sandbox).validate(test, spec=data["plan"]["final_test"])
 
     def component(self, data: dict, spec: dict, feedback: list[str] | None) -> tuple[dict, list[str]]:

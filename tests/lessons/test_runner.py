@@ -581,7 +581,9 @@ def grading_run(lesson, flow_settings, answers):
 def test_a_grading_run_saves_the_score_card_on_its_submission(make_runner, gateway, publisher, prepared, flow_settings):
     ids = {q["type"]: q["id"] for q in make_final_test()["questions"]}
     submission, run, _ = grading_run(prepared, flow_settings, {ids["mcq"]: 1, ids["short_answer"]: "Halve it."})
-    gateway.script("test.grade", {"grades": [{"question_id": ids["short_answer"], "awarded": 2, "feedback": "Good."}]})
+    gateway.script(
+        "test.grade", {"grades": [{"question_id": ids["short_answer"], "awards": [1, 2], "feedback": "Good."}]}
+    )
     sandbox = FakeSandbox()
 
     make_runner(context_factory=lambda run_id: FlowContext(gateway=gateway, sandbox=sandbox)).execute(run.id)

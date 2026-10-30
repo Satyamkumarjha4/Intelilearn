@@ -8,10 +8,11 @@ a missing answer cannot be graded; `public_question` is what keeps solutions out
 Use cases:
 - each sheet kind round-trips through JSON and is found by its kind
 - an unknown kind has no schema
-- every question type demands its own fields (mcq options and index, numerical answer and tolerance, short and long
-  model answers with points or rubric, code language/solution/test cases) and rejects what is missing
+- every question type demands its own fields (mcq options and index, msq options and correct indices, numerical
+  expression, tolerance and precision, short and long model answers with criteria) and rejects what is missing
+- a model is never asked for marks or for the numerical answer: those fields are not in what it writes
 - an mcq has exactly four options and an index among them
-- the public view of a question never contains a solution field, for any type
+- the public view of a question never contains a solution field, for any type, stored today or before criteria
 """
 
 import pytest
@@ -21,7 +22,8 @@ from support.study_data import make_cheat_sheet, make_practice_sheet, make_revis
 from graph.schemas import MATERIAL_SCHEMAS, CheatSheet, PracticeSheet, RevisionSheet, public_question
 from graph.schemas import lesson as lesson_schemas  # (a bare `TestQuestion` import would be collected by pytest)
 
-BASE = {"id": "t1", "concept": "c", "difficulty": "easy", "marks": 2, "question": "Q?"}
+BASE = {"id": "t1", "concept": "c", "difficulty": "easy", "question": "Q?"}
+CRITERIA = [{"text": "a", "marks": 1}, {"text": "b", "marks": 1}]
 
 
 @pytest.mark.parametrize(
@@ -34,9 +36,12 @@ BASE = {"id": "t1", "concept": "c", "difficulty": "easy", "marks": 2, "question"
 )
 def test_each_sheet_round_trips_and_is_found_by_its_kind(kind, schema, make):
     data = make()
+    written = dict(data)  # a model writes no marks and no computed answer
+    if "questions" in data:
+        written["questions"] = [{k: v for k, v in q.items() if k not in ("marks", "answer")} for q in data["questions"]]
 
     assert MATERIAL_SCHEMAS[kind] is schema
-    assert schema.model_validate(data).model_dump(mode="json") == data
+    assert schema.model_validate(written).model_dump(mode="json") == written
 
 
 def test_an_unknown_kind_has_no_schema():
@@ -51,22 +56,20 @@ class TestQuestionFields:
             ({"type": "mcq", "options": list("abc"), "correct_index": 0}, "options"),
             ({"type": "mcq", "options": list("abcd")}, "correct_index"),
             ({"type": "mcq", "options": list("abcd"), "correct_index": 4}, "correct_index"),
-            ({"type": "numerical", "tolerance": 0.1}, "answer"),
-            ({"type": "numerical", "answer": 1.0}, "tolerance"),
-            ({"type": "numerical", "answer": 1.0, "tolerance": -1}, "tolerance"),
-            ({"type": "short_answer", "key_points": ["a"]}, "model_answer"),
-            ({"type": "short_answer", "model_answer": "a"}, "key_points"),
-            ({"type": "long_answer", "model_answer": "a"}, "rubric"),
-            ({"type": "long_answer", "rubric": ["a"]}, "model_answer"),
-            (
-                {"type": "code", "reference_solution": "x", "test_cases": [{"input": "1", "expected_output": "1"}]},
-                "language",
-            ),
-            (
-                {"type": "code", "language": "python", "test_cases": [{"input": "1", "expected_output": "1"}]},
-                "reference_solution",
-            ),
-            ({"type": "code", "language": "python", "reference_solution": "x"}, "test_cases"),
+            ({"type": "msq", "correct_indices": [0, 1]}, "options"),
+            ({"type": "msq", "options": list("abc"), "correct_indices": [0, 1]}, "options"),
+            ({"type": "msq", "options": list("abcde")}, "correct_indices"),
+            ({"type": "msq", "options": list("abcde"), "correct_indices": [0]}, "correct_indices"),
+            ({"type": "msq", "options": list("abcde"), "correct_indices": [0, 7]}, "correct_indices"),
+            ({"type": "numerical", "tolerance": 0.1, "decimal_precision": 1}, "answer_expr"),
+            ({"type": "numerical", "answer_expr": "1", "decimal_precision": 1}, "tolerance"),
+            ({"type": "numerical", "answer_expr": "1", "tolerance": -1, "decimal_precision": 1}, "tolerance"),
+            ({"type": "numerical", "answer_expr": "1", "tolerance": 0.1}, "decimal_precision"),
+            ({"type": "numerical", "answer_expr": "1", "tolerance": 0.1, "decimal_precision": 9}, "decimal_precision"),
+            ({"type": "short_answer", "criteria": CRITERIA}, "model_answer"),
+            ({"type": "short_answer", "model_answer": "a"}, "criteria"),
+            ({"type": "long_answer", "model_answer": "a"}, "criteria"),
+            ({"type": "long_answer", "criteria": CRITERIA}, "model_answer"),
         ],
         ids=lambda v: v if isinstance(v, str) else v["type"],
     )
@@ -78,45 +81,76 @@ class TestQuestionFields:
         "fields",
         [
             {"type": "mcq", "options": list("abcd"), "correct_index": 3},
-            {"type": "numerical", "answer": 2.5, "tolerance": 0},
-            {"type": "short_answer", "model_answer": "a", "key_points": ["p"]},
-            {"type": "long_answer", "model_answer": "a", "rubric": ["r"]},
-            {"type": "code", "language": "python", "reference_solution": "x = 1",
-             "test_cases": [{"input": "1", "expected_output": "1"}]},
+            {"type": "msq", "options": list("abcde"), "correct_indices": [0, 4]},
+            {"type": "numerical", "answer_expr": "sqrt(3) / 2 * 10", "tolerance": 0, "decimal_precision": 2},
+            {"type": "short_answer", "model_answer": "a", "criteria": CRITERIA},
+            {"type": "long_answer", "model_answer": "a", "criteria": CRITERIA},
         ],
         ids=lambda f: f["type"],
-    )  # fmt: skip
+    )
     def test_accepts_a_complete_question(self, fields):
         assert lesson_schemas.TestQuestion(**BASE, **fields).type == fields["type"]
 
-    def test_marks_stay_between_one_and_twenty(self):
-        for marks in (0, 21):
-            with pytest.raises(ValidationError):
-                lesson_schemas.TestQuestion(
-                    **{**BASE, "marks": marks}, type="short_answer", model_answer="a", key_points=["p"]
-                )
+    def test_a_criterion_is_worth_at_least_one_mark(self):
+        with pytest.raises(ValidationError):
+            lesson_schemas.TestQuestion(
+                **BASE, type="short_answer", model_answer="a", criteria=[{"text": "a", "marks": 0}]
+            )
+
+    def test_a_model_is_never_asked_for_marks_or_the_numerical_answer(self):
+        fields = set(lesson_schemas.TestQuestion.model_fields)
+
+        assert "marks" not in fields and "answer" not in fields
+
+    def test_the_old_code_type_and_difficulty_names_are_not_something_a_model_may_write(self):
+        with pytest.raises(ValidationError):
+            lesson_schemas.TestQuestion(**BASE, type="code")
+        with pytest.raises(ValidationError):
+            lesson_schemas.TestQuestion(
+                **{**BASE, "difficulty": "medium"}, type="mcq", options=list("abcd"), correct_index=0
+            )
 
 
-SOLUTION_FIELDS = {"correct_index", "answer", "tolerance", "model_answer", "key_points", "rubric", "reference_solution",
-                   "test_cases"}  # fmt: skip
+DENIED = {
+    "correct_index", "correct_indices", "answer", "answer_expr", "tolerance", "model_answer", "criteria", "key_points",
+    "rubric", "reference_solution", "test_cases", "explanation",
+}  # fmt: skip
+STORED = {
+    "mcq": {"options": list("abcd"), "correct_index": 1},
+    "msq": {"options": list("abcde"), "correct_indices": [0, 2]},
+    "numerical": {"answer_expr": "2 ** 2", "answer": 4.0, "tolerance": 0.5, "decimal_precision": 1, "unit": "steps"},
+    "short_answer": {"model_answer": "m", "criteria": CRITERIA},
+    "long_answer": {"model_answer": "m", "criteria": CRITERIA},
+    # lessons from before criteria and before the code type went away
+    "legacy short_answer": {"type": "short_answer", "model_answer": "m", "key_points": ["p"]},
+    "legacy long_answer": {"type": "long_answer", "model_answer": "m", "rubric": ["r"]},
+    "legacy code": {"type": "code", "language": "python", "starter_code": "pass", "reference_solution": "x = 1",
+                    "test_cases": [{"input": "1", "expected_output": "1"}]},
+}  # fmt: skip
 
 
-def test_the_public_view_of_a_question_never_contains_a_solution():
-    questions = make_practice_sheet()["questions"]
-    questions.append(
-        {**BASE, "type": "code", "language": "python", "starter_code": "pass", "reference_solution": "x = 1",
-         "test_cases": [{"input": "1", "expected_output": "1"}], "difficulty": "hard"}
-    )  # fmt: skip
+@pytest.mark.parametrize("name", STORED)
+def test_the_public_view_of_a_question_never_contains_a_solution(name):
+    fields = STORED[name]
+    question = {**BASE, "marks": 2, "type": name, "explanation": "private", "hint": "stray", **fields}
+    question |= {"type": fields.get("type", name)}
 
-    for question in questions:
-        assert not SOLUTION_FIELDS & set(public_question(question))
+    public = public_question(question)
+
+    assert not DENIED & set(public), f"leaked: {DENIED & set(public)}"
+    assert set(public) <= {"id", "type", "concept", "difficulty", "marks", "question", "options", "unit",
+                           "decimal_precision", "language", "starter_code"}  # fmt: skip
+    assert "hint" not in public and public["question"] == "Q?"
 
 
 def test_the_public_view_keeps_what_the_learner_needs_to_answer():
-    mcq = next(q for q in make_practice_sheet()["questions"] if q["type"] == "mcq")
+    questions = make_practice_sheet()["questions"]
+    mcq = next(q for q in questions if q["type"] == "mcq")
 
     public = public_question(mcq)
 
     assert public["options"] == mcq["options"] and public["question"] == mcq["question"]
-    numerical = public_question(next(q for q in make_practice_sheet()["questions"] if q["type"] == "numerical"))
-    assert numerical["unit"] == "steps" and "options" not in numerical
+    numerical = public_question(next(q for q in questions if q["type"] == "numerical"))
+    assert numerical["unit"] == "steps" and numerical["decimal_precision"] == 0 and "options" not in numerical
+    msq = public_question({**BASE, "marks": 2, "type": "msq", **STORED["msq"]})
+    assert msq["options"] == list("abcde")

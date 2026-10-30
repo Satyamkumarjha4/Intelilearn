@@ -76,7 +76,8 @@ class AssessLearnerPrompt(Prompt):
 
     def system(self, subject: dict) -> str:
         return """You assess a learner from their quiz results and profile, for the writers of their lesson.
-- level: novice (knows almost nothing), beginner, intermediate, advanced.
+- level: beginner (knows almost nothing), foundation (knows some basics), proficient (solid on most of it), expert
+  (could teach it).
 - known_concepts / gaps: from the per-concept results. Wrong answers are gaps; "I don't know" is honest, not bad.
 - start_point: where the core-concepts page should begin, given what they already know.
 - author_notes: concrete guidance on tone, depth, pacing, examples and analogies for this learner.

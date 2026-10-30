@@ -15,6 +15,7 @@ from lessons.models import MaterialKind, Quiz, Stage, StudyMaterial
 from ..context import FlowContext
 from ..errors import RunFailed
 from ..prompts import StudyMaterialPrompt
+from ..questions import QuestionFinisher
 from ..schemas import MATERIAL_SCHEMAS
 from ..validators import StudyMaterialValidator, Validator
 from .base import AwaitNode, LLMNode, Node, PublishNode, ValidateNode
@@ -65,7 +66,10 @@ class GenerateStudyMaterialNode(LLMNode):
         return state | {"kind": state["mastery_choice"], "concepts": diagnostic_concepts(state)}
 
     def to_state(self, output: BaseModel, state: dict, ctx: FlowContext) -> dict:
-        return {"study_material": output.model_dump(mode="json"), "attempts": {"material": 1}}
+        material = output.model_dump(mode="json")
+        if state["mastery_choice"] == "practice_sheet":
+            material["questions"], _ = QuestionFinisher().finish(material["questions"])  # marks and answers, by code
+        return {"study_material": material, "attempts": {"material": 1}}
 
 
 class ValidateStudyMaterialNode(ValidateNode):

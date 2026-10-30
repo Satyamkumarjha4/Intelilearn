@@ -15,6 +15,9 @@ Use cases:
 - the old name "beginner" is ambiguous, so only the legacy reader maps it to Foundation
 - an unknown level name or a non-string is refused
 - a level shifts up and down and stops at both ends
+- a document (an assessment, a plan) says which level names it uses with `level_scheme`: stamped, its level is read with
+  `Level.parse`; unstamped, it is legacy and read with `Level.parse_legacy`, so "beginner" means what it meant when
+  written
 - a level has a display label
 - a difficulty parses from its name in any case, and from the old "medium" and "hard"
 - an unknown difficulty or a non-string is refused
@@ -26,7 +29,7 @@ Use cases:
 
 import pytest
 
-from graph.levels import BandDifficulty, Difficulty, Level, MarkTier, RaterCategory, StarRating
+from graph.levels import BandDifficulty, Difficulty, Level, LevelScheme, MarkTier, RaterCategory, StarRating
 from graph.schemas.diagnostic import BANDS
 
 STAR_TABLE = [
@@ -230,3 +233,56 @@ class TestBandDifficulty:
     def test_a_band_that_does_not_exist_is_refused(self, band):
         with pytest.raises(ValueError):
             BandDifficulty.of(band)
+
+
+class TestLevelScheme:
+    def test_stamping_adds_the_marker_and_leaves_the_document_as_it_was(self):
+        document = {"level": "beginner", "gaps": []}
+
+        stamped = LevelScheme.stamp(document)
+
+        assert stamped == {"level": "beginner", "gaps": [], "level_scheme": 2}
+        assert "level_scheme" not in document
+
+    @pytest.mark.parametrize(
+        ("document", "level"),
+        [
+            ({"level": "beginner", "level_scheme": 2}, Level.BEGINNER),
+            ({"level": "Foundation", "level_scheme": 2}, Level.FOUNDATION),
+            ({"level": "proficient", "level_scheme": 2}, Level.PROFICIENT),
+            ({"level": "expert", "level_scheme": 2}, Level.EXPERT),
+        ],
+    )
+    def test_a_stamped_document_is_read_with_the_new_names(self, document, level):
+        assert LevelScheme.level_of(document) is level
+
+    @pytest.mark.parametrize(
+        ("document", "level"),
+        [
+            ({"level": "novice"}, Level.BEGINNER),
+            ({"level": "beginner"}, Level.FOUNDATION),  # what it meant when it was written
+            ({"level": "intermediate"}, Level.PROFICIENT),
+            ({"level": "advanced"}, Level.EXPERT),
+            ({"level": "expert"}, Level.EXPERT),
+            ({"level": "beginner", "level_scheme": 1}, Level.FOUNDATION),
+            ({"level": "beginner", "level_scheme": None}, Level.FOUNDATION),
+        ],
+    )
+    def test_an_unstamped_document_is_legacy(self, document, level):
+        assert LevelScheme.level_of(document) is level
+
+    @pytest.mark.parametrize("document", [{}, {"level": ""}, {"level": "guru", "level_scheme": 2}, {"level": None}])
+    def test_a_document_without_a_readable_level_is_refused(self, document):
+        with pytest.raises(ValueError):
+            LevelScheme.level_of(document)
+
+    def test_upgrading_rewrites_a_legacy_document_to_the_new_names_and_stamps_it(self):
+        legacy = {"level": "beginner", "title": "x"}
+
+        assert LevelScheme.upgraded(legacy) == {"level": "foundation", "title": "x", "level_scheme": 2}
+        assert legacy == {"level": "beginner", "title": "x"}
+
+    def test_upgrading_a_stamped_document_changes_nothing(self):
+        current = {"level": "beginner", "level_scheme": 2}
+
+        assert LevelScheme.upgraded(current) == current

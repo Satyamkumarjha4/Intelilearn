@@ -75,12 +75,12 @@ A lesson is a learner's request to learn one topic, from the diagnostic quiz thr
 | user_context | text, blank | Optional extra context from the learner ("for my DSA exam, I know arrays") |
 | stage | enum | See the stage table below |
 | route | enum `prerequisite` \| `lesson` \| `mastery`, blank | Blank until the diagnostic sets it |
-| assessment | JSON, null | `LearnerAssessment` |
+| assessment | JSON, null | `LearnerAssessment`, stamped `level_scheme: 2`: which level names the document uses (see below) |
 | prerequisites_to_cover | JSON list | |
-| title / level | char | From the plan |
-| plan | JSON, null | `LessonPlan` |
+| title / level | char | From the plan. `level` is beginner, foundation, proficient or expert (migration 0006 renamed novice … advanced) |
+| plan | JSON, null | `LessonPlan`, stamped `level_scheme: 2`; `final_test.difficulty_mix` has the five difficulties |
 | pages | JSON, null | `{introduction, core, advanced}` → `PageContent` |
-| final_test | JSON, null | `FinalTest` (answers kept server-side, see below) |
+| final_test | JSON, null | `FinalTest` (answers kept server-side, see below). Each question has `marks` from `MarksPolicy`, a `difficulty` of easy, basic, standard, difficult or expert, and the fields of its type; a numerical question also has the computed `answer`. Lessons from before the modular parts may hold `medium`/`hard` (migration 0006 renamed them), `code` questions, and `key_points`/`rubric` |
 | interactive_plan | JSON, null | |
 | code | text, blank | Assembled TSX document |
 | code_parts | JSON | The pages' and interactives' TSX the document was assembled from, for targeted runtime repairs |
@@ -161,7 +161,7 @@ A lesson is a learner's request to learn one topic, from the diagnostic quiz thr
 |---|---|---|
 | lesson | FK | |
 | answers | JSON | `{question_id: answer}` |
-| result | JSON, null | The `ScoreCard` (`graph/grading.py`): score, per-question marks, feedback and solution, topics to revisit. At first only what could be marked at once (`complete: false`) |
+| result | JSON, null | The `ScoreCard` (`graph/grading.py`): score, per-question marks, feedback and solution (for a model-graded answer also its `criteria` with what each earned), topics to revisit. At first only what could be marked at once (`complete: false`) |
 | status | enum `grading` \| `graded` \| `failed` | |
 | error | text | Why grading failed (blank otherwise) |
 | submitted_at / graded_at | datetime | |
@@ -244,6 +244,12 @@ The tables `checkpoints`, `checkpoint_blobs`, `checkpoint_writes` and `checkpoin
 | tool_calls | smallint | |
 | cost | decimal, null | Null while the model has no price set (`input_cost_per_mtok`, `output_cost_per_mtok`), which makes the console show 0 spend |
 | created_at | datetime, indexed | Also indexed with `model_name` and with `node_key` for the console's usage page |
+
+## Level names and difficulties (migration 0006)
+
+Levels were novice, beginner, intermediate, advanced; they are now **beginner, foundation, proficient, expert**, and "beginner" is in both with different meanings. A stored document therefore says which it uses: `assessment` and `plan` carry `level_scheme: 2` when they use the new names, and `graph.levels.LevelScheme.level_of` reads one with `Level.parse` if it has the stamp and with `Level.parse_legacy` (old names by position) if it does not. The same marker is on the flow state of a new lesson. Migration `lessons/0006_level_and_difficulty_names` rewrites every lesson row once (`Lesson.level`, `assessment`, `plan`, and the difficulties below) and stamps the documents; **graph checkpoints are not rewritten**, and a checkpoint without the stamp is read as legacy. Undoing the migration is lossy for the two new difficulties (basic reads as easy, expert as hard).
+
+Difficulties were easy, medium, hard; they are now **easy, basic, standard, difficult, expert** (medium became standard, hard became difficult). The migration renames every `difficulty` value and every `difficulty_mix` in `Lesson.final_test`, `Lesson.plan` and `StudyMaterial.content`; a test lists every JSON column of the app and fails when one is neither rewritten nor known to hold neither name. `ModelCall.quiz_id`, `GraphRun.subject` and the rest of phase 9 are described in the plan.
 
 ## Deleting a lesson
 

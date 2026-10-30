@@ -65,7 +65,7 @@ def test_quiz_scores_are_listed_with_bands_and_inconsistency_is_flagged(lesson):
 
 def test_the_assessment_is_summarised(lesson):
     Lesson.objects.filter(pk=lesson.pk).update(
-        assessment={"level": "beginner", "confidence": "high", "start_point": "Halving",
+        assessment={"level": "beginner", "level_scheme": 2, "confidence": "high", "start_point": "Halving",
                     "known_concepts": ["Lists"], "gaps": ["Invariants", "Pointers"]},
         prerequisites_to_cover=[{"name": "Arrays", "why_needed": "x"}],
     )  # fmt: skip
@@ -113,7 +113,7 @@ def test_the_plan_the_pages_and_the_test_are_summarised(lesson):
 
     assert "plan: Binary search (beginner)" in report
     assert "introduction: Searching a list, Sorted data, Why halving helps [prerequisites: Arrays]" in report
-    assert "test: 10 questions (4 mcq, 2 numerical, 2 short_answer, 1 long_answer, 1 code)" in report
+    assert "test: 10 questions (3 mcq, 2 msq, 2 numerical, 2 short_answer, 1 long_answer)" in report
     assert "page core: Core page: 3 sections," in report and "(Halving the range; The loop invariant;" in report
 
 

@@ -16,6 +16,7 @@ from lessons.models import Stage
 from ..alignment import AlignmentPolicy
 from ..authoring import ContentWriter
 from ..context import FlowContext, NodeBudget
+from ..levels import LevelScheme
 from ..prompts import AlignmentPrompt, PlanInteractivesPrompt, PlanLessonPrompt
 from ..schemas import MEDIA_KINDS, PAGE_KEYS, AlignmentReport, InteractivePlan, LessonPlan
 from ..validators import InteractivePlanValidator, PlanValidator, Validator
@@ -34,7 +35,7 @@ class PlanLessonNode(LLMNode):
     feedback_key = "plan"
 
     def to_state(self, output: LessonPlan, state: dict, ctx: FlowContext) -> dict:
-        return {"plan": output.model_dump(mode="json"), "attempts": {"plan": 1}}
+        return {"plan": LevelScheme.stamp(output.model_dump(mode="json")), "attempts": {"plan": 1}}
 
 
 class ValidatePlanNode(ValidateNode):
@@ -57,7 +58,7 @@ class ValidatePlanNode(ValidateNode):
     def outcome(self, state: dict, problems: list[str], ctx: FlowContext) -> dict:
         if not problems:
             plan = state["plan"]
-            self.lesson(state).record(plan=plan, title=plan["title"][:200], level=plan["level"])
+            self.lesson(state).record(plan=plan, title=plan["title"][:200], level=LevelScheme.level_of(plan).value)
         return super().outcome(state, problems, ctx)
 
 

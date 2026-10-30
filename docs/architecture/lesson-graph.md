@@ -160,7 +160,7 @@ The input is the profile, both quiz results, and the per-concept breakdown. The 
 
 ```python
 class LearnerAssessment(BaseModel):
-    level: Literal["novice", "beginner", "intermediate", "advanced"]
+    level: Literal["beginner", "foundation", "proficient", "expert"]  # stamped level_scheme: 2 by the node
     known_concepts: list[str]
     gaps: list[str]                          # concepts to emphasise
     prerequisites_to_cover: list[str]        # copied from the deterministic step, not invented
@@ -210,26 +210,26 @@ flowchart TD
 
 ### `plan_lesson` (`lesson.plan`)
 
-This step produces a `LessonPlan` with a title, the level, and for each of the three content pages: goals, outline, and which gaps and prerequisites it covers. It also includes a `FinalTestSpec`: the number of questions (10–15), the type mix, and the difficulty mix, all derived from the level.
+This step produces a `LessonPlan` with a title, the level, and for each of the three content pages: goals, outline, and which gaps and prerequisites it covers. It also includes a `FinalTestSpec`: the number of questions (10–15), the type mix (mcq, msq, numerical, short answer, long answer), and the difficulty mix (easy, basic, standard, difficult, expert), all derived from the level. The node stamps the plan and the assessment with `level_scheme: 2`, which says they use the level names beginner, foundation, proficient and expert; a document without it (a graph checkpoint from before the rename) is read by `LevelScheme.level_of` as the old names, where "beginner" meant what is now foundation.
 
 | Page | Content |
 |---|---|
 | 1. Introduction | Hook, why it matters, and the **prerequisites to cover** (all, some, or none per Stage A), then an overview of the topic |
 | 2. Core concepts | Starts at `assessment.start_point` and emphasises `gaps` |
 | 3. Advanced concepts | Depth, edge cases, complexity, and real-world use, scaled to the level |
-| 4. Test | 10–15 questions: MCQ, numerical, short answer, long answer, code |
+| 4. Test | 10–15 questions: MCQ, multiple select (MSQ), numerical, short answer, long answer |
 
 `validate_plan` checks that each page's outline lists concepts that are distinct from the other pages (no overlap), that every required prerequisite appears on page 1, and that the test spec matches the settings.
 
 ### Page writers and the test writer: parallel `Send`
 
 - `generate_page` (`page.generate`, run ×3 in parallel) → `PageContent`: sections with Markdown body, key points, worked examples, formulas (LaTeX), code snippets, and callouts. Each writer gets the *whole* plan, so the pages don't overlap or contradict each other.
-- `generate_final_test` (`test.generate`) → `FinalTest`. Every question has `type`, `concept`, `difficulty`, and `marks`, plus type-specific fields:
-  - `mcq`: options, correct_index
-  - `numerical`: answer, tolerance, unit
-  - `short_answer`: model_answer, key_points
-  - `long_answer`: model_answer, rubric
-  - `code`: language, starter_code, reference_solution, test_cases
+- `generate_final_test` (`test.generate`) → `FinalTest`. A model writes `type`, `concept` and `difficulty` for each question, plus type-specific fields (`graph/questions/`, one `QuestionType` per kind):
+  - `mcq`: options (exactly 4), correct_index
+  - `msq`: options (4 to 6), correct_indices (at least two)
+  - `numerical`: answer_expr, tolerance, decimal_precision (0 to 6), unit
+  - `short_answer` / `long_answer`: model_answer, criteria (`[{text, marks}]`, whole marks that add up to the question's)
+  - **Marks are not written by the model.** `QuestionFinisher` sets them from `MarksPolicy` (MCQ 1 / 2, MSQ 2 / 3, numerical 2 / 3, short 2 / 3, long 5 / 6: the first number for easy, basic and standard, the second for difficult and expert) and computes a numerical question's `answer` from `answer_expr` with `ExpressionEvaluator` (an `ast` walk: numbers, `+ - * / **`, parentheses, `pi`, `e`, `sqrt sin cos tan asin acos atan log ln exp abs`; never `eval`), rounded to `decimal_precision`. An expression that cannot be computed, or criteria that do not add up, are validator problems and go back to the model. A lesson from before these keeps the marks and fields it was stored with (`code` questions, `key_points`, `rubric`); `LegacyQuestionAdapter` derives criteria for them when they are graded.
 - The schema uses one flat model with a `type` field and optional fields, enforced by a `model_validator`, instead of a JSON-Schema `oneOf` union. Several providers handle unions poorly in structured-output mode.
 - The validators are deterministic: lengths, LaTeX parses (a KaTeX check in `sandbox/`), code snippets parse, the test's type and difficulty mix matches the spec, and questions are unique. When a page fails validation, **only that page** is re-sent.
 
@@ -384,9 +384,9 @@ This writes pages, the test, media links, the assembled code and its parts (`cod
 
 ### How `grade_test` is built
 
-- **The request marks what it can.** `SubmissionService` marks multiple-choice and numerical answers with `AnswerGrader` (the grader practice sheets use, so a score never depends on where the test was taken) and gives blank answers 0, then stores a first `ScoreCard` with the open-ended answers still `awarded: null`. Only if some open-ended answer has something to judge is a `grade_test` run queued.
-- **The model sees only what needs a judgement**, with the reference for its type (key points, rubric, model answer, or reference solution and test cases; code is read, not run). The learner's answer is delimited as data and the prompt says to ignore any instruction inside it.
-- **Its marks are checked** (`GradeReportValidator`): every question once, within its marks, with feedback; a bad grading goes back with the problems, up to `test.grade.max_attempts`, then the run fails with the reason. Marks are capped at the question's worth again when the card is built.
+- **The request marks what it can.** `SubmissionService` marks multiple-choice, multiple-select (partial marks, in whole marks) and numerical answers with `AnswerGrader` (the grader practice sheets use, so a score never depends on where the test was taken) and gives blank answers 0, then stores a first `ScoreCard` with the open-ended answers still `awarded: null`. Only if some open-ended answer has something to judge is a `grade_test` run queued.
+- **The model sees only what needs a judgement**, with its model answer and its criteria (derived by `LegacyQuestionAdapter` for questions from before criteria; code is read, not run). It returns one whole award per criterion. The learner's answer is delimited as data and the prompt says to ignore any instruction inside it.
+- **Its marks are checked** (`GradeReportValidator`): every question once, one whole-number award per criterion in order, none above its criterion, with feedback; a bad grading goes back with the problems, up to `test.grade.max_attempts`, then the run fails with the reason. The card keeps the per-criterion breakdown and caps marks again when it is built.
 - **One attempt.** A lesson has at most one `TestSubmission` (a unique constraint, and `SubmissionService.submit` refuses a second with `409 already_submitted` and the first one's id, whatever its status). Answers, score and recommendations are read-only from then on.
 - **No Retry of the learner's answers, but of the grading.** A run that cannot grade (or is cancelled, or cannot be queued) marks its submission `failed` through `RunEffects`; the lesson stays ready. The learner never answers again: `POST …/regrade` runs `grade_test` once more on the stored answers, and only for a `failed` submission.
 

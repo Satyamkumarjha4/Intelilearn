@@ -37,8 +37,10 @@ FINAL_TEST = make_final_test()
 BY_TYPE = {}
 for question in FINAL_TEST["questions"]:
     BY_TYPE.setdefault(question["type"], []).append(question["id"])
-MCQ, NUM, SHORT, LONG, CODE = (BY_TYPE[t][0] for t in ("mcq", "numerical", "short_answer", "long_answer", "code"))
-ANSWERS = {MCQ: 1, NUM: "4", SHORT: "Halve the range each time.", LONG: "   ", CODE: "def search(items, t): return 0"}
+MCQ, NUM, LONG = (BY_TYPE[t][0] for t in ("mcq", "numerical", "long_answer"))
+SHORT, SHORT2 = BY_TYPE["short_answer"]  # both worth 3 marks, in two criteria (1 + 2)
+MARKS = {q["id"]: q["marks"] for q in FINAL_TEST["questions"]}
+ANSWERS = {MCQ: 1, NUM: "4", SHORT: "Halve the range each time.", LONG: "   ", SHORT2: "Keep the invariant."}
 
 
 @pytest.fixture
@@ -52,7 +54,7 @@ def submitted(lesson, lesson_state):
 
 
 def graded(*pairs):
-    return {"grades": [{"question_id": qid, "awarded": awarded, "feedback": f"About {qid}."} for qid, awarded in pairs]}
+    return {"grades": [{"question_id": qid, "awards": awards, "feedback": f"About {qid}."} for qid, awards in pairs]}
 
 
 class TestLoad:
@@ -64,8 +66,9 @@ class TestLoad:
         assert update["test_answers"] == ANSWERS and update["final_test"] == FINAL_TEST
         assert [item["id"] for item in update["grading_items"]] == [
             SHORT,
-            CODE,
+            SHORT2,
         ]  # not the mcq, not the blank long answer
+        assert [c["marks"] for c in update["grading_items"][0]["criteria"]] == [1, 2]
         assert update["profile"] == {"preferred_language": "en"} and update["snapshot"] == budget_snapshot()
 
     def test_a_submission_of_another_lesson_is_not_found(self, submitted, runtime, make_lesson):
@@ -87,7 +90,7 @@ class TestGradeOpen:
         return submitted[0] | LoadSubmissionNode()(submitted[0], runtime)
 
     def test_it_asks_test_grade_about_the_open_answers_and_keeps_the_report(self, submitted, runtime, gateway):
-        report = graded((SHORT, 1), (CODE, 2))
+        report = graded((SHORT, [1, 0]), (SHORT2, [1, 2]))
         gateway.script("test.grade", GradeReport(**report))
         state = self.state(submitted, runtime)
 
@@ -102,7 +105,7 @@ class TestGradeOpen:
         )
 
     def test_a_rejected_attempt_is_fed_back(self, submitted, runtime, gateway):
-        gateway.script("test.grade", GradeReport(**graded((SHORT, 1), (CODE, 2))))
+        gateway.script("test.grade", GradeReport(**graded((SHORT, [1, 0]), (SHORT2, [1, 2]))))
         state = self.state(submitted, runtime) | {
             "feedback": {"grading": ["s1: awarded 9 but the question is worth 4."]}
         }
@@ -118,12 +121,12 @@ class TestValidate:
         return loaded | {"grade_report": report} | extra
 
     def test_a_complete_grading_passes(self, submitted, runtime):
-        update = ValidateGradeNode()(self.state(submitted, runtime, graded((SHORT, 2), (CODE, 0))), runtime)
+        update = ValidateGradeNode()(self.state(submitted, runtime, graded((SHORT, [1, 2]), (SHORT2, [0, 0]))), runtime)
 
         assert update == {"feedback": {"grading": []}}
 
     def test_a_bad_grading_is_sent_back_with_the_problems(self, submitted, runtime, events):
-        state = self.state(submitted, runtime, graded((SHORT, 99)), attempts={"grading": 1})
+        state = self.state(submitted, runtime, graded((SHORT, [99, 99])), attempts={"grading": 1})
 
         update = ValidateGradeNode()(state, runtime)
 
@@ -131,7 +134,7 @@ class TestValidate:
         assert "error" not in update and events.of_type("attempt")[0]["node"] == "grade_open"
 
     def test_it_gives_up_with_the_reason_when_attempts_run_out(self, submitted, runtime):
-        state = self.state(submitted, runtime, graded((SHORT, 99)), attempts={"grading": 2})
+        state = self.state(submitted, runtime, graded((SHORT, [99, 99])), attempts={"grading": 2})
 
         update = ValidateGradeNode()(state, runtime)
 
@@ -142,21 +145,23 @@ class TestValidate:
 class TestPersist:
     def test_the_card_holds_the_models_marks_and_the_automatic_ones(self, submitted, runtime):
         state = submitted[0] | LoadSubmissionNode()(submitted[0], runtime)
-        state |= {"grade_report": graded((SHORT, 1), (CODE, 2))}
+        state |= {"grade_report": graded((SHORT, [1, 0]), (SHORT2, [1, 2]))}
 
         PersistGradeNode()(state, runtime)
 
         stored = TestSubmission.objects.get(pk=state["submission_id"])
         assert stored.status == TestSubmission.Status.GRADED and stored.graded_at is not None
         rows = {r["id"]: r for r in stored.result["questions"]}
-        assert (rows[MCQ]["awarded"], rows[MCQ]["graded_by"]) == (2, "auto")
+        assert (rows[MCQ]["awarded"], rows[MCQ]["graded_by"]) == (MARKS[MCQ], "auto")
         assert (rows[SHORT]["awarded"], rows[SHORT]["graded_by"], rows[SHORT]["feedback"]) == (
             1,
             "model",
             f"About {SHORT}.",
         )
+        assert [(c["marks"], c["awarded"]) for c in rows[SHORT]["criteria"]] == [(1, 1), (2, 0)]
+        assert rows[SHORT2]["awarded"] == 3 and rows[SHORT2]["correct"] is True
         assert (rows[LONG]["awarded"], rows[LONG]["feedback"]) == (0, "No answer given.")
-        assert stored.result["complete"] is True and stored.result["score"]["available"] == 20
+        assert stored.result["complete"] is True and stored.result["score"]["available"] == sum(MARKS.values())
 
     def test_with_nothing_to_grade_the_automatic_card_is_saved_alone(self, submitted, runtime, lesson):
         TestSubmission.objects.filter(pk=submitted[0]["submission_id"]).update(answers={MCQ: 1, NUM: "4"})
@@ -166,7 +171,7 @@ class TestPersist:
 
         stored = TestSubmission.objects.get(pk=state["submission_id"])
         assert stored.status == TestSubmission.Status.GRADED and state["grading_items"] == []
-        assert stored.result["score"]["awarded"] == 2 + 2  # mcq and numerical, 2 marks each
+        assert stored.result["score"]["awarded"] == MARKS[MCQ] + MARKS[NUM]
 
 
 def test_a_run_that_cannot_grade_ends_with_the_reason(runtime):

@@ -11,6 +11,7 @@ from llm_registry.gateway import AllModelsFailed
 
 from ..context import FlowContext, NodeBudget
 from ..grading import QuizResult, RoutingPolicy
+from ..levels import LevelScheme
 from ..profile import LearnerProfile
 from ..prompts import AssessLearnerPrompt, DiagnosticPrompt, DiagnosticReviewPrompt
 from ..schemas import DiagnosticBundle, LearnerAssessment, QuizReview
@@ -32,6 +33,7 @@ class LoadContextNode(Node):
             "profile": LearnerProfile.of(lesson.owner.profile).as_dict(),
             "snapshot": lesson.config_snapshot,
             "settings": lesson.settings_snapshot,
+            "level_scheme": LevelScheme.CURRENT,
         }
 
 
@@ -191,6 +193,8 @@ class AssessLearnerNode(LLMNode):
         }
 
     def to_state(self, output: Any, state: dict, ctx: FlowContext) -> dict:
-        assessment = self.guard.apply(output.model_dump(mode="json"), state["prerequisites_to_cover"])
-        self.lesson(state).record(assessment=assessment, level=assessment["level"])
+        assessment = LevelScheme.stamp(
+            self.guard.apply(output.model_dump(mode="json"), state["prerequisites_to_cover"])
+        )
+        self.lesson(state).record(assessment=assessment, level=LevelScheme.level_of(assessment).value)
         return {"assessment": assessment}

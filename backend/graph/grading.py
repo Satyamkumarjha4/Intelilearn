@@ -7,7 +7,7 @@ from inflating the learner's level (10 four-option questions give ~2.5 correct b
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
-from .questions import QuestionTypes
+from .questions import LegacyQuestionAdapter, QuestionTypes
 from .schemas.diagnostic import BANDS
 
 DONT_KNOW = "dont_know"
@@ -232,12 +232,13 @@ class ScoreCard:
     def open_items(self, questions: list[dict], answers: dict) -> list[dict]:
         """The open-ended questions that have an answer to grade, with that answer, for `test.grade`."""
         return [
-            q | {"answer": answers[q["id"]]}
+            LegacyQuestionAdapter.normalise(q) | {"answer": answers[q["id"]]}
             for q in questions
             if not QuestionTypes.of(q).auto_scored and not self._blank(answers.get(q["id"]))
         ]
 
     def _row(self, question: dict, answer, grade: QuestionGrade, model: dict[str, dict] | None) -> dict:
+        question = LegacyQuestionAdapter.normalise(question)
         row = {"id": question["id"], "type": question["type"], "concept": question["concept"], "marks": grade.marks}
         row["solution"] = Solution.of(question)
         if self._blank(answer):
@@ -250,14 +251,19 @@ class ScoreCard:
         given = (model or {}).get(question["id"])
         if given is None:
             return row | {"awarded": None, "correct": None, "graded_by": "none", "feedback": ""}
-        awarded = min(given["awarded"], grade.marks)
+        criteria = [
+            {**criterion, "awarded": max(0, min(award, criterion["marks"]))}
+            for criterion, award in zip(question["criteria"], given["awards"], strict=False)
+        ]
+        awarded = min(sum(c["awarded"] for c in criteria), grade.marks)
         return row | {
             "awarded": awarded, "correct": awarded == grade.marks, "graded_by": "model", "feedback": given["feedback"],
+            "criteria": criteria,
         }  # fmt: skip
 
     @staticmethod
     def _blank(answer) -> bool:
-        return answer is None or (isinstance(answer, str) and not answer.strip())
+        return answer is None or (isinstance(answer, str) and not answer.strip()) or answer == []
 
     @staticmethod
     def _topics(rows: list[dict]) -> list[str]:

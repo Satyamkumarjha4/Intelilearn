@@ -1,8 +1,10 @@
 """Builders for schema-valid study sheets (the mastery path), as the graph stores them: dumped Pydantic models, so a
 builder that drifts from the schema fails loudly. Each passes `StudyMaterialValidator` for `CONCEPTS`."""
 
-from graph.schemas import CheatSheet, PracticeSheet, RevisionSheet
+from graph.schemas import CheatSheet, RevisionSheet
 from graph.schemas.lesson import DIFFICULTIES
+
+from .question_data import make_question
 
 CONCEPTS = ["Halving the range", "Time complexity"]
 
@@ -47,25 +49,16 @@ def make_revision_sheet() -> dict:
 
 
 def make_practice_sheet(count: int = 15) -> dict:
-    """`count` questions: mcq, numerical and short_answer in turn, easy first."""
+    """`count` questions: mcq, numerical and short_answer in turn, easiest first."""
     kinds = ["mcq", "numerical", "short_answer"]
-    questions = []
-    for n in range(1, count + 1):
-        kind = kinds[(n - 1) % 3]
-        base = {
-            "id": f"t{n}",
-            "type": kind,
-            "concept": CONCEPTS[n % 2],
-            "difficulty": DIFFICULTIES[min(2, (n - 1) * 3 // count)],
-            "marks": 2,
-            "question": f"Practice question {n} about {CONCEPTS[n % 2].lower()}?",
-        }
-        extra = {
-            "mcq": {"options": [f"Choice {c} {n}" for c in "ABCD"], "correct_index": n % 4},
-            "numerical": {"answer": 4.0, "tolerance": 0.01, "unit": "steps"},
-            "short_answer": {"model_answer": "Halve the range.", "key_points": ["halving"]},
-        }[kind]
-        questions.append({**base, **extra})
-    return PracticeSheet(title="Binary search practice", instructions="Try each one.", questions=questions).model_dump(
-        mode="json"
-    )
+    questions = [
+        make_question(
+            kinds[(n - 1) % 3],
+            n,
+            DIFFICULTIES[min(4, (n - 1) * 5 // count)],
+            concept=CONCEPTS[n % 2],
+            question=f"Practice question {n} about {CONCEPTS[n % 2].lower()}?",
+        )
+        for n in range(1, count + 1)
+    ]
+    return {"title": "Binary search practice", "instructions": "Try each one.", "questions": questions}
