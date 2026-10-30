@@ -353,7 +353,8 @@ class TestSubmit:
         assert attempt.status == "graded" and attempt.result["complete"] is True
         assert (attempt.awarded, attempt.available, attempt.band) == (20, 20, "excellent")
         assert attempt.submitted_at is not None and attempt.graded_at is not None and attempt.duration_s is not None
-        assert attempt.followup is None and attempt.all_blank is False
+        assert attempt.followup == {"kind": "advanced", "action": "generate", "lesson_id": None}  # 100%
+        assert attempt.all_blank is False
 
     def test_the_answers_saved_one_by_one_are_what_is_marked(self, make_lesson, queue):
         lesson, service, attempt = self.started(make_lesson, queue)

@@ -12,6 +12,7 @@ from django.utils import timezone
 from graph.scoring import ScoreBand, Thresholds
 
 from .models import Lesson, TestSubmission
+from .offers import PolicyFollowups
 
 
 @dataclass(frozen=True)
@@ -31,13 +32,6 @@ class FollowupHook(Protocol):
         ...
 
 
-class NoFollowup:
-    """The hook in this phase: no offers. `FollowupPolicy` (phase 9.4) replaces it without changing the callers."""
-
-    def offer(self, lesson: Lesson, facts: AttemptFacts) -> dict | None:
-        return None
-
-
 @dataclass(frozen=True)
 class Decision:
     band: str
@@ -51,7 +45,7 @@ class AttemptOutcome:
     DEFAULT_THRESHOLDS = Thresholds()
 
     def __init__(self, followups: FollowupHook | None = None):
-        self.followups = followups or NoFollowup()
+        self.followups = followups or PolicyFollowups()
 
     def thresholds(self, lesson: Lesson) -> Thresholds:
         snapshot = lesson.settings_snapshot or {}

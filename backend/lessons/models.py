@@ -15,6 +15,7 @@ from django.utils import timezone
 from .errors import AttemptSealed
 from .stages import (  # noqa: F401  (re-exported)
     Entry,
+    FollowupLevel,
     IllegalTransition,
     Intent,
     LevelSource,
@@ -54,6 +55,12 @@ class Lesson(models.Model):
     entry = models.CharField(max_length=20, choices=Entry.choices, default=Entry.DIAGNOSTIC)
     level_source = models.CharField(max_length=20, choices=LevelSource.choices, blank=True)
     self_rating_halves = models.PositiveSmallIntegerField(null=True, blank=True)  # stars times two, 1 to 10
+    # A follow-up is a lesson of its own, linked to the one it came from by metadata only. The parent can be deleted and
+    # the follow-up stays (the link goes, what it is for does not).
+    created_from_lesson = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="followups"
+    )
+    followup_level = models.CharField(max_length=10, choices=FollowupLevel.choices, blank=True)
     # What the mastery choice offered, set when it is published; the old three-sheet choice is what a row from before
     # the Expert lesson has, so the page shows those learners the cards they were waiting at.
     mastery_options = models.CharField(
@@ -96,6 +103,21 @@ class Lesson(models.Model):
                 condition=models.Q(self_rating_halves__isnull=True)
                 | models.Q(self_rating_halves__gte=1, self_rating_halves__lte=10),
                 name="self_rating_is_one_to_ten_halves",
+            ),
+            # A lesson made from another says what kind of follow-up it is. (The reverse is not required: deleting the
+            # parent clears the link and the follow-up keeps its level.) And no lesson is its own parent.
+            models.CheckConstraint(
+                condition=models.Q(created_from_lesson__isnull=True) | ~models.Q(followup_level=""),
+                name="a_followup_has_a_level",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(created_from_lesson=models.F("id")), name="a_lesson_is_not_its_own_parent"
+            ),
+            # "Never a second Foundation lesson", even when two requests race.
+            models.UniqueConstraint(
+                fields=["created_from_lesson", "followup_level"],
+                condition=models.Q(followup_level__gt=""),
+                name="one_followup_per_level",
             ),
         ]
 

@@ -54,6 +54,14 @@ class LevelSource(models.TextChoices):
     QUIZ_RESULT = "quiz_result", "Quiz result"
 
 
+class FollowupLevel(models.TextChoices):
+    """What a follow-up lesson is for: the basics a failed test points back to, or the next step after an excellent
+    one."""
+
+    FOUNDATION = "foundation", "Foundation"
+    ADVANCED = "advanced", "Advanced"
+
+
 class MasteryOptions(models.TextChoices):
     """What the learner who aced the quick check was shown. A lesson already waiting at the choice when the Expert
     lesson was added keeps the three sheets it was offered; the choice published since offers the lesson or the two

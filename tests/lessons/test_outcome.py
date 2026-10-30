@@ -2,8 +2,9 @@
 
 Why: a lesson attempt is graded at submit, and a legacy attempt with open-ended answers is graded later by the
 `grade_test` graph. Both must reach the same band and the same offer, so they call one class. The offer itself is built
-in phase 9.4; this phase leaves a seam (`FollowupHook`) that returns no offer, and this file pins the seam so the next
-phase plugs into it without touching the callers.
+in `lessons/offers.py` (phase 9.4) behind a seam (`FollowupHook`), and this file pins the seam: any hook plugs in
+without
+touching the callers.
 
 Use cases:
 - the band comes from whole marks and the lesson's own thresholds (default 30 and 90 percent): the edges are Normal,
@@ -11,14 +12,15 @@ Use cases:
 - a lesson made before the settings existed uses the defaults
 - no marks available gives no band and no offer
 - the follow-up hook is asked once with the attempt number, marks, band and whether every answer was blank, and what it
-  returns is the offer; with the default hook there is no offer
+  returns is the offer; the default hook is the follow-up policy (its cases are in test_offers.py)
 - grading a legacy attempt later writes the result, the marks, the band and the offer, only while it is being graded
 """
 
 import pytest
 
 from lessons.models import TestSubmission
-from lessons.outcome import AttemptFacts, AttemptOutcome, NoFollowup
+from lessons.offers import PolicyFollowups
+from lessons.outcome import AttemptFacts, AttemptOutcome
 
 pytestmark = pytest.mark.django_db
 
@@ -70,10 +72,17 @@ class TestBand:
 
 
 class TestTheFollowupSeam:
-    def test_the_default_hook_offers_nothing(self, lesson):
-        decision = AttemptOutcome().decide(lesson, 2, card(2, 20), all_blank=False)
+    def test_the_default_hook_is_the_follow_up_policy(self, lesson):
+        assert isinstance(AttemptOutcome().followups, PolicyFollowups)
 
-        assert decision.followup is None and NoFollowup().offer(lesson, AttemptFacts(1, 0, 20, "fail", True)) is None
+    def test_the_default_hook_offers_a_foundation_lesson_to_a_learner_who_failed_and_nothing_to_one_who_passed(
+        self, lesson
+    ):
+        failed = AttemptOutcome().decide(lesson, 1, card(2, 20), all_blank=False)
+        passed = AttemptOutcome().decide(lesson, 1, card(12, 20), all_blank=False)
+
+        assert failed.followup == {"kind": "foundation", "action": "generate", "lesson_id": None}
+        assert passed.followup is None
 
     def test_a_hook_is_asked_once_with_the_facts_and_its_offer_is_the_followup(self, lesson):
         hook = RecordingHook({"kind": "foundation", "action": "generate", "lesson_id": None})

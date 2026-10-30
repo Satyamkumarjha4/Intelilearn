@@ -292,7 +292,8 @@ class TestSubmit:
         body = response.json()
         assert response.status_code == 200 and body["run_id"] is None and queue.runs == []
         assert (body["status"], body["awarded"], body["available"], body["band"]) == ("graded", 20, 20, "excellent")
-        assert body["followup"] is None and body["attempt_no"] == 1 and body["submission_id"] == attempt
+        assert body["followup"] == {"kind": "advanced", "action": "generate", "lesson_id": None}  # 100%
+        assert body["attempt_no"] == 1 and body["submission_id"] == attempt
         assert body["result"]["complete"] is True and body["result"]["score"]["percent"] == 100
 
     def test_a_submit_with_no_body_seals_what_was_saved(self, signed_in_client, ready, queue):
