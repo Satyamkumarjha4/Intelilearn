@@ -1,6 +1,7 @@
 """Stage A prompts: the diagnostic bundle, its optional reviewer, and the learner assessment."""
 
 from ..schemas.diagnostic import BANDS
+from ..shapes import LessonShapes
 from .base import Prompt
 
 BAND_MEANINGS = {
@@ -71,13 +72,41 @@ Return an empty issues list when the quiz is fine."""
         return f"{self.topic_text(subject)}\n\nQuiz:\n{self.to_json(quiz)}"
 
 
+class PlanPrerequisitesPrompt(Prompt):
+    """Subject carries the `assessment` (a Beginner's, from the self-rating) and the level's shape."""
+
+    def system(self, subject: dict) -> str:
+        return f"""You plan what a complete beginner should learn BEFORE a topic, for the writers of their lesson. \
+The learner took no quiz: they only told us they are new to the topic.
+
+List 3 to 6 prerequisites, most fundamental first. Each has a short "name" (a concept, not a sentence) and a \
+"why_needed" sentence that says where the topic relies on it.
+
+Rules:
+- Prerequisites are concepts to know BEFORE the topic, never parts of the topic itself.
+- Only what a learner who is new here may really lack. Do not list things everyone at school age knows.
+- Fewer is better than padding; never more than 6.
+{self.language_rule(subject.get("profile"))}"""
+
+    def user(self, subject: dict) -> str:
+        return f"""{self.topic_text(subject)}
+
+The learner:
+{self.learner_text(subject.get("profile"))}
+
+What the lesson will be like:
+{LessonShapes.of(subject["assessment"]).describe()}"""
+
+
 class AssessLearnerPrompt(Prompt):
     """Subject also carries `diagnostic_questions` and `prerequisite_questions`."""
 
     def system(self, subject: dict) -> str:
-        return """You assess a learner from their quiz results and profile, for the writers of their lesson.
+        levels = "\n".join(f"  {shape.level.value}: {shape.summary}" for shape in LessonShapes.all())
+        return f"""You assess a learner from their quiz results and profile, for the writers of their lesson.
 - level: beginner (knows almost nothing), foundation (knows some basics), proficient (solid on most of it), expert
-  (could teach it).
+  (could teach it). Each level gets a different lesson, so choose the one whose lesson would suit them:
+{levels}
 - known_concepts / gaps: from the per-concept results. Wrong answers are gaps; "I don't know" is honest, not bad.
 - start_point: where the core-concepts page should begin, given what they already know.
 - author_notes: concrete guidance on tone, depth, pacing, examples and analogies for this learner.

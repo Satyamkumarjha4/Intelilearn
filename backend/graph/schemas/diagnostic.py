@@ -23,6 +23,14 @@ class Prerequisite(BaseModel):
     why_needed: str = Field(description="One sentence: where the topic relies on it.")
 
 
+class PrerequisiteList(BaseModel):
+    """prerequisites.plan: what a learner who is new to the topic should learn first, when no quiz found it out."""
+
+    prerequisites: list[Prerequisite] = Field(
+        min_length=3, max_length=6, description="3 to 6 concepts, most fundamental first. Not parts of the topic."
+    )
+
+
 class PrerequisiteQuestion(BaseModel):
     id: str = Field(description='Short unique id, e.g. "p1".')
     prerequisite: str = Field(description="Must equal the name of exactly one prerequisite.")

@@ -15,6 +15,9 @@ Use cases:
 - there must be the configured number of prerequisites, each with exactly one question that uses its exact name
 - LaTeX that does not parse is reported, and the checker is only asked when there is maths
 - the assessment guard replaces the LLM's prerequisites with the deterministic ones
+- a planned prerequisite list has 3 to 6 prerequisites, each with a name and a reason, all different, and none is the
+  topic itself
+- the prerequisite list schema refuses fewer than 3 and more than 6
 - a composite validator reports the first part that finds problems and stops there
 - the LLM review validator turns reviewer issues into per-question problems
 """
@@ -24,11 +27,13 @@ import copy
 import pytest
 from support.quiz_data import make_prerequisites
 
+from graph.schemas import PrerequisiteList
 from graph.validators import (
     AssessmentGuard,
     CompositeValidator,
     DiagnosticReviewValidator,
     DiagnosticValidator,
+    PrerequisiteListValidator,
 )
 
 
@@ -256,3 +261,47 @@ class TestDiagnosticReviewValidator:
 
     def test_is_valid_when_the_reviewer_finds_nothing(self, valid_bundle):
         assert DiagnosticReviewValidator(lambda bundle: []).validate(valid_bundle) == []
+
+
+def listed(*names):
+    return {"prerequisites": [{"name": n, "why_needed": f"The topic relies on {n}."} for n in names]}
+
+
+class TestPrerequisiteList:
+    def test_three_to_six_different_prerequisites_are_fine(self):
+        for count in (3, 4, 5, 6):
+            assert PrerequisiteListValidator().validate(listed(*[f"Idea {n}" for n in range(count)])) == []
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 7, 8])
+    def test_too_few_or_too_many_are_reported_with_the_count(self, count):
+        problems = PrerequisiteListValidator().validate(listed(*[f"Idea {n}" for n in range(count)]))
+
+        assert f"List 3 to 6 prerequisites; there are {count}." in problems
+
+    def test_a_repeat_is_reported_ignoring_case_and_punctuation(self):
+        problems = PrerequisiteListValidator().validate(listed("Fractions", "fractions!", "Algebra"))
+
+        assert any("repeated" in p for p in problems)
+
+    def test_a_missing_name_or_reason_is_reported_once(self):
+        bad = listed("A idea", "B idea", "C idea")
+        bad["prerequisites"][0]["why_needed"] = " "
+        bad["prerequisites"][1]["name"] = ""
+
+        problems = PrerequisiteListValidator().validate(bad)
+
+        assert problems.count("Every prerequisite needs a name and a sentence on why it is needed.") == 1
+
+    def test_the_topic_itself_is_not_a_prerequisite(self):
+        problems = PrerequisiteListValidator().validate(
+            listed("Binary Search", "Arrays", "Sorting"), topic="binary search"
+        )
+
+        assert any("topic itself" in p for p in problems)
+
+    def test_the_schema_refuses_fewer_than_three_and_more_than_six(self):
+        with pytest.raises(ValueError):
+            PrerequisiteList.model_validate(listed("A", "B"))
+        with pytest.raises(ValueError):
+            PrerequisiteList.model_validate(listed(*"ABCDEFG"))
+        assert len(PrerequisiteList.model_validate(listed("A", "B", "C")).prerequisites) == 3

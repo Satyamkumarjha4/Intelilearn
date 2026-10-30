@@ -62,6 +62,8 @@ _NODES = {
     # An optional judge of the diagnostic quiz (independence, band calibration): on, small and cheap first.
     "diagnostic.review": ([GPT_OSS_SMALL, FLASH], {"params_override": {"temperature": 0}}),
     "learner.assess": ([GPT_OSS_SMALL, FLASH], {}),
+    # Light: a short list for a learner who took no quiz, so the small Groq model leads.
+    "prerequisites.plan": ([GPT_OSS_SMALL, FLASH], {}),
     "study.generate": ([FLASH, LITE], {}),
     "lesson.plan": ([FLASH, GPT_OSS, LITE], {}),
     "page.generate": ([FLASH, LITE], {}),

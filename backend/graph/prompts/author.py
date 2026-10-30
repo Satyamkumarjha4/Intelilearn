@@ -1,23 +1,24 @@
 """Stage B prompts: the plan, pages, test, interactives and the alignment judge."""
 
 from ..questions import QuestionTypes
+from ..shapes import LessonShapes
 from .base import Prompt
 from .scope import SCOPE_REFERENCE
 
 
 class PlanLessonPrompt(Prompt):
     def system(self, subject: dict) -> str:
+        shape = LessonShapes.of(subject["assessment"])
         return f"""You are an expert teacher planning a three-page interactive lesson for one learner.
 
-Pages:
-1. "introduction": a hook, why the topic matters, then the PREREQUISITES TO COVER (every one, listed in \
-covers_prerequisites and taught in the outline), then an overview of the topic.
-2. "core": the core concepts. Start at the assessment's start_point and emphasise the learner's gaps.
-3. "advanced": depth, edge cases, complexity and real-world use, scaled to the learner's level.
+{shape.describe()}
+Start the "core" page at the assessment's start_point and emphasise the learner's gaps. If there are PREREQUISITES \
+TO COVER, the "introduction" page teaches every one (list each in covers_prerequisites and teach it in the outline).
 The test is a separate screen after the lesson, not a page, and it is not planned here: it is the same for every \
 lesson and is written later from the concepts you outline.
 
 Rules:
+- level: "{shape.level.value}".
 - Every outline "concept" appears on exactly ONE page; pages don't overlap or repeat each other.
 - 3-6 outline parts per page, in teaching order.
 - quantitative: true only when the topic is mainly about calculating numbers (maths, physics, chemistry, statistics, \
@@ -42,8 +43,11 @@ class WritePagePrompt(Prompt):
 
     def system(self, subject: dict) -> str:
         key = subject["page_plan"]["key"]
+        shape = LessonShapes.of(subject["assessment"])
+        role = shape.role(key)
         return f"""You write one page of an interactive lesson, following the lesson plan exactly.
 
+- In this {shape.level.label} lesson the "{key}" page is "{role.title}": {role.brief}
 - Write the "{key}" page. Follow its outline: one section per outline part, in order, with section \
 ids "s1", "s2"…
 - Each section: a clear, well-structured Markdown body (at least two paragraphs), key points, and worked examples, \

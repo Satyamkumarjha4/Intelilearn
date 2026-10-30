@@ -6,6 +6,7 @@ tool calling or vision be bound, and the lesson fails mid-flow instead of at con
 
 Use cases:
 - every node documented in model-registry.md has a spec
+- the prerequisite planner is a required, light, structured node that runs with the diagnose steps
 - only the quiz reviewer, the vision check and the onboarding topic suggester are optional; every other node is required
 - the onboarding suggester is a fast, light structured node: low reasoning effort, a single attempt, a small output
 - tool calling, vision, text output and the alignment judge's context are declared
@@ -20,7 +21,7 @@ from llm_registry.node_specs import NODE_SPECS, Capability, Effort, OutputMode
 DOCUMENTED_NODES = {
     "diagnostic.generate", "diagnostic.review", "learner.assess", "study.generate", "lesson.plan", "page.generate",
     "test.generate", "interactive.plan", "media.search", "media.verify", "interactive.generate", "alignment.judge",
-    "page.compile", "code.repair", "runtime.repair", "test.grade", "onboarding.suggest_topics",
+    "page.compile", "code.repair", "runtime.repair", "test.grade", "onboarding.suggest_topics", "prerequisites.plan",
 }  # fmt: skip
 
 
@@ -31,6 +32,15 @@ def test_every_documented_node_has_a_spec():
 def test_only_judges_vision_check_and_topic_suggester_are_optional():
     assert {s.key for s in NODE_SPECS.optional()} == {"diagnostic.review", "media.verify", "onboarding.suggest_topics"}
     assert len(NODE_SPECS.required()) == len(NODE_SPECS) - 3
+
+
+def test_the_prerequisite_planner_is_a_required_light_structured_node_in_the_diagnose_phase():
+    spec = NODE_SPECS["prerequisites.plan"]
+
+    assert spec.optional is False and spec.stage.value == "diagnose"
+    assert spec.output == OutputMode.STRUCTURED and spec.schema_name == "PrerequisiteList"
+    assert Capability.STRUCTURED_OUTPUT in spec.requires
+    assert (spec.default_reasoning, spec.min_output_tokens) == (Effort.LOW, 2048)
 
 
 def test_the_topic_suggester_is_a_fast_light_structured_node():

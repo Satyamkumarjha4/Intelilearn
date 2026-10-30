@@ -103,6 +103,27 @@ class DiagnosticReviewValidator:
         return [f"Question {question_id}: {problem}" for question_id, problem in self.reviewer(bundle)]
 
 
+class PrerequisiteListValidator:
+    """The prerequisites planned for a Beginner who took no quiz: 3 to 6, each named and explained, all different."""
+
+    MIN, MAX = 3, 6
+
+    def validate(self, listed: dict, *, topic: str = "") -> list[str]:
+        items = listed["prerequisites"]
+        problems = []
+        if not self.MIN <= len(items) <= self.MAX:
+            problems.append(f"List {self.MIN} to {self.MAX} prerequisites; there are {len(items)}.")
+        for item in items:
+            if not item["name"].strip() or not item["why_needed"].strip():
+                problems.append("Every prerequisite needs a name and a sentence on why it is needed.")
+                break
+        if dupes := TextRules.duplicates(norm(item["name"]) for item in items):
+            problems.append(f"Prerequisites must be different (repeated: {', '.join(dupes)}).")
+        if topic and any(norm(item["name"]) == norm(topic) for item in items):
+            problems.append("The topic itself is not a prerequisite: list what must be learned before it.")
+        return problems
+
+
 class AssessmentGuard:
     """The LLM may explain the gaps but may not change which prerequisites are covered."""
 

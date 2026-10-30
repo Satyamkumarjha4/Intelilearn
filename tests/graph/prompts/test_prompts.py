@@ -15,6 +15,11 @@ Use cases:
   only when there was one
 - the study prompt carries the instructions for the chosen sheet and the concepts to cover
 - the plan prompt asks for the quantitative flag and says nothing about a test mix
+- the plan prompt describes the lesson shape of the learner's level: the role of each of the three slots, and the level
+  the plan must carry
+- the page prompt tells the writer what its page is for in this level's lesson
+- the assessment prompt describes what each of the four levels' lessons is like
+- the prerequisites prompt asks for 3 to 6 prerequisites that come before the topic, and describes the lesson ahead
 - the question prompt lists one line for each cell in order with its type, difficulty and marks, gives the instructions
   for those types only, and the newest questions already asked (shortened, and no more than a fixed number)
 - the media verification prompt is a single multimodal message with the image
@@ -25,10 +30,11 @@ Use cases:
 
 import pytest
 from langchain_core.messages import HumanMessage, SystemMessage
-from support.lesson_data import make_state
+from support.lesson_data import make_assessment, make_state
 from support.quiz_data import make_prerequisites, make_questions
 
 from graph.grading import QuizGrader
+from graph.levels import LevelScheme
 from graph.prompts import (
     SCOPE_REFERENCE,
     AlignmentPrompt,
@@ -41,6 +47,7 @@ from graph.prompts import (
     MediaAgentPrompt,
     PlanInteractivesPrompt,
     PlanLessonPrompt,
+    PlanPrerequisitesPrompt,
     RepairCodePrompt,
     RuntimeRepairPrompt,
     StudyMaterialPrompt,
@@ -49,6 +56,7 @@ from graph.prompts import (
     WriteQuestionsPrompt,
 )
 from graph.questions import LessonTestBlueprint
+from graph.shapes import LessonShapes
 
 QUESTIONS = make_questions()
 PREREQUISITES, PREREQUISITE_QUESTIONS = make_prerequisites()
@@ -100,10 +108,11 @@ def subject() -> dict:
 ALL_PROMPTS = [
     DiagnosticPrompt, DiagnosticReviewPrompt, AssessLearnerPrompt, StudyMaterialPrompt, PlanLessonPrompt,
     WritePagePrompt, WriteQuestionsPrompt, PlanInteractivesPrompt, GenerateInteractivePrompt, AlignmentPrompt,
-    MediaAgentPrompt, CompilePagePrompt, RepairCodePrompt, RuntimeRepairPrompt,
+    MediaAgentPrompt, CompilePagePrompt, RepairCodePrompt, RuntimeRepairPrompt, PlanPrerequisitesPrompt,
 ]  # fmt: skip
 LEARNER_FACING = [
     DiagnosticPrompt, StudyMaterialPrompt, PlanLessonPrompt, WritePagePrompt, WriteQuestionsPrompt,
+    PlanPrerequisitesPrompt,
 ]  # fmt: skip
 
 
@@ -147,6 +156,45 @@ class TestPlanLessonPrompt:
 
         assert "quantitative" in system and "type_mix" not in system and "difficulty_mix" not in system
         assert "question_count" not in system
+
+
+@pytest.mark.parametrize(("level", "intro"), [
+    ("beginner", "Prerequisites and introduction"), ("foundation", "Introduction and a quick recap"),
+    ("proficient", "A short overview"), ("expert", "Brief orientation"),
+])  # fmt: skip
+class TestLessonShapeInThePrompts:
+    def state(self, level):
+        return subject() | {"assessment": LevelScheme.stamp(make_assessment() | {"level": level})}
+
+    def test_the_plan_prompt_describes_the_levels_slots_and_asks_for_the_level(self, level, intro):
+        system = PlanLessonPrompt().messages(self.state(level))[0].content
+
+        assert intro in system and f'level: "{level}"' in system
+        for key in ("introduction", "core", "advanced"):
+            assert f'"{key}"' in system
+
+    def test_the_page_prompt_says_what_the_page_is_for_in_this_level(self, level, intro):
+        system = WritePagePrompt().messages(self.state(level) | {"page_plan": subject()["plan"]["pages"][0]})[0].content
+
+        assert f'the "introduction" page is "{intro}"' in system
+
+    def test_the_prerequisites_prompt_describes_the_lesson_ahead(self, level, intro):
+        user = PlanPrerequisitesPrompt().messages(self.state(level))[1].content
+
+        assert intro in user and 'Topic: "Binary search"' in user
+
+
+def test_the_assessment_prompt_describes_what_each_levels_lesson_is_like():
+    system = AssessLearnerPrompt().messages(subject())[0].content
+
+    for shape in LessonShapes.all():
+        assert shape.level.value in system and shape.summary in system
+
+
+def test_the_prerequisites_prompt_asks_for_three_to_six_that_come_before_the_topic():
+    system = PlanPrerequisitesPrompt().messages(subject())[0].content
+
+    assert "3 to 6 prerequisites" in system and "BEFORE" in system and "took no quiz" in system
 
 
 class TestWriteQuestionsPrompt:

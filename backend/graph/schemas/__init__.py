@@ -8,6 +8,7 @@ from .diagnostic import (
     DiagnosticQuestion,
     LearnerAssessment,
     Prerequisite,
+    PrerequisiteList,
     PrerequisiteQuestion,
     QuizReview,
 )
@@ -38,6 +39,7 @@ __all__ = [
     "DiagnosticBundle", "DiagnosticQuestion", "FinalTest", "GradeReport", "GradedAnswer",
     "InteractiveComponent",
     "InteractivePlan", "InteractiveSpec", "LearnerAssessment", "LessonPlan", "MediaCandidate", "MediaSelection",
-    "MediaVerdict", "PageContent", "PracticeSheet", "Prerequisite", "PrerequisiteQuestion", "QuestionBatch",
+    "MediaVerdict", "PageContent", "PracticeSheet", "Prerequisite", "PrerequisiteList", "PrerequisiteQuestion",
+    "QuestionBatch",
     "QuizReview", "RevisionSheet", "TestQuestion", "component_name", "public_question",
 ]  # fmt: skip
