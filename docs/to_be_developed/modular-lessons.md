@@ -43,7 +43,7 @@ Self-rating is 0.5–5 stars (half-star steps). Each star value shows explanator
 |---|---|
 | 0.5 | "This is completely new to me." |
 | 1 | "I've heard the name, but I don't know what it means." |
-| 1.5 | "I have heard of it, but I could not explain what it is." |
+| 1.5 | "I have a rough idea what it is, but I couldn't explain it." |
 | 2 | "I know a few words and ideas, but I get lost quickly." |
 | 2.5 | "I understand some of the basics, but I need help to use them." |
 | 3 | "I know the basics and can solve simple problems." |
