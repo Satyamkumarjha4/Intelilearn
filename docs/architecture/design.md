@@ -729,7 +729,32 @@ classDiagram
         +str trigger
         +str status
         +dict node_status
+        +subject RunSubject
+        +subject_id UUID
+        +fresh_subject() RunSubject
         +is_active() bool
+    }
+    class GraphRunQuerySet {
+        +for_subject(subject) GraphRunQuerySet
+        +owned_by(user) GraphRunQuerySet
+        +with_subject(owner) GraphRunQuerySet
+    }
+    class RunSubject {
+        <<interface>>
+        +UUID id
+        +UUID owner_id
+        +str stage
+        +str error
+        +dict config_snapshot
+        +dict settings_snapshot
+        +fail(error)
+        +record(**fields)
+    }
+    class LessonErasure {
+        +erase(lesson)
+    }
+    class CheckpointThreads {
+        +delete(thread_ids)
     }
     class FlowSettings {
         <<singleton>>
@@ -746,7 +771,7 @@ classDiagram
     }
     class StopPoint {
         +remember(run)
-        +of(lesson) tuple
+        +of(subject) tuple
     }
     class QuizService {
         -QuizGrader grader
@@ -779,6 +804,12 @@ classDiagram
     Lesson "1" *-- "many" MediaAsset
     Lesson "1" *-- "many" LessonVersion
     Lesson "1" *-- "many" GraphRun
+    Lesson ..|> RunSubject
+    GraphRun --> RunSubject : subject
+    GraphRunQuerySet ..> GraphRun
+    StopPoint ..> RunSubject
+    LessonService --> LessonErasure
+    LessonErasure --> CheckpointThreads
     LessonQuerySet ..> Lesson
     LessonService ..> Lesson
     LessonService ..> FlowSettings : snapshot
@@ -788,6 +819,9 @@ classDiagram
     LessonDocumentBuilder o-- EmbeddedTest
     LessonDocumentBuilder ..> Lesson
 ```
+
+- **`RunSubject`** (`lessons/subjects.py`) is the port for "what a run belongs to": `id`, `owner_id`, `stage`, `error`, the two snapshots, `fail` and `record`. `Lesson` is the only implementation today; a quick quiz joins it in phase 9.6, together with a second column on `GraphRun` (`SUBJECT_FIELDS` names the column per kind). `FlowRunner` (thread id, final stage, failing the subject), `StopPoint`, `has_active_run`, `RunDispatcher`, `LessonService.cancel` and the console's runs list reach the owner through `GraphRun.subject` / `subject_id` / `fresh_subject()` and the queryset helpers (`for_subject`, `owned_by`, `with_subject`) rather than `run.lesson`. `fresh_subject()` reads the row again because the graph moves the stage in another process. Only the code that creates runs, and queries that filter on lesson columns (the console's search), still name `lesson`. `RunEffects` needed no change: its effects read the run's payload, not its lesson.
+- **`LessonErasure`** (`lessons/erasure.py`) removes what a delete must not leave behind: the lesson's LangGraph threads (the flow thread `<lesson id>` and each small graph's `<lesson id>:<run id>`, through `CheckpointThreads` over `PostgresSaver.delete_thread`) and its `ModelCall` rows. `LessonService.delete` cancels active runs, erases, then deletes the lesson, so a failed erasure leaves the lesson to be deleted again. A database without checkpoint tables has no threads to delete.
 
 - Views are thin: `LessonViewSet` calls `LessonService` / `QuizService` and serializes the result. Every queryset in a view starts from `Lesson.objects.owned_by(request.user)`, so another user's lesson is a `404`.
 - `Quiz.public_questions()` is the only way questions leave the server before submission (answers stripped).

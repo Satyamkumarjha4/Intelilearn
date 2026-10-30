@@ -31,7 +31,7 @@ class RunQuery:
 
     def queryset(self, *, statuses=(), graphs=(), search="") -> QuerySet[GraphRun]:
         calls = ModelCall.objects.filter(run_id=OuterRef("pk")).order_by().values("run_id")
-        runs = GraphRun.objects.select_related("lesson__owner").annotate(
+        runs = GraphRun.objects.with_subject(owner=True).annotate(
             call_count=Coalesce(Subquery(calls.annotate(n=Count("id")).values("n")), 0),
             cost_sum=Coalesce(
                 Subquery(calls.annotate(total=Sum("cost")).values("total")), Decimal(0), output_field=DecimalField()
@@ -208,23 +208,24 @@ class RunActions:
     @staticmethod
     def can_retry(run: GraphRun) -> bool:
         """What `retry` would accept: a lesson build, of a failed lesson that has no run in progress."""
-        return run.graph == GraphRun.Graph.FLOW and run.lesson.stage == Stage.FAILED and not has_active_run(run.lesson)
+        subject = run.subject
+        return run.graph == GraphRun.Graph.FLOW and subject.stage == Stage.FAILED and not has_active_run(subject)
 
     def retry(self, run: GraphRun) -> GraphRun:
         """Resume the failed lesson from its checkpoint with a new run. Not in a transaction: the run is queued for a
         worker as soon as it exists, and the worker has to find it."""
         if run.graph != GraphRun.Graph.FLOW:
             raise NotRetryable()
-        new = self._lessons.retry(run.lesson)
+        new = self._lessons.retry(run.subject)
         self._trail.record(
             "run.retry", "run", run.id,
-            before={"status": run.status, "lesson_stage": run.lesson.stage},
-            after={"new_run_id": str(new.id), "lesson_id": str(run.lesson_id)},
+            before={"status": run.status, "lesson_stage": run.subject.stage},
+            after={"new_run_id": str(new.id), "lesson_id": str(run.subject_id)},
         )  # fmt: skip
         return new
 
     def cancel(self, run: GraphRun) -> GraphRun:
-        before = {"status": run.status, "lesson_stage": run.lesson.stage}
+        before = {"status": run.status, "lesson_stage": run.subject.stage}
         with transaction.atomic():
             self._lessons.cancel(run)
             run.refresh_from_db()

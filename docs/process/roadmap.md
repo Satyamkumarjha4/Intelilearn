@@ -12,7 +12,8 @@ Items carried over from the phases below, plus gaps found since. Nothing here bl
 
 **Privacy and security**
 
-- [ ] Delete a lesson's LangGraph checkpoints and its `ModelCall` rows together with the lesson (and with a user removed by hand). Today only the Django-cascaded rows go, and both leftovers can hold learner data. See [data-model.md](../architecture/data-model.md#deleting-a-lesson).
+- [x] Delete a lesson's LangGraph checkpoints and its `ModelCall` rows together with the lesson (`LessonErasure`). See [data-model.md](../architecture/data-model.md#deleting-a-lesson).
+- [ ] The same clean-up for a user removed by hand (there is no self-service account deletion): their lessons' checkpoints and `ModelCall` rows are still left behind.
 - [ ] Make the per-address rate limits independent of a client-supplied `X-Forwarded-For` (the Next.js proxy forwards the client's own first entry). Use the connection address in the proxy, or overwrite the header at the edge. See [api.md](../reference/api.md).
 - [ ] `scripts/enable_rls.sql`: row-level security with no policies on every table, including the checkpoint tables, for use with Supabase *(skipped while running on the local Postgres)*.
 - [ ] Set `SUPABASE_DATABASE_URL`, then verify the sync and `/api/health` *(skipped while running on the local Postgres)*.

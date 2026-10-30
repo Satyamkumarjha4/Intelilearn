@@ -242,13 +242,13 @@ class RunQuerySerializer(serializers.Serializer):
 
 class RunRowSerializer(serializers.Serializer):
     id = serializers.UUIDField()
-    lesson_id = serializers.UUIDField()
-    topic = serializers.CharField(source="lesson.topic")
-    learner_name = serializers.CharField(source="lesson.owner.name")
+    lesson_id = serializers.UUIDField(source="subject_id")
+    topic = serializers.CharField(source="subject.topic")
+    learner_name = serializers.CharField(source="subject.owner.name")
     graph = serializers.ChoiceField(choices=GraphRun.Graph.choices)
     trigger = serializers.ChoiceField(choices=GraphRun.Trigger.choices)
     status = serializers.ChoiceField(choices=GraphRun.Status.choices)
-    stage = serializers.CharField(source="lesson.stage", help_text="Where the lesson itself is (a lesson stage).")
+    stage = serializers.CharField(source="subject.stage", help_text="Where the lesson itself is (a lesson stage).")
     duration_s = serializers.SerializerMethodField(
         help_text="Start to finish; so far for a run in progress; null if it has not started."
     )

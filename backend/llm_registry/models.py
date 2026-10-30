@@ -208,6 +208,7 @@ class ModelCall(models.Model):
     # Plain UUIDs rather than foreign keys, so the registry doesn't depend on the lessons app.
     lesson_id = models.UUIDField(null=True, blank=True, db_index=True)
     run_id = models.UUIDField(null=True, blank=True, db_index=True)
+    quiz_id = models.UUIDField(null=True, blank=True, db_index=True)  # the quick quiz it was for (phase 9.6)
     node_key = models.CharField(max_length=60, db_index=True)
     provider_key = models.CharField(max_length=50)
     model_name = models.CharField(max_length=150)

@@ -12,6 +12,7 @@ from django.db import models
 from django.utils import timezone
 
 from .stages import IllegalTransition, MaterialKind, Route, Stage, StageTransitions  # noqa: F401  (re-exported)
+from .subjects import RunSubject
 
 
 class LessonQuerySet(models.QuerySet):
@@ -229,6 +230,25 @@ class TestSubmission(models.Model):
         return f"Test of {self.lesson.topic} ({self.get_status_display()})"
 
 
+class GraphRunQuerySet(models.QuerySet):
+    """The ways to find runs without naming the column of the thing they belong to (`GraphRun.SUBJECT_FIELDS`)."""
+
+    def for_subject(self, subject: RunSubject) -> "GraphRunQuerySet":
+        try:
+            field = GraphRun.SUBJECT_FIELDS[type(subject)]
+        except KeyError:
+            raise TypeError(f"{type(subject).__name__} cannot have runs") from None
+        return self.filter(**{field: subject})
+
+    def owned_by(self, user) -> "GraphRunQuerySet":
+        """The runs of this learner's own lessons. The API always starts from here, as it does for lessons."""
+        return self.filter(lesson__owner=user)
+
+    def with_subject(self, *, owner: bool = False) -> "GraphRunQuerySet":
+        """Fetch each run's subject in the same query (and its owner, for a list that names the learner)."""
+        return self.select_related("lesson__owner" if owner else "lesson")
+
+
 class GraphRun(models.Model):
     """One Celery execution segment of a graph: start, each resume, a retry, a repair… Drives progress streaming."""
 
@@ -273,11 +293,31 @@ class GraphRun(models.Model):
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
 
+    objects = GraphRunQuerySet.as_manager()
+
+    #: the kinds of subject a run can belong to → the column that holds it (a quick quiz joins in phase 9.6)
+    SUBJECT_FIELDS = {Lesson: "lesson"}
+
     class Meta:
         ordering = ["-created_at"]
 
     def __str__(self):
         return f"{self.get_graph_display()} · {self.get_trigger_display()} · {self.status}"
+
+    @property
+    def subject(self) -> RunSubject:
+        """What the run belongs to. Read this, not `lesson`, outside the code that creates runs."""
+        return self.lesson
+
+    @property
+    def subject_id(self):
+        """Its id, without fetching it."""
+        return self.lesson_id
+
+    def fresh_subject(self) -> RunSubject:
+        """The subject as the database has it now, because the graph moves its stage in another process."""
+        subject = self.subject
+        return type(subject).objects.get(pk=subject.pk)
 
     @property
     def is_active(self) -> bool:

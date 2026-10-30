@@ -11,7 +11,8 @@ Use cases:
 - stopping a run remembers the stage the lesson was in; Retry puts it back there and hands the retry run the answer the
   stopped run was about to give (for that kind of question only); a lesson that failed by itself, or whose stopped run
   was not the flow's, is retried as before
-- deleting a lesson cancels its active runs and removes it with everything attached
+- deleting a lesson cancels its active runs and removes it with everything attached, including its checkpoints and
+  model calls (erased first, so a failed erasure leaves the lesson there to be deleted again)
 - an unreachable queue fails the run and the lesson, so Retry works once it is back
 - the learner's quiz has no answers, explanations or concepts
 - a quiz that does not exist yet is not found
@@ -233,6 +234,28 @@ class TestDelete:
         assert cancelled == [run.pk]
         assert not Lesson.objects.filter(pk=lesson.pk).exists()
         assert Quiz.objects.count() == 0 and GraphRun.objects.count() == 0
+
+    def test_erases_the_checkpoints_and_model_calls_before_the_lesson_row_goes(self, lesson, queue):
+        seen, lesson_id = [], lesson.pk
+
+        class Erasure:
+            def erase(self, doomed):
+                seen.append((doomed.pk, Lesson.objects.filter(pk=doomed.pk).exists()))
+
+        LessonService(queue=queue, erasure=Erasure()).delete(lesson)
+
+        assert seen == [(lesson_id, True)]
+        assert not Lesson.objects.filter(pk=lesson_id).exists()
+
+    def test_a_failed_erasure_leaves_the_lesson_to_be_deleted_again(self, lesson, queue):
+        class Erasure:
+            def erase(self, doomed):
+                raise RuntimeError("database down")
+
+        with pytest.raises(RuntimeError):
+            LessonService(queue=queue, erasure=Erasure()).delete(lesson)
+
+        assert Lesson.objects.filter(pk=lesson.pk).exists()
 
 
 def make_quiz(lesson, kind="diagnostic", stage=None):

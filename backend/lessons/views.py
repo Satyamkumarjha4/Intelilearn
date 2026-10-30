@@ -467,7 +467,7 @@ class TestSubmissionCurrentView(OwnedLessons, APIView):
 class OwnedRuns:
     def run_of(self, request, run_id: str) -> GraphRun:
         try:
-            return GraphRun.objects.select_related("lesson").get(pk=parse_id(run_id), lesson__owner=request.user)
+            return GraphRun.objects.owned_by(request.user).with_subject().get(pk=parse_id(run_id))
         except GraphRun.DoesNotExist:
             raise NotFound() from None
 

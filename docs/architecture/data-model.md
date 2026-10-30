@@ -234,7 +234,7 @@ The tables `checkpoints`, `checkpoint_blobs`, `checkpoint_writes` and `checkpoin
 | Field | Type | Notes |
 |---|---|---|
 | id | integer | |
-| lesson_id / run_id | UUID, null, indexed | **Plain columns, not foreign keys**, so a call outlives a deleted lesson or run |
+| lesson_id / run_id / quiz_id | UUID, null, indexed | **Plain columns, not foreign keys**, so a call can outlive a deleted run. `quiz_id` is for the quick quiz a call was made for (phase 9.6); it is empty today. A lesson's calls are deleted with the lesson (see [Deleting a lesson](#deleting-a-lesson)) |
 | node_key / provider_key / model_name | char | The step and the model that answered |
 | attempt / fallback_index | smallint | Which retry, and how far down the fallback chain |
 | status | enum | `ok`, `retryable_error`, `fatal_error` or `invalid_output` |
@@ -249,12 +249,14 @@ The tables `checkpoints`, `checkpoint_blobs`, `checkpoint_writes` and `checkpoin
 
 `DELETE /api/lessons/{id}` (`LessonService.delete`) cancels any active run, then deletes the `Lesson` row. Django cascades to its `Quiz`, `QuizAttempt`, `StudyMaterial`, `MediaAsset` (the files go with them), `LessonVersion`, `TestSubmission` and `GraphRun` rows.
 
-Two things are **not** removed, and both can hold learner data:
+Two more things hold learner data and are not reached by the cascade, so `LessonErasure` (`lessons/erasure.py`) removes them first, before the lesson row:
 
-- the LangGraph checkpoint rows for the lesson's threads (see above);
-- the `ModelCall` rows for the lesson and its runs (they are not linked by a foreign key).
+- the LangGraph checkpoint rows for the lesson's threads: the flow thread `<lesson id>` and one `<lesson id>:<run id>` for each small graph run (see above);
+- the `ModelCall` rows with the lesson's `lesson_id` (they are not linked by a foreign key).
 
-There is no self-service account deletion: the Privacy page tells people to ask by email. Removing a user by hand leaves the same two sets of rows behind. Cleaning both up on delete is open work in [roadmap.md](../process/roadmap.md).
+If erasing fails, the lesson stays and the delete can be repeated. A step that was still writing a checkpoint when the run was cancelled can leave one more behind in the instant before it notices.
+
+There is no self-service account deletion: the Privacy page tells people to ask by email. **Removing a user by hand still leaves both sets of rows behind** (open work in [roadmap.md](../process/roadmap.md)).
 
 ## Access rules
 

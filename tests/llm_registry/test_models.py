@@ -13,14 +13,17 @@ Use cases:
 - a reasoning model must say how reasoning is controlled
 - Ollama needs a base URL, OpenAI needs an API key variable name
 - has_api_key reads the environment
+- a model call can name the quick quiz it was made for: a nullable, indexed plain UUID column (not a foreign key), empty
+  for every call made today
 """
 
 import os
+import uuid
 
 import pytest
 from django.core.exceptions import ValidationError
 
-from llm_registry.models import LLMModel, NodeModelBinding, Provider
+from llm_registry.models import LLMModel, ModelCall, NodeModelBinding, Provider
 
 pytestmark = pytest.mark.django_db
 
@@ -91,3 +94,17 @@ def test_has_api_key_reads_the_environment(gemini, monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "k")
     assert gemini.has_api_key
     assert os.environ["GEMINI_API_KEY"] == "k"
+
+
+def test_a_model_call_can_name_a_quiz_in_a_plain_indexed_uuid_column():
+    field = ModelCall._meta.get_field("quiz_id")
+    assert field.null and field.blank and field.db_index
+    assert not field.is_relation
+
+    quiz_id = uuid.uuid4()
+    fields = {"node_key": "n", "provider_key": "p", "model_name": "m", "attempt": 1, "fallback_index": 0}
+    fields |= {"status": "ok", "latency_ms": 1}
+    plain, quizzed = ModelCall.objects.create(**fields), ModelCall.objects.create(quiz_id=quiz_id, **fields)
+
+    assert ModelCall.objects.get(pk=plain.pk).quiz_id is None
+    assert ModelCall.objects.get(pk=quizzed.pk).quiz_id == quiz_id

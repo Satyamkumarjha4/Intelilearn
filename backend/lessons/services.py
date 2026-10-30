@@ -18,6 +18,7 @@ from llm_registry.resolver import RegistryResolver
 
 from .document import LessonDocumentBuilder
 from .effects import RunEffects
+from .erasure import LessonErasure
 from .errors import (
     AlreadyAttempted,
     AlreadyExists,
@@ -51,6 +52,7 @@ from .models import (
     StudyMaterial,
     TestSubmission,
 )
+from .subjects import RunSubject
 
 
 class TaskQueue(Protocol):
@@ -69,7 +71,7 @@ class RunDispatcher:
             self.queue.enqueue(run)
         except QueueUnavailable as exc:
             GraphRun.objects.filter(pk=run.pk).update(status=GraphRun.Status.FAILED, error=str(exc.detail))
-            run.lesson.fail(str(exc.detail))
+            run.subject.fail(str(exc.detail))
             self.effects.on_stopped(run, str(exc.detail))
             raise
 
@@ -94,15 +96,15 @@ class StopPoint:
         """Call before the lesson is failed: the stage is read from the database, where the graph moves it."""
         if run.graph != GraphRun.Graph.FLOW:
             return
-        stage = Lesson.objects.values_list("stage", flat=True).get(pk=run.lesson_id)
+        stage = run.fresh_subject().stage
         if stage in (Stage.READY, Stage.FAILED):
             return
         run.payload = {**run.payload, self.KEY: stage}
         GraphRun.objects.filter(pk=run.pk).update(payload=run.payload)
 
-    def of(self, lesson: Lesson) -> tuple[Stage | None, dict]:
+    def of(self, subject: RunSubject) -> tuple[Stage | None, dict]:
         """The stage to go back to and the payload for the retry run. Nothing, unless the last flow run was stopped."""
-        last = GraphRun.objects.filter(lesson=lesson, graph=GraphRun.Graph.FLOW).order_by("-created_at").first()
+        last = GraphRun.objects.for_subject(subject).filter(graph=GraphRun.Graph.FLOW).order_by("-created_at").first()
         if last is None or last.status != GraphRun.Status.CANCELLED or self.KEY not in last.payload:
             return None, {}
         payload = {}
@@ -111,8 +113,12 @@ class StopPoint:
         return Stage(last.payload[self.KEY]), payload
 
 
-def has_active_run(lesson: Lesson) -> bool:
-    return GraphRun.objects.filter(lesson=lesson, status__in=[GraphRun.Status.QUEUED, GraphRun.Status.RUNNING]).exists()
+def has_active_run(subject: RunSubject) -> bool:
+    return (
+        GraphRun.objects.for_subject(subject)
+        .filter(status__in=[GraphRun.Status.QUEUED, GraphRun.Status.RUNNING])
+        .exists()
+    )
 
 
 class LessonService:
@@ -123,11 +129,13 @@ class LessonService:
         queue: TaskQueue | None = None,
         resolver: RegistryResolver | None = None,
         events: EventPublisher | None = None,
+        erasure: LessonErasure | None = None,
     ):
         self.dispatcher = RunDispatcher(queue)
         self.resolver = resolver or RegistryResolver()
         self.events = events or RedisEventPublisher()
         self.stops = StopPoint()
+        self.erasure = erasure or LessonErasure()
 
     def create(self, user, topic: str, user_context: str = "") -> tuple[Lesson, GraphRun]:
         """A new lesson with its registry and settings snapshotted, and a queued start run."""
@@ -173,15 +181,20 @@ class LessonService:
         if not stopped.update(status=GraphRun.Status.CANCELLED, finished_at=timezone.now()):
             raise RunEnded()
         self.stops.remember(run)
-        run.lesson.fail("Cancelled. Press Retry to continue where it stopped.")
+        run.subject.fail("Cancelled. Press Retry to continue where it stopped.")
         RunEffects().on_stopped(run, "Cancelled before it finished.")
         self.events.publish(run.id, RunEvent("cancelled", {}))
 
     def delete(self, lesson: Lesson) -> list:
-        """Cancel whatever is running, then remove the lesson and everything attached (media files go with them)."""
-        active = GraphRun.objects.filter(lesson=lesson, status__in=[GraphRun.Status.QUEUED, GraphRun.Status.RUNNING])
+        """Cancel whatever is running, erase what the cascade does not reach (LangGraph checkpoints, model calls), then
+        remove the lesson and everything attached (media files go with them). Erasing comes first, so if it fails the
+        lesson is still there and the delete can be repeated."""
+        active = GraphRun.objects.for_subject(lesson).filter(
+            status__in=[GraphRun.Status.QUEUED, GraphRun.Status.RUNNING]
+        )
         cancelled = list(active.values_list("pk", flat=True))
         active.update(status=GraphRun.Status.CANCELLED)
+        self.erasure.erase(lesson)
         lesson.delete()
         return cancelled
 

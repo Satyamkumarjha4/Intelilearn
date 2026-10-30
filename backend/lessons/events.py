@@ -171,13 +171,13 @@ class RunSnapshot:
         self.run_id = run_id
 
     def __call__(self) -> dict:
-        run = GraphRun.objects.select_related("lesson").get(pk=self.run_id)
+        run = GraphRun.objects.with_subject().get(pk=self.run_id)
         return {
             "status": run.status,
-            "stage": run.lesson.stage,
-            "lesson_id": str(run.lesson_id),
+            "stage": run.subject.stage,
+            "lesson_id": str(run.subject_id),
             "node_status": run.node_status,
             "error": run.error,
-            "awaiting": self.AWAITING.get(run.lesson.stage),
+            "awaiting": self.AWAITING.get(run.subject.stage),
             "started_at": (run.started_at or run.created_at).isoformat(),
         }

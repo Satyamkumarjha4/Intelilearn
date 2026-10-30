@@ -22,7 +22,7 @@ from llm_registry.gateway import AllModelsFailed, NodeDisabled
 from .checkpoints import CheckpointerFactory
 from .effects import RunEffects
 from .events import EventPublisher, RedisEventPublisher, RunEvent, RunEventTranslator
-from .models import GraphRun, Lesson
+from .models import GraphRun
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +140,7 @@ class FlowRunner:
         self.effects = effects or RunEffects()
 
     def execute(self, run_id) -> GraphRun:
-        run = GraphRun.objects.select_related("lesson").get(pk=run_id)
+        run = GraphRun.objects.with_subject().get(pk=run_id)
         if run.status not in GraphRunRecorder.ACTIVE or not self.lock.acquire(run.id):
             return run  # already finished, or another worker has it
         try:
@@ -164,12 +164,12 @@ class FlowRunner:
         if self.recorder.is_cancelled(run):
             self._stopped(run)
             return
-        lesson = Lesson.objects.get(pk=run.lesson_id)
+        subject = run.fresh_subject()
         if interrupt is None:
             self.recorder.finish(run, GraphRun.Status.SUCCEEDED)
-            self._publish(run, RunEvent("done", {"lesson_id": str(lesson.id), "stage": lesson.stage}))
-        elif interrupt.get("kind") == "retry":  # the graph gave up and recorded why on the lesson
-            self._fail(run, lesson.error, lesson_already_failed=True)
+            self._publish(run, RunEvent("done", {"lesson_id": str(subject.id), "stage": subject.stage}))
+        elif interrupt.get("kind") == "retry":  # the graph gave up and recorded why on the subject
+            self._fail(run, subject.error, subject_already_failed=True)
         else:
             self.recorder.finish(run, GraphRun.Status.PAUSED)
             self._publish(run, RunEvent("awaiting_input", {k: v for k, v in interrupt.items() if k != "message"}))
@@ -214,16 +214,16 @@ class FlowRunner:
             return None
         if snapshot.values:
             return self.NOTHING_TO_DO  # the thread already ran to its end (a redelivered task)
-        return {"lesson_id": str(run.lesson_id), **run.payload.get("input", {})}
+        return {"lesson_id": str(run.subject_id), **run.payload.get("input", {})}
 
     @staticmethod
     def thread_id(run: GraphRun) -> str:
-        """The main flow is one thread per lesson; the small graphs get a fresh thread per run."""
-        return str(run.lesson_id) if run.graph == GraphRun.Graph.FLOW else f"{run.lesson_id}:{run.id}"
+        """The main flow is one thread per subject; the small graphs get a fresh thread per run."""
+        return str(run.subject_id) if run.graph == GraphRun.Graph.FLOW else f"{run.subject_id}:{run.id}"
 
-    def _fail(self, run: GraphRun, message: str, *, lesson_already_failed: bool = False) -> None:
-        if run.graph == GraphRun.Graph.FLOW and not lesson_already_failed:
-            Lesson.objects.get(pk=run.lesson_id).fail(message)
+    def _fail(self, run: GraphRun, message: str, *, subject_already_failed: bool = False) -> None:
+        if run.graph == GraphRun.Graph.FLOW and not subject_already_failed:
+            run.fresh_subject().fail(message)
         self.effects.on_stopped(run, message)
         self.recorder.finish(run, GraphRun.Status.FAILED, message)
         self._publish(run, RunEvent("error", {"message": message, "code": "failed"}))

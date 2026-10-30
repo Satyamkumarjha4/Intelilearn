@@ -91,7 +91,7 @@ class RunRetryView(RunLookup, ConsoleView):
     def post(self, request, run_id):
         run = self.run_of(run_id)
         new = RunActions(self.audit).retry(run)
-        return Response(RunRetriedSerializer({"run_id": new.id, "lesson_id": run.lesson_id}).data, status=202)
+        return Response(RunRetriedSerializer({"run_id": new.id, "lesson_id": run.subject_id}).data, status=202)
 
 
 class RunCancelView(RunLookup, ConsoleView):
