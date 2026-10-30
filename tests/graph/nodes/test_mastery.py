@@ -7,7 +7,8 @@ stage of a lesson that is already ready would hide the sheets they have.
 
 Use cases:
 - publish_mastery_options moves the lesson to awaiting_choice and has no other effect
-- await_choice accepts the three sheet kinds and refuses anything else
+- await_choice accepts the two choices (as a body or bare) and the three sheet kinds a lesson already waiting may send,
+  and refuses anything else
 - generate_study_material asks for the chosen kind's schema, passes the diagnostic's concepts and counts the attempt
 - a practice sheet's marks and numerical answers are set by code, never taken from the model
 - generate_study_material takes the concepts from the stored quiz when the state has no bundle (an extra sheet later)
@@ -65,9 +66,18 @@ class TestAwaitChoice:
     def test_accepts_the_three_kinds(self, kind):
         assert AwaitChoiceNode().accept(kind) == kind
 
-    @pytest.mark.parametrize("value", ["poster", "", None, 3, ["cheat_sheet"]])
+    @pytest.mark.parametrize("choice", ["lesson", "sheets"])
+    def test_accepts_the_two_choices_as_a_body_or_bare(self, choice):
+        assert AwaitChoiceNode().accept({"choice": choice}) == choice
+        assert AwaitChoiceNode().accept(choice) == choice
+
+    @pytest.mark.parametrize("kind", ["cheat_sheet", "revision_sheet", "practice_sheet"])
+    def test_still_accepts_a_sheet_kind_inside_a_body(self, kind):
+        assert AwaitChoiceNode().accept({"choice": kind}) == kind
+
+    @pytest.mark.parametrize("value", ["poster", "", None, 3, ["cheat_sheet"], {}, {"choice": "poster"}, {"kind": "x"}])
     def test_refuses_anything_else(self, value):
-        with pytest.raises(ValueError, match="Unknown study sheet"):
+        with pytest.raises(ValueError, match="Unknown choice"):
             AwaitChoiceNode().accept(value)
 
     def test_waits_with_its_own_kind_of_interrupt(self):

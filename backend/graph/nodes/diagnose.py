@@ -9,13 +9,14 @@ from typing import Any
 from lessons.models import Lesson, Quiz, QuizAttempt, Stage
 from llm_registry.gateway import AllModelsFailed
 
+from ..assessment import AssessmentRequest, AssessmentSource, AssessmentSources
 from ..context import FlowContext, NodeBudget
 from ..grading import QuizResult, RoutingPolicy
 from ..levels import LevelScheme
 from ..profile import LearnerProfile
 from ..prompts import AssessLearnerPrompt, DiagnosticPrompt, DiagnosticReviewPrompt
 from ..schemas import DiagnosticBundle, LearnerAssessment, QuizReview
-from ..validators import AssessmentGuard, DiagnosticReviewValidator, DiagnosticValidator, Validator
+from ..validators import DiagnosticReviewValidator, DiagnosticValidator, Validator
 from .base import AwaitNode, LLMNode, Node, PublishNode, ValidateNode
 
 
@@ -34,6 +35,9 @@ class LoadContextNode(Node):
             "snapshot": lesson.config_snapshot,
             "settings": lesson.settings_snapshot,
             "level_scheme": LevelScheme.CURRENT,
+            "entry": lesson.entry,
+            "intent": lesson.intent,
+            "self_rating_halves": lesson.self_rating_halves,
         }
 
 
@@ -182,8 +186,15 @@ class AssessLearnerNode(LLMNode):
     prompt = AssessLearnerPrompt()
     schema = LearnerAssessment
 
-    def __init__(self, guard: AssessmentGuard | None = None):
-        self.guard = guard or AssessmentGuard()
+    def __init__(self, source: AssessmentSource | None = None):
+        self.source = source or AssessmentSources.for_key("diagnostic")
+
+    def before(self, state: dict) -> None:
+        """The learner who aced the quiz and chose the Expert lesson comes here straight from the choice: the lesson
+        starts building now, and (the sheets path set `mastery` as the route) its route becomes `lesson`, so it has a
+        test like any other."""
+        if state.get("mastery_choice") == "lesson":
+            self.lesson(state).advance_to(Stage.GENERATING_LESSON, route="lesson", prerequisites_to_cover=[])
 
     def subject(self, state: dict) -> dict:
         bundle = state["bundle"]
@@ -193,8 +204,14 @@ class AssessLearnerNode(LLMNode):
         }
 
     def to_state(self, output: Any, state: dict, ctx: FlowContext) -> dict:
-        assessment = LevelScheme.stamp(
-            self.guard.apply(output.model_dump(mode="json"), state["prerequisites_to_cover"])
+        request = AssessmentRequest(
+            draft=output.model_dump(mode="json"),
+            prerequisites_to_cover=state["prerequisites_to_cover"],
+            mastery_choice=state.get("mastery_choice"),
         )
-        self.lesson(state).record(assessment=assessment, level=LevelScheme.level_of(assessment).value)
-        return {"assessment": assessment}
+        assessment = self.source.assess(request)
+        self.lesson(state).record(
+            assessment=assessment, level=LevelScheme.level_of(assessment).value, level_source=self.source.key
+        )
+        update = {"assessment": assessment, "level_source": self.source.key}
+        return update | {"route": "lesson"} if state.get("mastery_choice") == "lesson" else update

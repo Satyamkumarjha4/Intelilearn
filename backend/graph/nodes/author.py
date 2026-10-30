@@ -24,6 +24,7 @@ from ..levels import LevelScheme
 from ..prompts import AlignmentPrompt, PlanInteractivesPrompt, PlanLessonPrompt
 from ..questions import LessonTestBlueprint
 from ..schemas import MEDIA_KINDS, PAGE_KEYS, AlignmentReport, FinalTest, InteractivePlan, LessonPlan
+from ..shapes import LessonShapes
 from ..validators import InteractivePlanValidator, PlanValidator, Validator
 from .authoring_media import MediaAssets
 from .base import LLMNode, Node, ValidateNode
@@ -41,8 +42,10 @@ class PlanLessonNode(LLMNode):
     feedback_key = "plan"
 
     def to_state(self, output: LessonPlan, state: dict, ctx: FlowContext) -> dict:
+        # The level is the learner's, found by the quiz or the rating: the model does not get to change it.
+        level = LevelScheme.level_of(state["assessment"])
         return {
-            "plan": LevelScheme.stamp(output.model_dump(mode="json")),
+            "plan": LevelScheme.stamp(output.model_dump(mode="json") | {"level": level.value}),
             "blueprint": LessonTestBlueprint.for_topic(output.quantitative).to_json(),
             "question_round": 0,  # a new plan starts the test from the beginning
             "accepted": {},
@@ -65,7 +68,10 @@ class ValidatePlanNode(ValidateNode):
         return state["plan"]
 
     def context(self, state: dict) -> dict:
-        return {"prerequisites_to_cover": state.get("prerequisites_to_cover") or []}
+        return {
+            "prerequisites_to_cover": state.get("prerequisites_to_cover") or [],
+            "shape": LessonShapes.of(state["assessment"]),
+        }
 
     def outcome(self, state: dict, problems: list[str], ctx: FlowContext) -> dict:
         if not problems:

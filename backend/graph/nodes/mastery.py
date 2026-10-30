@@ -34,10 +34,17 @@ class AwaitChoiceNode(AwaitNode):
     kind = "mastery_choice"
     result_key = "mastery_choice"
 
+    #: what a learner who aced the quiz can choose; the three sheet kinds are accepted for a lesson that was already
+    #: waiting at the choice before it had two options
+    CHOICES = ("lesson", "sheets")
+
     def accept(self, value: Any) -> str:
-        if value not in MaterialKind.values:
-            raise ValueError(f"Unknown study sheet {value!r}")
-        return value
+        """`{"choice": "lesson" | "sheets"}`, or one of the three sheet kinds from before the two-way choice (a bare
+        `"lesson"` or `"sheets"` is taken too). → the choice as a string."""
+        choice = value.get("choice") if isinstance(value, dict) else value
+        if choice not in self.CHOICES and choice not in MaterialKind.values:
+            raise ValueError(f"Unknown choice {choice!r}")
+        return choice
 
 
 def diagnostic_concepts(state: dict) -> list[str]:

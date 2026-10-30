@@ -9,6 +9,8 @@ feedback the model gets on its retry.
 Use cases:
 - a well-formed plan, page, test and interactive plan have no problems
 - plan: exactly the three page keys, outlines of 2 to 8 parts, no concept on two pages
+- plan: the slots asked for are the shape's (every level has the same three keys), and a shape does not relax the
+  promise to teach the prerequisites the lesson was given
 - plan: the introduction lists every prerequisite to cover (names compared ignoring case and punctuation)
 - plan: carries only the quantitative flag; the test is the fixed blueprint, so there is no test spec to check
 - page: the key matches the plan, 2 to 8 sections, unique ids and headings, a real body, every outline concept taught
@@ -27,6 +29,7 @@ from support.fakes import FakeSandbox
 from support.lesson_data import make_blueprint_test, make_interactive_plan, make_page, make_pages, make_plan
 
 from graph.questions import LessonTestBlueprint
+from graph.shapes import LessonShapes
 from graph.validators import InteractivePlanValidator, PageValidator, PlanValidator, QuestionBatchValidator
 
 SETTINGS = {"max_interactives_per_page": 3}
@@ -44,6 +47,24 @@ class TestPlan:
 
     def test_a_well_formed_plan_has_no_problems(self):
         assert self.problems(make_plan()) == []
+
+    @pytest.mark.parametrize("level", ["beginner", "foundation", "proficient", "expert"])
+    def test_a_plan_is_judged_against_the_slots_of_the_learners_shape(self, level):
+        shape = LessonShapes.for_level(level)
+
+        assert PlanValidator().validate(make_plan(), prerequisites_to_cover=[], shape=shape) == []
+        broken = mutated(make_plan(), lambda p: p["pages"].pop())
+        assert any("Plan exactly three pages" in p
+                   for p in PlanValidator().validate(broken, prerequisites_to_cover=[], shape=shape))  # fmt: skip
+
+    @pytest.mark.parametrize("level", ["beginner", "expert"])
+    def test_whatever_the_shape_the_introduction_covers_the_prerequisites_it_was_given(self, level):
+        shape = LessonShapes.for_level(level)
+        listed = [{"name": "Arrays", "why_needed": "x"}]
+
+        problems = PlanValidator().validate(make_plan(), prerequisites_to_cover=listed, shape=shape)
+
+        assert any('must cover the prerequisite "Arrays"' in p for p in problems)
 
     def test_needs_exactly_the_three_page_keys(self):
         plan = mutated(make_plan(), lambda p: p["pages"].pop())

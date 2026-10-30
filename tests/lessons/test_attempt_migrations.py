@@ -140,12 +140,13 @@ def test_the_migrations_can_be_undone(django_user_model):
 
 @pytest.mark.django_db(transaction=True)
 def test_the_constraints_keep_attempt_numbers_open_attempts_and_stems_unique(django_user_model):
-    migrate(AFTER)
+    apps = migrate(AFTER)  # the models as they were then: the lesson table has fewer columns now
     try:
-        from lessons.models import Lesson, Question, TestSubmission
+        Lesson, Question = apps.get_model("lessons", "Lesson"), apps.get_model("lessons", "Question")
+        TestSubmission = apps.get_model("lessons", "TestSubmission")
 
         owner = django_user_model.objects.create_user("c@example.com", password="x", name="C")
-        lesson = Lesson.objects.create(owner=owner, topic="T")
+        lesson = Lesson.objects.create(owner_id=owner.pk, topic="T")
         TestSubmission.objects.create(lesson=lesson, attempt_no=1, status="graded")
 
         with pytest.raises(IntegrityError), transaction.atomic():

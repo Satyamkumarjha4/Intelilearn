@@ -258,7 +258,12 @@ def test_a_bundle_that_stays_invalid_fails_the_run_and_retry_starts_over(run, ga
 def test_exits_that_no_segment_provides_lead_to_the_end():
     exits = FlowGraphBuilder(segments=[DiagnoseSegment()])._exits()
 
-    assert exits == {"failed": "mark_failed", "lesson": "__end__", "mastery": "__end__", "build": "__end__"}
+    assert exits == {
+        "failed": "mark_failed", "lesson": "__end__", "mastery": "__end__", "build": "__end__", "sheets": "__end__",
+        "begin": "generate_diagnostic",  # the quick check is the only way in without an entry segment
+        "assessed": "__end__",  # an assessment leads to the lesson exit
+        "assess": "assess_learner",
+    }  # fmt: skip
 
 
 def test_the_default_flow_wires_the_mastery_and_author_segments_in():

@@ -39,6 +39,11 @@ class FlowState(TypedDict, total=False):
     snapshot: dict  # resolved model registry (Lesson.config_snapshot)
     settings: dict  # FlowSettings snapshot
     level_scheme: int  # which level names this flow's documents use; a checkpoint from before the rename lacks it
+    # how the lesson began (every key is optional: a thread checkpointed before self-rating has none, and means a quiz)
+    entry: str  # diagnostic or self_rating
+    intent: str  # lesson (sheets from a topic come later)
+    self_rating_halves: int | None
+    level_source: str  # where the level came from
 
     # Stage A
     bundle: dict  # DiagnosticBundle
@@ -51,8 +56,13 @@ class FlowState(TypedDict, total=False):
     prerequisites_to_cover: list[dict]  # Prerequisite
     route: Literal["prerequisite", "lesson", "mastery"]
     assessment: dict  # LearnerAssessment
-    mastery_choice: Literal["cheat_sheet", "revision_sheet", "practice_sheet"] | None
+    prerequisite_plan: dict  # PrerequisiteList, planned for a Beginner who took no quiz
+    # "lesson" or "sheets", or a sheet kind from before the two-way choice
+    mastery_choice: Literal["lesson", "sheets", "cheat_sheet", "revision_sheet", "practice_sheet"] | None
     study_material: dict | None
+    sheets: Annotated[dict[str, dict], Reducers.merge_dicts]  # kind → sheet, written in parallel by "sheets"
+    sheets_outcome: str  # what the sheets' join decided: retry, failed or complete
+    concepts: list[str]  # what the sheets must cover
 
     # Stage B (parallel writers → reducers)
     plan: dict  # LessonPlan

@@ -59,6 +59,17 @@ from .nodes.diagnose import (
     PublishPrerequisiteNode,
     ValidateDiagnosticNode,
 )
+from .nodes.entry import (
+    AssessFromSourceNode,
+    EntryRouter,
+    EntryRouterNode,
+    IntentRouter,
+    IntentRouterNode,
+    LevelGate,
+    LevelGateNode,
+    PlanPrerequisitesNode,
+    ValidatePrerequisitesNode,
+)
 from .nodes.failure import AwaitRetryNode, MarkFailedNode
 from .nodes.grading import (
     FailGradeNode,
@@ -86,12 +97,23 @@ from .nodes.repair import (
     VerifyRepairNode,
 )
 from .nodes.routers import CheckRouter, LevelRouter
+from .nodes.sheets import (
+    ChoiceRouter,
+    GenerateSheetNode,
+    PlanSheetsNode,
+    PlanSheetsRouter,
+    SheetsJoinNode,
+    SheetsRouter,
+)
 
 
 class DiagnoseSegment(Segment):
-    """Stage A: START → … → assess_learner. Exits: `mastery` (aced it), `lesson` (after the assessment), `failed`."""
+    """Stage A: START → … → assess_learner. Exits: `begin` (where load_context goes: the quick check, unless a segment
+    offers another way in), `mastery` (aced it), `assessed` (after the assessment), `failed`. Provides `assess`, the
+    assessment, for a learner who chose the Expert lesson."""
 
     retry_targets = ("load_context", "generate_diagnostic")
+    provides = {"assess": "assess_learner"}
 
     def add_nodes(self, graph: StateGraph) -> None:
         for node in (
@@ -110,7 +132,7 @@ class DiagnoseSegment(Segment):
 
     def add_edges(self, graph: StateGraph, exits: dict[str, str]) -> None:
         graph.add_edge(START, "load_context")
-        graph.add_edge("load_context", "generate_diagnostic")
+        graph.add_edge("load_context", exits["begin"])
         graph.add_edge("generate_diagnostic", "validate_diagnostic")
         graph.add_conditional_edges(
             "validate_diagnostic",
@@ -124,11 +146,44 @@ class DiagnoseSegment(Segment):
         graph.add_edge("publish_prerequisite", "await_prerequisite")
         graph.add_edge("await_prerequisite", "grade_prerequisite")
         graph.add_edge("grade_prerequisite", "assess_learner")
-        graph.add_edge("assess_learner", exits["lesson"])
+        graph.add_edge("assess_learner", exits["assessed"])
+
+
+class EntrySegment(Segment):
+    """The way in for a learner who took no quick check, and where both ways meet: entry_router, assess_from_source,
+    level_gate, plan_prerequisites, intent_router. Provides `begin` (load_context goes to the entry router) and
+    `assessed` (every assessment goes to the level gate); the intent router sends a lesson on to the `lesson` exit."""
+
+    retry_targets = ("plan_prerequisites",)
+    provides = {"begin": "entry_router", "assessed": "level_gate"}
+
+    def add_nodes(self, graph: StateGraph) -> None:
+        for node in (
+            EntryRouterNode(),
+            AssessFromSourceNode(),
+            LevelGateNode(),
+            PlanPrerequisitesNode(),
+            ValidatePrerequisitesNode(),
+            IntentRouterNode(),
+        ):
+            graph.add_node(node.name, node)
+
+    def add_edges(self, graph: StateGraph, exits: dict[str, str]) -> None:
+        graph.add_conditional_edges("entry_router", EntryRouter(), ["generate_diagnostic", "assess_from_source"])
+        graph.add_edge("assess_from_source", "level_gate")
+        graph.add_conditional_edges("level_gate", LevelGate(), ["plan_prerequisites", "intent_router"])
+        graph.add_edge("plan_prerequisites", "validate_prerequisites")
+        graph.add_conditional_edges(
+            "validate_prerequisites",
+            CheckRouter("prerequisites", ok="intent_router", retry="plan_prerequisites", fail=exits["failed"]),
+            ["intent_router", "plan_prerequisites", exits["failed"]],
+        )
+        graph.add_conditional_edges("intent_router", IntentRouter({"lesson": exits["lesson"]}), [exits["lesson"]])
 
 
 class MasterySegment(Segment):
-    """The learner aced the diagnostic: offer a sheet, write it, check it, save it. Provides the `mastery` exit."""
+    """The learner aced the diagnostic: offer the Expert lesson or the two sheets (or, for a lesson that was waiting
+    before that, one sheet), then follow the choice. Provides the `mastery` exit."""
 
     retry_targets = ("generate_study_material",)
     provides = {"mastery": "publish_mastery_options"}
@@ -145,7 +200,11 @@ class MasterySegment(Segment):
 
     def add_edges(self, graph: StateGraph, exits: dict[str, str]) -> None:
         graph.add_edge("publish_mastery_options", "await_choice")
-        graph.add_edge("await_choice", "generate_study_material")
+        graph.add_conditional_edges(
+            "await_choice",
+            ChoiceRouter(lesson=exits["assess"], sheets=exits["sheets"], legacy="generate_study_material"),
+            sorted({exits["assess"], exits["sheets"], "generate_study_material"}),
+        )
         graph.add_edge("generate_study_material", "validate_study_material")
         graph.add_conditional_edges(
             "validate_study_material",
@@ -153,6 +212,24 @@ class MasterySegment(Segment):
             ["persist_study_material", "generate_study_material", exits["failed"]],
         )
         graph.add_edge("persist_study_material", END)
+
+
+class SheetsSegment(Segment):
+    """The cheat sheet and the revision sheet, written in parallel and saved together. Provides the `sheets` exit."""
+
+    retry_targets = ("plan_sheets",)
+    provides = {"sheets": "plan_sheets"}
+
+    def add_nodes(self, graph: StateGraph) -> None:
+        for node in (PlanSheetsNode(), GenerateSheetNode(), SheetsJoinNode()):
+            graph.add_node(node.name, node)
+
+    def add_edges(self, graph: StateGraph, exits: dict[str, str]) -> None:
+        graph.add_conditional_edges("plan_sheets", PlanSheetsRouter(), ["generate_sheet"])
+        graph.add_edge("generate_sheet", "sheets_join")
+        graph.add_conditional_edges(
+            "sheets_join", SheetsRouter(on_fail=exits["failed"]), ["generate_sheet", END, exits["failed"]]
+        )
 
 
 class AuthorSegment(Segment):
@@ -269,13 +346,17 @@ class FlowGraphBuilder(GraphBuilder):
 
     @staticmethod
     def default_segments() -> list[Segment]:
-        return [DiagnoseSegment(), MasterySegment(), AuthorSegment(), BuildSegment()]
+        return [DiagnoseSegment(), EntrySegment(), MasterySegment(), SheetsSegment(), AuthorSegment(), BuildSegment()]
 
     def _exits(self) -> dict[str, str]:
         # Exits that no segment provides lead to END.
-        exits = {"failed": "mark_failed", "lesson": END, "mastery": END, "build": END}
+        exits = {"failed": "mark_failed", "lesson": END, "mastery": END, "build": END, "sheets": END}
         for segment in self.segments:
             exits |= segment.provides
+        # Without an entry segment the quick check is the only way in, and an assessment leads straight to the lesson.
+        exits.setdefault("begin", "generate_diagnostic")
+        exits.setdefault("assessed", exits["lesson"])
+        exits.setdefault("assess", END)
         return exits
 
     def add_nodes(self, graph: StateGraph) -> None:

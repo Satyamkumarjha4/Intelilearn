@@ -11,6 +11,7 @@ Use cases:
 - plan_lesson asks for a LessonPlan and stamps it with the level names it uses; validate_plan saves a valid plan (and
   its title and level, a plan from before the rename read as it was written) or asks again, and gives up with a readable
   error when attempts run out
+- the plan always carries the learner's level, whatever level the model wrote
 - a valid plan also records the fixed test blueprint for its kind of topic, on the state and on the lesson, and a new
   plan starts the test's questions from the beginning
 - the plan router goes on to plan the batches, or retries, or fails; after the batches are planned the first round
@@ -33,10 +34,18 @@ Use cases:
 
 import pytest
 from langgraph.types import Send
-from support.lesson_data import make_blueprint_test, make_interactive_plan, make_pages, make_plan, make_state
+from support.lesson_data import (
+    make_assessment,
+    make_blueprint_test,
+    make_interactive_plan,
+    make_pages,
+    make_plan,
+    make_state,
+)
 from support.question_data import written
 
 from graph.alignment import AlignmentPolicy
+from graph.levels import LevelScheme
 from graph.nodes.author import (
     AlignmentJudgeNode,
     AuthoredJoinNode,
@@ -100,6 +109,18 @@ class TestPlan:
         call = gateway.called("lesson.plan")[0]
         assert call.schema is LessonPlan and "Plan exactly three pages." in call.messages[1].content
         assert "Halving the range" in call.messages[1].content  # the assessment's start point
+
+    @pytest.mark.parametrize("level", ["beginner", "foundation", "proficient", "expert"])
+    def test_the_plan_carries_the_learners_level_whatever_the_model_wrote(
+        self, lesson, lesson_state, gateway, runtime, level
+    ):
+        Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.GENERATING_LESSON)
+        gateway.script("lesson.plan", make_plan() | {"level": "foundation" if level != "foundation" else "expert"})
+        state = authored(lesson_state) | {"assessment": LevelScheme.stamp(make_assessment() | {"level": level})}
+
+        update = PlanLessonNode()(state, runtime)
+
+        assert update["plan"]["level"] == level and update["plan"]["level_scheme"] == LevelScheme.CURRENT
 
     def test_a_valid_plan_is_saved_with_its_title_and_level(self, lesson, lesson_state, runtime):
         Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.GENERATING_LESSON)

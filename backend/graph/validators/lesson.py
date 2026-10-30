@@ -3,6 +3,7 @@
 import re
 
 from ..schemas.lesson import PAGE_KEYS
+from ..shapes import LessonShape
 from .base import LatexChecker, LatexRules, TextRules
 from .questions import QuestionRules
 
@@ -10,11 +11,17 @@ norm = TextRules.norm
 
 
 class PlanValidator:
-    def validate(self, plan: dict, *, prerequisites_to_cover: list[dict]) -> list[str]:
+    """The shape of the learner's level says which slots the plan has; the prerequisites the lesson was given are
+    taught on the first page whatever the level (a quiz that found a gap made the promise)."""
+
+    def validate(
+        self, plan: dict, *, prerequisites_to_cover: list[dict], shape: LessonShape | None = None
+    ) -> list[str]:
         problems: list[str] = []
+        wanted = shape.page_keys if shape else PAGE_KEYS
         keys = [page["key"] for page in plan["pages"]]
-        if sorted(keys) != sorted(PAGE_KEYS):
-            problems.append(f"Plan exactly three pages with keys {', '.join(PAGE_KEYS)} (got {', '.join(keys)}).")
+        if sorted(keys) != sorted(wanted):
+            problems.append(f"Plan exactly three pages with keys {', '.join(wanted)} (got {', '.join(keys)}).")
         concepts = [norm(item["concept"]) for page in plan["pages"] for item in page["outline"]]
         if dupes := TextRules.duplicates(concepts):
             problems.append("Each concept belongs to one page only; repeated across pages: " + ", ".join(dupes))

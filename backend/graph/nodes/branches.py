@@ -5,7 +5,7 @@ from typing import Any
 #: What every branch needs from the lesson's state to call a model and to see the whole plan.
 SHARED_KEYS = (
     "lesson_id", "topic", "user_context", "profile", "snapshot", "settings", "assessment", "plan", "pages",
-    "interactive_plan", "media", "prerequisites_to_cover", "final_test", "blueprint", "exclusions",
+    "interactive_plan", "media", "prerequisites_to_cover", "final_test", "blueprint", "exclusions", "concepts",
 )  # fmt: skip
 
 

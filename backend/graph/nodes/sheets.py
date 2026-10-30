@@ -1,0 +1,153 @@
+"""The mastery choice: where the learner who aced the quiz goes, and the two sheets written in parallel.
+
+    await_choice → (choice_router)  lesson → assess_learner (as an Expert)
+                                    sheets → plan_sheets → Send ×(cheat sheet ‖ revision sheet) → sheets_join → ready
+                                    a sheet kind from before the two-way choice → generate_study_material (unchanged)
+
+The sheets are grounded in the diagnostic's concepts. `sheets_join` sends back only the sheet that failed its rules,
+saves both when they pass, and gives up with a reason when a sheet runs out of attempts (Retry then plans both again).
+"""
+
+from langgraph.graph import END
+from langgraph.types import Send
+
+from lessons.models import Stage, StudyMaterial
+
+from ..context import FlowContext, NodeBudget
+from ..sheets import SheetKinds, SheetWriter
+from .base import Node
+from .branches import BranchBuilder
+from .mastery import diagnostic_concepts
+from .routers import Router
+
+LESSON, SHEETS = "lesson", "sheets"
+
+
+class ChoiceRouter(Router):
+    """After await_choice: the Expert lesson, the two sheets, or the one sheet a lesson waiting before the two-way
+    choice asked for."""
+
+    def __init__(self, *, lesson: str, sheets: str, legacy: str):
+        self.lesson, self.sheets, self.legacy = lesson, sheets, legacy
+
+    def __call__(self, state: dict) -> str:
+        choice = state["mastery_choice"]
+        if choice == LESSON:
+            return self.lesson
+        return self.sheets if choice == SHEETS else self.legacy
+
+
+class PlanSheetsNode(Node):
+    """Starts the sheets: the lesson moves to writing them, the concepts they must cover are read once, and a Retry
+    starts both sheets from the beginning."""
+
+    name = "plan_sheets"
+    stage = Stage.GENERATING_MATERIAL
+
+    def run(self, state: dict, ctx: FlowContext) -> dict:
+        self.lesson(state).advance_to(Stage.GENERATING_MATERIAL)
+        keys = {SheetKinds.feedback_key(kind): None for kind in SheetKinds.CHOICE}
+        return {
+            "concepts": diagnostic_concepts(state),
+            "sheets": dict.fromkeys(SheetKinds.CHOICE),
+            "feedback": keys,
+            "attempts": dict(keys),
+        }
+
+
+class SheetStatus:
+    """Which sheets still need another attempt, and which ran out of attempts."""
+
+    @classmethod
+    def of(cls, state: dict) -> tuple[list[str], list[str]]:
+        """→ (kinds to try again, kinds out of attempts that still have problems)."""
+        retry, exhausted = [], []
+        budget = NodeBudget.of(state, "study.generate").max_attempts
+        for kind in SheetKinds.CHOICE:
+            key = SheetKinds.feedback_key(kind)
+            if not (state.get("feedback") or {}).get(key):
+                continue
+            (retry if (state.get("attempts") or {}).get(key, 0) < budget else exhausted).append(kind)
+        return retry, exhausted
+
+    @classmethod
+    def sends(cls, state: dict, kinds=SheetKinds.CHOICE) -> list[Send]:
+        feedback = state.get("feedback") or {}
+        return [
+            Send(
+                "generate_sheet",
+                BranchBuilder.of(state, key=kind, feedback=list(feedback.get(SheetKinds.feedback_key(kind)) or [])),
+            )
+            for kind in kinds
+        ]
+
+
+class PlanSheetsRouter(Router):
+    """After plan_sheets: both sheets are written at once."""
+
+    def __call__(self, state: dict) -> list[Send]:
+        return SheetStatus.sends(state)
+
+
+class GenerateSheetNode(Node):
+    """One sheet, written in parallel with the other."""
+
+    name = "generate_sheet"
+    stage = Stage.GENERATING_MATERIAL
+
+    def run(self, state: dict, ctx: FlowContext) -> dict:
+        kind = state["key"]
+        material, problems = SheetWriter(ctx).sheet(state, kind, state.get("feedback"))
+        key = SheetKinds.feedback_key(kind)
+        # The latest version is kept even with problems: the join decides whether to try again.
+        return {"sheets": {kind: material}, "feedback": {key: problems}, "attempts": {key: 1}}
+
+
+class SheetsJoinNode(Node):
+    """Saves both sheets when they pass, sends back the one that did not, or gives up when it is out of attempts."""
+
+    name = "sheets_join"
+    stage = Stage.GENERATING_MATERIAL
+
+    COMPLETE, RETRY, FAILED = "complete", "retry", "failed"
+
+    def run(self, state: dict, ctx: FlowContext) -> dict:
+        retry, exhausted = SheetStatus.of(state)
+        if exhausted:
+            problems = [p for kind in exhausted for p in (state["feedback"].get(SheetKinds.feedback_key(kind)) or [])]
+            return {
+                "sheets_outcome": self.FAILED,
+                "error": f"The study sheets still failed their checks: {'; '.join(problems[:4])}",
+                "failed_node": "plan_sheets",
+                "retry_keys": [SheetKinds.feedback_key(kind) for kind in SheetKinds.CHOICE],
+            }
+        if retry:
+            for kind in retry:
+                ctx.events({
+                    "type": "attempt", "node": "generate_sheet",
+                    "attempt": state["attempts"].get(SheetKinds.feedback_key(kind), 0) + 1,
+                    "reason": state["feedback"][SheetKinds.feedback_key(kind)][0],
+                })  # fmt: skip
+            return {"sheets_outcome": self.RETRY}
+        for kind in SheetKinds.CHOICE:
+            StudyMaterial.objects.update_or_create(
+                lesson_id=state["lesson_id"], kind=kind, defaults={"content": state["sheets"][kind]}
+            )
+        self.lesson(state).advance_to(Stage.READY)
+        return {"sheets_outcome": self.COMPLETE}
+
+
+class SheetsRouter(Router):
+    """After sheets_join: send back only the sheet that failed, finish, or give up."""
+
+    def __init__(self, on_fail: str = "mark_failed"):
+        self.on_fail = on_fail
+
+    def __call__(self, state: dict):
+        outcome = state["sheets_outcome"]
+        if outcome == SheetsJoinNode.FAILED:
+            return self.on_fail
+        if outcome == SheetsJoinNode.RETRY:
+            retry, _ = SheetStatus.of(state)
+            return SheetStatus.sends(state, retry)
+        return END

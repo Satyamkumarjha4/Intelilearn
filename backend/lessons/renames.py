@@ -99,6 +99,7 @@ class StoredRenames:
         # added by migration 0007, after the rename: they are written in the new names from the start
         ("Lesson", "test_blueprint"), ("Question", "payload"), ("TestSubmission", "questions"),
         ("TestSubmission", "followup"),
+        ("Lesson", "recommended_from"),  # added by migration 0011: an attempt id and a topic
     )  # fmt: skip
 
     def __init__(self, levels: LevelRename | None = None, difficulties: DifficultyRename | None = None):
