@@ -25,13 +25,18 @@ from ..validators import Validator
 class Node(ABC):
     name: ClassVar[str]
     #: The stage the lesson is in while this node works. A node that runs while the lesson is `failed` means a
-    #: retry resumed here, so the lesson goes back to this stage without the node having to know about retries.
+    #: retry resumed here, so the lesson goes back to this stage without the node having to know about retries. A node
+    #: of a later stage that runs while the lesson still reads "preparing the quick check" means the same thing for a
+    #: lesson that has no quick check: a Stop before the first step finished, and a Retry that put the lesson back to
+    #: where the Stop found it, while the thread had already gone on.
     stage: ClassVar[Stage | None] = None
 
     def __call__(self, state: dict, runtime) -> Any:
         ctx: FlowContext = runtime.context
         if self.stage:
             Lesson.objects.filter(pk=state["lesson_id"], stage=Stage.FAILED).update(stage=self.stage, error="")
+            if self.stage != Stage.PREPARING_DIAGNOSTIC:
+                Lesson.objects.filter(pk=state["lesson_id"], stage=Stage.PREPARING_DIAGNOSTIC).update(stage=self.stage)
         ctx.events({"type": "node", "node": self.name, "status": "running"})
         try:
             return self.run(state, ctx)

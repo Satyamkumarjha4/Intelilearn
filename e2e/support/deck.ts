@@ -28,6 +28,9 @@ export class Deck {
     return answered;
   }
 
+  /** Every card answered right: a perfect quick check. */
+  static readonly allRight = (_position: number, options: string[]) => Math.max(0, options.findIndex((text) => /true statement/.test(text)));
+
   /** The fake model writes the right option as "The true statement about idea N". */
   static readonly rightOrDontKnow = (position: number, options: string[]) =>
     position % 2 === 0 ? Math.max(0, options.findIndex((text) => /true statement/.test(text))) : ("dont_know" as const);
