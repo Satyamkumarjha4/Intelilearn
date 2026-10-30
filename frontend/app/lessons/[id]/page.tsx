@@ -29,7 +29,7 @@ import { lessonsApi } from "@/lib/lessons-api";
 import { LessonTabs, type TabId } from "@/lib/lesson-tabs";
 import { PlainWarning } from "@/lib/plain-notes";
 import { StageView } from "@/lib/stage-view";
-import type { QuizKind, QuizResultSummary, Stage } from "@/lib/types";
+import type { Entry, QuizKind, QuizResultSummary, Stage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 import Loading from "./loading";
@@ -40,8 +40,10 @@ const BUILDING_TITLES: Partial<Record<Stage, string>> = {
   generating_lesson: "Building your lesson",
 };
 
-/** The small line above the heading: the foundations check has its own words while it is being prepared. */
-function buildingTitle(stage: Stage, route: string): string {
+/** The small line above the heading: the foundations check has its own words while it is being prepared, and a lesson
+ *  with no quick check is not getting one ready. */
+function buildingTitle(stage: Stage, route: string, entry: Entry): string {
+  if (stage === "preparing_diagnostic" && entry === "self_rating") return "Getting your lesson started";
   if (stage === "preparing_diagnostic" && route === "prerequisite") return "Preparing your foundations check";
   return BUILDING_TITLES[stage] ?? "Working on your lesson";
 }
@@ -179,13 +181,13 @@ function Workspace({ id }: { id: string }) {
               <PipelineProgress
                 className="min-[900px]:sticky min-[900px]:top-[calc(1rem+env(safe-area-inset-top))]"
                 pipeline={pipeline}
-                title={buildingTitle(lesson.stage, lesson.route)}
+                title={buildingTitle(lesson.stage, lesson.route, lesson.entry)}
                 onCancel={lesson.active_run_id ? stop : undefined}
               />
-              {lesson.assessment && <StartingPointCard assessment={lesson.assessment} result={lesson.results.diagnostic} review={review} />}
+              {lesson.assessment && <StartingPointCard assessment={lesson.assessment} result={lesson.results.diagnostic} review={review} rating={lesson.self_rating} />}
             </div>
           ) : screen === "choice" ? (
-            <MasteryChoice lessonId={lesson.id} result={lesson.results.diagnostic} onChosen={() => void refresh()} />
+            <MasteryChoice lesson={lesson} onChosen={() => void refresh()} />
           ) : null}
         </>
       )}

@@ -1,3 +1,5 @@
+import { ActionRefusedMessage } from "@/lib/action-refused";
+import { ApiError } from "@/lib/api";
 import type { LearnerTestQuestion, QuestionResult } from "@/lib/types";
 
 export type Status = "right" | "partial" | "wrong" | "pending";
@@ -62,6 +64,11 @@ export class TestReport {
       topic: named.length >= 2 ? named : `${lessonTitle} (${named})`.slice(0, 200),
       context: `Follow-up to my ${lessonTitle.slice(0, 200)} test`,
     };
+  }
+
+  /** Words for a lesson that could not be started from a topic: a refusal in its own words, else by status. */
+  static followUpMessage(error: unknown): string {
+    return ActionRefusedMessage.of(error) ?? TestReport.followUpError(error instanceof ApiError ? error.status : undefined);
   }
 
   static followUpError(status: number | undefined): string {

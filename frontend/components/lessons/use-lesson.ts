@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ApiError } from "@/lib/api";
 import { lessonsApi } from "@/lib/lessons-api";
-import { PipelineModel } from "@/lib/pipeline";
+import { PipelineModel, PipelinePaths } from "@/lib/pipeline";
 import { RunEventStream, TERMINAL_EVENTS } from "@/lib/run-events";
 import { StageView } from "@/lib/stage-view";
 import type { LessonDetail, RunEvent } from "@/lib/types";
@@ -54,20 +54,23 @@ export function useLesson(id: string) {
   const runId = lesson?.active_run_id ?? null;
   const stage = lesson?.stage;
   const route = lesson?.route ?? "";
+  const rated = lesson?.entry === "self_rating";
+  const beginner = lesson ? PipelinePaths.of(lesson).beginner : false;
+  const path = useMemo(() => ({ rated, beginner }), [rated, beginner]);
   useEffect(() => {
     if (!runId || !stage) return;
-    const model = new PipelineModel(stage, Date.now, route);
+    const model = new PipelineModel(stage, Date.now, route, path);
     const stream = new RunEventStream(runId, (event: RunEvent) => {
       model.apply(event);
       setLive({ runId, model });
       if (TERMINAL_EVENTS.has(event.name)) void refresh();
     });
     return () => stream.close();
-    // `stage` and `route` are read once per run: a stage change within a run must not restart the stream.
+    // `stage`, `route` and `path` are read once per run: a stage change within a run must not restart the stream.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId, refresh]);
 
-  const idle = useMemo(() => new PipelineModel(stage ?? "preparing_diagnostic", Date.now, route), [stage, route]);
+  const idle = useMemo(() => new PipelineModel(stage ?? "preparing_diagnostic", Date.now, route, path), [stage, route, path]);
 
   const working = lesson ? StageView.of(lesson) === "progress" || lesson.active_run_id !== null : false;
   useEffect(() => {

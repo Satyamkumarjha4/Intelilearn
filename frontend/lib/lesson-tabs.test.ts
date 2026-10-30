@@ -7,6 +7,7 @@
  *
  * Use cases:
  * - a lesson that is not ready has no tabs
+ * - a learner who rated themselves took no quick check, so their lesson has no Quick check answers tab, on either route
  * - a ready lesson has Lesson, Test and Quick check answers; a ready mastery lesson has Study sheets and Quick check
  *   answers
  * - before the test is taken its tab says "To do"; while its questions are being written "Getting ready…"; while it is
@@ -25,6 +26,7 @@ const lesson = (over: Partial<TabsInput> = {}): TabsInput => ({
   test_status: "not_started",
   latest_score: null,
   attempts_count: 0,
+  entry: "diagnostic",
   ...over,
 });
 
@@ -42,6 +44,11 @@ describe("LessonTabs.of", () => {
       ["test", "Test"],
       ["answers", "Quick check answers"],
     ]);
+  });
+
+  test("a self-rated lesson has no quick check answers", () => {
+    expect(LessonTabs.of(lesson({ entry: "self_rating" })).map((t) => t.id)).toEqual(["lesson", "test"]);
+    expect(LessonTabs.of(lesson({ entry: "self_rating", route: "mastery" })).map((t) => t.id)).toEqual(["lesson"]);
   });
 
   test("a ready mastery lesson has the study sheets and the quick check answers", () => {

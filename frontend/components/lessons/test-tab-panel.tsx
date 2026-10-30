@@ -35,6 +35,8 @@ export function TestTabPanel({ lessonId, lessonTitle, onChanged, onOpenLesson }:
   const [history, setHistory] = useState<AttemptHistory | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [trying, setTrying] = useState(false);
+  const [cancellable, setCancellable] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const preparing = useRef<AttemptPreparation | null>(null);
   useEffect(() => () => preparing.current?.dispose(), []);
 
@@ -53,12 +55,16 @@ export function TestTabPanel({ lessonId, lessonTitle, onChanged, onOpenLesson }:
     });
     preparing.current = run;
     try {
-      const outcome = await run.run(lessonId, () => setView({ kind: "preparing" }));
+      const outcome = await run.run(lessonId, () => {
+        setCancellable(run.cancellable);
+        setView({ kind: "preparing" });
+      });
       onChanged();
       if (outcome.kind === "ready") {
         setView({ kind: "taking", test: outcome.test });
       } else {
-        toast.error("We couldn't get your questions ready. Nothing was lost: try again.");
+        if (outcome.kind === "failed") toast.error("We couldn't get your questions ready. Nothing was lost: try again.");
+        else toast.message("Stopped. Nothing was used: you can try again whenever you like.");
         const data = await lessonsApi.attempts(lessonId);
         setHistory(data);
         await showLatest(data);
@@ -69,6 +75,18 @@ export function TestTabPanel({ lessonId, lessonTitle, onChanged, onOpenLesson }:
       else setView({ kind: "intro" });
     } finally {
       setTrying(false);
+      setCancellable(false);
+      setCancelling(false);
+    }
+  };
+
+  const cancel = async () => {
+    setCancelling(true);
+    try {
+      await preparing.current?.cancel();
+    } catch (err) {
+      toast.error(AttemptErrors.message(err, "We couldn't stop that. Please try again."));
+      setCancelling(false);
     }
   };
 
@@ -117,7 +135,7 @@ export function TestTabPanel({ lessonId, lessonTitle, onChanged, onOpenLesson }:
     case "intro":
       return <TestIntro starting={trying} onStart={() => void begin()} />;
     case "preparing":
-      return <PreparingQuestions />;
+      return <PreparingQuestions onCancel={cancellable ? () => void cancel() : undefined} cancelling={cancelling} />;
     case "taking":
       return <AttemptRunner key={view.test.attempt!.id} lessonId={lessonId} test={view.test} onChanged={onChanged} onSubmitted={(attempt) => void handedIn(attempt)} />;
     case "results":
@@ -153,7 +171,7 @@ function TestIntro({ starting, onStart }: { starting: boolean; onStart: () => vo
   );
 }
 
-function PreparingQuestions() {
+function PreparingQuestions({ onCancel, cancelling }: { onCancel?: () => void; cancelling: boolean }) {
   return (
     <Card>
       <CardContent className="flex flex-col items-center gap-3 px-6 py-8 text-center">
@@ -162,6 +180,11 @@ function PreparingQuestions() {
         <p className="max-w-prose text-muted-foreground" aria-live="polite">
           Fresh questions are being written for you. This takes a moment, and you can leave this page: they&apos;ll be here when you come back.
         </p>
+        {onCancel && (
+          <Button variant="outline" onClick={onCancel} disabled={cancelling}>
+            {cancelling ? "Stopping…" : "Cancel"}
+          </Button>
+        )}
       </CardContent>
     </Card>
   );

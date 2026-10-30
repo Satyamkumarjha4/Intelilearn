@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { BandDots, DOT_LEGEND } from "@/components/lessons/band-dots";
 import { LevelMeter } from "@/components/lessons/level-meter";
+import { StarsDisplay } from "@/components/lessons/star-rating";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Chips } from "@/lib/chips";
@@ -11,12 +12,19 @@ import { StartingPoint } from "@/lib/starting-point";
 import type { Assessment, QuizResultSummary, QuizReview } from "@/lib/types";
 
 
-type Props = { assessment: Assessment; result: QuizResultSummary | null; review: QuizReview | null };
+type Props = {
+  assessment: Assessment;
+  result: QuizResultSummary | null;
+  review: QuizReview | null;
+  /** The stars of a lesson the learner rated themselves into (0.5 to 5), else null. */
+  rating?: number | null;
+};
 
 /** What the quick check told us about the learner, in the AI's colour (grape): their level, the topics they have and
- *  lack, and where the lesson will begin. */
-export function StartingPointCard({ assessment, result, review }: Props) {
-  const view = StartingPoint.of(assessment, result, review);
+ *  lack, and where the lesson will begin. A learner who rated themselves sees their stars and their own sentence
+ *  instead of a quiz and a confidence bar, because nothing was tested. */
+export function StartingPointCard({ assessment, result, review, rating = null }: Props) {
+  const view = StartingPoint.of(assessment, result, review, rating);
   return (
     <Card className="border-insight/40 bg-card">
       <CardContent className="flex flex-col gap-5 px-5">
@@ -25,6 +33,14 @@ export function StartingPointCard({ assessment, result, review }: Props) {
           <p className="font-heading text-xl font-semibold">{view.level.label}</p>
           <LevelMeter filled={view.level.filled} total={view.level.total} label={view.level.label} className="mt-1" />
         </div>
+
+        {view.rating && (
+          <section aria-label="Your rating" className="flex flex-col gap-1.5">
+            <h2 className="text-sm font-extrabold">You rated yourself</h2>
+            <StarsDisplay halves={view.rating.halves} />
+            <p className="text-sm text-muted-foreground">{view.rating.sentence}</p>
+          </section>
+        )}
 
         {view.bands.length > 0 && (
           <section aria-label="Your quick check" className="flex flex-col gap-2">
@@ -51,22 +67,24 @@ export function StartingPointCard({ assessment, result, review }: Props) {
           </section>
         )}
 
-        <div className="flex flex-col gap-1.5">
-          <div className="flex items-center justify-between text-sm">
-            <span className="font-extrabold">How sure we are</span>
-            <span className="text-muted-foreground">{view.confidence.label}</span>
+        {view.confidence && (
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-extrabold">How sure we are</span>
+              <span className="text-muted-foreground">{view.confidence.label}</span>
+            </div>
+            <div
+              role="progressbar"
+              aria-label="How sure we are about your level"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(view.confidence.fraction * 100)}
+              className="h-2.5 w-full overflow-hidden rounded-full bg-insight-soft"
+            >
+              <div className="h-full rounded-full bg-insight motion-safe:transition-all" style={{ width: `${view.confidence.fraction * 100}%` }} />
+            </div>
           </div>
-          <div
-            role="progressbar"
-            aria-label="How sure we are about your level"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round(view.confidence.fraction * 100)}
-            className="h-2.5 w-full overflow-hidden rounded-full bg-insight-soft"
-          >
-            <div className="h-full rounded-full bg-insight motion-safe:transition-all" style={{ width: `${view.confidence.fraction * 100}%` }} />
-          </div>
-        </div>
+        )}
       </CardContent>
     </Card>
   );

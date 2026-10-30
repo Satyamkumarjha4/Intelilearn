@@ -15,6 +15,12 @@
  * - while the foundations check is being prepared its steps say so
  * - a retry starts while the lesson still reads "failed": one calm step, not a single "Preparing your quiz" for the whole
  *   rebuild, and once the lesson's real stage is known the model switches to its steps and keeps what it has seen
+ * - a lesson the learner rated themselves into has no quick check to prepare: its first step is setting the starting
+ *   point, nothing is assumed done before it, and only a Beginner, who was not tested, has a step that chooses what to
+ *   learn first; the path is read from the lesson (the entry, and the stars as the API sends them)
+ * - the two sheets written together after a perfect quick check have their own steps (writing both, then checking and
+ *   putting them together): the model switches to them on the first event only that path has, counts the sheets
+ *   written, and a snapshot from a client that connected late does the same; a single sheet keeps its three steps
  * - the headline is the step being worked on
  * - the time a step took is measured from when the client saw it start to when it finished, and keeps counting while
  *   it runs; a step first seen finished started when the one before it ended; steps restored from a snapshot have no time
@@ -25,7 +31,7 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import { Elapsed, PipelineModel } from "./pipeline";
+import { Elapsed, PipelineModel, PipelinePaths } from "./pipeline";
 import type { RunEvent } from "./types";
 
 const node = (name: string, status: "running" | "done" | "retrying", extra = {}): RunEvent => ({
@@ -335,5 +341,147 @@ describe("a retry that starts while the lesson still reads failed", () => {
     model.setStage("preparing_diagnostic");
 
     expect(model.percent).toBe(25);
+  });
+});
+
+describe("a lesson with no quick check", () => {
+  const rated = { rated: true, beginner: false };
+  const rawBeginner = { rated: true, beginner: true };
+
+  test("its first step sets the starting point, and while it starts there is nothing else to show", () => {
+    expect(labels(new PipelineModel("preparing_diagnostic", Date.now, "", rated))).toEqual(["Setting your starting point"]);
+  });
+
+  test("a rated lesson that is being built has no quiz step, and nothing is assumed done", () => {
+    const model = new PipelineModel("generating_lesson", Date.now, "", rated);
+
+    expect(labels(model)).toEqual([
+      "Setting your starting point", "Planning the lesson", "Writing pages", "Finding images & building interactives",
+      "Checking it fits your level", "Building the lesson", "Test-driving it in a safe browser",
+    ]);
+    expect(model.steps.every((s) => s.status === "pending")).toBe(true);
+    expect(model.measurable).toBe(false);
+  });
+
+  test("a Beginner also has what to learn first chosen, after the starting point", () => {
+    const labelsOf = labels(new PipelineModel("generating_lesson", Date.now, "", rawBeginner));
+
+    expect(labelsOf.slice(0, 3)).toEqual(["Setting your starting point", "Choosing what to learn first", "Planning the lesson"]);
+  });
+
+  test("the steps follow the events of the run", () => {
+    const model = new PipelineModel("generating_lesson", Date.now, "", rawBeginner);
+
+    for (const name of ["load_context", "entry_router", "assess_from_source", "level_gate"]) {
+      model.apply(node(name, "running"));
+      model.apply(node(name, "done"));
+    }
+    model.apply(node("plan_prerequisites", "running"));
+
+    expect(model.steps.slice(0, 3).map((s) => [s.key, s.status])).toEqual([
+      ["rated_start", "done"], ["prerequisites", "running"], ["plan", "pending"],
+    ]);
+    expect(model.headline).toBe("Choosing what to learn first");
+    expect(model.measurable).toBe(true);
+  });
+
+  test("a model that learns the stage later keeps what it saw", () => {
+    const model = new PipelineModel("preparing_diagnostic", Date.now, "", rawBeginner);
+    model.apply(node("assess_from_source", "done"));
+
+    model.setStage("generating_lesson");
+
+    expect(model.steps[0]).toMatchObject({ key: "rated_start", status: "done" });
+  });
+
+  test("a quick check lesson is unchanged", () => {
+    expect(labels(new PipelineModel("generating_lesson", Date.now, "", PipelinePaths.QUICK_CHECK))[0]).toBe("Prepared your quiz");
+  });
+
+  test("a retry still shows its one calm step", () => {
+    expect(labels(new PipelineModel("failed", Date.now, "", rated))).toEqual(["Picking up where it stopped"]);
+  });
+});
+
+describe("the path of a lesson", () => {
+  test.each([
+    [{ entry: "diagnostic", self_rating: null }, { rated: false, beginner: false }],
+    [{ entry: "self_rating", self_rating: 0.5 }, { rated: true, beginner: true }],
+    [{ entry: "self_rating", self_rating: 1.5 }, { rated: true, beginner: true }],
+    [{ entry: "self_rating", self_rating: 2 }, { rated: true, beginner: false }],
+    [{ entry: "self_rating", self_rating: 5 }, { rated: true, beginner: false }],
+    [{ entry: "self_rating", self_rating: null }, { rated: true, beginner: false }],
+  ] as const)("%j", (lesson, path) => {
+    expect(PipelinePaths.of(lesson)).toEqual(path);
+  });
+});
+
+describe("the two study sheets", () => {
+  test("a single sheet keeps its three steps until an event shows it is the pair", () => {
+    const model = new PipelineModel("generating_material");
+
+    expect(labels(model)).toEqual(["Writing your study sheet", "Checking it", "Putting it together"]);
+    model.apply(node("generate_study_material", "running"));
+    expect(labels(model)).toHaveLength(3);
+  });
+
+  test("the first event only the pair has switches to the pair's steps", () => {
+    const model = new PipelineModel("generating_material");
+
+    model.apply(node("plan_sheets", "running"));
+
+    expect(labels(model)).toEqual(["Writing your two study sheets", "Checking and putting them together"]);
+    expect(model.headline).toBe("Writing your two study sheets");
+  });
+
+  test("the sheets are counted, and writing is done when both are written", () => {
+    const model = new PipelineModel("generating_material");
+    model.apply(node("plan_sheets", "running"));
+    model.apply(node("plan_sheets", "done"));
+    model.apply(node("generate_sheet", "running"));
+    model.apply(node("generate_sheet", "done"));
+
+    expect(model.steps[0]).toMatchObject({ status: "running", detail: "1 of 2 sheets written" });
+
+    model.apply(node("generate_sheet", "done"));
+    expect(model.steps.map((s) => s.status)).toEqual(["done", "pending"]);
+
+    model.apply(node("sheets_join", "running"));
+    expect(model.steps.map((s) => s.status)).toEqual(["done", "running"]);
+    model.apply(node("sheets_join", "done"));
+    expect(model.steps.map((s) => s.status)).toEqual(["done", "done"]);
+    expect(model.percent).toBe(100);
+  });
+
+  test("a sheet written again shows writing as running while it is", () => {
+    const model = new PipelineModel("generating_material");
+    for (const status of ["running", "done"] as const) model.apply(node("generate_sheet", status));
+    model.apply(node("generate_sheet", "done"));
+    model.apply(node("generate_sheet", "running"));
+
+    expect(model.steps[0].status).toBe("running");
+  });
+
+  test("a snapshot from a client that connected late shows the pair too", () => {
+    const model = new PipelineModel("generating_material");
+
+    model.apply({
+      name: "snapshot",
+      data: {
+        status: "running", stage: "generating_material", lesson_id: "l", error: "", awaiting: null,
+        node_status: { plan_sheets: "done", generate_sheet: "running" },
+      },
+    });
+
+    expect(labels(model)).toEqual(["Writing your two study sheets", "Checking and putting them together"]);
+    expect(model.steps[0].status).toBe("running");
+  });
+
+  test("a lesson that is being built never switches to the sheets' steps", () => {
+    const model = new PipelineModel("generating_lesson");
+
+    model.apply(node("generate_sheet", "running"));
+
+    expect(labels(model)[0]).toBe("Prepared your quiz");
   });
 });

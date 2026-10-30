@@ -10,6 +10,7 @@ import type {
   LessonDocument,
   LessonSummary,
   LessonVersion,
+  MasteryPick,
   MaterialKind,
   Page,
   PracticeGrade,
@@ -22,6 +23,13 @@ import type {
   StudyMaterial,
   TestSubmission,
 } from "@/lib/types";
+
+/** How a lesson starts beyond the topic: with the learner's own rating, or from a topic a test result listed. */
+export type CreateOptions = {
+  /** Stars, 0.5 to 5. Present means "rate yourself": there is no quick check. */
+  selfRating?: number;
+  recommendedFrom?: { attemptId: string; topic: string };
+};
 
 export type LessonQuery = { q?: string; stage?: Stage | Stage[] | ""; cursor?: string | null; pageSize?: number };
 
@@ -40,8 +48,20 @@ export class LessonsApi {
     return this.client.request(`/lessons${text ? `?${text}` : ""}`);
   }
 
-  create(topic: string, userContext: string): Promise<{ lesson_id: string; run_id: string }> {
-    return this.client.request("/lessons", { method: "POST", body: { topic, user_context: userContext } });
+  /**
+   * Starts a lesson. A quick check is the default; a rating (in stars, 0.5 to 5) starts the lesson without one. A
+   * lesson made from a test result names the attempt and the topic it listed, and the server checks both.
+   */
+  create(topic: string, userContext: string, options: CreateOptions = {}): Promise<{ lesson_id: string; run_id: string }> {
+    const body: Record<string, unknown> = { topic, user_context: userContext };
+    if (options.selfRating !== undefined) Object.assign(body, { entry: "self_rating", self_rating: options.selfRating });
+    if (options.recommendedFrom) {
+      Object.assign(body, {
+        origin: "recommendation",
+        recommended_from: { attempt_id: options.recommendedFrom.attemptId, topic: options.recommendedFrom.topic },
+      });
+    }
+    return this.client.request("/lessons", { method: "POST", body });
   }
 
   get(id: string): Promise<LessonDetail> {
@@ -72,8 +92,11 @@ export class LessonsApi {
     return this.client.request(`/lessons/${id}/quizzes/${kind}/review`);
   }
 
-  choose(id: string, kind: MaterialKind): Promise<{ run_id: string }> {
-    return this.client.request(`/lessons/${id}/choice`, { method: "POST", body: { kind } });
+  /** The pick after a perfect quick check: `lesson` or `sheets`; a lesson already waiting at the old three-sheet
+   *  choice sends the sheet kind it picked instead. */
+  choose(id: string, pick: MasteryPick | { kind: MaterialKind }): Promise<{ run_id: string }> {
+    const body = typeof pick === "string" ? { choice: pick } : { kind: pick.kind };
+    return this.client.request(`/lessons/${id}/choice`, { method: "POST", body });
   }
 
   requestMaterial(id: string, kind: MaterialKind): Promise<{ run_id: string }> {

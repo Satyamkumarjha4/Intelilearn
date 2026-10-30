@@ -12,6 +12,8 @@
  * - with the review, a dot is right, wrong or "I don't know" for each question of the band
  * - bands come easiest first and bands that were not asked are left out
  * - the confidence maps to a fraction of the bar with a label; an unknown word is a third of the bar
+ * - a learner who rated themselves gets their stars and their own sentence, no quiz bands and no confidence bar, because
+ *   nothing was tested; the level is still the level the stars mean
  * - known concepts, gaps and the start point are passed on
  */
 import { describe, expect, test } from "bun:test";
@@ -98,4 +100,45 @@ test("known concepts, gaps and where the lesson begins are passed on", () => {
   const view = StartingPoint.of(assessment(), result());
 
   expect([view.known, view.gaps, view.startPoint]).toEqual([["loops"], ["recursion"], "Start with arrays"]);
+});
+
+describe("a learner who rated themselves", () => {
+  const rated = (stars: number | null = 3.5, over: Partial<Assessment> = {}) =>
+    StartingPoint.of(assessment({ source: "self_rating", level: "foundation", known_concepts: [], gaps: [], confidence: "low", ...over }), null, null, stars);
+
+  test("their stars and the sentence they picked are shown, with the level the stars mean", () => {
+    const view = rated(3.5);
+
+    expect(view.rating).toEqual({ halves: 7, label: "3.5 stars", sentence: "I can solve most simple problems and I am starting on harder ones." });
+    expect(view.level.label).toBe("Finding your feet");
+    expect(view.bands).toEqual([]);
+  });
+
+  test("there is no confidence bar, because nothing was tested", () => {
+    expect(rated().confidence).toBeNull();
+  });
+
+  test("the assessment alone says it was a rating, even before the stars arrive", () => {
+    const view = rated(null);
+
+    expect(view.rating).toBeNull();
+    expect(view.confidence).toBeNull();
+  });
+
+  test("the stars alone are enough, for an assessment from before it said where it came from", () => {
+    expect(StartingPoint.of(assessment(), null, null, 2).confidence).toBeNull();
+  });
+
+  test("a rating that is not on the scale is ignored", () => {
+    expect(rated(2.3, { source: "diagnostic" }).rating).toBeNull();
+    expect(rated(2.3, { source: "diagnostic" }).confidence).not.toBeNull();
+  });
+
+  test("a quick check keeps its bands, its confidence and no rating", () => {
+    const view = StartingPoint.of(assessment({ source: "diagnostic" }), result(), null, null);
+
+    expect(view.rating).toBeNull();
+    expect(view.confidence).toEqual({ fraction: 2 / 3, label: "Fairly sure" });
+    expect(view.bands.length).toBeGreaterThan(0);
+  });
 });

@@ -4,29 +4,32 @@ import { ArrowRightIcon, ChevronDownIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { StarRating } from "@/components/lessons/star-rating";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { lessonsApi } from "@/lib/lessons-api";
 import { NewLesson } from "@/lib/new-lesson";
+import type { Entry } from "@/lib/types";
 import { cn } from "@/lib/utils";
-
-const STEPS = ["Quick check", "Your starting point", "Your lesson"];
 
 export default function NewLessonPage() {
   const router = useRouter();
   const [topic, setTopic] = useState("");
   const [context, setContext] = useState("");
+  const [entry, setEntry] = useState<Entry>("diagnostic");
+  const [rating, setRating] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!NewLesson.canStart(topic, busy)) return;
+    if (!NewLesson.canStart(topic, busy, entry, rating)) return;
     setBusy(true);
     setError(null);
     try {
-      const { lesson_id } = await lessonsApi.create(topic.trim(), context);
+      const request = NewLesson.request(topic, context, entry, rating);
+      const { lesson_id } = await lessonsApi.create(request.topic, request.context, request.options);
       router.push(`/lessons/${lesson_id}`);
     } catch (err) {
       setError(NewLesson.errorMessage(err));
@@ -38,9 +41,7 @@ export default function NewLessonPage() {
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center gap-6 px-4 py-10 text-center">
       <div className="flex flex-col gap-2">
         <h1 className="font-heading text-3xl font-semibold tracking-tight sm:text-4xl">What do you want to learn?</h1>
-        <p className="text-muted-foreground">
-          Tell us a topic. We&apos;ll start with a short quick check to find out what you already know, then build a lesson that starts in the right place.
-        </p>
+        <p className="text-muted-foreground">{NewLesson.intro(entry)}</p>
       </div>
 
       <form onSubmit={submit} className="flex w-full flex-col gap-5 text-left" noValidate>
@@ -87,6 +88,36 @@ export default function NewLessonPage() {
           </ul>
         </div>
 
+        <fieldset className="flex flex-col gap-3" disabled={busy}>
+          <legend className="mb-1 text-sm font-extrabold text-muted-foreground">How should we find your level?</legend>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {NewLesson.ENTRIES.map((choice) => {
+              const selected = entry === choice.id;
+              return (
+                <label
+                  key={choice.id}
+                  className={cn(
+                    "flex cursor-pointer flex-col gap-1 rounded-2xl border-2 bg-card px-4 py-3 motion-safe:transition-[box-shadow,background-color,border-color] has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50 has-[:disabled]:cursor-default",
+                    selected ? "border-primary bg-primary-soft shadow-[0_4px_0_var(--primary-deep)]" : "border-border shadow-[0_4px_0_var(--border)] hover:bg-muted",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="entry"
+                    value={choice.id}
+                    checked={selected}
+                    onChange={() => setEntry(choice.id)}
+                    className="sr-only"
+                  />
+                  <span className="font-heading text-lg font-semibold">{choice.label}</span>
+                  <span className="text-sm text-muted-foreground">{choice.hint}</span>
+                </label>
+              );
+            })}
+          </div>
+          {entry === "self_rating" && <StarRating value={rating} onChange={setRating} disabled={busy} />}
+        </fieldset>
+
         <details className="group rounded-2xl border-[1.5px] border-border bg-card">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-2xl px-4 py-3 text-sm font-extrabold outline-none focus-visible:ring-3 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
             Add a note for us (optional)
@@ -108,20 +139,20 @@ export default function NewLessonPage() {
         </details>
 
         <ol aria-label="What happens next" className="flex items-center justify-center gap-2 text-sm">
-          {STEPS.map((step, index) => (
+          {NewLesson.steps(entry).map((step, index, steps) => (
             <li key={step} className="flex items-center gap-2">
               <span className={cn("flex items-center gap-1.5 rounded-full px-3 py-1 font-extrabold", index === 0 ? "bg-primary-soft text-primary-text" : "bg-muted text-muted-foreground")}>
                 <span className="font-mono text-xs">{index + 1}</span>
                 <span className="max-sm:hidden">{step}</span>
                 <span className="sm:hidden">{index === 0 ? step : ""}</span>
               </span>
-              {index < STEPS.length - 1 && <ArrowRightIcon className="size-4 text-muted-foreground" aria-hidden="true" />}
+              {index < steps.length - 1 && <ArrowRightIcon className="size-4 text-muted-foreground" aria-hidden="true" />}
             </li>
           ))}
         </ol>
 
-        <Button type="submit" size="lg" disabled={!NewLesson.canStart(topic, busy)} className="h-12 self-center px-8 text-base">
-          {busy ? "Starting…" : "Start my quick check"}
+        <Button type="submit" size="lg" disabled={!NewLesson.canStart(topic, busy, entry, rating)} className="h-12 self-center px-8 text-base">
+          {NewLesson.buttonLabel(entry, busy)}
         </Button>
       </form>
     </main>

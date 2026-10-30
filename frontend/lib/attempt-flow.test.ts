@@ -11,10 +11,14 @@
  * - the first attempt is ready at once and the questions are read; nothing is announced as preparing
  * - a retake announces that it is preparing, follows its run to the end, and is ready when the attempt has its questions
  * - a retake whose run failed (no open attempt afterwards) is reported as failed, and so is one the page left
+ * - the learner can stop the wait: the run is stopped, following ends, the wait is reported as cancelled (not failed) and the
+ *   attempt is not read; if the run had already ended by itself the stop is a no-op and the questions are found; any other
+ *   error from the stop is passed on; there is nothing to stop before a run is known, when only polling, or twice
  * - a repeated start of a retake with no run to follow asks now and then until the questions are there
  * - an answer is saved on the server; one the server already has counts as saved; a sealed attempt and a network
  *   failure are reported with words for the learner
- * - a refused start or save is told in words: the day's retakes are used up, or the learner is going too fast
+ * - a refused start or save is told in words: the day's retakes are used up, the learner is going too fast, or the
+ *   action was refused in the server's own words
  * - handing in: a lesson attempt comes back graded and no run is followed; a legacy attempt is shown at once, followed to
  *   the end of its run and read again; an attempt that is already over is read; other errors reject; leaving the page
  *   stops following and silences updates
@@ -64,6 +68,7 @@ describe("AttemptErrors", () => {
     [new ApiError(429, "retake_limit", "server words"), "That's enough tries for today. You can try again tomorrow."],
     [new ApiError(429, "throttled", "server words"), "You're going a bit fast. Wait a moment and try again."],
     [new ApiError(409, "wrong_stage", "The lesson is not ready."), "The lesson is not ready."],
+    [new ApiError(403, "out_of_credits", "You have used all your tries for today."), "You have used all your tries for today."],
     [new Error("boom"), "fallback words"],
   ])("tells a refusal in words for the learner", (error, words) => {
     expect(AttemptErrors.message(error, "fallback words")).toBe(words);
@@ -71,9 +76,11 @@ describe("AttemptErrors", () => {
 });
 
 describe("AttemptPreparation", () => {
-  const api = (start: AttemptStarted, reads: LearnerTest[]) => ({
+  const stops: string[] = [];
+  const api = (start: AttemptStarted, reads: LearnerTest[], cancel: (runId: string) => Promise<void> = async (runId) => void stops.push(runId)) => ({
     startAttempt: async () => start,
     test: async () => reads.shift() ?? reads[0] ?? test_(null),
+    cancelRun: cancel,
   });
 
   test("the first attempt is ready at once and nothing is announced", async () => {
@@ -112,6 +119,71 @@ describe("AttemptPreparation", () => {
     expect(await done).toEqual({ kind: "failed" });
   });
 
+  describe("stopping the wait", () => {
+    const retake = () => started({ status: "generating", run_id: "R1", attempt_no: 2 });
+
+    test("stops the run, ends the wait as cancelled and never reads the attempt", async () => {
+      stops.length = 0;
+      const { follow, followed } = follower();
+      let reads = 0;
+      const flow = new AttemptPreparation({ ...api(retake(), [test_("in_progress")]), test: async () => (reads++, test_("in_progress")) }, follow);
+      const done = flow.run("L1", () => {});
+      await tick();
+
+      expect(flow.cancellable).toBe(true);
+      expect(await flow.cancel()).toBe(true);
+
+      expect(await done).toEqual({ kind: "cancelled" });
+      expect(stops).toEqual(["R1"]);
+      expect(followed[0].stopped).toBe(true);
+      expect(reads).toBe(0);
+      expect(flow.cancellable).toBe(false);
+      expect(await flow.cancel()).toBe(false);
+    });
+
+    test("a run that had already ended is not stopped, and the questions are found", async () => {
+      const { follow, followed } = follower();
+      const ended = async () => {
+        throw new ApiError(409, "run_ended", "That run has already ended.");
+      };
+      const flow = new AttemptPreparation(api(retake(), [test_("in_progress")], ended), follow);
+      const done = flow.run("L1", () => {});
+      await tick();
+
+      expect(await flow.cancel()).toBe(false);
+      followed[0].end();
+
+      expect((await done).kind).toBe("ready");
+    });
+
+    test("any other error from the stop is passed on, and the wait goes on", async () => {
+      const { follow, followed } = follower();
+      const broken = async () => {
+        throw new ApiError(500, "error", "boom");
+      };
+      const flow = new AttemptPreparation(api(retake(), [test_("in_progress")], broken), follow);
+      const done = flow.run("L1", () => {});
+      await tick();
+
+      await expect(flow.cancel()).rejects.toThrow("boom");
+      expect(flow.cancellable).toBe(true);
+      followed[0].end();
+      expect((await done).kind).toBe("ready");
+    });
+
+    test("there is nothing to stop before a run is known, or when the wait is only polling", async () => {
+      const { follow } = follower();
+      const polling = new AttemptPreparation(api(started({ status: "generating", run_id: null }), [test_("generating"), test_("in_progress"), test_("in_progress")]), follow, async () => {});
+      expect(polling.cancellable).toBe(false);
+      const done = polling.run("L1", () => {});
+      await tick();
+
+      expect(polling.cancellable).toBe(false);
+      expect(await polling.cancel()).toBe(false);
+      await done;
+    });
+  });
+
   test("leaving the page stops following the run and reports nothing ready", async () => {
     const { follow, followed } = follower();
     const flow = new AttemptPreparation(api(started({ status: "generating", run_id: "R1" }), [test_("in_progress")]), follow);
@@ -138,7 +210,10 @@ describe("AttemptPreparation", () => {
   });
 
   test("a start that is refused rejects with the server's error", async () => {
-    const flow = new AttemptPreparation({ startAttempt: async () => Promise.reject(new ApiError(429, "retake_limit", "x")), test: async () => test_(null) }, () => () => {});
+    const flow = new AttemptPreparation(
+      { startAttempt: async () => Promise.reject(new ApiError(429, "retake_limit", "x")), test: async () => test_(null), cancelRun: async () => {} },
+      () => () => {},
+    );
 
     await expect(flow.run("L1", () => {})).rejects.toThrow("x");
   });

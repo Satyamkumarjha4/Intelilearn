@@ -6,6 +6,8 @@
  * lesson look broken.
  *
  * Use cases:
+ * - a lesson found by self-rating starts at "Rate yourself" instead of "Diagnose", which is already done: it is never the
+ *   current step, and a failure before the level exists is on Your level
  * - the lesson route is Diagnose, Your level, Learn, Test, Revisit; the mastery route is Diagnose, Mastered,
  *   Pick a sheet, Study; a lesson whose route is not known yet shows the lesson route
  * - while the quizzes are prepared or answered, Diagnose is the current step
@@ -27,6 +29,7 @@ import { Journey, type JourneyInput } from "./journey";
 const lesson = (over: Partial<JourneyInput> = {}): JourneyInput => ({
   stage: "preparing_diagnostic",
   route: "",
+  entry: "diagnostic",
   assessment: null,
   results: { diagnostic: null, prerequisite: null },
   test_status: "not_started",
@@ -64,6 +67,37 @@ describe("Journey.of", () => {
     const working = lesson({ stage: "generating_lesson", results: { diagnostic: answered, prerequisite: null } });
 
     expect(states(working)).toEqual(["Diagnose:done", "Your level:now", "Learn:todo", "Test:todo", "Revisit:todo"]);
+  });
+
+  describe("a lesson found by self-rating", () => {
+    const rated = (over: Partial<JourneyInput> = {}) => lesson({ entry: "self_rating", ...over });
+
+    test("names Rate yourself where the others say Diagnose, and keeps the rest", () => {
+      expect(Journey.of(rated()).map((s) => s.label)).toEqual(["Rate yourself", "Your level", "Learn", "Test", "Revisit"]);
+      expect(Journey.of(lesson()).map((s) => s.label)[0]).toBe("Diagnose");
+    });
+
+    test("Rate yourself is done from the start; Your level is current until the assessment exists", () => {
+      expect(states(rated({ stage: "preparing_diagnostic" }))).toEqual(["Rate yourself:done", "Your level:now", "Learn:todo", "Test:todo", "Revisit:todo"]);
+      expect(states(rated({ stage: "generating_lesson" }))).toEqual(["Rate yourself:done", "Your level:now", "Learn:todo", "Test:todo", "Revisit:todo"]);
+    });
+
+    test("once the assessment exists the lesson is being built: Learn is current", () => {
+      expect(states(rated({ stage: "generating_lesson", route: "lesson", assessment }))).toEqual([
+        "Rate yourself:done", "Your level:done", "Learn:now", "Test:todo", "Revisit:todo",
+      ]);
+    });
+
+    test("a ready lesson follows the test like any other", () => {
+      expect(states(rated({ stage: "ready", route: "lesson", assessment, test_status: "in_progress" }))).toEqual([
+        "Rate yourself:done", "Your level:done", "Learn:done", "Test:now", "Revisit:todo",
+      ]);
+    });
+
+    test("a failure before the level exists is on Your level, never on the rating", () => {
+      expect(states(rated({ stage: "failed" }))).toEqual(["Rate yourself:done", "Your level:now!", "Learn:todo", "Test:todo", "Revisit:todo"]);
+      expect(states(rated({ stage: "failed", assessment }))[2]).toBe("Learn:now!");
+    });
   });
 
   test("a ready lesson is on Learn until the test is taken", () => {
@@ -142,7 +176,7 @@ describe("Journey.tag", () => {
   test.each([
     [{ route: "lesson", level: "", assessment: null }, "Lesson"],
     [{ route: "mastery", level: "", assessment: null }, "Mastery"],
-    [{ route: "prerequisite", level: "", assessment: null }, "Foundations first"],
+    [{ route: "prerequisite", level: "", assessment: null }, "Basics first"],
     [{ route: "", level: "", assessment: null }, null],
     [{ route: "lesson", level: "advanced", assessment: null }, "Advanced level"],
     [{ route: "lesson", level: "advanced", assessment: assessment }, "Beginner level"],

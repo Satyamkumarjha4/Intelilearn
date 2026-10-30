@@ -60,6 +60,12 @@ export type Stage =
   | "failed";
 
 export type Route = "prerequisite" | "lesson" | "mastery";
+/** How the learner's starting point was found: a quick check, or their own rating. */
+export type Entry = "diagnostic" | "self_rating";
+export type Origin = "direct" | "recommendation" | "followup" | "quiz_result";
+export type LevelSource = "diagnostic" | "self_rating" | "test_score" | "quiz_result" | "";
+/** What a learner who aced the quick check can pick; a sheet kind is what a lesson already waiting at the old choice takes. */
+export type MasteryPick = "lesson" | "sheets";
 export type QuizKind = "diagnostic" | "prerequisite";
 export type Band = "basic" | "easy_moderate" | "moderate" | "moderate_hard" | "hard";
 
@@ -97,6 +103,8 @@ export type QuizResultSummary = {
 
 export type Assessment = {
   level: string;
+  /** Where the level came from; an assessment from before self-rating has none. */
+  source?: LevelSource;
   known_concepts: string[];
   gaps: string[];
   start_point: string;
@@ -104,6 +112,14 @@ export type Assessment = {
 };
 
 export type LessonDetail = LessonSummary & {
+  entry: Entry;
+  intent: "lesson" | "sheets";
+  origin: Origin;
+  level_source: LevelSource;
+  /** Stars, 0.5 to 5; null unless the lesson was started by a self-rating. */
+  self_rating: number | null;
+  /** The choice a learner who aced the quick check is shown: the Expert lesson or sheets, or the old three sheets. */
+  mastery_options: "lesson_or_sheets" | "three_sheets";
   user_context: string;
   error: string;
   warnings: string[];

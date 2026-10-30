@@ -1,5 +1,6 @@
 import { PlainWarning } from "@/lib/plain-notes";
-import type { NodeStatus, Route, RunEvent, Stage } from "@/lib/types";
+import { StarScale } from "@/lib/star-scale";
+import type { LessonDetail, NodeStatus, Route, RunEvent, Stage } from "@/lib/types";
 
 type StepDef = {
   doing: string; // what the learner reads while it is pending or running
@@ -11,6 +12,8 @@ type StepDef = {
   foundations?: { doing: string; done: string };
   /** A sub-line while the step runs: how many times `node` has finished, said in words. */
   progress?: { node: string; text: (count: number) => string };
+  /** For a step several branches of one node make: it is done once `node` has finished `count` times. */
+  doneAfter?: { node: string; count: number };
 };
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
@@ -61,6 +64,22 @@ const STEPS: Record<string, StepDef> = {
     nodes: ["grade_diagnostic", "publish_prerequisite", "grade_prerequisite", "assess_learner"],
     doneWhen: "assess_learner",
     registry: ["learner.assess"],
+  },
+  // A lesson the learner rated themselves into has no quick check: it starts from the rating ...
+  rated_start: {
+    doing: "Setting your starting point",
+    done: "Set your starting point",
+    nodes: ["load_context", "entry_router", "assess_from_source", "level_gate"],
+    doneWhen: "assess_from_source",
+    registry: [],
+  },
+  // ... and a Beginner, who was not tested, gets the things to learn first chosen for them.
+  prerequisites: {
+    doing: "Choosing what to learn first",
+    done: "Chose what to learn first",
+    nodes: ["plan_prerequisites", "validate_prerequisites"],
+    doneWhen: "validate_prerequisites",
+    registry: ["prerequisites."],
   },
   plan: {
     doing: "Planning the lesson",
@@ -128,7 +147,28 @@ const STEPS: Record<string, StepDef> = {
     doneWhen: "persist_study_material",
     registry: [],
   },
+  // The cheat sheet and the revision sheet written together (the choice after a perfect quick check) have their own steps.
+  sheets_write: {
+    doing: "Writing your two study sheets",
+    done: "Wrote your two study sheets",
+    nodes: ["plan_sheets", "generate_sheet"],
+    doneWhen: "",
+    doneAfter: { node: "generate_sheet", count: 2 },
+    registry: ["study."],
+    progress: { node: "generate_sheet", text: (n) => `${Math.min(n, 2)} of 2 sheets written` },
+  },
+  sheets_save: {
+    doing: "Checking and putting them together",
+    done: "Checked and put them together",
+    nodes: ["sheets_join"],
+    doneWhen: "sheets_join",
+    registry: [],
+  },
 };
+
+/** The nodes only the two-sheet path has: seeing one means the sheet steps are the pair's. */
+const SHEET_PAIR_NODES = new Set(["plan_sheets", "generate_sheet", "sheets_join"]);
+const SHEET_PAIR_STEPS = ["sheets_write", "sheets_save"];
 
 // A retry starts before the lesson says which stage it is back in: one calm step until it does (`setStage`).
 STEPS.resume = { doing: "Picking up where it stopped", done: "Picked up where it stopped", nodes: [], doneWhen: "", registry: [] };
@@ -141,8 +181,37 @@ const ORDER_BY_STAGE: Partial<Record<Stage, string[]>> = {
   generating_lesson: ["quiz", "assess", "plan", "write", "media", "check", "build", "sandbox"],
 };
 
+/** How a lesson's steps differ by how its level was found: a quick check (the default), or the learner's own rating. */
+export type PipelinePath = { rated: boolean; beginner: boolean };
+
+export class PipelinePaths {
+  static readonly QUICK_CHECK: PipelinePath = { rated: false, beginner: false };
+
+  /** From the lesson: a rating and, for the stars of a Beginner, the step that chooses their prerequisites. */
+  static of(lesson: Pick<LessonDetail, "entry" | "self_rating">): PipelinePath {
+    const rated = lesson.entry === "self_rating";
+    return { rated, beginner: rated && StarScale.levelOf(StarScale.halvesOf(lesson.self_rating)) === "beginner" };
+  }
+
+  /** The steps of a stage on this path. A lesson with no quick check has none to prepare or to have finished before. */
+  static order(stage: Stage, path: PipelinePath): string[] {
+    if (path.rated && stage === "preparing_diagnostic") return ["rated_start"];
+    if (path.rated && stage === "generating_lesson") {
+      return ["rated_start", ...(path.beginner ? ["prerequisites"] : []), "plan", "write", "media", "check", "build", "sandbox"];
+    }
+    return ORDER_BY_STAGE[stage] ?? ["quiz"];
+  }
+
+  static doneBefore(stage: Stage, path: PipelinePath): string[] {
+    return path.rated ? [] : (DONE_BEFORE[stage] ?? []);
+  }
+}
+
 /** Steps that finished in an earlier run of the lesson's flow, so no event of this run will say so. */
 const DONE_BEFORE: Partial<Record<Stage, string[]>> = { generating_lesson: ["quiz"] };
+
+/** The stages whose steps are a study sheet being written. */
+const STEPS_OF_SHEETS = new Set<Stage>(["generating_material"]);
 
 export type StepStatus = "pending" | "running" | "done";
 export type StepView = {
@@ -164,6 +233,7 @@ type Timing = { start?: number; end?: number };
  */
 export class PipelineModel {
   private keys: string[] = [];
+  private pair = false;
   private assumedDone = new Set<string>();
   private stage: Stage;
   private readonly nodeStatus = new Map<string, NodeStatus>();
@@ -181,6 +251,8 @@ export class PipelineModel {
     private readonly clock: () => number = Date.now,
     /** The route, which tells a foundations check from a quick check while it is being prepared. */
     private readonly route: Route | "" = "",
+    /** How the level was found, which decides whether there is a quick check to prepare and prerequisites to choose. */
+    private readonly path: PipelinePath = PipelinePaths.QUICK_CHECK,
   ) {
     this.stage = stage;
     this.configure(stage);
@@ -197,8 +269,8 @@ export class PipelineModel {
   }
 
   private configure(stage: Stage): void {
-    this.keys = ORDER_BY_STAGE[stage] ?? ["quiz"];
-    this.assumedDone = new Set(DONE_BEFORE[stage] ?? []);
+    this.keys = this.pair && STEPS_OF_SHEETS.has(stage) ? SHEET_PAIR_STEPS : PipelinePaths.order(stage, this.path);
+    this.assumedDone = new Set(PipelinePaths.doneBefore(stage, this.path));
   }
 
   apply(event: RunEvent): void {
@@ -206,13 +278,17 @@ export class PipelineModel {
     const live = event.name !== "snapshot";
     switch (event.name) {
       case "snapshot":
-        for (const [node, status] of Object.entries(event.data.node_status)) this.nodeStatus.set(node, status);
+        for (const [node, status] of Object.entries(event.data.node_status)) {
+          this.nodeStatus.set(node, status);
+          this.noticePair(node);
+        }
         if (event.data.started_at) {
           const started = Date.parse(event.data.started_at);
           this.startedAt = Number.isNaN(started) ? null : started;
         }
         break;
       case "node":
+        this.noticePair(event.data.node);
         this.nodeStatus.set(event.data.node, event.data.status);
         if (event.data.status === "done") this.doneCount.set(event.data.node, (this.doneCount.get(event.data.node) ?? 0) + 1);
         if (event.data.status === "retrying" && this.stepOfNode(event.data.node)) this.recovered = true;
@@ -285,6 +361,7 @@ export class PipelineModel {
     const def = STEPS[key];
     if (this.assumedDone.has(key)) return "done";
     if (def.nodes.some((node) => ["running", "retrying"].includes(this.nodeStatus.get(node) ?? ""))) return "running";
+    if (def.doneAfter && (this.doneCount.get(def.doneAfter.node) ?? 0) >= def.doneAfter.count) return "done";
     if (this.nodeStatus.get(def.doneWhen) === "done") return "done";
     return def.nodes.some((node) => this.nodeStatus.get(node) === "done") ? "running" : "pending";
   }
@@ -315,6 +392,15 @@ export class PipelineModel {
     const timing = this.timings.get(key);
     if (!timing || timing.start === undefined || status === "pending") return null;
     return (status === "done" ? (timing.end ?? now) : now) - timing.start;
+  }
+
+  /** A node only the two-sheet path runs: from now on the sheet steps are the pair's. */
+  private noticePair(node: string): void {
+    if (this.pair || !SHEET_PAIR_NODES.has(node)) return;
+    const before = this.statuses();
+    this.pair = true;
+    this.configure(this.stage);
+    this.time(before, false);
   }
 
   private stepOfNode(node: string): string | undefined {

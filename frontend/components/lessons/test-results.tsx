@@ -120,7 +120,7 @@ export function TestResults({ lessonId, lessonTitle, attempt: shown, history, tr
         </Card>
       )}
       {card && attempt.status === "graded" && card.topics_to_revisit.length > 0 && (
-        <Revisit topics={card.topics_to_revisit} lessonTitle={lessonTitle} />
+        <Revisit topics={card.topics_to_revisit} lessonTitle={lessonTitle} attemptId={attempt.id} />
       )}
       {history && history.attempts.length > 1 && <AttemptHistory history={history} selectedId={attempt.id} onSelect={onSelect} />}
       {card && <QuestionList rows={card.questions} questions={attempt.questions} answers={attempt.answers} />}
@@ -179,17 +179,18 @@ function Hero({ card, changes }: { card: NonNullable<TestSubmission["result"]>; 
   );
 }
 
-function Revisit({ topics, lessonTitle }: { topics: string[]; lessonTitle: string }) {
+function Revisit({ topics, lessonTitle, attemptId }: { topics: string[]; lessonTitle: string; attemptId: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const start = async (topic: string) => {
     setBusy(topic);
     const { topic: name, context } = TestReport.followUp(lessonTitle, topic);
     try {
-      const { lesson_id } = await lessonsApi.create(name, context);
+      // The server checks that this attempt is yours and listed this topic; it is how a lesson is marked as recommended.
+      const { lesson_id } = await lessonsApi.create(name, context, { recommendedFrom: { attemptId, topic } });
       router.push(`/lessons/${lesson_id}`);
     } catch (err) {
-      toast.error(TestReport.followUpError(err instanceof ApiError ? err.status : undefined));
+      toast.error(TestReport.followUpMessage(err));
       setBusy(null);
     }
   };

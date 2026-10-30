@@ -17,10 +17,12 @@
  * - a multiple-select question lists the options picked and the right ones, one to a line
  * - a written answer's criteria say what each point earned
  * - a follow-up lesson is asked for on a topic, naming the lesson, within the API's length limits
- * - a refused follow-up (too many lessons) is explained, and other failures fall back to a general message
+ * - a refused follow-up (too many lessons) is explained, an action the server refused is told in its own words, and other
+ *   failures fall back to a general message
  */
 import { describe, expect, test } from "bun:test";
 
+import { ApiError } from "./api";
 import { TestReport } from "./test-report";
 import type { LearnerTestQuestion, QuestionResult } from "./types";
 
@@ -128,6 +130,11 @@ describe("follow-up lesson", () => {
   });
 
   test("a refusal for too many lessons is explained, anything else is general", () => {
+    expect(TestReport.followUpMessage(new ApiError(403, "out_of_credits", "You have used all your lessons for today."))).toBe(
+      "You have used all your lessons for today.",
+    );
+    expect(TestReport.followUpMessage(new ApiError(429, "throttled", "x"))).toContain("a little while");
+    expect(TestReport.followUpMessage(new Error("boom"))).toContain("couldn't start");
     expect(TestReport.followUpError(429)).toContain("a little while");
     expect(TestReport.followUpError(500)).toContain("couldn't start");
     expect(TestReport.followUpError(undefined)).toContain("couldn't start");

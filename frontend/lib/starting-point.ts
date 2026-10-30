@@ -1,4 +1,5 @@
 import { BAND_LABELS, BAND_ORDER } from "@/lib/stage-view";
+import { StarScale } from "@/lib/star-scale";
 import type { Assessment, Band, QuizResultSummary, ReviewQuestion } from "@/lib/types";
 
 export type Dot = "right" | "wrong" | "unsure";
@@ -9,7 +10,10 @@ export type StartingPointView = {
   known: string[];
   gaps: string[];
   startPoint: string;
-  confidence: { fraction: number; label: string };
+  /** How sure we are of the level; none for a learner who rated themselves, because nothing was tested. */
+  confidence: { fraction: number; label: string } | null;
+  /** What a learner who rated themselves said: the stars and their own sentence. Null for everyone else. */
+  rating: { halves: number; label: string; sentence: string } | null;
 };
 
 /** The four levels (beginner, foundation, proficient, expert). The API only sends these names. */
@@ -29,22 +33,27 @@ const CONFIDENCE: Record<string, [number, string]> = {
 export class StartingPoint {
   static readonly SEGMENTS = 4;
 
-  /** `review` is optional: it tells "I don't know" from a wrong answer, which the score alone cannot. */
+  /** `review` is optional: it tells "I don't know" from a wrong answer, which the score alone cannot. `stars` is the
+   *  rating of a self-rated lesson (0.5 to 5), whose card shows the level and the stars instead of the quiz. */
   static of(
     assessment: Assessment,
     result: QuizResultSummary | null,
     review?: { questions: ReviewQuestion[] } | null,
+    stars?: number | null,
   ): StartingPointView {
     const word = assessment.level.trim().toLowerCase();
     const [filled, label] = LEVELS[word] ?? [0, word.charAt(0).toUpperCase() + word.slice(1)];
     const [fraction, sure] = CONFIDENCE[assessment.confidence] ?? CONFIDENCE.low;
+    const step = StarScale.of(StarScale.halvesOf(stars));
+    const rated = assessment.source === "self_rating" || step !== null;
     return {
       level: { filled, total: StartingPoint.SEGMENTS, label },
       bands: result ? StartingPoint.bands(result, review) : [],
       known: assessment.known_concepts,
       gaps: assessment.gaps,
       startPoint: assessment.start_point,
-      confidence: { fraction, label: sure },
+      confidence: rated ? null : { fraction, label: sure },
+      rating: step ? { halves: step.halves, label: step.label, sentence: step.sentence } : null,
     };
   }
 

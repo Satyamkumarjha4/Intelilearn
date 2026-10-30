@@ -6,11 +6,13 @@
  *
  * Use cases:
  * - lists with only the query parameters that were given, and several stages as one comma-separated parameter
- * - creates a lesson with the topic and the learner's context
+ * - creates a lesson with the topic and the learner's context, with their rating when they rated themselves, and with the
+ *   attempt and topic of a test result when the lesson was recommended by one
  * - reads, deletes and retries a lesson
  * - reads a quiz and submits answers to its attempt endpoint
  * - reads the review and cancels a run
- * - chooses a sheet, asks for another, reads one (with revealed solutions) and grades practice answers
+ * - chooses the Expert lesson or the sheets (or, for a lesson already waiting at the old choice, one sheet kind), asks
+ *   for another sheet, reads one (with revealed solutions) and grades practice answers
  * - reads the lesson document, reports a crash for repair, lists versions and restores one
  * - reads the test to take, starts an attempt, saves an answer, submits, reads the attempts and one attempt, and grades a
  *   failed one again
@@ -62,6 +64,31 @@ describe("LessonsApi", () => {
     });
   });
 
+  test("a rating starts a lesson with no quick check", async () => {
+    const { api, calls } = fakeClient();
+
+    await api.create("Binary search", "", { selfRating: 3.5 });
+
+    expect(calls[0].options).toEqual({
+      method: "POST",
+      body: { topic: "Binary search", user_context: "", entry: "self_rating", self_rating: 3.5 },
+    });
+  });
+
+  test("a topic a test result listed names the attempt and the topic", async () => {
+    const { api, calls } = fakeClient();
+
+    await api.create("Off by one", "", { recommendedFrom: { attemptId: "a1", topic: "Off by one" } });
+
+    expect(calls[0].options).toEqual({
+      method: "POST",
+      body: {
+        topic: "Off by one", user_context: "", origin: "recommendation",
+        recommended_from: { attempt_id: "a1", topic: "Off by one" },
+      },
+    });
+  });
+
   test("reads, deletes and retries a lesson", async () => {
     const { api, calls } = fakeClient();
 
@@ -102,13 +129,17 @@ describe("LessonsApi", () => {
   test("chooses a sheet, asks for another, reads one with revealed solutions and grades practice", async () => {
     const { api, calls } = fakeClient();
 
-    await api.choose("l1", "cheat_sheet");
+    await api.choose("l1", "lesson");
+    await api.choose("l1", "sheets");
+    await api.choose("l1", { kind: "cheat_sheet" });
     await api.requestMaterial("l1", "revision_sheet");
     await api.material("l1", "cheat_sheet");
     await api.material("l1", "practice_sheet", ["t1", "t 2"]);
     await api.gradePractice("l1", { t1: 2, t2: "4" });
 
     expect(calls).toEqual([
+      { path: "/lessons/l1/choice", options: { method: "POST", body: { choice: "lesson" } } },
+      { path: "/lessons/l1/choice", options: { method: "POST", body: { choice: "sheets" } } },
       { path: "/lessons/l1/choice", options: { method: "POST", body: { kind: "cheat_sheet" } } },
       { path: "/lessons/l1/materials", options: { method: "POST", body: { kind: "revision_sheet" } } },
       { path: "/lessons/l1/materials/cheat_sheet", options: undefined },
