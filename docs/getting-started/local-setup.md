@@ -33,7 +33,9 @@ The root `.env` is the **single source of configuration**. Django reads it, `doc
 | Reasoning budgets | `LLM_REASONING_BUDGET_LOW/MEDIUM/HIGH` | 2048 / 8192 / 24576 |
 | Media sources | `WIKIMEDIA_API_URL`, `OPENVERSE_API_URL`, `GIPHY_API_URL`, `MEDIA_ALLOW_PRIVATE_HOSTS` | the public services, false |
 | Console (staff API) | `CONSOLE_MONTHLY_BUDGET_USD`, `CONSOLE_THROTTLE_RATE` | 25, 120/min |
-| Lesson flow | `FLOW_RUN_LOCK_TTL_S`, `LESSON_CREATE_THROTTLE_RATE`, `SSE_HEARTBEAT_S`, `SANDBOX_DIR`, `NODE_BINARY`, `SANDBOX_CHECK_TIMEOUT_S`, `SANDBOX_RENDER_TIMEOUT_S`, `SANDBOX_PAGE_TIMEOUT_MS`, `GIPHY_API_KEY`, `MEDIA_URL_TTL_S` | 600, 30/hour, 15, `<repo>/sandbox`, node, 30, 180, 8000, empty, 21600 (6 h) |
+| Landing page | `LANDING_DEMO_THROTTLE_RATE`, `LANDING_DEMO_IDS_TTL_S` | 60/min, 600 (10 min) |
+| Onboarding | `TOPIC_SUGGESTIONS_THROTTLE_RATE`, `ONBOARDING_SUGGESTION_TTL_S` | 30/min, 30 days |
+| Lesson flow | `FLOW_RUN_LOCK_TTL_S`, `LESSON_CREATE_THROTTLE_RATE`, `TEST_SUBMIT_THROTTLE_RATE`, `SSE_HEARTBEAT_S`, `SANDBOX_DIR`, `NODE_BINARY`, `SANDBOX_CHECK_TIMEOUT_S`, `SANDBOX_RENDER_TIMEOUT_S`, `SANDBOX_PAGE_TIMEOUT_MS`, `GIPHY_API_KEY`, `MEDIA_URL_TTL_S` | 600, 30/hour, 30/hour, 15, `<repo>/sandbox`, node, 30, 180, 8000, empty, 21600 (6 h) |
 | Offline walk-through | `FAKE_LLM_API_KEY` | empty (any value; not a secret) |
 
 - The `POSTGRES_HOST`, `POSTGRES_PORT`, `REDIS_HOST`, and `REDIS_PORT` values in `.env` describe how the **host** reaches the services. Inside docker, compose overrides them with the service names and internal ports (`db:5432`, `redis:6379`).
@@ -54,9 +56,12 @@ On start, `make up` also recreates the frontend's anonymous `node_modules` and `
 | `http://localhost:${BACKEND_PORT}/api/redoc` | ReDoc |
 | `http://localhost:${BACKEND_PORT}/api/schema` | OpenAPI 3 schema (YAML; add `Accept: application/json` for JSON) |
 | `http://localhost:${BACKEND_PORT}/api/health` | Health JSON (`200` ok, `503` degraded) |
+| `http://localhost:${FRONTEND_PORT}/console` | The staff console (usage and cost, lesson runs, models and routing, learners, change log). Only a user with `is_staff` can open it; anyone else sees a not-found page. `make superuser` makes one. |
 | `http://localhost:${BACKEND_PORT}/admin/` | Django admin (run `make superuser` first) |
 
 ## 3. Databases: local Postgres and Supabase
+
+Supabase is optional and off by default: leave `SUPABASE_DATABASE_URL` empty and everything uses the docker `db` Postgres. The rest of this section only matters if you set it.
 
 | `SUPABASE_DATABASE_URL` | `default` database | What happens on backend start |
 |---|---|---|
@@ -74,7 +79,7 @@ About the sync (`backend/core/sync.py`, also available as `make sync-supabase`):
 
 Getting the Supabase URL: in the dashboard, go to **Connect** and copy the **Session pooler** string (port 5432). Append `?sslmode=require`. Do **not** use the transaction pooler (6543): Django, and later the LangGraph checkpointer, need session features.
 
-**Lock down the Data API** after migrations that add tables: run `backend/scripts/enable_rls.sql` in the Supabase SQL editor (added in Phase 1). It enables RLS with no policies, so the public Data API can read nothing. Django connects as `postgres` and bypasses RLS.
+**The public Data API is not locked down yet.** The script that would enable row-level security with no policies on every table (the checkpoint tables too) is not written (see [roadmap.md](../process/roadmap.md)), so do it by hand in the Supabase SQL editor before using a real project: `ALTER TABLE <name> ENABLE ROW LEVEL SECURITY;` for each table. Django connects as `postgres` and bypasses RLS.
 
 ## 4. Model registry (once)
 
@@ -88,7 +93,7 @@ docker compose exec backend python manage.py probe_models --node learner.assess 
 
 `probe_models` exits non-zero when a check fails, and API keys never appear in its output.
 
-Tune models, fallbacks, and parameters in the admin under **LLM model registry**. Share a tuned setup with `manage.py export_registry --output registry.json` and `seed_registry --file registry.json`. See [model-registry.md](model-registry.md).
+Tune models, fallbacks, and parameters in the admin under **LLM model registry**. Share a tuned setup with `manage.py export_registry --output registry.json` and `seed_registry --file registry.json`. See [model-registry.md](../architecture/model-registry.md).
 
 ## 5. Run a lesson from the terminal
 
@@ -123,11 +128,11 @@ make fake-llm      # a separate compose project (socra-e2e): http://localhost:71
 make e2e-down      # when you are done: stops it and deletes its database
 ```
 
-It is `docker-compose.e2e.yml` on top of the normal file (own ports, `SUPABASE_DATABASE_URL` and the provider keys blanked, trusted origins for its own two ports), with the registry loaded and a staff user made. `make e2e` runs the browser tests on it ([testing.md](testing.md)). The fake is reached at `http://fake-llm.lan:9000/v1` (the registry insists on a domain-like host name, so the compose service has that alias). The fake also serves the media services the lesson flow searches (a Wikimedia-style API and generated PNGs), so run the stack with `WIKIMEDIA_API_URL=http://fake-llm.lan:9000/w/api.php` and `MEDIA_ALLOW_PRIVATE_HOSTS=true` for the media agent to find a picture. Add a builder to the fake whenever a phase adds an LLM output schema.
+It is `docker-compose.e2e.yml` on top of the normal file (own ports, `SUPABASE_DATABASE_URL` and the provider keys blanked, trusted origins for its own two ports), with the registry loaded and a staff user made. `make e2e` runs the browser tests on it ([testing.md](../process/testing.md)). The fake is reached at `http://fake-llm.lan:9000/v1` (the registry insists on a domain-like host name, so the compose service has that alias). The fake also serves the media services the lesson flow searches (a Wikimedia-style API and generated PNGs), so run the stack with `WIKIMEDIA_API_URL=http://fake-llm.lan:9000/w/api.php` and `MEDIA_ALLOW_PRIVATE_HOSTS=true` for the media agent to find a picture. Add a builder to the fake whenever a phase adds an LLM output schema.
 
 ## Tracing and usage (optional)
 
-- **Usage:** the admin's *Model calls* page has a *Cost and latency by node* page: calls, success rate, fallbacks, average and p95 latency, tokens and cost per node and per model over the last day, week, month or everything.
+- **Usage:** the staff console's *Usage & cost* page (`/console/usage`) shows calls, success rate, fallbacks, median and p95 latency, tokens and spend per model and per step over today, 7 days, 30 days or a custom range, and exports the calls as CSV. Spend stays at 0 until a model has a price (`input_cost_per_mtok` and `output_cost_per_mtok`) in the registry. The Django admin keeps its own *Model calls* pages with the same figures.
 - **Tracing:** set `LLM_TRACING=langsmith` (with `LANGSMITH_API_KEY`, optionally `LANGSMITH_PROJECT`) or `LLM_TRACING=langfuse` (with `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, optionally `LANGFUSE_HOST`, and `uv add langfuse` plus a rebuild) in `.env`. It is off by default. **A trace contains the prompts and replies, which hold what the learner wrote**, so it goes to the service you choose. `manage.py check` warns when the setting cannot work (it names missing variables, never their values); a tracing problem never fails a model call.
 
 ## Everyday commands
@@ -153,7 +158,7 @@ make down            # stop; volumes are kept
 
 ## The sandbox package
 
-`sandbox/` is a small Node package (managed with bun) that the backend runs in a subprocess to check generated lesson code (`scripts/check.mjs`: syntax, security scan, scope contract, KaTeX). The **backend image has Node and installs its packages** (the `sandbox` build context in `docker-compose.yml`), and compose bind-mounts `./sandbox` with the image's `node_modules` kept visible. After pulling a change to `sandbox/package.json`, rebuild with `docker compose up --build --renew-anon-volumes`: without the last flag compose keeps the old container's `node_modules` volume, which hides the new image's packages (for example `playwright` missing at render-check time). Fixtures of known-malicious and known-good code are in `sandbox/fixtures/` and run by `tests/graph/test_sandbox.py`. To run a check by hand: `echo '{"mode":"latex","items":["x^2"]}' | docker compose run --rm -T backend node /sandbox/scripts/check.mjs`.
+`sandbox/` is a small Node package (managed with bun) that the backend runs in a subprocess to check generated lesson code (`scripts/check.mjs`: syntax, security scan, scope contract, KaTeX). The **backend image has Node and installs its packages** (the `sandbox` build context in `docker-compose.yml`), and compose bind-mounts `./sandbox` with the image's `node_modules` kept visible. After pulling a change to `sandbox/package.json`, rebuild with `docker compose up --build --renew-anon-volumes`: without the last flag compose keeps the old container's `node_modules` volume, which hides the new image's packages (for example `playwright` missing at render-check time). Fixtures of known-malicious and known-good code are in `sandbox/fixtures/` and run by `tests/graph/test_sandbox.py`. To run a check by hand: `echo '{"mode":"latex","items":["x^2"]}' | docker compose run --rm -T backend node /sandbox/scripts/check.mjs`. The backend image also carries Playwright Chromium for the headless render check, and the `sandbox-build` service rebuilds the lesson runtime into `frontend/public/sandbox/` on every `docker compose up`.
 
 ## Adding dependencies
 
@@ -175,7 +180,3 @@ The backend image installs into `/opt/venv`, outside the bind-mounted `/app`. Th
 | Health: `celery: no workers responded` | `docker compose logs worker`. It restarts on file changes, so check for a Python error. |
 | New dependency not found | `docker compose up --build --renew-anon-volumes`. Without the last flag compose keeps the old container's `node_modules` volume, which hides the new image's packages (the frontend then fails with `Module not found`). |
 | `no space left on device` from Docker while `df` shows free space (btrfs) | Metadata is full and there's no unallocated space for more. Run `sudo btrfs balance start -dusage=20 /` (then `-dusage=50`) to give empty data chunks back, and `docker volume prune` for old anonymous `node_modules` volumes. |
-
-## Later phases add
-
-- Playwright Chromium in the backend image, for the headless render check (Phase 6). It is built, and `sandbox-build` rebuilds the lesson runtime into `frontend/public/sandbox/` on every `docker compose up`.

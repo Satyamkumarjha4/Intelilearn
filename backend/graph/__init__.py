@@ -1,1 +1,4 @@
-"""LangGraph flow: state, schemas, prompts, validators, nodes and graph builders (see docs/lesson-graph.md)."""
+"""LangGraph flow: state, schemas, prompts, validators, nodes and graph builders.
+
+See docs/architecture/lesson-graph.md.
+"""

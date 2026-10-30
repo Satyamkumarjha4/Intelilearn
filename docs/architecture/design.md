@@ -8,6 +8,34 @@ This document is the **binding object model** for Socra: the rules every module 
 
 Legend for status columns: ✅ in code · ◐ partly (functions still to wrap in a class) · ☐ planned (roadmap phase).
 
+## Contents
+
+- [1. Rules](#1-rules)
+  - [1.1 Everything is object-oriented](#11-everything-is-object-oriented)
+  - [1.2 SOLID in this codebase](#12-solid-in-this-codebase)
+  - [1.3 Further conventions](#13-further-conventions)
+- [2. Layers](#2-layers)
+- [3. Pattern catalogue](#3-pattern-catalogue)
+- [4. Module designs](#4-module-designs)
+  - [4.1 `accounts`](#41-accounts)
+  - [4.2 `core` and `config`](#42-core-and-config)
+  - [4.3 `llm_registry`: registry and resolution](#43-llm_registry-registry-and-resolution)
+  - [4.4 `llm_registry`: the gateway](#44-llm_registry-the-gateway)
+  - [4.5 `llm_registry`: probes](#45-llm_registry-probes)
+  - [4.6 `lessons`: domain and services](#46-lessons-domain-and-services)
+  - [4.7 `graph`: nodes, routers and builders](#47-graph-nodes-routers-and-builders)
+  - [4.8 `graph`: domain logic (grading, validation, prompts, codegen)](#48-graph-domain-logic-grading-validation-prompts-codegen)
+  - [4.9 `graph`: media and sandbox adapters](#49-graph-media-and-sandbox-adapters)
+  - [4.10 Flow execution and progress (Phase 3)](#410-flow-execution-and-progress-phase-3)
+  - [4.11 Frontend (`frontend/lib`)](#411-frontend-frontendlib)
+  - [4.12 Stage C and runtime repair (Phase 6)](#412-stage-c-and-runtime-repair-phase-6)
+  - [4.13 Test grading, tracing and usage (Phase 7)](#413-test-grading-tracing-and-usage-phase-7)
+  - [4.14 `onboarding`: first-topic suggestions](#414-onboarding-first-topic-suggestions)
+  - [4.15 `marketing`: the landing page's question bank](#415-marketing-the-landing-pages-question-bank)
+  - [4.16 `console`: the staff API](#416-console-the-staff-api)
+- [5. How to extend](#5-how-to-extend)
+- [Refactor backlog](#refactor-backlog)
+
 ## 1. Rules
 
 ### 1.1 Everything is object-oriented
@@ -32,7 +60,7 @@ Behaviour lives in classes. A unit of work is a method on an object with a singl
 | Signal receivers (`@receiver`), system checks (`@register`), DRF `EXCEPTION_HANDLER` | Function → one call into a class (`RegistryResolver().invalidate()`) |
 | Celery tasks (`@shared_task`) | Function → `FlowRunner().start(lesson_id)` |
 | LangGraph state reducers in `Annotated[...]` | `@staticmethod`s on a `Reducers` class |
-| pytest test functions and fixtures | pytest idiom (test classes are optional); see [testing.md](testing.md) |
+| pytest test functions and fixtures | pytest idiom (test classes are optional); see [testing.md](../process/testing.md) |
 | React components and hooks | Function components and hooks (class components are legacy React). Non-UI logic they use lives in TypeScript classes in `lib/` |
 
 ### 1.2 SOLID in this codebase
@@ -113,25 +141,25 @@ flowchart TB
 | | providers | `ProviderProfile` per provider kind | Allowed params, renames and reasoning kwargs differ per vendor | ✅ |
 | | rate limits | `RateLimiter` (`CacheWindowRateLimiter`) | Gateway depends on "wait for room", not on Redis | ✅ |
 | | probes | `CapabilityProbe` per capability | Each capability has its own check; `ModelProber` runs the declared ones | ✅ |
-| | graph | `Validator` per artefact | Deterministic rules per output type, fed back as retry feedback | ✅ Stage A and study material · ◐ plan, page, test and interactive-plan validators are classes but not wired until Phase 5 |
+| | graph | `Validator` per artefact | Deterministic rules per output type, fed back as retry feedback | ✅ all of them: Stage A, study material, plan, page, test, interactive plan and grading |
 | | graph | `RoutingPolicy` | Diagnostic score → route uses admin thresholds | ✅ |
 | | media | `MediaSource` (`Wikimedia…`, `Openverse…`, `Giphy…`) | Sources are added or disabled by settings | ✅ |
 | | health | `HealthCheck` (`Database…`, `Redis…`, `Celery…`) | Each dependency checked the same way | ✅ |
 | **Composite** | health | `HealthService` aggregates `HealthCheck`s | Overall status = worst child status | ✅ |
 | | graph | `CompositeValidator` | Deterministic validator + optional LLM reviewer (`diagnostic.review`) behave as one validator | ✅ |
-| **Template Method** | graph | `Node`, `LLMNode`, `ValidateNode`, `PublishNode`, `AwaitNode` | Every LLM node follows prompt → gateway → state update; every publish/await pair keeps side effects out of the re-executed `await` | ✅ Stage A · ☐ later stages (Phases 4–6) |
+| **Template Method** | graph | `Node`, `LLMNode`, `ValidateNode`, `PublishNode`, `AwaitNode` | Every LLM node follows prompt → gateway → state update; every publish/await pair keeps side effects out of the re-executed `await` | ✅ |
 | | prompts | `Prompt` (`system()`, `user()`, shared feedback and language blocks) | 15+ prompts share the same skeleton | ✅ |
 | | accounts | `_PublicAuthView` | Auth views share permission, throttle and CSRF set-up | ✅ |
 | | Django | `BaseCommand`, `AppConfig`, `ModelAdmin` (registry admins share the `StatusMarks` and `RegistryExportActions` mixins) | Framework-defined hooks | ✅ |
-| **Builder** | graph | `FlowGraphBuilder`, `StudyMaterialGraphBuilder`, `RuntimeRepairGraphBuilder`, `MediaGraphBuilder`, `CodeFixLoopBuilder` | Graphs are assembled step by step (nodes, edges, conditional edges) then compiled | ✅ flow (Stage A) · ☐ the others (Phases 4–6) |
-| | codegen | `DocumentAssembler` | The TSX document is built from page and component parts | ◐ (`codegen.py` functions) |
+| **Builder** | graph | `FlowGraphBuilder`, `StudyMaterialGraphBuilder`, `RuntimeRepairGraphBuilder`, `MediaGraphBuilder`, `CodeFixLoopBuilder`, `GradeTestGraphBuilder` | Graphs are assembled step by step (nodes, edges, conditional edges) then compiled | ✅ |
+| | codegen | `DocumentAssembler` | The TSX document is built from page and component parts | ✅ (`graph/codegen.py`; `CodeSanitizer` in `graph/sanitizer.py`) |
 | **Factory** | providers | `ChatModelFactory` (`LangChainChatModelFactory`) | Builds a LangChain client from a `ResolvedModel`; tests inject a fake factory | ✅ |
 | | graph | `default_context()` (composition root) | The one place concrete adapters are chosen | ✅ |
 | **Registry** | specs | `NODE_SPECS`, a `NodeSpecCatalog` (read-only `Mapping`) | Node keys are discovered by the admin, migrations and checks | ✅ |
 | | graph | `GraphRegistry` over `GRAPH_BUILDERS` | `GraphRun.graph` name → builder | ✅ |
 | | providers | `ProviderProfiles` | Provider kind → `ProviderProfile` | ✅ |
 | **Adapter** | sandbox | `SandboxRunner` | Wraps `node sandbox/scripts/*.mjs` subprocesses as Python methods | ✅ |
-| | media | `MediaSource` implementations | Wrap each external search API to one shape | ◐ |
+| | media | `MediaSource` implementations | Wrap each external search API to one shape | ✅ (`graph/media/sources.py`) |
 | | accounts | `CookieJWTAuthentication` | Adapts simplejwt to read the token from a cookie with CSRF | ✅ |
 | | frontend | `app/api/[...path]/route.ts` | Remote proxy from Next.js to Django with forwarded headers | ✅ |
 | **Observer** | Django signals | registry cache invalidation, `NodeConfig` sync on `post_migrate`, profile creation, media file deletion | Side effects follow saves without the saver knowing | ✅ |
@@ -140,7 +168,7 @@ flowchart TB
 | **Proxy (caching)** | resolver | `RegistryResolver` with cache-aside in Redis | Resolution is expensive; invalidated on every registry save | ✅ |
 | **Repository** | Django managers | `UserManager`, `LessonQuerySet.owned_by(user)` | Ownership filtering lives in one place, so a forgotten filter can't leak lessons | ✅ |
 | **Singleton** | settings | `FlowSettings.load()` | One editable settings row | ✅ |
-| **Memento** | snapshots | `Lesson.config_snapshot`, `settings_snapshot`, `LessonVersion` | A lesson keeps the registry and code it was built with; repairs can roll back | ✅ / ☐ Phase 6 |
+| **Memento** | snapshots | `Lesson.config_snapshot`, `settings_snapshot`, `LessonVersion` | A lesson keeps the registry and code it was built with; repairs can roll back | ✅ |
 | **State** | lessons | `Lesson.advance_to(stage)` with `StageTransitions` | Only legal stage moves happen (`awaiting_diagnostic` → `generating_lesson`, never `ready` → `awaiting_diagnostic`) | ✅ |
 | **Command** | execution | Celery task messages, LangGraph `Command(resume=…)`, `Send` | Work is captured as data, queued, retried and replayed from checkpoints | ✅ |
 | **Value Object** | everywhere | `ResolvedModel`, `ResolvedNode`, `GatewayResult`, `SyncReport`, `ProbeResult`, `CheckResult`, `RenderReport`, Pydantic schemas | Immutable results that are safe to cache, snapshot and compare in tests | ✅ |
@@ -1261,7 +1289,7 @@ classDiagram
 
 - **Stop, Retry and the session.** `StopPoint` (`lessons/services.py`) is what `LessonService.cancel` leaves for `retry`: the stage the lesson was in and the answer the stopped run was about to give. `SessionProbe` asks the site's own `/api/session` whether the (httpOnly) session marker is there, so a signed-out page makes no `/auth/me` call to fail; `SetupMarker` is the one cookie the page itself sets, for the last onboarding step. `StopControl` keeps the stop dialog tied to the learner's action, not to the run. `ChartPalette` keeps provider and status colours in separate charts, enforced by `lib/console-charts.test.ts`.
 - Components call the shared `apiClient` instance (`apiClient.request<T>(path, options)`), so concurrent 401s share one refresh. `fetch` and the cookie reader are constructor parameters, so `lib/api.test.ts` drives the client with a scripted fake `fetch`.
-- The landing page (see [frontend.md](frontend.md#the-landing-page)) keeps every rule in a static class: `RouteGuard` is what the thin `proxy.ts` hook calls; `HeroDemo`, `Walkthrough` (an immutable value: each move returns the next state), `ScorePaths`, `SlideCycle`, `PendingTopic` (storage is a constructor parameter) and `RevealPolicy` are used by thin components in `components/landing/`. `DeckMotion` holds the fly-off and rise constants that `FlashcardDeck` and the try-it card share.
+- The landing page (see [frontend.md](../reference/frontend.md#the-landing-page)) keeps every rule in a static class: `RouteGuard` is what the thin `proxy.ts` hook calls; `HeroDemo`, `Walkthrough` (an immutable value: each move returns the next state), `ScorePaths`, `SlideCycle`, `PendingTopic` (storage is a constructor parameter) and `RevealPolicy` are used by thin components in `components/landing/`. `DeckMotion` holds the fly-off and rise constants that `FlashcardDeck` and the try-it card share.
 - The console's Lesson runs page (`components/console/runs/`) follows the same split. `RunFilters` is the address (`?status=&job=&q=&run=`) as a value, and the only way a run id from the address reaches an API path (it must be a whole UUID). `RunText` writes every time, cost, status and stage; `RunTimeline.layout` turns timeline steps into phase groups, lanes and bar percentages (minimum width, waiting steps open-ended); `RunActions` runs Retry and Stop and explains each refusal. `RunFollower` keeps the open run current: events say *when* something changed and the console's detail says *what*, so it reloads on events and on a slow beat, falls back to polling when the stream is refused (the stream is open only to the learner who owns the run), spaces its loads for the console's throttle, and stops once the run is over. Its timers, stream and loader are constructor parameters, so `run-follower.test.ts` drives it with a fake clock.
 - The console's shell, Overview and Usage pages (`components/console/`, `components/console/overview/`, `components/console/usage/`) keep every decision in static classes, and the components only draw. `ConsoleGate` (not the backend's `ConsoleAccess`) decides what the layout does with a session (wait, sign in, not-found, show); `ConsoleQueryClient` and `ConsoleQueries` are the only TanStack Query setup (a factory for the client and a set of `queryOptions` with an injectable `ConsoleApi` and clock); `ConsoleUrl` is the address as a value (forgiving reads, defaults left out when writing); `ConsoleNav` is the sidebar as data; `ConsoleFormat` is the one place that writes numbers. `lib/console-charts.ts` has one class per chart (`SpendChart`, `LatencyChart`, `OutcomeChart`, `FunnelChart`, `SlowestSteps`, `StepTable`) with the same three methods where they apply: shape the reply into rows, say what a hover shows (`tooltip`, a `TooltipData` value), and give the table form (`table`); `ProviderSeries` is the only mapping from a provider to a colour, so a series never changes colour with its rank. `UsageFilterOptions` builds the drop-down choices and keeps a chosen model consistent with its provider. Variants are added to a class, not branched in a component (a new chart is a new class and a thin card).
 - The Learners and Change log pages (`components/console/people/`) are thin views over `lib/console-people.ts` and `lib/console-audit.ts`. `LearnerText`, `LearnerStats`, `PeopleUrl` and `AdminLinks` (the only place a link out of the console is built, from an allow-listed scheme) are static classes; `AuditText` turns an `AuditEntry` into `Segment`s (a variant is a new `case` in one `switch` over the API's own action names, with a generic sentence as the fallback, so an action the frontend has not heard of still reads), `AuditAreas` maps a target to its area, and `AuditDiff` formats the changed fields. `PeopleQueries` holds the paged `infiniteQueryOptions` with an injectable `ConsoleApi`; it sits beside `ConsoleQueries` rather than in it so that each page's queries and shaping stay together. `useDebouncedText` (search to address) and `notFoundIfRefused` (the 404 rule for a paged list) are the only hooks.
@@ -1518,7 +1546,7 @@ classDiagram
 - **Chain of responsibility / Strategy**: `RouteRule`s (school, interview, higher education, professional, self-learner) and `ReasonRule`s are lists the router and the builder walk, first match wins, so a new variant is a new class, never a new `if`. `FieldFamilies` is data-driven from the catalogue file.
 - **Port**: `TopicModel` is the only thing onboarding needs from a model, and it raises only `TopicModelError`, which is what the service turns into the catalogue. `GatewayTopicModel` calls `Gateway().invoke("onboarding.suggest_topics", ...)` with a snapshot taken at the moment of the call and a limiter that does not wait out a rate limit. The prompts are `Prompt` subclasses (Template Method, as in `graph/prompts`).
 - **Cache-aside**: `SuggestionCache` keeps pages, a model's list and translations, never fails a request, and builds normalised, short, plain keys.
-- Results are frozen dataclasses (`SuggestionRequest`, `Topic`, `Suggestions`); the model's output is the Pydantic `TopicSuggestions`. [onboarding.md](onboarding.md) has the behaviour.
+- Results are frozen dataclasses (`SuggestionRequest`, `Topic`, `Suggestions`); the model's output is the Pydantic `TopicSuggestions`. [onboarding.md](../reference/onboarding.md) has the behaviour.
 
 ### 4.15 `marketing`: the landing page's question bank
 
@@ -1548,7 +1576,7 @@ classDiagram
 
 - `DemoQuestionPicker` is the only logic: random among the active ids, never the excluded one (unless it is all there is), ids cached with the cache injected, and a cached id that has gone is skipped for a fresh list. A signal receiver (`signals.py`, a thin hook) clears the cache when a question is saved or deleted. The view validates `exclude`, throttles per client address (scope `landing_demo`) and formats; an empty bank is a `NotFound`.
 - `DemoQuestion.clean()` is the contract of a row (three different options, an answer among them, a band, outcomes validated by the Pydantic `Outcome`), so what the admin saves is what the card can show.
-- The frontend side is in [frontend.md](frontend.md#the-landing-page): `DemoQuestions`, `DemoQuestionFetcher`, `HeroDemo` and `Autoplay`, all `lib/` classes with `bun test`.
+- The frontend side is in [frontend.md](../reference/frontend.md#the-landing-page): `DemoQuestions`, `DemoQuestionFetcher`, `HeroDemo` and `Autoplay`, all `lib/` classes with `bun test`.
 
 ### 4.16 `console`: the staff API
 
@@ -1663,14 +1691,14 @@ classDiagram
 - **Template of every write**: a service method checks, then `transaction.atomic()` around the change and `AuditTrail.record`; a refused request raises before the transaction. Retry is the exception (the run it creates is queued for a worker as soon as it exists, and the worker must find it, so the entry is written after, not inside a transaction).
 - **Adapter**: `ModelProbeService` runs the same `CapabilityProbe`s as `probe_models`, one at a time under one 20-second deadline (each client gets the time left), because `ModelProber` gives every probe the whole timeout. `UsageCsv` streams rows through a `csv.writer` over an `Echo` buffer.
 - **Views** are thin: `ConsoleAccess` gives them staff-only access (404, never 403), the `console` throttle, `Cache-Control: no-store` and the audit trail; serializers (`console/serializers.py`) describe the shapes for Swagger and reject fields that cannot be set (`RejectUnknownFields`). A guard test fails when an endpoint that changes something is added without an audit test.
-- The timeline is derived from `GraphRun.node_timings`, which `GraphRunRecorder.record` fills as node events arrive (first start, latest finish, retry count); `NodePhases` places a node in a phase by the module that defines it. [api.md](api.md#console-staff-only) has the derivation and every endpoint.
+- The timeline is derived from `GraphRun.node_timings`, which `GraphRunRecorder.record` fills as node events arrive (first start, latest finish, retry count); `NodePhases` places a node in a phase by the module that defines it. [api.md](../reference/api.md#console-staff-only) has the derivation and every endpoint.
 
 ## 5. How to extend
 
 | You are adding | Do this |
 |---|---|
 | A hero question | A row in the Django admin (Marketing → Demo questions): it is live as soon as it is saved and active, because saving clears the cached list of ids. |
-| A first-topic list, field family, routing rule or reason | A JSON edit in `onboarding/catalogue.json`, or a `RouteRule` / `ReasonRule` class in the router or the reason builder; see [onboarding.md](onboarding.md#extending). |
+| A first-topic list, field family, routing rule or reason | A JSON edit in `onboarding/catalogue.json`, or a `RouteRule` / `ReasonRule` class in the router or the reason builder; see [onboarding.md](../reference/onboarding.md#extending). |
 | An LLM step | `NodeSpec` in `node_specs.py` → `Prompt` subclass → `LLMNode` subclass (+ `Validator` and `ValidateNode` if its output has rules) → register in the graph builder → `migrate` → bind models. Tests first for the validator and the node with `FakeGateway`. |
 | A provider kind | `ProviderProfile` subclass, registered in `ProviderProfiles`; a test that builds the real client offline (`tests/llm_registry/test_providers.py`). |
 | A media source | `MediaSource` implementation, a `FlowSettings.media_sources` value, tests with `httpx.MockTransport`. |
@@ -1685,7 +1713,7 @@ classDiagram
 
 Code written before this document that doesn't follow it yet. Behaviour must not change in a refactor: tests stay green before and after, and only imports and names in tests change. Tick items off here as they land.
 
-Every phase 0–2 item is done. The rows still open describe the work-in-progress lesson-flow code (`graph/`, `lessons/`), which is kept on the `phase-3/lesson-flow` branch rather than in `main`. It is brought in line with this design, with tests, as Phase 3 lands.
+Every row below is done: the registry, core, accounts and frontend code of phases 0–2, and the lesson-flow code (`graph/`, `lessons/`) that landed with phases 3–6. The status columns above (✅ ◐ ☐) match it. New gaps go in the table that follows.
 
 | Module | Today | Target | Do it |
 |---|---|---|---|
@@ -1712,3 +1740,5 @@ Every phase 0–2 item is done. The rows still open describe the work-in-progres
 | ~~`lessons/document.py`~~ | ~~functions~~ | `LessonSource`, `LessonData`, `LessonDocumentBuilder`, with `MediaUrlSigner` (`lessons/media_urls.py`) | ✅ Done |
 | ~~`frontend/lib/api.ts`~~ | ~~module functions + `ApiError`~~ | `ApiClient` + the shared `apiClient` instance | ✅ Done |
 | ~~`frontend/lib/safe-redirect.ts`~~ | ~~`safeNext()`~~ | `RedirectPolicy.safeNext` | ✅ Done |
+| `graph/schemas/lesson.py`, `graph/schemas/interactive.py`, `graph/nodes/mastery.py`, `graph/nodes/media_agent.py`, `graph/media/sources.py`, `lessons/services.py`, `lessons/views.py`, `lessons/events.py`, `console/services/attention.py`, `console/services/overview.py`, `onboarding/prompts.py` | module-level helper functions that hold logic: `public_question`, `component_name`, `diagnostic_concepts`, `sources_of`, `strip_html`, `has_active_run`, `parse_id`, `channel`, `plural`, `money`, `language_name` | a method on the class or value object that owns the data (the rules above allow only framework hooks at module level) | ☐ Open |
+| `lessons/events.py`, `lessons/reports.py`, `graph/grading.py`, `graph/schemas/lesson.py` | `if kind ==` chains over event kinds, sheet kinds and question types | one registered variant class per kind (Open/Closed) | ☐ Open |

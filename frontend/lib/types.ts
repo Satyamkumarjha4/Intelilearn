@@ -1,4 +1,4 @@
-// Mirrors the API (see docs/api.md and Swagger at /api/docs).
+// Mirrors the API (see docs/reference/api.md and Swagger at /api/docs).
 
 export type User = {
   id: string;
@@ -29,7 +29,7 @@ export type Profile = {
 
 export type ProfileInput = Omit<Profile, "email" | "profile_complete" | "updated_at">;
 
-// --- The landing page (docs/api.md) ---
+// --- The landing page (docs/reference/api.md) ---
 
 export type DemoOutcome = { level: number; level_label: string; lesson_start: string };
 
@@ -47,7 +47,7 @@ export type DemoQuestion = {
   outcome_wrong: DemoOutcome;
 };
 
-// --- Lessons (docs/api.md) ---
+// --- Lessons (docs/reference/api.md) ---
 
 export type Stage =
   | "preparing_diagnostic"
@@ -155,7 +155,7 @@ export type RunEvent =
   | { name: "error"; data: { message: string; code: string } }
   | { name: "cancelled"; data: Record<string, never> };
 
-// --- Study sheets (docs/lesson-graph.md, docs/api.md) ---
+// --- Study sheets (docs/architecture/lesson-graph.md, docs/reference/api.md) ---
 
 export type MaterialKind = "cheat_sheet" | "revision_sheet" | "practice_sheet";
 
@@ -307,7 +307,7 @@ export type LearnerTest = {
 export type TestSubmissionCreated = { submission_id: string; run_id: string | null; status: TestSubmission["status"] };
 
 
-// --- The console (staff only, /api/console; docs/api.md) -------------------------------------------------------------
+// --- The console (staff only, /api/console; docs/reference/api.md) -------------------------------------------------------------
 
 /** US dollars as a decimal string with six places, for example "0.012345" (`Number()` it only to draw). */
 export type Money = string;

@@ -247,7 +247,7 @@ class FailureSegment(Segment):
 
 
 class FlowGraphBuilder(GraphBuilder):
-    """The lesson flow: one thread per lesson (`thread_id` = lesson id). See docs/lesson-graph.md."""
+    """The lesson flow: one thread per lesson (`thread_id` = lesson id). See docs/architecture/lesson-graph.md."""
 
     def __init__(self, segments: list[Segment] | None = None):
         self.segments = segments if segments is not None else self.default_segments()

@@ -1,4 +1,7 @@
-"""Request and response shapes of the lessons API (docs/api.md). Responses are built from the services' output."""
+"""Request and response shapes of the lessons API (docs/reference/api.md).
+
+Responses are built from the services' output.
+"""
 
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
@@ -188,7 +191,9 @@ class MaterialKindSerializer(serializers.Serializer):
 
 class StudyMaterialSerializer(serializers.Serializer):
     kind = serializers.ChoiceField(choices=MaterialKind.choices)
-    content = serializers.DictField(help_text="The sheet (docs/lesson-graph.md). Practice solutions are left out.")
+    content = serializers.DictField(
+        help_text="The sheet (docs/architecture/lesson-graph.md). Practice solutions are left out."
+    )
     solutions = serializers.DictField(
         help_text="Practice sheet only: {question_id: solution} for the questions named in `reveal`."
     )

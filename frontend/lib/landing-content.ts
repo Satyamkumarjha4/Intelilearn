@@ -1,4 +1,4 @@
-// The words on the public landing page (docs/frontend.md, "The landing page"). Static on purpose: the page is for people
+// The words on the public landing page (docs/reference/frontend.md, "The landing page"). Static on purpose: the page is for people
 // who are not signed in, so none of it comes from the API.
 
 import type { DemoQuestion } from "@/lib/types";

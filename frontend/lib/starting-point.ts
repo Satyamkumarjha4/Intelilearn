@@ -25,7 +25,7 @@ const CONFIDENCE: Record<string, [number, string]> = {
   high: [1, "Very sure"],
 };
 
-/** What the "Your starting point" card shows, from the assessment and the quick check (docs/frontend.md). */
+/** What the "Your starting point" card shows, from the assessment and the quick check (docs/reference/frontend.md). */
 export class StartingPoint {
   static readonly SEGMENTS = 5;
 

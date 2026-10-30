@@ -47,7 +47,7 @@ lint: ## Lint backend (ruff, OpenAPI schema) and frontend (eslint, tsc, bun test
 
 check: lint test ## Lint + tests: run before finishing any change
 
-# --- Browser tests against the fake LLM (docs/testing.md) ---------------------------------------------------------
+# --- Browser tests against the fake LLM (docs/process/testing.md) ---------------------------------------------------------
 # Its own compose project, ports and database: no Supabase, no provider key, nothing shared with `make up`.
 E2E_FRONTEND_PORT ?= 7100
 E2E_BACKEND_PORT ?= 7110

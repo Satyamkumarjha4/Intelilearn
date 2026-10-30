@@ -11,7 +11,7 @@ export const BAND_LABELS: Record<Band, string> = {
   hard: "Expert",
 };
 
-/** Which screen of the lesson page a lesson is on (docs/frontend.md, "the stage-driven view"). */
+/** Which screen of the lesson page a lesson is on (docs/reference/frontend.md, "the stage-driven view"). */
 export type ScreenKind =
   | "progress"
   | "diagnostic"

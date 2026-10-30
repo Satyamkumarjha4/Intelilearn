@@ -1,4 +1,4 @@
-# The throwaway stack the browser tests run against: `make fake-llm` / `make e2e` (docs/testing.md).
+# The throwaway stack the browser tests run against: `make fake-llm` / `make e2e` (docs/process/testing.md).
 #   docker compose -p socra-e2e -f docker-compose.yml -f docker-compose.e2e.yml --profile e2e up -d --build
 # It is its own compose project (its own containers and database volume), on its own ports, with no Supabase URL and no
 # provider key: the only model is the fake one in tests/e2e/fake_llm_server.py, so nothing here can reach your data or

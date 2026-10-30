@@ -1,4 +1,4 @@
-"""Test doubles for the ports the graph depends on (see docs/testing.md §4).
+"""Test doubles for the ports the graph depends on (see docs/process/testing.md §4).
 
 - `FakeGateway`: scripted outputs per node key; records every call. An item may be a Pydantic object, a dict (validated
   against the call's schema), a callable taking the messages, or an exception to raise.

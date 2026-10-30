@@ -29,7 +29,7 @@ import type {
 export type PageQuery = { cursor?: string | null; pageSize?: number };
 
 /**
- * The staff-only console endpoints (docs/api.md, "Console"), typed.
+ * The staff-only console endpoints (docs/reference/api.md, "Console"), typed.
  *
  * The console answers anyone who is not signed in as staff with a 404, so that it does not announce itself. That also
  * means a staff member whose access cookie has just expired looks like a stranger and gets a 404 instead of the 401

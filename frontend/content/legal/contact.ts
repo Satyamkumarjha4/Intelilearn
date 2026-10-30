@@ -1,5 +1,5 @@
 /**
- * The words of the Contact page, from docs/legal/socra-legal-copy.md. Edit them here: the page only lays them out.
+ * The words of the Contact page (docs/legal/README.md). Edit them here: the page only lays them out.
  * The email below is the only address anywhere in the product.
  */
 export const CONTACT = {

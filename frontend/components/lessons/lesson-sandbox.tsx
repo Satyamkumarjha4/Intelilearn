@@ -15,7 +15,7 @@ type Props = {
 };
 
 /**
- * The lesson, running in a sandboxed iframe (docs/frontend.md): `allow-scripts` without `allow-same-origin` gives it an
+ * The lesson, running in a sandboxed iframe (docs/reference/frontend.md): `allow-scripts` without `allow-same-origin` gives it an
  * opaque origin, and the harness's CSP lets it load only the runtime and our media, so generated code can neither reach
  * the app's cookies nor the network. It speaks only through `postMessage`, and only messages from this iframe are heard.
  */

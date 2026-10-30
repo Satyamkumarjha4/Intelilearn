@@ -29,17 +29,35 @@ Socra (formerly Lesson Crafter) is a re-architecture of [girishkhanna1105/lesson
 
 ## Documentation
 
-1. [Architecture](docs/architecture.md): what the product does, its components, and the lifecycle
-2. [Local setup](docs/local-setup.md): run everything on your machine
-3. [Data model](docs/data-model.md): users, lessons, quizzes, media, runs, settings
-4. [Model registry](docs/model-registry.md): capabilities, node specs, reasoning, structured output, fallbacks, admin
-5. [Lesson flow graph](docs/lesson-graph.md): diagnose → author → build and verify, with every validation, retry, and fallback
-6. [API reference](docs/api.md): REST and SSE
-7. [Frontend](docs/frontend.md): stage-driven UI, quiz runner, study sheets, sandboxed lesson viewer
-8. [Roadmap](docs/roadmap.md): build phases
-9. [CI](docs/ci.md): checks on every push, auto-revert on main, failure issues for branches
-10. [Testing](docs/testing.md): how tests are written, and the browser tests (`make e2e`)
-11. [UI audit](docs/audit/ui-audit-2026-10-25.md): the final screen-by-screen review against the mockups
+The docs index is [docs/README.md](docs/README.md). It lists every doc by job and flags the ones that are out of date.
+
+**Getting started**
+
+- [Local setup](docs/getting-started/local-setup.md): run everything on your machine
+
+**Architecture**
+
+- [Overview](docs/architecture/overview.md): what the product does, its components, and the lifecycle
+- [Object design](docs/architecture/design.md): the rules, layers, patterns and class diagrams new code follows
+- [Lesson flow graph](docs/architecture/lesson-graph.md): diagnose → author → build and verify, with every validation, retry, and fallback
+- [Model registry](docs/architecture/model-registry.md): capabilities, node specs, reasoning, structured output, fallbacks, admin
+- [Data model](docs/architecture/data-model.md): users, lessons, quizzes, media, runs, settings
+
+**Reference**
+
+- [API reference](docs/reference/api.md): REST and SSE
+- [Frontend](docs/reference/frontend.md): stage-driven UI, quiz runner, study sheets, sandboxed lesson viewer
+- [Onboarding topic suggestions](docs/reference/onboarding.md)
+
+**Process**
+
+- [Testing](docs/process/testing.md): how tests are written, and the browser tests (`make e2e`)
+- [CI](docs/process/ci.md): checks on every push, auto-revert on main, failure issues for branches
+- [Roadmap](docs/process/roadmap.md): build phases
+
+**Archive**
+
+- [UI audit, 25 October 2026](docs/archive/ui-audit-2026-10-25.md): the final screen-by-screen review against the mockups
 
 ## Repository layout (target)
 
@@ -74,7 +92,7 @@ Lesson Crafter/
 make env      # creates the single root .env from .env.example (optional: everything has defaults)
 make up       # docker compose: db (Postgres), redis, backend, worker, frontend
 make check    # lint + tests
-make e2e      # browser tests on a throwaway stack with a fake LLM (docs/testing.md)
+make e2e      # browser tests on a throwaway stack with a fake LLM (docs/process/testing.md)
 ```
 
-The app runs at http://localhost:3000 and Swagger at http://localhost:8000/api/docs (ports come from `.env`). It uses the docker Postgres until you set `SUPABASE_DATABASE_URL`. From then on, the backend copies local data up to Supabase on start. Details are in [docs/local-setup.md](docs/local-setup.md). Development rules are in [CLAUDE.md](CLAUDE.md).
+The app runs at http://localhost:3000 and Swagger at http://localhost:8000/api/docs (ports come from `.env`). It uses the docker Postgres until you set `SUPABASE_DATABASE_URL`. From then on, the backend copies local data up to Supabase on start. Details are in [docs/getting-started/local-setup.md](docs/getting-started/local-setup.md). Development rules are in [CLAUDE.md](CLAUDE.md).

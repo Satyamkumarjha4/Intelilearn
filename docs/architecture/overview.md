@@ -10,13 +10,13 @@ A learner signs in and asks to learn a topic. Socra first **diagnoses** what the
 
 A **lesson** has three pages: Introduction (with prerequisites if needed), Core concepts and Advanced concepts. The **final test** (10–15 questions of mixed types) is a separate screen of the app, not a page of the lesson, and can be submitted once. The pages include interactive graphs, simulations, animations, and real images or GIFs. The content is validated against the learner's level, compiled into a TypeScript document, security-scanned, test-rendered in a headless sandbox, and only then shown.
 
-The complete flow is in [lesson-graph.md](lesson-graph.md). The classes, layers and design patterns are in [design.md](design.md), and the test-driven workflow in [testing.md](testing.md).
+The complete flow is in [lesson-graph.md](lesson-graph.md). The classes, layers and design patterns are in [design.md](design.md), and the test-driven workflow in [testing.md](../process/testing.md).
 
 ## Components
 
 ```
                     ┌──────────────────────────────┐
-  Browser ───────▶  │ Next.js (localhost:3000)     │   lesson renders in a sandboxed iframe
+  Browser ───────▶  │ Next.js (FRONTEND_PORT)      │   lesson renders in a sandboxed iframe
                     │  /api/* proxied to Django    │   (sandbox/ runtime)
                     └──────────────┬───────────────┘
                                    │ HTTP + SSE (JWT in httpOnly cookie)
@@ -31,7 +31,7 @@ The complete flow is in [lesson-graph.md](lesson-graph.md). The classes, layers 
                     └──────┬───────────────────────┘
                            │
                     ┌──────▼───────────────────────┐        ┌──────────────────────────┐
-                    │ Celery worker                │──SQL──▶│ Supabase Postgres        │
+                    │ Celery worker                │──SQL──▶│ Postgres (db or Supabase)│
                     │  LangGraph flow per lesson   │        │  app tables              │
                     │  model gateway ──▶ LLM APIs  │        │  LangGraph checkpoints   │
                     │  media tools ──▶ Wikimedia,  │        └──────────────────────────┘
@@ -44,7 +44,7 @@ The complete flow is in [lesson-graph.md](lesson-graph.md). The classes, layers 
 | Component | Responsibility |
 |---|---|
 | **Next.js** | UI. The public landing page, sign-in and the five-step setup, the stage-driven lesson page (quick check, lesson book, one-attempt test, study sheets, sandboxed viewer), and the staff console (`/console`). A route guard (`proxy.ts`) reads marker cookies to pick the page; the API authorises everything. |
-| **Django** | Auth and profile (with consent to the terms), the landing page's try-it question (`marketing`), first-topic suggestions for the setup (`onboarding`), the staff console API (`console`: usage, lesson runs, routing, learners, an audit entry for every change), lesson CRUD, quiz delivery and **synchronous grading**, resuming graphs, SSE progress, signed media URLs, and the admin (model registry and `FlowSettings`). It never calls an LLM inside a request. |
+| **Django** | Auth and profile (with consent to the terms), the landing page's try-it question (`marketing`), first-topic suggestions for the setup (`onboarding`), the staff console API (`console`: usage, lesson runs, routing, learners, an audit entry for every change), lesson CRUD, quiz delivery and **synchronous grading**, resuming graphs, SSE progress, signed media URLs, and the admin (model registry and `FlowSettings`). It never calls an LLM inside a learner's request. The one exception is the staff console's model probe, which makes a few real provider calls and is limited to 20 seconds. |
 | **Celery worker** | Runs graph segments: start, resume after each learner input, retry, repair, grading. |
 | **LangGraph** | One `StateGraph` thread per lesson with `interrupt()` pauses, parallel `Send` fan-outs, validation loops, targeted regeneration, and fallbacks. |
 | **Model gateway** | Resolves the model chain for each node from the registry snapshot. Handles structured output, tool calling, reasoning settings, retries, fallback, rate limits, and call logging. |
@@ -54,7 +54,7 @@ The complete flow is in [lesson-graph.md](lesson-graph.md). The classes, layers 
 
 ### Why checkpoints live in Postgres, not Redis
 
-The flow pauses for the learner at up to two `interrupt()` points, and a learner may come back hours or days later. Checkpoints must therefore be durable and must not expire. `langgraph-checkpoint-postgres` on the existing Supabase database provides that. Redis stays for short-lived data.
+The flow pauses for the learner at up to two `interrupt()` points, and a learner may come back hours or days later. Checkpoints must therefore be durable and must not expire. `langgraph-checkpoint-postgres` on the app's own Postgres database provides that. Redis stays for short-lived data.
 
 ## Lifecycle
 
@@ -77,7 +77,7 @@ The flow pauses for the learner at up to two `interrupt()` points, and a learner
 
 ## Security
 
-- **Keys:** LLM and media API keys are in `backend/.env` only. The registry stores environment variable names.
+- **Keys:** LLM and media API keys are in the root `.env` only (gitignored; `docker-compose.yml` passes it to the backend and worker). The registry stores environment variable names, never the keys.
 - **Generated code** is untrusted, so it is contained in four ways:
   1. an AST security scan and scope allow-list before it is saved;
   2. a headless render with every network request blocked;
@@ -87,4 +87,4 @@ The flow pauses for the learner at up to two `interrupt()` points, and a learner
 - **Answers** to quizzes and tests never reach the browser before the learner submits, and the final test can be submitted once (a unique constraint; a second go is `409`).
 - **The console** answers `404` to anyone who is not staff, signed in or not, as if it did not exist, and every change made there leaves an audit entry. Provider keys are never serialised.
 - **Cookies:** the session and the markers the route guard reads are httpOnly; the one cookie the page sets itself (`lc_setting_up`) is a hint with no authority.
-- **Supabase:** Django owns the tables. RLS is enabled with no policies on every table, including the checkpoint tables, so the public Data API exposes nothing.
+- **Supabase:** Django owns the tables. Row-level security with no policies (so the public Data API exposes nothing) is the intended lock-down, but the script for it was skipped while the app runs on the local Postgres, so it is **not in place**. Enable it, including on the checkpoint tables, before pointing a Supabase project at this app.

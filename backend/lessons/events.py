@@ -1,8 +1,8 @@
 """Run progress: what nodes emit, what the browser receives, and the Redis pub/sub in between (Observer).
 
 Nodes emit plain dicts through LangGraph's custom stream. The `FlowRunner` translates them into `RunEvent`s
-(the vocabulary in docs/api.md) and publishes them on `run:{id}:events`; `RunEventStream` relays that channel to a
-browser as Server-Sent Events, starting with a snapshot so a late or reconnecting client catches up.
+(the vocabulary in docs/reference/api.md) and publishes them on `run:{id}:events`; `RunEventStream` relays that channel
+to a browser as Server-Sent Events, starting with a snapshot so a late or reconnecting client catches up.
 """
 
 import asyncio
@@ -159,7 +159,7 @@ class RunEventStream:
 
 
 class RunSnapshot:
-    """The state of a run as the stream's first event: enough for a client to catch up (see docs/api.md)."""
+    """The state of a run as the stream's first event: enough for a client to catch up (see docs/reference/api.md)."""
 
     AWAITING = {
         Stage.AWAITING_DIAGNOSTIC: "diagnostic",

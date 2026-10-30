@@ -39,7 +39,7 @@ class QuizResult:
         return cls(**data)
 
     def summary(self, route: Route | None = None) -> dict:
-        """What the learner sees right after submitting (QuizResultSummary in docs/api.md)."""
+        """What the learner sees right after submitting (QuizResultSummary in docs/reference/api.md)."""
         data = {"correct": self.correct, "total": self.total, "dont_know": self.dont_know, "by_band": self.by_band}
         if route:
             data["route"] = route

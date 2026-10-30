@@ -22,7 +22,7 @@ import type {
 
 export type LessonQuery = { q?: string; stage?: Stage | Stage[] | ""; cursor?: string | null; pageSize?: number };
 
-/** The lessons endpoints (docs/api.md), typed. */
+/** The lessons endpoints (docs/reference/api.md), typed. */
 export class LessonsApi {
   constructor(private readonly client: ApiClient = apiClient) {}
 

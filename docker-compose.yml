@@ -6,7 +6,7 @@
 # from your LAN. Set BIND_ADDRESS=0.0.0.0 only if you really need that.
 #
 # Database: the `db` service, unless SUPABASE_DATABASE_URL is set. Then the backend uses Supabase
-# and first copies local rows up to it on every start (see docs/local-setup.md).
+# and first copies local rows up to it on every start (see docs/getting-started/local-setup.md).
 
 x-backend: &backend
   build:
@@ -102,7 +102,7 @@ services:
     # watchfiles restarts the worker when Python files change
     command: watchfiles --filter python "celery -A config worker -l info --concurrency 4" /app
 
-  # Dev-only stand-in for an LLM provider (profile `e2e`; see `make fake-llm` and docs/local-setup.md).
+  # Dev-only stand-in for an LLM provider (profile `e2e`; see `make fake-llm` and docs/getting-started/local-setup.md).
   fake-llm:
     profiles: ["e2e"]
     build:

@@ -14,7 +14,7 @@ import pytest
 def _need_keys(request):
     """Live tests only: every other test in this folder (the offline checks) runs as usual."""
     if request.node.get_closest_marker("live") and not os.environ.get("GEMINI_API_KEY"):
-        pytest.skip("GEMINI_API_KEY is not set: the default registry's models need it (see docs/testing.md)")
+        pytest.skip("GEMINI_API_KEY is not set: the default registry's models need it (see docs/process/testing.md)")
 
 
 @pytest.fixture

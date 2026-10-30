@@ -1,6 +1,6 @@
 # Socra: frontend
 
-Next.js (App Router), managed with **bun**. Normally run through docker compose from the repo root. See [../docs/local-setup.md](../docs/local-setup.md) and [../docs/frontend.md](../docs/frontend.md).
+Next.js (App Router), managed with **bun**. Normally run through docker compose from the repo root. See [../docs/getting-started/local-setup.md](../docs/getting-started/local-setup.md) and [../docs/reference/frontend.md](../docs/reference/frontend.md).
 
 ```bash
 bun install

@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * Smoke tests of the whole app in a browser, against the throwaway fake-LLM stack (`make e2e`; docs/testing.md).
+ * Smoke tests of the whole app in a browser, against the throwaway fake-LLM stack (`make e2e`; docs/process/testing.md).
  * One worker: the tests share one database and one fake model, and a lesson build is the slow part, not the browser.
  */
 export default defineConfig({

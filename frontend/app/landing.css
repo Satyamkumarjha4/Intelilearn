@@ -1,5 +1,5 @@
 /*
- * Motion for the public landing page (docs/frontend.md, "The landing page"). Components mark what moves with data
+ * Motion for the public landing page (docs/reference/frontend.md, "The landing page"). Components mark what moves with data
  * attributes and set a delay in `--d`; this file says how. Nothing here is needed to read the page: it renders visible
  * on the server, and a visitor who asked for less motion gets none of it.
  */

@@ -1,6 +1,6 @@
 # Testing
 
-Socra is built **test-first**. Every behaviour change starts with a failing test, and every test file says what it tests, why, and which use cases it covers. This document is the contract for both. The object design that makes code testable is in [design.md](design.md).
+Socra is built **test-first**. Every behaviour change starts with a failing test, and every test file says what it tests, why, and which use cases it covers. This document is the contract for both. The object design that makes code testable is in [design.md](../architecture/design.md).
 
 ## 1. Workflow: red → green → refactor
 
@@ -88,7 +88,7 @@ Use cases:
 
 ## 4. Test doubles
 
-The design injects every collaborator through a constructor or `FlowContext` ([design.md §1.2](design.md#12-solid-in-this-codebase)), so tests pass doubles instead of patching.
+The design injects every collaborator through a constructor or `FlowContext` ([design.md §1.2](../architecture/design.md#12-solid-in-this-codebase)), so tests pass doubles instead of patching.
 
 | Collaborator | Double | Where |
 |---|---|---|

@@ -2,7 +2,7 @@
 
 The last onboarding step asks "Where would you like to start?" and offers four topics picked for the learner. It has to be **fast, cheap and never in the way**: the learner can always type a topic of their own, and nothing here may fail the step.
 
-The code is the Django app `onboarding/`, separate from `accounts/` because it is a different job (choosing topics, a cache, a model call) from keeping a profile. `accounts` owns the profile and its choice lists (`GET /api/profile/options`); `onboarding` only reads those choices to validate a request. The module design is in [design.md](design.md#414-onboarding-first-topic-suggestions).
+The code is the Django app `onboarding/`, separate from `accounts/` because it is a different job (choosing topics, a cache, a model call) from keeping a profile. `accounts` owns the profile and its choice lists (`GET /api/profile/options`); `onboarding` only reads those choices to validate a request. The module design is in [design.md](../architecture/design.md#414-onboarding-first-topic-suggestions).
 
 ## The request
 
