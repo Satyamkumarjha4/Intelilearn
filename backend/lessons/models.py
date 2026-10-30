@@ -18,6 +18,7 @@ from .stages import (  # noqa: F401  (re-exported)
     IllegalTransition,
     Intent,
     LevelSource,
+    MasteryOptions,
     MaterialKind,
     Origin,
     Route,
@@ -53,6 +54,11 @@ class Lesson(models.Model):
     entry = models.CharField(max_length=20, choices=Entry.choices, default=Entry.DIAGNOSTIC)
     level_source = models.CharField(max_length=20, choices=LevelSource.choices, blank=True)
     self_rating_halves = models.PositiveSmallIntegerField(null=True, blank=True)  # stars times two, 1 to 10
+    # What the mastery choice offered, set when it is published; the old three-sheet choice is what a row from before
+    # the Expert lesson has, so the page shows those learners the cards they were waiting at.
+    mastery_options = models.CharField(
+        max_length=20, choices=MasteryOptions.choices, default=MasteryOptions.THREE_SHEETS
+    )
 
     # Stage A
     assessment = models.JSONField(null=True, blank=True)  # LearnerAssessment

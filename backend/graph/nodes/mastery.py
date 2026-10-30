@@ -10,7 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from lessons.models import MaterialKind, Quiz, Stage, StudyMaterial
+from lessons.models import MasteryOptions, MaterialKind, Quiz, Stage, StudyMaterial
 
 from ..context import FlowContext
 from ..errors import RunFailed
@@ -25,7 +25,7 @@ class PublishMasteryOptionsNode(PublishNode):
     name = "publish_mastery_options"
 
     def publish(self, state: dict, ctx: FlowContext) -> dict:
-        self.lesson(state).advance_to(Stage.AWAITING_CHOICE)
+        self.lesson(state).advance_to(Stage.AWAITING_CHOICE, mastery_options=MasteryOptions.LESSON_OR_SHEETS)
         return {}
 
 

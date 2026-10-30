@@ -12,6 +12,9 @@ Use cases:
 - a self-rated lesson keeps its rating, entry and level source
 - a rating of 1 to 10 halves is stored and anything else is refused by the database; no rating is allowed
 - a recommended lesson keeps the attempt and topic it came from
+- a lesson remembers which mastery choice it was shown: the three sheets it was offered before the Expert lesson
+  existed (the default, so a lesson already waiting keeps its cards), or the Expert lesson or two sheets once the new
+  choice is published; migration 0013 gives every existing lesson the old one
 - migration 0012 credits the quick check as the level source of every existing lesson that has a level, leaves a lesson
   without a level alone, and can be undone
 - migration 0011 gives every existing lesson the defaults and can be undone
@@ -23,10 +26,12 @@ import pytest
 from django.db import IntegrityError, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
 
+from graph.nodes.mastery import PublishMasteryOptionsNode
 from lessons.models import Lesson, Stage, StageTransitions
 
 BEFORE = [("lessons", "0010_many_attempts_per_lesson")]
 COLUMNS = [("lessons", "0011_lesson_entry_columns")]
+OPTIONS = [("lessons", "0013_lesson_mastery_options")]
 BACKFILLED = [("lessons", "0012_level_source_backfill")]
 
 
@@ -78,6 +83,28 @@ class TestColumns:
         assert fresh.origin == "recommendation" and fresh.recommended_from == source
 
 
+@pytest.mark.django_db
+class TestMasteryOptions:
+    def test_a_lesson_defaults_to_the_choice_it_was_offered_before_the_expert_lesson(self, lesson):
+        assert Lesson.objects.get(pk=lesson.pk).mastery_options == "three_sheets"
+
+    def test_publishing_the_choice_records_the_new_options(self, lesson, lesson_state, runtime):
+        Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.AWAITING_DIAGNOSTIC, route="mastery")
+
+        PublishMasteryOptionsNode()(lesson_state, runtime)
+
+        stored = Lesson.objects.get(pk=lesson.pk)
+        assert (stored.stage, stored.mastery_options) == (Stage.AWAITING_CHOICE, "lesson_or_sheets")
+
+    def test_the_api_says_which_choice_the_lesson_was_shown(self, signed_in_client, lesson):
+        before = signed_in_client.get(f"/api/lessons/{lesson.id}").json()["mastery_options"]
+        Lesson.objects.filter(pk=lesson.pk).update(mastery_options="lesson_or_sheets")
+
+        after = signed_in_client.get(f"/api/lessons/{lesson.id}").json()["mastery_options"]
+
+        assert (before, after) == ("three_sheets", "lesson_or_sheets")
+
+
 class TestTransitions:
     @pytest.mark.parametrize(("source", "target"), [
         (Stage.PREPARING_DIAGNOSTIC, Stage.GENERATING_LESSON),
@@ -103,7 +130,8 @@ class TestMigrations:
         migrate(latest())
 
     def make(self, apps, owner_id, **fields):
-        return apps.get_model("lessons", "Lesson").objects.create(owner_id=owner_id, topic="T", stage="ready", **fields)
+        fields = {"stage": "ready"} | fields
+        return apps.get_model("lessons", "Lesson").objects.create(owner_id=owner_id, topic="T", **fields)
 
     def test_existing_lessons_get_the_defaults_and_the_quick_check_as_their_level_source(self, django_user_model):
         old = migrate(BEFORE)
@@ -130,6 +158,15 @@ class TestMigrations:
         after = migrate(BACKFILLED)
 
         assert after.get_model("lessons", "Lesson").objects.get(pk=pk).level_source == "self_rating"
+
+    def test_an_existing_lesson_keeps_the_three_sheet_choice(self, django_user_model):
+        old = migrate(BACKFILLED)
+        owner = django_user_model.objects.create_user("h@example.com", password="x", name="H")
+        pk = self.make(old, owner.pk, stage="awaiting_choice").pk
+
+        new = migrate(OPTIONS)
+
+        assert new.get_model("lessons", "Lesson").objects.get(pk=pk).mastery_options == "three_sheets"
 
     def test_the_migrations_can_be_undone_and_applied_again(self, django_user_model):
         migrate(BACKFILLED)

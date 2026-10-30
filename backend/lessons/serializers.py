@@ -11,7 +11,7 @@ from graph.scoring import AttemptTrend
 
 from .attempts import AttemptQuestions
 from .models import GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt, TestSubmission
-from .stages import Entry, Intent, LevelSource, MaterialKind, Origin, Route
+from .stages import Entry, Intent, LevelSource, MasteryOptions, MaterialKind, Origin, Route
 
 
 class StarsField(serializers.FloatField):
@@ -186,6 +186,12 @@ class LessonDetailSerializer(LessonSummarySerializer):
     intent = serializers.ChoiceField(choices=Intent.choices, read_only=True)
     origin = serializers.ChoiceField(choices=Origin.choices, read_only=True)
     level_source = serializers.ChoiceField(choices=LevelSource.choices, read_only=True)
+    mastery_options = serializers.ChoiceField(
+        choices=MasteryOptions.choices,
+        read_only=True,
+        help_text="What the choice after a perfect quick check offers: the Expert lesson or two sheets, or (a lesson "
+        "that was already waiting) the three sheets.",
+    )
     self_rating = serializers.SerializerMethodField()
 
     class Meta(LessonSummarySerializer.Meta):
@@ -195,6 +201,7 @@ class LessonDetailSerializer(LessonSummarySerializer):
             "intent",
             "origin",
             "level_source",
+            "mastery_options",
             "self_rating",
             "user_context",
             "error",
