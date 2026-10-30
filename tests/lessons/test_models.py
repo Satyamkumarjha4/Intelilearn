@@ -205,21 +205,12 @@ class TestFlowSettings:
         assert snapshot["allowed_media_licenses"] == ["cc0", "pdm", "cc-by", "cc-by-sa"]
 
 
-def test_a_test_submission_starts_as_grading_and_goes_with_its_lesson(lesson):
+def test_a_test_submission_starts_in_progress_as_attempt_one_and_goes_with_its_lesson(lesson):
     submission = TestSubmission.objects.create(lesson=lesson, answers={"t1": 1})
 
-    assert submission.status == TestSubmission.Status.GRADING and submission.result is None
-    assert submission.graded_at is None and str(submission) == "Test of Binary search (Grading)"
+    assert submission.status == TestSubmission.Status.IN_PROGRESS and submission.attempt_no == 1
+    assert submission.result is None and submission.submitted_at is None and submission.graded_at is None
+    assert submission.is_open and str(submission) == "Attempt 1 of Binary search (In progress)"
     assert list(lesson.submissions.all()) == [submission]
     lesson.delete()
     assert not TestSubmission.objects.exists()
-
-
-def test_a_lesson_has_at_most_one_test_submission(lesson, make_lesson):
-    TestSubmission.objects.create(lesson=lesson)
-
-    with pytest.raises(IntegrityError), transaction.atomic():
-        TestSubmission.objects.create(lesson=lesson)
-
-    TestSubmission.objects.create(lesson=make_lesson())  # another lesson is not affected
-    assert TestSubmission.objects.count() == 2

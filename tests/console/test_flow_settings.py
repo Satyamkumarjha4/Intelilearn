@@ -30,7 +30,8 @@ FIELDS = {
     "diagnostic_questions_per_band", "prerequisite_question_count", "prereq_trigger_max_correct",
     "mastery_requires_all_correct", "final_test_min", "final_test_max", "max_interactives_per_page",
     "alignment_min_score", "alignment_max_rounds", "render_check_max_rounds", "max_auto_runtime_repairs",
-    "media_sources", "allowed_media_licenses",
+    "media_sources", "allowed_media_licenses", "band_fail_below", "band_excellent_above", "question_batch_size",
+    "batch_max_long", "batch_max_short", "retakes_per_day",
 }  # fmt: skip
 
 

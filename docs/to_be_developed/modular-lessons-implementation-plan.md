@@ -9,6 +9,12 @@ This plan says what has to change to build the spec on top of today's Socra: arc
 
 ## Changelog
 
+Phase 9.2 (branch `phase-9/retest`, from `main` after the 9.0 and 9.1 branches were merged). Decisions and changes made while building it.
+
+| # | Change | Sections touched |
+|---|---|---|
+| C30 | **Criteria are rebalanced in code.** Short and long answers whose criteria do not add up to the question's marks are scaled in proportion with largest-remainder rounding (ties to the earlier criterion), and every criterion keeps at least one mark (`CriteriaRebalancer`, run by `QuestionFinisher` before validation). Only a question with more criteria than marks goes back to the model, with the reason. This replaces the validator-only rule of C29 for the case of a wrong sum; `OpenEndedType.problems` still checks what reaches it | 10.5, 9.1, C29 |
+
 Third pass, 2026-10-30 (branch `docs/spec-fixes`, before phase 9.0 starts). Docs only.
 
 | # | Change | Sections touched |

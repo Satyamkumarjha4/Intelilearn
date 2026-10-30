@@ -112,3 +112,35 @@ class SubmissionNotFound(LessonError):
     status_code = status.HTTP_404_NOT_FOUND
     default_code = "not_found"
     default_detail = "That test submission does not exist."
+
+
+class AttemptNotFound(LessonError):
+    status_code = status.HTTP_404_NOT_FOUND
+    default_code = "not_found"
+    default_detail = "That attempt does not exist."
+
+
+class AttemptInProgress(LessonError):
+    """A start while an attempt is open returns that attempt; this is for what cannot share it."""
+
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "attempt_in_progress"
+    default_detail = "There is already an attempt in progress."
+
+
+class AttemptSealed(LessonError):
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "attempt_sealed"
+    default_detail = "That attempt is over. Its answers and score cannot be changed."
+
+
+class QuestionLocked(LessonError):
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "locked"
+    default_detail = "That question was already answered. Answers cannot be changed."
+
+
+class RetakeLimitReached(LessonError):
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    default_code = "retake_limit"
+    default_detail = "That is enough retakes for today. Try again tomorrow."

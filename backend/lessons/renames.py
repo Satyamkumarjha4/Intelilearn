@@ -96,6 +96,9 @@ class StoredRenames:
         ("TestSubmission", "answers"), ("TestSubmission", "result"), ("GraphRun", "payload"),
         ("GraphRun", "node_status"), ("GraphRun", "node_timings"), ("LessonVersion", "code_parts"),
         ("FlowSettings", "media_sources"), ("FlowSettings", "allowed_media_licenses"),
+        # added by migration 0007, after the rename: they are written in the new names from the start
+        ("Lesson", "test_blueprint"), ("Question", "payload"), ("TestSubmission", "questions"),
+        ("TestSubmission", "followup"),
     )  # fmt: skip
 
     def __init__(self, levels: LevelRename | None = None, difficulties: DifficultyRename | None = None):

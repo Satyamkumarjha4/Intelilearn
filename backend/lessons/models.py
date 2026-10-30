@@ -7,10 +7,12 @@ The LangGraph thread for a lesson uses `Lesson.id` as its thread_id (checkpoints
 import uuid
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 
+from .errors import AttemptSealed
 from .stages import IllegalTransition, MaterialKind, Route, Stage, StageTransitions  # noqa: F401  (re-exported)
 from .subjects import RunSubject
 
@@ -43,6 +45,9 @@ class Lesson(models.Model):
     plan = models.JSONField(null=True, blank=True)  # LessonPlan
     pages = models.JSONField(null=True, blank=True)  # {introduction, core, advanced} → PageContent
     final_test = models.JSONField(null=True, blank=True)  # FinalTest, answers included: never sent as-is
+    # The fixed LessonTestBlueprint (cells and total marks), written when the plan is saved. Null for a lesson made
+    # before it, until its first retake.
+    test_blueprint = models.JSONField(null=True, blank=True)
     interactive_plan = models.JSONField(null=True, blank=True)
     # Stage C
     code = models.TextField(blank=True)  # the assembled TSX document
@@ -198,36 +203,118 @@ class LessonVersion(models.Model):
         return f"{self.lesson.topic} v{self.code_version}"
 
 
-class TestSubmission(models.Model):
-    """The learner's one go at the lesson's final test: a lesson has at most one, and its answers, score and
-    recommendations are read-only once it exists. A failed grading is run again on the same answers, never on new ones.
+class Question(models.Model):
+    """The record of the questions a lesson has asked (docs/architecture/data-model.md). Questions are immutable once
+    created: a retake only adds rows. A row feeds the exclusion list for the next retake and holds any question that was
+    written but not served. Only `lessons.bank.QuestionBank` writes here."""
 
-    `result` is the `ScoreCard` (graph/grading.py): at first only what could be marked at once, complete when the
-    `grade_test` graph has graded the open-ended answers.
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name="questions")
+    type = models.CharField(max_length=20)  # mcq, msq, numerical, short_answer, long_answer (or a legacy code)
+    difficulty = models.CharField(max_length=20)
+    concept = models.CharField(max_length=200, blank=True)
+    marks = models.PositiveSmallIntegerField()  # from MarksPolicy, fixed at creation
+    payload = models.JSONField()  # the full question with its answer key: never sent to a client as it is
+    stem_hash = models.CharField(max_length=64)  # of the normalised question text (graph.questions.StemHash)
+    batch = models.UUIDField(null=True, blank=True)  # the generation that made it; none for a legacy question
+    retired = models.BooleanField(default=False, help_text="Withdrawn without deleting, so past attempts stay valid.")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        constraints = [models.UniqueConstraint(fields=["lesson", "stem_hash"], name="unique_question_stem_per_lesson")]
+        indexes = [
+            models.Index(fields=["lesson", "type", "difficulty"], name="question_lesson_cell"),
+            models.Index(fields=["lesson", "concept"], name="question_lesson_concept"),
+        ]
+
+    def __str__(self):
+        return f"{self.type} question of {self.lesson.topic}"
+
+
+class TestSubmission(models.Model):
+    """One attempt at the lesson's test. The model, table and URL names stay from when a lesson had a single
+    submission; in prose and in the app it is an attempt.
+
+    A lesson can have many, numbered from 1, and at most one is open (`generating` while a retake's questions are being
+    written, then `in_progress`). `questions` is the snapshot of what was served, answer keys included, which is what
+    makes an attempt immutable and gradable whatever happens to the record later. Once the attempt leaves `in_progress`
+    its `answers` and `questions` never change: `seal()` is the only way out. `result` is the `ScoreCard`
+    (graph/grading.py): complete at once for an objective attempt, and when the `grade_test` graph has graded the
+    open-ended answers for a legacy one.
     """
 
     __test__ = False  # not a pytest test class, whatever its name looks like
 
     class Status(models.TextChoices):
-        GRADING = "grading", "Grading"
+        GENERATING = "generating", "Preparing questions"
+        IN_PROGRESS = "in_progress", "In progress"
+        GRADING = "grading", "Grading"  # legacy attempts with open-ended questions only
         GRADED = "graded", "Graded"
         FAILED = "failed", "Grading failed"
 
+    OPEN = (Status.GENERATING, Status.IN_PROGRESS)
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name="submissions")
-    answers = models.JSONField(default=dict)  # {question_id: answer}
+    attempt_no = models.PositiveSmallIntegerField(default=1)  # per lesson, from 1
+    questions = models.JSONField(default=list, blank=True)  # the snapshot of the questions served in this attempt
+    answers = models.JSONField(default=dict)  # {question_id: answer}; an answered question is locked
     result = models.JSONField(null=True, blank=True)
-    status = models.CharField(max_length=10, choices=Status.choices, default=Status.GRADING)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.IN_PROGRESS)
     error = models.TextField(blank=True)
-    submitted_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(default=timezone.now)
+    submitted_at = models.DateTimeField(null=True, blank=True)  # none while the attempt is open
     graded_at = models.DateTimeField(null=True, blank=True)
+    awarded = models.PositiveSmallIntegerField(null=True, blank=True)  # filled when graded, so trends are cheap
+    available = models.PositiveSmallIntegerField(null=True, blank=True)
+    band = models.CharField(max_length=10, blank=True)  # fail, normal or excellent, once graded
+    duration_s = models.PositiveIntegerField(null=True, blank=True)  # server-measured, started_at to submitted_at
+    followup = models.JSONField(null=True, blank=True)  # the offer decided with the band (none until phase 9.4)
+    all_blank = models.BooleanField(default=False, help_text="Every answer was blank. Stored, scores 0, no offer.")
 
     class Meta:
-        ordering = ["-submitted_at"]
-        constraints = [models.UniqueConstraint(fields=["lesson"], name="unique_test_submission_per_lesson")]
+        ordering = ["-attempt_no"]
+        constraints = [
+            models.UniqueConstraint(fields=["lesson"], name="unique_test_submission_per_lesson"),
+            models.UniqueConstraint(fields=["lesson", "attempt_no"], name="unique_attempt_no_per_lesson"),
+            models.UniqueConstraint(
+                fields=["lesson"],
+                condition=models.Q(status__in=["generating", "in_progress"]),
+                name="one_open_attempt_per_lesson",
+            ),
+        ]
 
     def __str__(self):
-        return f"Test of {self.lesson.topic} ({self.get_status_display()})"
+        return f"Attempt {self.attempt_no} of {self.lesson.topic} ({self.get_status_display()})"
+
+    @property
+    def is_open(self) -> bool:
+        return self.status in self.OPEN
+
+    def seal(
+        self, *, answers: dict, status: str, result: dict, band: str, followup: dict | None, all_blank: bool, now
+    ) -> None:
+        """Close an attempt that is in progress: its answers are final, and so is what they scored (or, for a legacy
+        attempt with open-ended answers, the part of it that could be marked at once). The only way out of
+        `in_progress`; the conditional update makes a second call, or a call on a closed attempt, do nothing."""
+        score = result["score"]
+        sealed = TestSubmission.objects.filter(pk=self.pk, status=self.Status.IN_PROGRESS).update(
+            answers=answers,
+            status=status,
+            result=result,
+            awarded=score["awarded"] if status == self.Status.GRADED else None,
+            available=score["available"] if status == self.Status.GRADED else None,
+            band=band,
+            followup=followup,
+            all_blank=all_blank,
+            submitted_at=now,
+            graded_at=now if status == self.Status.GRADED else None,
+            duration_s=max(0, int((now - self.started_at).total_seconds())),
+        )
+        if not sealed:
+            raise AttemptSealed()
+        self.refresh_from_db()
 
 
 class GraphRunQuerySet(models.QuerySet):
@@ -354,6 +441,26 @@ class FlowSettings(models.Model):
     final_test_min = models.PositiveSmallIntegerField(default=10)
     final_test_max = models.PositiveSmallIntegerField(default=15)
     max_interactives_per_page = models.PositiveSmallIntegerField(default=3)
+    band_fail_below = models.PositiveSmallIntegerField(
+        default=30, validators=[MaxValueValidator(100)], help_text="Percent under which an attempt is a Fail."
+    )
+    band_excellent_above = models.PositiveSmallIntegerField(
+        default=90, validators=[MaxValueValidator(100)], help_text="Percent over which an attempt is Excellent."
+    )
+    question_batch_size = models.PositiveSmallIntegerField(
+        default=5,
+        validators=[MinValueValidator(5), MaxValueValidator(10)],
+        help_text="Questions written per model call (5 to 10).",
+    )
+    batch_max_long = models.PositiveSmallIntegerField(
+        default=1, validators=[MaxValueValidator(10)], help_text="Long answers per batch, unless only long are asked."
+    )
+    batch_max_short = models.PositiveSmallIntegerField(
+        default=2, validators=[MaxValueValidator(10)], help_text="Short answers per batch, unless only short are asked."
+    )
+    retakes_per_day = models.PositiveSmallIntegerField(
+        default=3, validators=[MinValueValidator(1), MaxValueValidator(50)], help_text="Per lesson, in 24 hours."
+    )
     alignment_min_score = models.PositiveSmallIntegerField(
         default=3, validators=[MinValueValidator(1), MaxValueValidator(5)], help_text="Out of 5, for every score."
     )
@@ -374,6 +481,18 @@ class FlowSettings(models.Model):
     def save(self, *args, **kwargs):
         self.pk = 1  # singleton
         super().save(*args, **kwargs)
+
+    def clean(self):
+        """Checked by the admin and by the console, which both build a model form. The test's size is fixed in code
+        now, so `final_test_min` and `final_test_max` are no longer asked about."""
+        errors = {}
+        if self.band_fail_below is not None and self.band_excellent_above is not None:
+            if self.band_fail_below >= self.band_excellent_above:
+                errors["band_fail_below"] = "The Fail line must be below the Excellent line."
+        if self.question_batch_size is not None and not 5 <= self.question_batch_size <= 10:
+            errors["question_batch_size"] = "A batch is 5 to 10 questions."
+        if errors:
+            raise ValidationError(errors)
 
     @classmethod
     def load(cls) -> "FlowSettings":

@@ -26,7 +26,7 @@ def grading_run(lesson, submission=None, graph=GraphRun.Graph.GRADE_TEST):
 
 
 def test_a_grading_run_that_stopped_marks_its_submission_failed_with_the_reason(lesson):
-    submission = TestSubmission.objects.create(lesson=lesson)
+    submission = TestSubmission.objects.create(lesson=lesson, status=TestSubmission.Status.GRADING)
 
     RunEffects().on_stopped(grading_run(lesson, submission), "Every AI model failed.")
 
@@ -44,7 +44,7 @@ def test_a_submission_that_was_already_graded_is_left_alone(lesson):
 
 
 def test_other_graphs_and_runs_without_a_submission_have_no_effect(lesson):
-    submission = TestSubmission.objects.create(lesson=lesson)
+    submission = TestSubmission.objects.create(lesson=lesson, status=TestSubmission.Status.GRADING)
 
     RunEffects().on_stopped(grading_run(lesson, submission, graph=GraphRun.Graph.RUNTIME_REPAIR), "x")
     RunEffects().on_stopped(grading_run(lesson), "x")

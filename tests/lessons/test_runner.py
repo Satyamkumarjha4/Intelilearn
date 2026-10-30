@@ -573,7 +573,7 @@ def grading_run(lesson, flow_settings, answers):
     Lesson.objects.filter(pk=lesson.pk).update(
         stage=Stage.READY, final_test=final_test, config_snapshot=budget_snapshot(), settings_snapshot=flow_settings
     )
-    submission = TestSubmission.objects.create(lesson=lesson, answers=answers)
+    submission = TestSubmission.objects.create(lesson=lesson, answers=answers, status=TestSubmission.Status.GRADING)
     payload = {"input": {"submission_id": str(submission.id)}}
     return submission, new_run(lesson, GraphRun.Trigger.GRADE, payload, graph="grade_test"), final_test
 
