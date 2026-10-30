@@ -6,6 +6,7 @@ The default topic is "Binary search". Page bodies are long enough, and mention e
 """
 
 from graph.levels import LevelScheme
+from graph.questions import LessonTestBlueprint
 from graph.schemas import (
     FinalTest,
     InteractivePlan,
@@ -22,8 +23,11 @@ CONCEPTS = {
     "core": ["Halving the range", "The loop invariant", "Returning the index"],
     "advanced": ["Time complexity", "Off-by-one pitfalls", "Searching on answers"],
 }
+#: The test of a lesson made before the fixed blueprint: the model chose the mix, short and long answers included.
+#: Tests of the legacy paths (grading open-ended answers, a retake of an old lesson) build theirs from this.
 TYPE_MIX = {"mcq": 3, "msq": 2, "numerical": 2, "short_answer": 2, "long_answer": 1}
 DIFFICULTY_MIX = {"easy": 2, "basic": 2, "standard": 2, "difficult": 2, "expert": 2}
+LEGACY_TEST_SPEC = {"question_count": 10, "type_mix": TYPE_MIX, "difficulty_mix": DIFFICULTY_MIX}
 
 
 def make_assessment(to_cover: list[str] = ()) -> dict:
@@ -41,7 +45,7 @@ def make_assessment(to_cover: list[str] = ()) -> dict:
     )
 
 
-def make_plan(prerequisites: list[str] = ()) -> dict:
+def make_plan(prerequisites: list[str] = (), quantitative: bool = True) -> dict:
     pages = [
         {
             "key": key,
@@ -59,7 +63,7 @@ def make_plan(prerequisites: list[str] = ()) -> dict:
             level="beginner",
             summary="Find a value in sorted data by halving the range. For beginners.",
             pages=pages,
-            final_test={"question_count": 10, "type_mix": TYPE_MIX, "difficulty_mix": DIFFICULTY_MIX},
+            quantitative=quantitative,
         ).model_dump(mode="json")
     )
 
@@ -90,14 +94,22 @@ def make_pages(plan: dict | None = None) -> dict:
 
 
 def make_final_test(spec: dict | None = None) -> dict:
-    """A stored test for the plan's spec: questions of the right kinds and difficulties, as the graph stores them."""
-    spec = spec or make_plan()["final_test"]
+    """A stored test of the legacy kind (the model chose the mix): questions of the spec's kinds and difficulties, as
+    the graph stored them before the fixed blueprint. Use `make_blueprint_test` for a test made now."""
+    spec = spec or LEGACY_TEST_SPEC
     difficulties = [d for d, n in spec["difficulty_mix"].items() for _ in range(n)]
     questions, number = [], 0
     for kind, count in spec["type_mix"].items():
         for _ in range(count):
             number += 1
             questions.append(make_question(kind, number, difficulties[number - 1]))
+    return {"title": FinalTest(questions=[]).title, "questions": questions}
+
+
+def make_blueprint_test(quantitative: bool = True) -> dict:
+    """A stored test made now: the ten cells of the fixed blueprint, one question each, as the graph stores them."""
+    cells = LessonTestBlueprint.for_topic(quantitative).cells
+    questions = [make_question(cell.type, cell.index + 1, cell.difficulty) for cell in cells]
     return {"title": FinalTest(questions=[]).title, "questions": questions}
 
 
@@ -126,12 +138,13 @@ def make_state(**overrides) -> dict:
         "topic": "Binary search",
         "user_context": "for my DSA exam",
         "profile": {"education_level": "Undergraduate", "goal": "Exam prep", "preferred_language": "en"},
-        "settings": {"final_test_min": 10, "final_test_max": 15, "max_interactives_per_page": 3},
+        "settings": {"max_interactives_per_page": 3, "question_batch_size": 5},
         "assessment": make_assessment(),
         "prerequisites_to_cover": [],
         "plan": plan,
         "pages": pages,
-        "final_test": make_final_test(plan["final_test"]),
+        "final_test": make_blueprint_test(plan["quantitative"]),
+        "blueprint": LessonTestBlueprint.for_topic(plan["quantitative"]).to_json(),
         "interactive_plan": make_interactive_plan(pages),
     }
     return state | overrides

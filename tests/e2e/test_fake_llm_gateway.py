@@ -42,28 +42,28 @@ from graph.prompts import (
     RuntimeRepairPrompt,
     StudyMaterialPrompt,
     WritePagePrompt,
-    WriteTestPrompt,
+    WriteQuestionsPrompt,
 )
-from graph.questions import MarksPolicy, QuestionFinisher
+from graph.questions import LessonTestBlueprint, MarksPolicy, QuestionFinisher
 from graph.sandbox import SandboxRunner
 from graph.schemas import (
     MATERIAL_SCHEMAS,
     AlignmentReport,
     DiagnosticBundle,
-    FinalTest,
     GradeReport,
     InteractiveComponent,
     InteractivePlan,
     LearnerAssessment,
     LessonPlan,
     PageContent,
+    QuestionBatch,
 )
 from graph.validators import (
-    FinalTestValidator,
     GradeReportValidator,
     InteractivePlanValidator,
     PageValidator,
     PlanValidator,
+    QuestionBatchValidator,
     StudyMaterialValidator,
 )
 from llm_registry.gateway import AllModelsFailed, Gateway
@@ -168,19 +168,36 @@ def test_the_plan_the_page_and_the_test_pass_the_real_validators(server, monkeyp
     state = stage_b_state()
 
     plan = call(snapshot, "lesson.plan", LessonPlan, PlanLessonPrompt().messages(state))
-    assert PlanValidator().validate(plan, settings=state["settings"], prerequisites_to_cover=[{"name": "Arrays"}]) == []
+    assert PlanValidator().validate(plan, prerequisites_to_cover=[{"name": "Arrays"}]) == []
+    assert plan["quantitative"] is True and "final_test" not in plan
 
     state = state | {"plan": plan}
     page_plan = plan["pages"][1]
     page = call(snapshot, "page.generate", PageContent, WritePagePrompt().messages(state | {"page_plan": page_plan}))
     assert PageValidator().validate(page, plan_page=page_plan) == [] and page["key"] == "core"
 
-    test = call(snapshot, "test.generate", FinalTest, WriteTestPrompt().messages(state))
-    test["questions"], finishing = QuestionFinisher().finish(test["questions"])
+    cells = LessonTestBlueprint.for_topic(plan["quantitative"]).cells
+    batch = {"id": "b1-1", "cells": [c.as_dict() for c in cells]}
+    asked = ["An earlier question?"]
+    test = call(
+        snapshot, "test.generate", QuestionBatch,
+        WriteQuestionsPrompt().messages(state | {"batch": batch, "exclusions": asked}),
+    )  # fmt: skip
+    for cell, question in zip(cells, test["questions"], strict=True):
+        question["id"] = cell.question_id
+    questions, finishing = QuestionFinisher().finish(test["questions"])
     assert finishing == []
-    assert {q["type"] for q in test["questions"]} >= {"msq", "numerical"}  # the canned lesson has the new kinds
-    assert all(q["marks"] == MarksPolicy.marks(q["type"], q["difficulty"]) for q in test["questions"])
-    assert FinalTestValidator().validate(test, spec=plan["final_test"]) == []
+    assert {q["type"] for q in questions} >= {"msq", "numerical"}  # the canned lesson has the new kinds
+    assert all(q["marks"] == MarksPolicy.marks(q["type"], q["difficulty"]) for q in questions)
+    assert sum(q["marks"] for q in questions) == 20
+    assert QuestionBatchValidator().validate(questions, cells=cells) == []
+
+    # the same cells asked again after ten questions were asked give other questions
+    again = call(
+        snapshot, "test.generate", QuestionBatch,
+        WriteQuestionsPrompt().messages(state | {"batch": batch, "exclusions": [q["question"] for q in questions]}),
+    )  # fmt: skip
+    assert {q["question"] for q in again["questions"]}.isdisjoint(q["question"] for q in questions)
 
 
 @pytest.mark.parametrize(("topic", "first_kind"), [("Binary search", "svg_diagram"), ("Asexual reproduction", "image")])

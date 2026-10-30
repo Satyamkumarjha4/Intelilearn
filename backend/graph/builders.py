@@ -20,14 +20,22 @@ from .nodes.author import (
     ValidatePlanNode,
     WidgetsJoinNode,
     WritePageNode,
-    WriteTestNode,
 )
 from .nodes.author_routers import (
     AlignmentRouter,
     AuthoringRouter,
+    BatchesRouter,
     InteractivePlanRouter,
     PlanRouter,
     WidgetRouter,
+)
+from .nodes.bank import (
+    BankBatchesRouter,
+    BankJoinNode,
+    BankRouter,
+    FailAttemptNode,
+    LoadBankNode,
+    PersistAttemptNode,
 )
 from .nodes.build import (
     AssembleDocumentNode,
@@ -68,6 +76,7 @@ from .nodes.mastery import (
     PublishMasteryOptionsNode,
     ValidateStudyMaterialNode,
 )
+from .nodes.questions import GenerateQuestionsNode, PlanBatchesNode
 from .nodes.repair import (
     AssembleRepairedNode,
     LoadRepairNode,
@@ -147,18 +156,19 @@ class MasterySegment(Segment):
 
 
 class AuthorSegment(Segment):
-    """Stage B: plan, write the pages and the test in parallel, plan and build the interactives and media in parallel,
-    then the alignment judge. Provides the `lesson` exit; its own exit, `build`, leads on to Stage C."""
+    """Stage B: plan, write the pages and the test's batches in parallel, plan and build the interactives and media in
+    parallel, then the alignment judge. Provides the `lesson` exit; its own exit, `build`, leads on to Stage C."""
 
-    retry_targets = ("plan_lesson", "alignment_judge")
+    retry_targets = ("plan_lesson", "plan_batches", "alignment_judge")
     provides = {"lesson": "plan_lesson"}
 
     def add_nodes(self, graph: StateGraph) -> None:
         for node in (
             PlanLessonNode(),
             ValidatePlanNode(),
+            PlanBatchesNode(),
             WritePageNode(),
-            WriteTestNode(),
+            GenerateQuestionsNode(),
             AuthoredJoinNode(),
             PlanInteractivesNode(),
             ValidateInteractivePlanNode(),
@@ -173,11 +183,16 @@ class AuthorSegment(Segment):
     def add_edges(self, graph: StateGraph, exits: dict[str, str]) -> None:
         failed = exits["failed"]
         graph.add_edge("plan_lesson", "validate_plan")
-        graph.add_conditional_edges("validate_plan", PlanRouter(), ["write_page", "write_test", "plan_lesson", failed])
-        graph.add_edge("write_page", "authored_join")
-        graph.add_edge("write_test", "authored_join")
+        graph.add_conditional_edges("validate_plan", PlanRouter(), ["plan_batches", "plan_lesson", failed])
         graph.add_conditional_edges(
-            "authored_join", AuthoringRouter(), ["write_page", "write_test", "plan_interactives"]
+            "plan_batches", BatchesRouter(), ["write_page", "generate_questions", "authored_join"]
+        )
+        graph.add_edge("write_page", "authored_join")
+        graph.add_edge("generate_questions", "authored_join")
+        graph.add_conditional_edges(
+            "authored_join",
+            AuthoringRouter(on_fail=failed),
+            ["write_page", "generate_questions", "plan_batches", "plan_interactives", failed],
         )
         graph.add_edge("plan_interactives", "validate_interactive_plan")
         graph.add_conditional_edges(
@@ -359,3 +374,34 @@ class GradeTestGraphBuilder(GraphBuilder):
             ["persist_grade", "grade_open", "fail_grade"],
         )
         graph.add_edge("persist_grade", END)
+
+
+class QuestionBankGraphBuilder(GraphBuilder):
+    """A retake's questions: all ten cells of the lesson's blueprint, new, in two batches written in parallel.
+
+    Input: `{"lesson_id", "attempt_id"}`, in its own thread. There is no Retry: a run that cannot fill the test ends
+    with its reason and the waiting attempt is removed (`AttemptGenerationEffect`), so the learner starts again.
+    """
+
+    def add_nodes(self, graph: StateGraph) -> None:
+        for node in (
+            LoadBankNode(),
+            PlanBatchesNode(),
+            GenerateQuestionsNode(),
+            BankJoinNode(),
+            PersistAttemptNode(),
+            FailAttemptNode(),
+        ):
+            graph.add_node(node.name, node)
+
+    def add_edges(self, graph: StateGraph) -> None:
+        graph.add_edge(START, "load_bank")
+        graph.add_edge("load_bank", "plan_batches")
+        graph.add_conditional_edges("plan_batches", BankBatchesRouter(), ["generate_questions", "persist_attempt"])
+        graph.add_edge("generate_questions", "questions_join")
+        graph.add_conditional_edges(
+            "questions_join",
+            BankRouter(),
+            ["generate_questions", "plan_batches", "persist_attempt", "fail_attempt"],
+        )
+        graph.add_edge("persist_attempt", END)

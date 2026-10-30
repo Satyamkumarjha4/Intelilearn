@@ -348,6 +348,7 @@ class GraphRun(models.Model):
         STUDY_MATERIAL = "study_material", "Extra study sheet"
         RUNTIME_REPAIR = "runtime_repair", "Runtime repair"
         GRADE_TEST = "grade_test", "Test grading"
+        QUESTION_BANK = "question_bank", "New test questions"
 
     class Trigger(models.TextChoices):
         START = "start", "Start"
@@ -358,6 +359,7 @@ class GraphRun(models.Model):
         REPAIR = "repair", "Runtime repair"
         GRADE = "grade", "Test submitted"
         EXTRA_MATERIAL = "extra_material", "Extra sheet"
+        RETAKE = "retake", "Test retake"
 
     class Status(models.TextChoices):
         QUEUED = "queued", "Queued"

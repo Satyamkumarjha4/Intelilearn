@@ -29,8 +29,17 @@ def many_attempts(db):
     from lessons.models import TestSubmission
 
     constraint = next(c for c in TestSubmission._meta.constraints if c.name == "unique_test_submission_per_lesson")
-    with connection.schema_editor() as editor:
-        editor.remove_constraint(TestSubmission, constraint)
+    table = TestSubmission._meta.db_table
+    with connection.cursor() as cursor:
+        present = constraint.name in connection.introspection.get_constraints(cursor, table)
+    if present:
+        with connection.schema_editor() as editor:
+            editor.remove_constraint(TestSubmission, constraint)
+    yield
+    if not connection.in_atomic_block:  # a transactional test: its DDL is not rolled back, so put the table right
+        TestSubmission.objects.all().delete()
+        with connection.schema_editor() as editor:
+            editor.add_constraint(TestSubmission, constraint)
 
 
 @pytest.fixture

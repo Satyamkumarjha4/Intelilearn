@@ -14,6 +14,9 @@ Use cases:
 - the assessment prompt asks the model to copy the deterministic prerequisites, and includes the prerequisite quiz
   only when there was one
 - the study prompt carries the instructions for the chosen sheet and the concepts to cover
+- the plan prompt asks for the quantitative flag and says nothing about a test mix
+- the question prompt lists one line for each cell in order with its type, difficulty and marks, gives the instructions
+  for those types only, and the newest questions already asked (shortened, and no more than a fixed number)
 - the media verification prompt is a single multimodal message with the image
 - the code prompts carry the sandbox scope contract
 - the grading prompt carries each open-ended question with its reference and the learner's answer, tells the model to
@@ -43,8 +46,9 @@ from graph.prompts import (
     StudyMaterialPrompt,
     VerifyMediaPrompt,
     WritePagePrompt,
-    WriteTestPrompt,
+    WriteQuestionsPrompt,
 )
+from graph.questions import LessonTestBlueprint
 
 QUESTIONS = make_questions()
 PREREQUISITES, PREREQUISITE_QUESTIONS = make_prerequisites()
@@ -56,42 +60,50 @@ def subject() -> dict:
     state = make_state()
     spec = state["interactive_plan"]["specs"][0]
     all_right = {q["id"]: q["correct_index"] for q in QUESTIONS}
-    return state | {
-        "bundle": {
-            "diagnostic": QUESTIONS,
-            "prerequisites": PREREQUISITES,
+    return (
+        state
+        | {
+            "bundle": {
+                "diagnostic": QUESTIONS,
+                "prerequisites": PREREQUISITES,
+                "prerequisite_questions": PREREQUISITE_QUESTIONS,
+            },  # fmt: skip
+            "diagnostic_questions": QUESTIONS,
             "prerequisite_questions": PREREQUISITE_QUESTIONS,
-        },  # fmt: skip
-        "diagnostic_questions": QUESTIONS,
-        "prerequisite_questions": PREREQUISITE_QUESTIONS,
-        "diagnostic_result": GRADER.grade(QUESTIONS, all_right).as_dict(),
-        "kind": "cheat_sheet",
-        "concepts": ["Halving the range", "Time complexity"],
-        "page_plan": state["plan"]["pages"][1],
-        "spec": spec,
-        "component_name": "Interactive_widget_introduction",
-        "section": state["pages"]["introduction"]["sections"][0],
-        "key": "core",
-        "components": [{"name": "Interactive_widget_core", "anchor": "s1", "purpose": "Shows halving."}],
-        "figures": [{"asset": "asset-1", "anchor": "s2", "caption": "A caption"}],
-        "tools_available": ["search_wikimedia", "search_openverse"],
-        "candidate": {"title": "Amoeba", "source": "wikimedia"},
-        "image_b64": "AAAA",
-        "mime": "image/png",
-        "code": "function Page_core() { return null; }",
-        "errors": ["line 1: bad"],
-        "error": {"message": "boom", "stack": "at Page_core"},
-        "contract": "Declare exactly `function Page_core() { … }`.",
-    }
+            "diagnostic_result": GRADER.grade(QUESTIONS, all_right).as_dict(),
+            "kind": "cheat_sheet",
+            "concepts": ["Halving the range", "Time complexity"],
+            "page_plan": state["plan"]["pages"][1],
+            "spec": spec,
+            "component_name": "Interactive_widget_introduction",
+            "section": state["pages"]["introduction"]["sections"][0],
+            "key": "core",
+            "batch": {
+                "id": "b1-1",
+                "cells": [cell.as_dict() for cell in LessonTestBlueprint.for_topic(True).cells[2:5]],
+            },
+            "exclusions": ["What is a sorted list?", "Why halve the range?"],
+            "components": [{"name": "Interactive_widget_core", "anchor": "s1", "purpose": "Shows halving."}],
+            "figures": [{"asset": "asset-1", "anchor": "s2", "caption": "A caption"}],
+            "tools_available": ["search_wikimedia", "search_openverse"],
+            "candidate": {"title": "Amoeba", "source": "wikimedia"},
+            "image_b64": "AAAA",
+            "mime": "image/png",
+            "code": "function Page_core() { return null; }",
+            "errors": ["line 1: bad"],
+            "error": {"message": "boom", "stack": "at Page_core"},
+            "contract": "Declare exactly `function Page_core() { … }`.",
+        }
+    )
 
 
 ALL_PROMPTS = [
     DiagnosticPrompt, DiagnosticReviewPrompt, AssessLearnerPrompt, StudyMaterialPrompt, PlanLessonPrompt,
-    WritePagePrompt, WriteTestPrompt, PlanInteractivesPrompt, GenerateInteractivePrompt, AlignmentPrompt,
+    WritePagePrompt, WriteQuestionsPrompt, PlanInteractivesPrompt, GenerateInteractivePrompt, AlignmentPrompt,
     MediaAgentPrompt, CompilePagePrompt, RepairCodePrompt, RuntimeRepairPrompt,
 ]  # fmt: skip
 LEARNER_FACING = [
-    DiagnosticPrompt, StudyMaterialPrompt, PlanLessonPrompt, WritePagePrompt, WriteTestPrompt,
+    DiagnosticPrompt, StudyMaterialPrompt, PlanLessonPrompt, WritePagePrompt, WriteQuestionsPrompt,
 ]  # fmt: skip
 
 
@@ -127,6 +139,54 @@ def test_states_the_learners_language(prompt):
     assert "Write all learner-facing text in English." in english
     assert "Write all learner-facing text in Hindi." in hindi
     assert "in xx." in unknown
+
+
+class TestPlanLessonPrompt:
+    def test_it_asks_for_the_quantitative_flag_and_leaves_the_test_mix_out(self):
+        system = PlanLessonPrompt().messages(subject())[0].content
+
+        assert "quantitative" in system and "type_mix" not in system and "difficulty_mix" not in system
+        assert "question_count" not in system
+
+
+class TestWriteQuestionsPrompt:
+    def system(self, **overrides) -> str:
+        return WriteQuestionsPrompt().messages(subject() | overrides)[0].content
+
+    def test_each_cell_is_a_numbered_line_with_its_type_difficulty_and_marks_in_order(self):
+        system = self.system()
+
+        assert "exactly 3 questions, ONE for each line" in system
+        lines = [line for line in system.splitlines() if line[:2] in ("1.", "2.", "3.")]
+        assert lines == [
+            "1. mcq, basic, worth 1 mark",
+            "2. msq, basic, worth 2 marks",
+            "3. mcq, standard, worth 1 mark",
+        ]
+
+    def test_only_the_types_in_the_batch_are_explained(self):
+        system = self.system()
+
+        assert "multiple select" in system.lower() or "correct_indices" in system
+        assert "answer_expr" not in system and "criteria" not in system.split("How to write each type:")[1]
+
+    def test_the_questions_already_asked_are_given_to_avoid(self):
+        user = WriteQuestionsPrompt().messages(subject())[1].content
+
+        assert "What is a sorted list?" in user and "Why halve the range?" in user and "do not repeat" in user
+
+    def test_only_the_newest_stems_are_kept_and_each_is_shortened(self):
+        many = [f"Question number {n} " + "x" * 400 for n in range(100)]
+
+        user = WriteQuestionsPrompt().messages(subject() | {"exclusions": many})[1].content
+
+        assert "Question number 99" in user and "Question number 39 " not in user and "Question number 40" in user
+        assert "x" * 200 not in user
+
+    def test_no_exclusions_is_an_empty_list(self):
+        assert (
+            "(do not repeat them): []" in WriteQuestionsPrompt().messages(subject() | {"exclusions": None})[1].content
+        )
 
 
 @pytest.mark.parametrize("prompt", [DiagnosticPrompt, AssessLearnerPrompt, PlanLessonPrompt, AlignmentPrompt],

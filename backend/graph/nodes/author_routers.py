@@ -5,23 +5,51 @@ from langgraph.types import Send
 from ..alignment import AlignmentPolicy
 from .author import AuthoringStatus, WidgetStatus
 from .branches import BranchBuilder
+from .questions import QuestionRound, QuestionSends
 from .routers import CheckRouter, Router
 
 
 class PlanRouter(Router):
-    """After validate_plan: fan out the pages and the test, retry the plan, or give up."""
+    """After validate_plan: plan the test's batches, retry the plan, or give up."""
 
     def __call__(self, state: dict):
-        target = CheckRouter("plan", ok="fan_out", retry="plan_lesson")(state)
-        return AuthoringStatus.sends(state) if target == "fan_out" else target
+        target = CheckRouter("plan", ok="plan_batches", retry="plan_lesson")(state)
+        return target
+
+
+class BatchesRouter(Router):
+    """After plan_batches: the first round writes the three pages and every batch of the test at once; a later round
+    (cells that are still unfilled) writes only the batches."""
+
+    def __call__(self, state: dict):
+        sends = QuestionSends.of(state)
+        if state["question_plan"]["round"] == 1:
+            sends = AuthoringStatus.sends(state) + sends
+        return sends
 
 
 class AuthoringRouter(Router):
-    """After authored_join: send only the pages (or the test) that still need work, else on to the interactives."""
+    """After authored_join: send only what still needs work (pages, or batches of the test), plan the test's unfilled
+    cells again, fail when the test cannot be filled, wait while a batch is still being written, else on to the
+    interactives."""
+
+    def __init__(self, on_fail: str = "mark_failed", questions: QuestionRound | None = None):
+        self.on_fail = on_fail
+        self.questions = questions or QuestionRound()
 
     def __call__(self, state: dict):
+        outcome = state.get("question_outcome")
+        if outcome == QuestionRound.SHORT:
+            return self.on_fail
+        if outcome == QuestionRound.REPLAN:
+            return "plan_batches"
+        if outcome == QuestionRound.PENDING:
+            return []
         retry, _ = AuthoringStatus.of(state)
-        return AuthoringStatus.sends(state, keys=retry) if retry else "plan_interactives"
+        sends = AuthoringStatus.sends(state, keys=retry)
+        if outcome == QuestionRound.RETRY:
+            sends += QuestionSends.of(state, set(self.questions.retry_ids(state)))
+        return sends or "plan_interactives"
 
 
 class InteractivePlanRouter(Router):

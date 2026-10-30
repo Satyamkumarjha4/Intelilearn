@@ -4,6 +4,7 @@ produced, section by section. Each section is a small class, so a stage adds its
 from abc import ABC, abstractmethod
 
 from graph.levels import LevelScheme
+from graph.questions import LessonTestBlueprint
 
 from .models import Lesson, QuizAttempt
 
@@ -62,7 +63,6 @@ class PlanSection(ReportSection):
         plan = lesson.plan
         if not plan:
             return []
-        spec = plan["final_test"]
         lines = [f"  plan: {plan['title']} ({LevelScheme.level_of(plan).value}); {plan['summary']}"]
         for page in plan["pages"]:
             concepts = ", ".join(item["concept"] for item in page["outline"])
@@ -70,9 +70,17 @@ class PlanSection(ReportSection):
                 f" [prerequisites: {', '.join(page['covers_prerequisites'])}]" if page["covers_prerequisites"] else ""
             )
             lines.append(f"    {page['key']}: {concepts}{covers}")
-        mix = ", ".join(f"{n} {kind}" for kind, n in spec["type_mix"].items() if n)
-        lines.append(f"    test: {spec['question_count']} questions ({mix})")
+        lines.append(self._test_line(plan))
         return lines
+
+    @staticmethod
+    def _test_line(plan: dict) -> str:
+        if spec := plan.get("final_test"):  # a plan from before the fixed blueprint chose its own mix
+            mix = ", ".join(f"{n} {kind}" for kind, n in spec["type_mix"].items() if n)
+            return f"    test: {spec['question_count']} questions ({mix})"
+        blueprint = LessonTestBlueprint.for_topic(bool(plan.get("quantitative")))
+        kind = "quantitative topic" if blueprint.quantitative else "other topic"
+        return f"    test: fixed blueprint, {len(blueprint.cells)} questions, {blueprint.total_marks} marks ({kind})"
 
 
 class PagesSection(ReportSection):

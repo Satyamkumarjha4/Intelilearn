@@ -11,24 +11,30 @@ Use cases:
 - plan_lesson asks for a LessonPlan and stamps it with the level names it uses; validate_plan saves a valid plan (and
   its title and level, a plan from before the rename read as it was written) or asks again, and gives up with a readable
   error when attempts run out
-- the test's marks and numerical answers are set by code, and an expression that cannot be computed goes back as a
-  problem
-- the plan router fans out three page writers and the test writer, each with the shared context; or retries, or fails
-- a page and the test are kept even when they have problems, and the join node decides: wait for a retry, or accept
-  with a warning once attempts run out, saving what there is
-- the authoring router re-sends only the items that failed, with their problems as feedback
+- a valid plan also records the fixed test blueprint for its kind of topic, on the state and on the lesson, and a new
+  plan starts the test's questions from the beginning
+- the plan router goes on to plan the batches, or retries, or fails; after the batches are planned the first round
+  writes three pages and every batch (each with the shared context), and a later round writes only batches
+- a page is kept even when it has problems, and the join node decides: wait for a retry, or accept with a warning once
+  attempts run out
+- the join saves the pages and the ten-question test (the questions go on the record, in blueprint order) once pages
+  and batches have settled, waits while a batch is missing, re-plans unfilled cells without re-sending pages, and fails
+  the run when the test cannot be filled
+- the authoring router re-sends only the pages and batches that failed, with their problems as feedback
 - the interactive plan is regenerated on problems, then degraded to what is usable (within the per-page maximum)
 - widgets are sent to the media agent (image/gif) or the code writer, only the failed ones again
 - a component is sanitised and checked by the sandbox, and kept only when it passes
 - when no media is found the spec is drawn as an SVG diagram, with a warning
 - the widgets join saves media and the final specs, drops widgets that kept failing, and reports it
 - the alignment judge records its decision (pass, fix, accept, fail); the router sends only the fixable items
-- a fix replaces the item when it passes its checks and keeps the old one, with a warning, when it does not
+- a fix replaces the item when it passes its checks and keeps the old one, with a warning, when it does not; a fixed
+  question replaces only its own cell and retires the old one on the record
 """
 
 import pytest
 from langgraph.types import Send
-from support.lesson_data import make_final_test, make_interactive_plan, make_pages, make_plan, make_state
+from support.lesson_data import make_blueprint_test, make_interactive_plan, make_pages, make_plan, make_state
+from support.question_data import written
 
 from graph.alignment import AlignmentPolicy
 from graph.nodes.author import (
@@ -43,18 +49,19 @@ from graph.nodes.author import (
     ValidatePlanNode,
     WidgetsJoinNode,
     WritePageNode,
-    WriteTestNode,
 )
 from graph.nodes.author_routers import (
     AlignmentRouter,
     AuthoringRouter,
+    BatchesRouter,
     InteractivePlanRouter,
     PlanRouter,
     WidgetRouter,
 )
-from graph.questions import MarksPolicy
-from graph.schemas import InteractivePlan, LessonPlan
-from lessons.models import Lesson, MediaAsset, Stage
+from graph.questions import BatchPlanner, LessonTestBlueprint
+from graph.schemas import InteractivePlan, LessonPlan, QuestionBatch
+from lessons.bank import QuestionBank
+from lessons.models import Lesson, MediaAsset, Question, Stage
 
 BAD_PAGE_TEXT = "Too short."
 
@@ -62,7 +69,7 @@ BAD_PAGE_TEXT = "Too short."
 def authored(lesson_state, **extra):
     """The state when Stage B starts writing: assessment, plan, and (later) pages, test and interactive plan."""
     full = make_state()
-    keys = ("assessment", "plan", "pages", "final_test", "interactive_plan")
+    keys = ("assessment", "plan", "pages", "final_test", "interactive_plan", "blueprint")
     return lesson_state | {k: full[k] for k in keys} | {"prerequisites_to_cover": []} | extra
 
 
@@ -83,7 +90,13 @@ class TestPlan:
 
         update = PlanLessonNode()(state, runtime)
 
-        assert update == {"plan": make_plan(), "attempts": {"plan": 1}}  # stamped with the level names
+        assert update == {
+            "plan": make_plan(),  # stamped with the level names
+            "blueprint": LessonTestBlueprint.for_topic(True).to_json(),
+            "question_round": 0,
+            "accepted": {},
+            "attempts": {"plan": 1},
+        }
         call = gateway.called("lesson.plan")[0]
         assert call.schema is LessonPlan and "Plan exactly three pages." in call.messages[1].content
         assert "Halving the range" in call.messages[1].content  # the assessment's start point
@@ -96,6 +109,10 @@ class TestPlan:
         assert update == {"feedback": {"plan": []}}
         stored = Lesson.objects.get(pk=lesson.pk)
         assert (stored.title, stored.level, stored.plan) == ("Binary search", "beginner", make_plan())
+        assert (
+            stored.test_blueprint == LessonTestBlueprint.for_topic(True).to_json()
+            and stored.test_blueprint["total_marks"] == 20
+        )
 
     def test_a_plan_from_before_the_level_rename_is_saved_with_the_level_it_was_written_in(
         self, lesson, lesson_state, runtime
@@ -137,20 +154,37 @@ class TestPlan:
 
 
 class TestPlanRouter:
-    def test_fans_out_the_three_pages_and_the_test_with_the_shared_context(self, lesson_state):
-        state = authored(lesson_state, feedback={"plan": []})
-
-        sends = PlanRouter()(state)
-
-        assert [(s.node, s.arg["key"]) for s in sends] == [
-            ("write_page", "introduction"), ("write_page", "core"), ("write_page", "advanced"), ("write_test", "test"),
-        ]  # fmt: skip
-        assert all(isinstance(s, Send) and s.arg["plan"] == make_plan() and s.arg["lesson_id"] for s in sends)
-        assert all(s.arg["feedback"] == [] for s in sends)
+    def test_a_valid_plan_goes_on_to_plan_the_batches(self, lesson_state):
+        assert PlanRouter()(authored(lesson_state, feedback={"plan": []})) == "plan_batches"
 
     def test_retries_the_plan_or_fails(self, lesson_state):
         assert PlanRouter()(authored(lesson_state, feedback={"plan": ["bad"]})) == "plan_lesson"
         assert PlanRouter()(authored(lesson_state, feedback={"plan": ["bad"]}, error="gave up")) == "mark_failed"
+
+
+class TestBatchesRouter:
+    def planned(self, lesson_state, round_no):
+        batches = BatchPlanner().plan(LessonTestBlueprint.for_topic(True).cells[:6], round_no)
+        plan = {"round": round_no, "batches": [{"id": b.id, "cells": [c.as_dict() for c in b.cells]} for b in batches]}
+        return authored(lesson_state, question_plan=plan, feedback={})
+
+    def test_the_first_round_writes_three_pages_and_every_batch_with_the_shared_context(self, lesson_state):
+        sends = BatchesRouter()(self.planned(lesson_state, 1))
+
+        assert [(s.node, s.arg["key"]) for s in sends] == [
+            ("write_page", "introduction"), ("write_page", "core"), ("write_page", "advanced"),
+            ("generate_questions", "b1-1"), ("generate_questions", "b1-2"),
+        ]  # fmt: skip
+        assert all(isinstance(s, Send) and s.arg["plan"] == make_plan() and s.arg["lesson_id"] for s in sends)
+        assert all(s.arg["feedback"] == [] for s in sends)
+
+    def test_a_later_round_writes_only_batches(self, lesson_state):
+        sends = BatchesRouter()(self.planned(lesson_state, 2))
+
+        assert [(s.node, s.arg["key"]) for s in sends] == [
+            ("generate_questions", "b2-1"),
+            ("generate_questions", "b2-2"),
+        ]
 
 
 class TestWriters:
@@ -183,95 +217,130 @@ class TestWriters:
 
         assert "- Write longer sections." in gateway.called("page.generate")[0].messages[1].content
 
-    def test_marks_and_numerical_answers_are_set_by_code_not_by_the_model(self, lesson_state, gateway, runtime):
-        written = make_final_test()
-        for question in written["questions"]:
-            question["marks"] = 20  # a model may write anything: the schema does not read it
-            question.pop("answer", None)
-        gateway.script("test.generate", written)
-
-        update = WriteTestNode()(self.branch(lesson_state, "test"), runtime)
-
-        questions = update["final_test"]["questions"]
-        assert update["feedback"] == {"test": []}
-        assert all(q["marks"] == MarksPolicy.marks(q["type"], q["difficulty"]) for q in questions)
-        assert {q["type"] for q in questions} >= {"msq", "numerical"}
-        assert next(q for q in questions if q["type"] == "numerical")["answer"] == 4.0
-
-    def test_a_numerical_expression_that_cannot_be_computed_goes_back_to_the_model_as_a_problem(
-        self, lesson_state, gateway, runtime
-    ):
-        written = make_final_test()
-        next(q for q in written["questions"] if q["type"] == "numerical")["answer_expr"] = "1 / 0"
-        gateway.script("test.generate", written)
-
-        update = WriteTestNode()(self.branch(lesson_state, "test"), runtime)
-
-        assert any("answer_expr cannot be computed" in p for p in update["feedback"]["test"])
-
-    def test_the_test_is_written_and_checked_against_the_plans_spec(self, lesson_state, gateway, runtime):
-        test = make_final_test()
-        test["questions"].pop()
-        gateway.script("test.generate", test)
-
-        update = WriteTestNode()(self.branch(lesson_state, "test"), runtime)
-
-        assert any("exactly 10 questions" in p for p in update["feedback"]["test"])
-        assert len(update["final_test"]["questions"]) == 9 and update["attempts"] == {"test": 1}
-
 
 class TestAuthoredJoin:
-    def state(self, lesson_state, bad: tuple[str, ...] = (), attempts: int = 1):
-        feedback = {"page:introduction": [], "page:core": [], "page:advanced": [], "test": []}
-        for key in bad:
-            feedback["test" if key == "test" else f"page:{key}"] = [f"{key} is wrong"]
-        counts = {"page:introduction": attempts, "page:core": attempts, "page:advanced": attempts, "test": attempts}
-        return authored(lesson_state, feedback=feedback, attempts=counts)
+    BLUEPRINT = LessonTestBlueprint.for_topic(True)
 
-    def test_saves_the_pages_and_the_test_when_everything_is_valid(self, lesson, lesson_state, runtime):
+    def state(self, lesson_state, bad_pages: tuple[str, ...] = (), page_attempts: int = 1, **extra):
+        """Pages and both batches of round 1 have reported; `bad_pages` have problems."""
+        plan = {
+            "round": 1,
+            "batches": [
+                {"id": "b1-1", "cells": [c.as_dict() for c in self.BLUEPRINT.cells[:5]]},
+                {"id": "b1-2", "cells": [c.as_dict() for c in self.BLUEPRINT.cells[5:]]},
+            ],
+        }
+        questions = make_blueprint_test()["questions"]
+        feedback = {f"page:{key}": [f"{key} is wrong"] if key in bad_pages else [] for key in make_pages()}
+        attempts = {f"page:{key}": page_attempts for key in make_pages()} | {"batch:b1-1": 1, "batch:b1-2": 1}
+        return authored(
+            lesson_state, question_plan=plan, feedback=feedback, attempts=attempts, accepted={}, exclusions=[],
+            question_batches={"b1-1": {"questions": questions[:5]}, "b1-2": {"questions": questions[5:]}}, **extra,
+        )  # fmt: skip
+
+    def test_saves_the_pages_and_the_ten_question_test_when_everything_is_valid(self, lesson, lesson_state, runtime):
         update = AuthoredJoinNode()(self.state(lesson_state), runtime)
 
-        assert update == {"warnings": []}
+        assert update["question_outcome"] == "complete" and update["warnings"] == []
         stored = Lesson.objects.get(pk=lesson.pk)
-        assert set(stored.pages) == {"introduction", "core", "advanced"} and len(stored.final_test["questions"]) == 10
+        assert set(stored.pages) == {"introduction", "core", "advanced"}
+        assert [q["id"] for q in stored.final_test["questions"]] == [f"t{n}" for n in range(1, 11)]
+        assert update["final_test"] == stored.final_test
 
-    def test_waits_for_a_retry_while_attempts_remain(self, lesson, lesson_state, runtime, events):
-        update = AuthoredJoinNode()(self.state(lesson_state, bad=("core",)), runtime)
+    def test_the_questions_go_on_the_record_and_know_their_row(self, lesson, lesson_state, runtime):
+        AuthoredJoinNode()(self.state(lesson_state), runtime)
 
-        assert update == {}
-        assert Lesson.objects.get(pk=lesson.pk).pages is None
+        stored = Lesson.objects.get(pk=lesson.pk).final_test["questions"]
+        rows = {str(r.id): r for r in Question.objects.filter(lesson=lesson)}
+        assert len(rows) == 10 and {q["question_id"] for q in stored} == set(rows)
+        assert all(
+            not r.retired and str(r.batch) == "00000000-0000-0000-0000-000000000000" or r.batch is None
+            for r in rows.values()
+        )
+
+    def test_waits_for_a_page_retry_while_attempts_remain(self, lesson, lesson_state, runtime, events):
+        update = AuthoredJoinNode()(self.state(lesson_state, bad_pages=("core",)), runtime)
+
+        assert update["question_outcome"] == "complete" and "final_test" not in update
+        assert Lesson.objects.get(pk=lesson.pk).pages is None and not Question.objects.exists()
         assert events.of_type("attempt") == [{"type": "attempt", "node": "write_page:core", "reason": "core is wrong"}]
 
-    def test_accepts_what_there_is_with_a_warning_when_attempts_run_out(self, lesson, lesson_state, runtime):
-        update = AuthoredJoinNode()(self.state(lesson_state, bad=("advanced", "test"), attempts=2), runtime)
+    def test_accepts_a_page_with_a_warning_when_its_attempts_run_out(self, lesson, lesson_state, runtime):
+        update = AuthoredJoinNode()(self.state(lesson_state, bad_pages=("advanced",), page_attempts=2), runtime)
 
-        assert update["warnings"] == [
-            "The advanced page was kept despite: advanced is wrong",
-            "The final test was kept despite: test is wrong",
-        ]
+        assert update["warnings"] == ["The advanced page was kept despite: advanced is wrong"]
         assert Lesson.objects.get(pk=lesson.pk).pages is not None
+
+    def test_waits_while_a_batch_has_not_reported(self, lesson, lesson_state, runtime):
+        state = self.state(lesson_state)
+        del state["question_batches"]["b1-2"]
+
+        assert AuthoredJoinNode()(state, runtime) == {"question_outcome": "pending"}
+        assert Lesson.objects.get(pk=lesson.pk).pages is None
+
+    def test_unfilled_cells_are_planned_again_and_nothing_is_saved_yet(self, lesson, lesson_state, runtime):
+        state = self.state(lesson_state)
+        state["question_batches"]["b1-2"]["questions"][0] = state["question_batches"]["b1-1"]["questions"][0]  # a clash
+
+        update = AuthoredJoinNode()(state, runtime)
+
+        assert update["question_outcome"] == "replan" and "final_test" not in update and len(update["accepted"]) == 9
+        assert Lesson.objects.get(pk=lesson.pk).final_test is None
+
+    def test_a_test_that_cannot_be_filled_fails_the_run_instead_of_keeping_a_short_test(
+        self, lesson, lesson_state, runtime
+    ):
+        state = self.state(lesson_state)
+        state["question_plan"]["round"] = 2  # the last round the budget allows
+        state["question_batches"]["b1-2"]["questions"][0] = state["question_batches"]["b1-1"]["questions"][0]
+
+        update = AuthoredJoinNode()(state, runtime)
+
+        assert update["question_outcome"] == "short" and "could not be filled" in update["error"]
+        assert update["failed_node"] == "plan_batches" and "final_test" not in update
+        assert Lesson.objects.get(pk=lesson.pk).final_test is None
 
 
 class TestAuthoringRouter:
-    def test_sends_only_the_items_that_failed_with_their_problems(self, lesson_state):
+    def state(self, lesson_state, outcome, **extra):
+        plan = {"round": 1, "batches": [{"id": "b1-1", "cells": []}, {"id": "b1-2", "cells": []}]}
+        return authored(lesson_state, question_plan=plan, question_outcome=outcome, **extra)
+
+    def test_sends_only_the_pages_and_batches_that_failed_with_their_problems(self, lesson_state):
         feedback = {
             "page:core": ["core is wrong"],
-            "test": ["test is wrong"],
+            "batch:b1-2": ["test is wrong"],
             "page:introduction": [],
             "page:advanced": [],
         }
-        state = authored(lesson_state, feedback=feedback, attempts={"page:core": 1, "test": 1})
+        state = self.state(lesson_state, "retry", feedback=feedback, attempts={"page:core": 1, "batch:b1-2": 1})
 
         sends = AuthoringRouter()(state)
 
         assert [(s.node, s.arg["key"], s.arg["feedback"]) for s in sends] == [
-            ("write_page", "core", ["core is wrong"]), ("write_test", "test", ["test is wrong"]),
+            ("write_page", "core", ["core is wrong"]), ("generate_questions", "b1-2", ["test is wrong"]),
         ]  # fmt: skip
 
+    def test_unfilled_cells_go_back_to_be_planned_again(self, lesson_state):
+        assert AuthoringRouter()(self.state(lesson_state, "replan")) == "plan_batches"
+
+    def test_a_test_that_cannot_be_filled_fails_the_run(self, lesson_state):
+        assert AuthoringRouter(on_fail="mark_failed")(self.state(lesson_state, "short")) == "mark_failed"
+
+    def test_while_a_batch_is_missing_nothing_is_sent(self, lesson_state):
+        assert AuthoringRouter()(self.state(lesson_state, "pending")) == []
+
     def test_goes_on_to_the_interactives_when_nothing_needs_a_retry(self, lesson_state):
-        state = authored(lesson_state, feedback={"page:core": ["x"]}, attempts={"page:core": 2})  # out of attempts
+        state = self.state(
+            lesson_state, "complete", feedback={"page:core": ["x"]}, attempts={"page:core": 2}
+        )  # out of attempts
 
         assert AuthoringRouter()(state) == "plan_interactives"
+
+    def test_a_page_that_still_needs_work_is_sent_again_once_the_questions_are_complete(self, lesson_state):
+        state = self.state(lesson_state, "complete", feedback={"page:core": ["x"]}, attempts={"page:core": 1})
+
+        assert [(s.node, s.arg["key"]) for s in AuthoringRouter()(state)] == [("write_page", "core")]
 
 
 class TestInteractivePlan:
@@ -618,18 +687,43 @@ class TestFixItem:
         assert "pages" not in update
         assert update["warnings"][0].startswith("Could not apply the review fix to the core page:")
 
-    def test_a_fixed_test_names_the_question(self, lesson_state, gateway, runtime):
-        gateway.script("test.generate", make_final_test())
+    def test_a_fixed_question_replaces_only_its_own_cell_and_retires_the_old_one(
+        self, lesson, lesson_state, gateway, runtime
+    ):
+        cells = LessonTestBlueprint.for_topic(True).cells
+        stored = QuestionBank().add(lesson.id, None, make_blueprint_test()["questions"])
+        state = authored(lesson_state, final_test={"title": "T", "questions": stored})
+        Lesson.objects.filter(pk=lesson.pk).update(final_test=state["final_test"])
+        replacement = written(cells[2].type, 77, cells[2].difficulty, question="A completely new question about steps?")
+        gateway.script("test.generate", QuestionBatch(questions=[replacement]))
 
-        update = FixItemNode()(self.branch(lesson_state, issue("final_test", "t3")), runtime)
+        update = FixItemNode()(state | {"key": "k", "item": issue("final_test", "t3"), "feedback": []}, runtime)
 
-        assert len(update["final_test"]["questions"]) == 10
-        assert "(question t3)" in gateway.called("test.generate")[0].messages[1].content
+        questions = update["final_test"]["questions"]
+        assert len(questions) == 10 and [q["id"] for q in questions] == [f"t{n}" for n in range(1, 11)]
+        assert questions[2]["question"] == "A completely new question about steps?" and questions[2]["marks"] == 1
+        assert [q["question"] for i, q in enumerate(questions) if i != 2] == [
+            q["question"] for i, q in enumerate(stored) if i != 2
+        ]
+        assert Question.objects.get(pk=stored[2]["question_id"]).retired is True
+        assert Question.objects.get(pk=questions[2]["question_id"]).retired is False
+        assert Lesson.objects.get(pk=lesson.pk).final_test == update["final_test"]
+        prompt = gateway.called("test.generate")[0].messages
+        assert "(question t3)" in prompt[1].content and "exactly 1 questions" in prompt[0].content
 
-    def test_a_fix_for_the_test_that_fails_its_checks_keeps_the_old_test(self, lesson_state, gateway, runtime):
-        bad = make_final_test()
-        bad["questions"].pop()
-        gateway.script("test.generate", bad)
+    def test_the_other_questions_of_the_test_are_given_as_ones_not_to_repeat(self, lesson_state, gateway, runtime):
+        cells = LessonTestBlueprint.for_topic(True).cells
+        gateway.script("test.generate", QuestionBatch(questions=[written(cells[2].type, 77, cells[2].difficulty)]))
+
+        FixItemNode()(self.branch(lesson_state, issue("final_test", "t3")), runtime)
+
+        user = gateway.called("test.generate")[0].messages[1].content
+        assert make_blueprint_test()["questions"][0]["question"] in user
+
+    def test_a_fix_for_a_question_that_fails_its_checks_keeps_the_old_test(self, lesson_state, gateway, runtime):
+        cells = LessonTestBlueprint.for_topic(True).cells
+        wrong_kind = written("msq", 77, cells[2].difficulty)  # the cell wants an mcq
+        gateway.script("test.generate", QuestionBatch(questions=[wrong_kind]))
 
         update = FixItemNode()(self.branch(lesson_state, issue("final_test", "t3")), runtime)
 

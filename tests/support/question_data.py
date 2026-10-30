@@ -1,8 +1,10 @@
 """Builders for stored test questions, made the way the graph makes them: a schema-valid `TestQuestion` (what a model
 writes), then `QuestionFinisher` (marks from the table, the numerical answer computed)."""
 
+import re
+
 from graph.questions import MarksPolicy, QuestionFinisher
-from graph.schemas import TestQuestion
+from graph.schemas import QuestionBatch, TestQuestion
 
 
 def written(kind: str, number: int, difficulty: str = "easy", **overrides) -> dict:
@@ -40,3 +42,29 @@ def make_question(kind: str, number: int, difficulty: str = "easy", **overrides)
     (question,), problems = QuestionFinisher().finish([written(kind, number, difficulty, **overrides)])
     assert not problems, problems
     return question
+
+
+class ScriptedQuestions:
+    """Answers `test.generate` the way a model would: one question for each line of the prompt, in order. A question's
+    text is its number, so none repeats. A spoiler is `(applies, change)`: the first time a call's cells satisfy
+    `applies(cells)` (a list of (type, difficulty)) the answer is changed by `change(questions, questions_so_far)`."""
+
+    LINE = re.compile(r"^\d+\. (\w+), (\w+), worth", re.M)
+
+    def __init__(self):
+        self.written = 0
+        self.history = []
+        self.spoilers = []
+
+    def __call__(self, messages):
+        cells = self.LINE.findall(messages[0].content)
+        questions = []
+        for kind, difficulty in cells:
+            self.written += 1
+            questions.append(written(kind, self.written, difficulty))
+        spoiler = next((s for s in self.spoilers if s[0](cells)), None)
+        if spoiler and "REJECTED" not in messages[1].content:
+            self.spoilers.remove(spoiler)
+            spoiler[1](questions, self.history)
+        self.history += questions
+        return QuestionBatch(questions=questions)

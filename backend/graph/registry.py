@@ -4,6 +4,7 @@ from .builders import (
     FlowGraphBuilder,
     GradeTestGraphBuilder,
     GraphBuilder,
+    QuestionBankGraphBuilder,
     RuntimeRepairGraphBuilder,
     StudyMaterialGraphBuilder,
 )
@@ -23,6 +24,7 @@ class GraphRegistry:
                 "study_material": StudyMaterialGraphBuilder(),
                 "runtime_repair": RuntimeRepairGraphBuilder(),
                 "grade_test": GradeTestGraphBuilder(),
+                "question_bank": QuestionBankGraphBuilder(),
             }
         )
 

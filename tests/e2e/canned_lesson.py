@@ -4,6 +4,7 @@ alignment report that pass the real validators and the real sandbox check, and c
 Content is built from what the prompt contains (the topic, the page plan, the lesson plan), so the lesson the
 walk-through shows is about what the learner asked for."""
 
+import hashlib
 import json
 import re
 
@@ -141,11 +142,7 @@ class LessonCanned:
         ]
         return {
             "title": topic, "level": "proficient", "summary": f"A lesson on {topic} for this learner.", "pages": pages,
-            "final_test": {
-                "question_count": 10,
-                "type_mix": {"mcq": 3, "msq": 2, "numerical": 2, "short_answer": 2, "long_answer": 1},
-                "difficulty_mix": {"easy": 2, "basic": 2, "standard": 2, "difficult": 2, "expert": 2},
-            },
+            "quantitative": True,
         }  # fmt: skip
 
     def build_PageContent(self) -> dict:
@@ -179,23 +176,26 @@ class LessonCanned:
             "summary": f"A recap of the {plan_page['key']} page.",
         }  # fmt: skip
 
-    def build_FinalTest(self) -> dict:
-        spec = self._json_after("The lesson plan:")["final_test"]
-        levels = [d for d, n in spec["difficulty_mix"].items() for _ in range(n)]
-        questions, number = [], 0
-        for kind, count in spec["type_mix"].items():
-            for _ in range(count):
-                number += 1
-                questions.append(
-                    canned_question(
-                        kind,
-                        number,
-                        levels[number - 1],
-                        f"{self.topic}: part {number}",
-                        f"Test question {number} about {self.topic}?",
-                    )
+    LINE = re.compile(r"^\d+\. (\w+), (\w+), worth", re.M)
+
+    def build_QuestionBatch(self) -> dict:
+        """One question for each line of the prompt. The wording depends on how many questions the lesson has asked
+        already (the prompt lists them), so a retake is never a repeat, and on a short code per question, so two
+        questions never look alike to the duplicate check."""
+        asked = len(self._json_after("Questions already asked (do not repeat them):"))
+        questions = []
+        for number, (kind, difficulty) in enumerate(self.LINE.findall(self.text), start=1):
+            code = hashlib.md5(f"{asked}-{number}-{kind}-{difficulty}".encode()).hexdigest()[:6]
+            questions.append(
+                canned_question(
+                    kind,
+                    number,
+                    difficulty,
+                    f"{self.topic}: part {number}",
+                    f"Case {code}: a {difficulty} {kind} question number {number} in set {asked} about {self.topic}?",
                 )
-        return {"title": f"Test your understanding of {self.topic}", "questions": questions}
+            )
+        return {"questions": questions}
 
     def build_InteractivePlan(self) -> dict:
         sections: dict[str, str] = {}

@@ -1,5 +1,6 @@
 """Unit under test: the Stage B segment of the lesson-flow graph (`graph.builders.AuthorSegment`) wired after Stage A:
-plan → pages and test in parallel → interactives and media in parallel → alignment judge with targeted fixes.
+plan → pages and the test's batches in parallel → interactives and media in parallel → alignment judge with targeted
+fixes.
 
 Why: the nodes pass their own tests, but the wiring is what decides that a bad page is regenerated *alone*, that the
 media agent and the widget writers run for the right specs, that a fix goes only to the flagged item, and that a run
@@ -7,10 +8,13 @@ which cannot be fixed fails with a reason and resumes where it gave up. These te
 gateway, a real media library over fake sources, and the fake sandbox.
 
 Use cases:
-- diagnostic → assessment → plan → three pages and the test → interactives (media agent for the image, code for the
-  rest) → alignment passes: everything is saved on the lesson, the image is stored as a MediaAsset, the stage stays
-  generating_lesson (Stage C is not wired yet)
+- diagnostic → assessment → plan → three pages and the test's two batches → interactives (media agent for the image,
+  code for the rest) → alignment passes: everything is saved on the lesson, the ten questions are on the record, the
+  image is stored as a MediaAsset, the stage stays generating_lesson (Stage C is not wired yet)
 - a page that fails its rules is regenerated alone, with the problems as feedback, and the others are not touched
+- a batch that fails its rules is written again alone, and the pages and the other batch are not touched
+- a cell that no batch filled is planned again in a second round, and only that cell is written
+- a test that cannot be filled fails the run with a reason, and Retry plans the whole test again
 - the alignment judge's fix goes only to the flagged page; the judge then runs again and passes
 - when no media is found the spec becomes an SVG diagram and the lesson says so
 - a widget whose code keeps failing the sandbox is dropped with a warning and the lesson goes on
@@ -25,11 +29,12 @@ import pytest
 from langchain_core.messages import AIMessage
 from langgraph.types import Command
 from support.driver import GraphDriver
-from support.lesson_data import make_final_test, make_interactive_plan, make_pages, make_plan
+from support.lesson_data import make_interactive_plan, make_pages, make_plan
 from support.media import make_library, result
+from support.question_data import ScriptedQuestions
 
 from graph.builders import AuthorSegment, DiagnoseSegment
-from lessons.models import Lesson, MediaAsset, Stage
+from lessons.models import Lesson, MediaAsset, Question, Stage
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -80,10 +85,11 @@ def flow(lesson, ctx, lesson_state, gateway, valid_bundle, tmp_path):
     gateway.script("lesson.plan", make_plan()).script("interactive.plan", plan_with_image())
     gateway.script("media.search", search(), submit(result(1)))
     gateway.script("alignment.judge", REPORT)
-    gateway.respond("page.generate", page_for).respond("test.generate", lambda m: make_final_test())
+    gateway.respond("page.generate", page_for).respond("test.generate", ScriptedQuestions())
     gateway.respond("interactive.generate", component_for)
     driver = GraphDriver(lesson, ctx, lesson_state, [DiagnoseSegment(), AuthorSegment()])
     driver.start()
+    driver.gateway_questions = gateway.responders["test.generate"]
     return driver
 
 
@@ -98,11 +104,14 @@ def test_the_whole_of_stage_b_runs_and_saves_what_it_wrote(flow, lesson, gateway
     for node in ("assess_learner", "plan_lesson", "validate_plan", "authored_join", "plan_interactives", "widgets_join",
                  "alignment_judge"):  # fmt: skip
         assert node in flow.nodes
-    assert flow.nodes.count("write_page") == 3 and flow.nodes.count("write_test") == 1
+    assert flow.nodes.count("write_page") == 3 and flow.nodes.count("generate_questions") == 2
+    assert flow.nodes.count("plan_batches") == 1
     assert flow.nodes.count("find_media") == 1 and flow.nodes.count("build_interactive") == 2
     stored = Lesson.objects.get(pk=lesson.pk)
     assert (stored.title, stored.level, stored.stage) == ("Binary search", "beginner", Stage.GENERATING_LESSON)
     assert set(stored.pages) == {"introduction", "core", "advanced"} and len(stored.final_test["questions"]) == 10
+    assert stored.test_blueprint["total_marks"] == 20 and Question.objects.filter(lesson=lesson).count() == 10
+    assert sum(q["marks"] for q in stored.final_test["questions"]) == 20
     assert [s["kind"] for s in stored.interactive_plan["specs"]] == ["image", "simulation", "svg_diagram"]
     assert MediaAsset.objects.get(lesson=lesson).spec_id == "widget_introduction"
     assert flow.state()["alignment"]["decision"] == "pass"
@@ -127,8 +136,36 @@ def test_a_page_that_fails_its_rules_is_regenerated_alone_with_the_problems(flow
     assert sorted(keys) == ["advanced", "core", "core", "introduction"]
     retry = next(c for c in calls if "REJECTED" in c.messages[1].content)
     assert "too thin" in retry.messages[1].content
-    assert len(gateway.called("test.generate")) == 1  # the test was not touched
+    assert len(gateway.called("test.generate")) == 2  # the two batches were not touched
     assert flow.nodes.count("write_page") == 4
+
+
+def test_a_batch_that_fails_its_rules_is_written_again_alone_with_the_problems(flow, gateway):
+    flow.gateway_questions.spoilers.append((lambda cells: True, lambda qs, so_far: qs[0].update(difficulty="expert")))
+
+    finish(flow)
+
+    calls = gateway.called("test.generate")
+    assert len(calls) == 3 and flow.nodes.count("generate_questions") == 3 and flow.nodes.count("write_page") == 3
+    retry = next(c for c in calls if "REJECTED" in c.messages[1].content)
+    assert "must be easy; it is expert" in retry.messages[1].content
+    assert len(Lesson.objects.get(pk=flow.lesson.pk).final_test["questions"]) == 10
+
+
+def test_a_cell_that_no_batch_filled_is_planned_again_in_a_second_round_and_only_that_cell_is_written(flow, gateway):
+    second_batch = lambda cells: cells[0] == ("numerical", "standard")  # noqa: E731
+    repeat_the_first = lambda qs, so_far: qs[0].update(question=so_far[0]["question"])  # noqa: E731
+    flow.gateway_questions.spoilers.append((second_batch, repeat_the_first))
+
+    finish(flow)
+
+    calls = gateway.called("test.generate")
+    third = calls[-1].messages[0].content
+    assert len(calls) == 3 and "exactly 1 questions" in third and "1. numerical, standard, worth 2 marks" in third
+    assert flow.nodes.count("plan_batches") == 2 and flow.nodes.count("write_page") == 3
+    stored = Lesson.objects.get(pk=flow.lesson.pk).final_test["questions"]
+    assert len(stored) == 10 and len({q["question"] for q in stored}) == 10
+    assert flow.state()["question_plan"]["round"] == 2
 
 
 def test_the_judges_fix_goes_only_to_the_flagged_page_and_the_judge_runs_again(flow, gateway, lesson):
@@ -142,7 +179,7 @@ def test_the_judges_fix_goes_only_to_the_flagged_page_and_the_judge_runs_again(f
     fixes = [c for c in gateway.called("page.generate") if "A reviewer flagged" in c.messages[1].content]
     assert len(fixes) == 1 and 'Write the "advanced" page' in fixes[0].messages[0].content
     assert "Wrong complexity claim" in fixes[0].messages[1].content and "Use O(log n)" in fixes[0].messages[1].content
-    assert len(gateway.called("test.generate")) == 1 and len(gateway.called("interactive.generate")) == 2
+    assert len(gateway.called("test.generate")) == 2 and len(gateway.called("interactive.generate")) == 2
     assert flow.state()["alignment"]["decision"] == "pass" and flow.state()["alignment"]["round"] == 2
 
 

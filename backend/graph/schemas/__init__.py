@@ -25,9 +25,9 @@ from .interactive import (
 from .lesson import (
     PAGE_KEYS,
     FinalTest,
-    FinalTestSpec,
     LessonPlan,
     PageContent,
+    QuestionBatch,
     TestQuestion,
     public_question,
 )
@@ -35,9 +35,9 @@ from .study import MATERIAL_SCHEMAS, CheatSheet, PracticeSheet, RevisionSheet
 
 __all__ = [
     "BANDS", "MATERIAL_SCHEMAS", "MEDIA_KINDS", "PAGE_KEYS", "AlignmentIssue", "AlignmentReport", "CheatSheet",
-    "DiagnosticBundle", "DiagnosticQuestion", "FinalTest", "FinalTestSpec", "GradeReport", "GradedAnswer",
+    "DiagnosticBundle", "DiagnosticQuestion", "FinalTest", "GradeReport", "GradedAnswer",
     "InteractiveComponent",
     "InteractivePlan", "InteractiveSpec", "LearnerAssessment", "LessonPlan", "MediaCandidate", "MediaSelection",
-    "MediaVerdict", "PageContent", "PracticeSheet", "Prerequisite", "PrerequisiteQuestion", "QuizReview",
-    "RevisionSheet", "TestQuestion", "component_name", "public_question",
+    "MediaVerdict", "PageContent", "PracticeSheet", "Prerequisite", "PrerequisiteQuestion", "QuestionBatch",
+    "QuizReview", "RevisionSheet", "TestQuestion", "component_name", "public_question",
 ]  # fmt: skip

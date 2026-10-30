@@ -21,8 +21,9 @@ import pytest
 from langchain_core.messages import AIMessage
 from langgraph.types import Command
 from support.driver import GraphDriver
-from support.lesson_data import make_final_test, make_interactive_plan, make_pages, make_plan
+from support.lesson_data import make_interactive_plan, make_pages, make_plan
 from support.media import make_library, result
+from support.question_data import ScriptedQuestions
 
 from graph.builders import AuthorSegment, BuildSegment, DiagnoseSegment
 from graph.sandbox import RenderReport
@@ -81,7 +82,7 @@ def flow(lesson, ctx, lesson_state, gateway, valid_bundle, tmp_path, sandbox):
     gateway.respond(
         "page.generate", lambda m: make_pages()[re.search(r'Write the "(\w+)" page', m[0].content).group(1)]
     )
-    gateway.respond("test.generate", lambda m: make_final_test())
+    gateway.respond("test.generate", ScriptedQuestions())
     gateway.respond("interactive.generate", component_for)
     gateway.respond("page.compile", lambda m: page_code(page_key(m)))
     sandbox.render_reports = [CLEAN]

@@ -1,15 +1,16 @@
-"""Writing the lesson's content: one object that asks a model for a page, the test or a widget and checks the result.
+"""Writing the lesson's content: one object that asks a model for a page, a batch of test questions or a widget and
+checks the result.
 
 The same writer serves the first attempt (the write_* nodes) and a fix after the alignment judge (fix_item), so a
 fixed item is held to exactly the rules of a fresh one.
 """
 
 from .context import FlowContext
-from .prompts import GenerateInteractivePrompt, WritePagePrompt, WriteTestPrompt
-from .questions import QuestionFinisher
+from .prompts import GenerateInteractivePrompt, WritePagePrompt, WriteQuestionsPrompt
+from .questions import Batch, Cell, LessonTestBlueprint, QuestionFinisher
 from .sanitizer import CodeSanitizer
-from .schemas import FinalTest, InteractiveComponent, PageContent, component_name
-from .validators import FinalTestValidator, PageValidator
+from .schemas import InteractiveComponent, PageContent, QuestionBatch, component_name
+from .validators import PageValidator, QuestionBatchValidator
 
 
 class ContentWriter:
@@ -25,14 +26,37 @@ class ContentWriter:
         page = output.model_dump(mode="json") | {"key": key}
         return page, PageValidator(self.ctx.sandbox).validate(page, plan_page=plan_page)
 
-    def final_test(self, data: dict, feedback: list[str] | None) -> tuple[dict, list[str]]:
-        messages = WriteTestPrompt().messages(data, feedback)
-        output = self.ctx.invoke(data, "test.generate", messages, schema=FinalTest).output
-        test = output.model_dump(mode="json")
-        test["questions"], _ = QuestionFinisher().finish(
-            test["questions"]
-        )  # marks and answers, by code; the validator re-checks
-        return test, FinalTestValidator(self.ctx.sandbox).validate(test, spec=data["plan"]["final_test"])
+    def questions(self, data: dict, batch: Batch, feedback: list[str] | None) -> tuple[list[dict], list[str]]:
+        """The questions for a batch's cells → (the questions in cell order, the problems with them). The marks, the
+        ids and the answer of a numerical question are set here by code, never taken from the model, and the questions
+        come back even with problems: the join decides whether to try again."""
+        cells = batch.cells
+        messages = WriteQuestionsPrompt().messages(data | {"batch": self.batch_json(batch)}, feedback)
+        output = self.ctx.invoke(data, "test.generate", messages, schema=QuestionBatch).output
+        written = [question.model_dump(mode="json") for question in output.questions]
+        for cell, question in zip(cells, written, strict=False):
+            question["id"] = cell.question_id
+        finished, finishing = QuestionFinisher().finish(written)
+        problems = QuestionBatchValidator(self.ctx.sandbox).validate(finished, cells=cells)
+        return finished, list(dict.fromkeys(finishing + problems))
+
+    def question(self, data: dict, question_id: str, feedback: list[str] | None) -> tuple[dict, list[str]]:
+        """One question of the test written again (a fix after the review): the batch is its own cell, and the other
+        questions of the test are given as ones not to repeat."""
+        cell = next(c for c in LessonTestBlueprint.from_json(data["blueprint"]).cells if c.question_id == question_id)
+        asked = [q["question"] for q in data["final_test"]["questions"]]
+        subject = data | {"exclusions": [*(data.get("exclusions") or []), *asked]}
+        (question,), problems = self.questions(subject, Batch(f"fix-{question_id}", (cell,)), feedback)
+        return question, problems
+
+    @staticmethod
+    def batch_json(batch: Batch) -> dict:
+        return {"id": batch.id, "cells": [cell.as_dict() for cell in batch.cells]}
+
+    @staticmethod
+    def batch_of(data: dict) -> Batch:
+        """The batch a `Send` carries (stored as plain JSON in the state)."""
+        return Batch(data["id"], tuple(Cell(**cell) for cell in data["cells"]))
 
     def component(self, data: dict, spec: dict, feedback: list[str] | None) -> tuple[dict, list[str]]:
         """interactive.generate, then the sandbox's static and security check → (component, problems)."""

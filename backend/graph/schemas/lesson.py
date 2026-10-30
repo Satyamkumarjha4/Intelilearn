@@ -1,5 +1,5 @@
-"""Stage B content: the plan, the three content pages, and test questions (shared by the final test and the
-practice sheet).
+"""Stage B content: the plan, the three content pages, and test questions (shared by the lesson test, its retakes and
+the practice sheet).
 
 Flat models only: a question is one model with a `type` field and optional per-type fields checked by a
 model_validator, not a union. Several providers handle unions poorly in structured-output mode.
@@ -37,40 +37,15 @@ class PagePlan(BaseModel):
     )
 
 
-class TypeMix(BaseModel):
-    mcq: int = Field(ge=0)
-    msq: int = Field(ge=0, description="Multiple select: choose all that apply.")
-    numerical: int = Field(ge=0)
-    short_answer: int = Field(ge=0)
-    long_answer: int = Field(ge=0)
-
-    def total(self) -> int:
-        return self.mcq + self.msq + self.numerical + self.short_answer + self.long_answer
-
-
-class DifficultyMix(BaseModel):
-    easy: int = Field(ge=0)
-    basic: int = Field(ge=0)
-    standard: int = Field(ge=0)
-    difficult: int = Field(ge=0)
-    expert: int = Field(ge=0)
-
-    def total(self) -> int:
-        return self.easy + self.basic + self.standard + self.difficult + self.expert
-
-
-class FinalTestSpec(BaseModel):
-    question_count: int = Field(description="Between the configured minimum and maximum (usually 10-15).")
-    type_mix: TypeMix = Field(description="Counts per question type; must add up to question_count.")
-    difficulty_mix: DifficultyMix = Field(description="Counts per difficulty; must add up to question_count.")
-
-
 class LessonPlan(BaseModel):
     title: str
     level: LevelName
     summary: str = Field(description="Two sentences: what the lesson covers and for whom.")
     pages: list[PagePlan] = Field(description="Exactly three: introduction, core, advanced.")
-    final_test: FinalTestSpec
+    quantitative: bool = Field(
+        description="True when the topic is mainly about calculating a number (maths, physics, chemistry, statistics, "
+        "finance); false for any other topic. It decides whether the test includes numerical questions."
+    )
 
 
 class WorkedExample(BaseModel):
@@ -158,7 +133,15 @@ class TestQuestion(BaseModel):
         return self
 
 
+class QuestionBatch(BaseModel):
+    """What a model returns for one batch: one question for each cell it was given, in the same order."""
+
+    questions: list[TestQuestion]
+
+
 class FinalTest(BaseModel):
+    """The test as a lesson stores it (`Lesson.final_test`): the questions of attempt 1."""
+
     title: str = Field(default="Test your understanding")
     questions: list[TestQuestion]
 

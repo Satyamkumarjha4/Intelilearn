@@ -1,20 +1,21 @@
-"""Unit under test: `graph.validators.lesson`: `PlanValidator`, `PageValidator`, `FinalTestValidator` and
+"""Unit under test: `graph.validators.lesson`: `PlanValidator`, `PageValidator`, `QuestionBatchValidator` and
 `InteractivePlanValidator`, the deterministic rules for Stage B output.
 
 Why: these gate what a learner is taught. A plan whose pages repeat each other, an introduction that skips a missing
-prerequisite, a test whose mix differs from the plan, or an interactive anchored to a section that does not exist all
-parse as valid JSON, so only these rules catch them. Their messages are also the feedback the model gets on its retry.
+prerequisite, a batch of questions whose types differ from the cells it was asked for, or an interactive anchored to a
+section that does not exist all parse as valid JSON, so only these rules catch them. Their messages are also the
+feedback the model gets on its retry.
 
 Use cases:
 - a well-formed plan, page, test and interactive plan have no problems
 - plan: exactly the three page keys, outlines of 2 to 8 parts, no concept on two pages
 - plan: the introduction lists every prerequisite to cover (names compared ignoring case and punctuation)
-- plan: the test spec is within the configured count and its type and difficulty mixes add up, with 3+ types
+- plan: carries only the quantitative flag; the test is the fixed blueprint, so there is no test spec to check
 - page: the key matches the plan, 2 to 8 sections, unique ids and headings, a real body, every outline concept taught
 - page: a Python snippet must parse, and LaTeX the checker cannot parse is reported
-- final test: the question, type and difficulty counts match the spec (a plan from before msq is still read); questions
-  are unique and mcq and msq options sane; short and long criteria add up to the marks; a numerical expression computes
-  and its answer was stored
+- question batch: one question for each cell, in order, of the cell's type and difficulty; questions are unique and mcq
+  and msq options sane; short and long criteria add up to the marks; a numerical expression computes and its answer was
+  stored; LaTeX is checked
 - interactive plan: unique valid ids, anchors that exist, a media_query for images and GIFs, a purpose that names the
   concept, at least one per page and no more than the maximum
 """
@@ -23,11 +24,12 @@ import copy
 
 import pytest
 from support.fakes import FakeSandbox
-from support.lesson_data import make_final_test, make_interactive_plan, make_page, make_pages, make_plan
+from support.lesson_data import make_blueprint_test, make_interactive_plan, make_page, make_pages, make_plan
 
-from graph.validators import FinalTestValidator, InteractivePlanValidator, PageValidator, PlanValidator
+from graph.questions import LessonTestBlueprint
+from graph.validators import InteractivePlanValidator, PageValidator, PlanValidator, QuestionBatchValidator
 
-SETTINGS = {"final_test_min": 10, "final_test_max": 15, "max_interactives_per_page": 3}
+SETTINGS = {"max_interactives_per_page": 3}
 
 
 def mutated(data, change):
@@ -38,7 +40,7 @@ def mutated(data, change):
 
 class TestPlan:
     def problems(self, plan, to_cover=()):
-        return PlanValidator().validate(plan, settings=SETTINGS, prerequisites_to_cover=list(to_cover))
+        return PlanValidator().validate(plan, prerequisites_to_cover=list(to_cover))
 
     def test_a_well_formed_plan_has_no_problems(self):
         assert self.problems(make_plan()) == []
@@ -79,27 +81,9 @@ class TestPlan:
 
         assert self.problems(plan, [{"name": "Arrays", "why_needed": "x"}]) == []
 
-    @pytest.mark.parametrize("count", [9, 16])
-    def test_the_test_has_the_configured_number_of_questions(self, count):
-        plan = mutated(make_plan(), lambda p: p["final_test"].update(question_count=count))
-
-        assert any("The final test must have 10-15 questions" in p for p in self.problems(plan))
-
-    def test_the_mixes_must_add_up_to_the_count(self):
-        def change(plan):
-            plan["final_test"]["type_mix"]["mcq"] += 1
-            plan["final_test"]["difficulty_mix"]["easy"] -= 1
-
-        found = self.problems(mutated(make_plan(), change))
-
-        assert any("type_mix adds up to 11, not question_count 10" in p for p in found)
-        assert any("difficulty_mix adds up to 9, not question_count 10" in p for p in found)
-
-    def test_at_least_three_question_types(self):
-        def change(plan):
-            plan["final_test"]["type_mix"] = {"mcq": 6, "msq": 0, "numerical": 4, "short_answer": 0, "long_answer": 0}
-
-        assert any("Mix at least 3 question types" in p for p in self.problems(mutated(make_plan(), change)))
+    def test_the_plan_has_no_test_spec_to_check(self):
+        assert "final_test" not in make_plan() and "quantitative" in make_plan()
+        assert self.problems(make_plan(quantitative=False)) == []
 
 
 class TestPage:
@@ -177,88 +161,89 @@ class TestPage:
         assert {"a+b", "c", "d"} <= set(checker.latex_calls[0])
 
 
-class TestFinalTest:
-    SPEC = make_plan()["final_test"]
+class TestQuestionBatch:
+    CELLS = LessonTestBlueprint.for_topic(True).cells
 
-    def problems(self, test, latex=None):
-        return FinalTestValidator(latex).validate(test, spec=self.SPEC)
+    def problems(self, questions, cells=CELLS, latex=None):
+        return QuestionBatchValidator(latex).validate(questions, cells=cells)
 
-    def test_a_well_formed_test_has_no_problems(self):
-        assert self.problems(make_final_test()) == []
+    def test_a_well_formed_batch_has_no_problems(self):
+        assert self.problems(make_blueprint_test()["questions"]) == []
 
-    def test_the_question_count_must_match(self):
-        test = mutated(make_final_test(), lambda t: t["questions"].pop())
+    def test_one_question_is_needed_for_each_cell(self):
+        questions = make_blueprint_test()["questions"][:9]
 
-        assert any("Write exactly 10 questions; there are 9" in p for p in self.problems(test))
+        assert any(
+            "Write exactly 10 questions, one for each cell, in order; there are 9" in p
+            for p in self.problems(questions)
+        )
 
-    def test_the_type_mix_must_match(self):
-        def change(test):
-            test["questions"][0].update(type="short_answer", model_answer="a", criteria=[{"text": "p", "marks": 1}])
+    def test_a_question_of_another_type_than_its_cell_is_named(self):
+        def change(questions):
+            questions[0].update(type="msq", options=["a", "b", "c", "d"], correct_indices=[0, 1])
 
-        found = self.problems(mutated(make_final_test(), change))
+        found = self.problems(mutated(make_blueprint_test()["questions"], change))
 
-        assert any("exactly 3 mcq questions; there are 2" in p for p in found)
-        assert any("exactly 2 short_answer questions; there are 3" in p for p in found)
+        assert any("Question t1 must be a mcq question; it is a msq" in p for p in found)
 
-    def test_the_difficulty_mix_must_match(self):
-        test = mutated(make_final_test(), lambda t: t["questions"][0].update(difficulty="expert"))
+    def test_a_question_of_another_difficulty_than_its_cell_is_named(self):
+        found = self.problems(mutated(make_blueprint_test()["questions"], lambda qs: qs[0].update(difficulty="expert")))
 
-        assert any("exactly 2 easy questions; there are 1" in p for p in self.problems(test))
-        assert any("exactly 2 expert questions; there are 3" in p for p in self.problems(test))
-
-    def test_a_plan_from_before_multiple_select_and_code_is_still_checked_against_its_own_kinds(self):
-        spec = {**self.SPEC, "type_mix": {"mcq": 10, "code": 0}}
-
-        found = FinalTestValidator().validate(make_final_test(), spec=spec)
-
-        assert any("exactly 10 mcq questions; there are 3" in p for p in found)
+        assert any("Question t1 must be easy; it is expert" in p for p in found)
 
     def test_a_multiple_select_question_needs_different_options(self):
-        def change(test):
-            msq = next(q for q in test["questions"] if q["type"] == "msq")
+        def change(questions):
+            msq = next(q for q in questions if q["type"] == "msq")
             msq["options"][1] = msq["options"][0]
 
-        assert any("options must all be different" in p for p in self.problems(mutated(make_final_test(), change)))
-
-    def test_criteria_that_do_not_add_up_to_the_questions_marks_are_reported(self):
-        def change(test):
-            short = next(q for q in test["questions"] if q["type"] == "short_answer")
-            short["criteria"][0]["marks"] += 1
-
-        assert any("criteria are worth" in p for p in self.problems(mutated(make_final_test(), change)))
+        assert any(
+            "options must all be different" in p
+            for p in self.problems(mutated(make_blueprint_test()["questions"], change))
+        )
 
     def test_a_numerical_expression_that_cannot_be_computed_is_reported(self):
-        def change(test):
-            numerical = next(q for q in test["questions"] if q["type"] == "numerical")
+        def change(questions):
+            numerical = next(q for q in questions if q["type"] == "numerical")
             numerical["answer_expr"] = "1 / 0"
 
-        assert any("answer_expr cannot be computed" in p for p in self.problems(mutated(make_final_test(), change)))
+        found = self.problems(mutated(make_blueprint_test()["questions"], change))
+
+        assert any("answer_expr cannot be computed" in p for p in found)
 
     def test_a_numerical_answer_that_was_never_computed_is_reported(self):
-        def change(test):
-            numerical = next(q for q in test["questions"] if q["type"] == "numerical")
+        def change(questions):
+            numerical = next(q for q in questions if q["type"] == "numerical")
             del numerical["answer"]
 
-        assert any("answer was not computed" in p for p in self.problems(mutated(make_final_test(), change)))
+        assert any(
+            "answer was not computed" in p for p in self.problems(mutated(make_blueprint_test()["questions"], change))
+        )
 
     def test_questions_must_not_repeat_and_ids_must_be_unique(self):
-        def change(test):
-            test["questions"][1].update(id="t1", question=test["questions"][0]["question"])
+        def change(questions):
+            questions[1].update(id="t1", question=questions[0]["question"])
 
-        found = self.problems(mutated(make_final_test(), change))
+        found = self.problems(mutated(make_blueprint_test()["questions"], change))
 
         assert any("Question ids must be unique" in p for p in found)
         assert any("Questions must not repeat" in p for p in found)
 
     def test_an_mcq_may_not_use_a_catch_all_option(self):
-        test = mutated(make_final_test(), lambda t: t["questions"][0]["options"].__setitem__(3, "None of the above"))
+        questions = mutated(
+            make_blueprint_test()["questions"], lambda qs: qs[0]["options"].__setitem__(3, "None of the above")
+        )
 
-        assert any("all/none of the above" in p for p in self.problems(test))
+        assert any("all/none of the above" in p for p in self.problems(questions))
 
     def test_latex_in_questions_is_checked(self):
-        test = mutated(make_final_test(), lambda t: t["questions"][0].update(question="Solve $x^$."))
+        questions = mutated(make_blueprint_test()["questions"], lambda qs: qs[0].update(question="Solve $x^$."))
 
-        assert self.problems(test, latex=FakeSandbox(latex_errors=["bad latex"])) == ["bad latex"]
+        assert self.problems(questions, latex=FakeSandbox(latex_errors=["bad latex"])) == ["bad latex"]
+
+    def test_a_batch_of_a_few_cells_is_checked_against_only_those_cells(self):
+        questions = make_blueprint_test()["questions"][4:6]
+
+        assert self.problems(questions, cells=self.CELLS[4:6]) == []
 
 
 class TestInteractivePlan:

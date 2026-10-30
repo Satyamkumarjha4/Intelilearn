@@ -56,8 +56,16 @@ class FlowState(TypedDict, total=False):
 
     # Stage B (parallel writers → reducers)
     plan: dict  # LessonPlan
+    blueprint: dict  # LessonTestBlueprint: the ten cells of the test
     pages: Annotated[dict[str, dict], Reducers.merge_dicts]  # introduction / core / advanced → PageContent
     final_test: dict | None  # FinalTest
+    # the questions pipeline (graph/nodes/questions.py), shared by the author stage and the retake graph
+    exclusions: list[str]  # the text of every question the lesson has asked
+    question_round: int  # how many times the missing cells have been planned
+    question_plan: dict  # {round, batches: [{id, cells}]}
+    question_batches: Annotated[dict[str, dict], Reducers.merge_dicts]  # batch id → {questions}
+    accepted: dict  # cell index (as text) → the question that fills it
+    question_outcome: str  # what the join decided: retry, replan, short or complete
     interactive_plan: dict  # InteractivePlan
     media: Annotated[dict[str, dict], Reducers.merge_dicts]  # spec_id → MediaRef
     interactives: Annotated[dict[str, dict], Reducers.merge_dicts]  # spec_id → InteractiveComponent
@@ -86,6 +94,7 @@ class FlowState(TypedDict, total=False):
     grade_report: dict  # GradeReport
 
     # control
+    attempt_id: str  # the retake being prepared (question_bank graph)
     attempts: Annotated[dict[str, int], Reducers.merge_counts]
     feedback: Annotated[dict[str, list[str]], Reducers.merge_dicts]
     warnings: Annotated[list[str], operator.add]
@@ -108,6 +117,8 @@ class Branch(TypedDict, total=False):
     settings: dict
     assessment: dict
     plan: dict
+    blueprint: dict
+    exclusions: list[str]
     pages: dict
     interactive_plan: dict
     media: dict

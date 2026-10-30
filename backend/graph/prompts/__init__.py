@@ -6,7 +6,7 @@ from .author import (
     PlanInteractivesPrompt,
     PlanLessonPrompt,
     WritePagePrompt,
-    WriteTestPrompt,
+    WriteQuestionsPrompt,
 )
 from .base import Prompt
 from .build import CompilePagePrompt, RepairCodePrompt, RuntimeRepairPrompt
@@ -20,5 +20,5 @@ __all__ = [
     "SCOPE_REFERENCE", "AlignmentPrompt", "AssessLearnerPrompt", "CompilePagePrompt", "DiagnosticPrompt",
     "DiagnosticReviewPrompt", "GenerateInteractivePrompt", "GradeTestPrompt", "MediaAgentPrompt",
     "PlanInteractivesPrompt", "PlanLessonPrompt", "Prompt", "RepairCodePrompt", "RuntimeRepairPrompt",
-    "StudyMaterialPrompt", "VerifyMediaPrompt", "WritePagePrompt", "WriteTestPrompt",
+    "StudyMaterialPrompt", "VerifyMediaPrompt", "WritePagePrompt", "WriteQuestionsPrompt",
 ]  # fmt: skip

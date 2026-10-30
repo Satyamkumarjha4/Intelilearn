@@ -1,7 +1,8 @@
 """Stage B: author the lesson.
 
-    plan_lesson → validate_plan → Send ×4 (write_page ×3 ‖ write_test) → authored_join (re-sends only the failed items)
-    → plan_interactives → validate_interactive_plan → Send per spec (find_media ‖ build_interactive) → widgets_join
+    plan_lesson → validate_plan → plan_batches → Send ×(3 pages ‖ one per batch of test questions) → authored_join
+    (re-sends only the failed items, plans unfilled test cells again) → plan_interactives
+    → validate_interactive_plan → Send per spec (find_media ‖ build_interactive) → widgets_join
     → alignment_judge → Send fix_item (only the flagged items) → alignment_judge … → Stage C
 
 Items that run in parallel receive a `Branch` (shared context plus the item) and write their result under a key of
@@ -9,8 +10,11 @@ the state with a reducer; the join node then decides, from the attempts and the 
 send the failing items again, accept them with a warning, or move on.
 """
 
+import uuid
+
 from langgraph.types import Send
 
+from lessons.bank import QuestionBank
 from lessons.models import Stage
 
 from ..alignment import AlignmentPolicy
@@ -18,12 +22,14 @@ from ..authoring import ContentWriter
 from ..context import FlowContext, NodeBudget
 from ..levels import LevelScheme
 from ..prompts import AlignmentPrompt, PlanInteractivesPrompt, PlanLessonPrompt
-from ..schemas import MEDIA_KINDS, PAGE_KEYS, AlignmentReport, InteractivePlan, LessonPlan
+from ..questions import LessonTestBlueprint
+from ..schemas import MEDIA_KINDS, PAGE_KEYS, AlignmentReport, FinalTest, InteractivePlan, LessonPlan
 from ..validators import InteractivePlanValidator, PlanValidator, Validator
 from .authoring_media import MediaAssets
 from .base import LLMNode, Node, ValidateNode
 from .branches import BranchBuilder
 from .media_agent import MediaFinder
+from .questions import QuestionRound
 
 
 class PlanLessonNode(LLMNode):
@@ -35,7 +41,13 @@ class PlanLessonNode(LLMNode):
     feedback_key = "plan"
 
     def to_state(self, output: LessonPlan, state: dict, ctx: FlowContext) -> dict:
-        return {"plan": LevelScheme.stamp(output.model_dump(mode="json")), "attempts": {"plan": 1}}
+        return {
+            "plan": LevelScheme.stamp(output.model_dump(mode="json")),
+            "blueprint": LessonTestBlueprint.for_topic(output.quantitative).to_json(),
+            "question_round": 0,  # a new plan starts the test from the beginning
+            "accepted": {},
+            "attempts": {"plan": 1},
+        }
 
 
 class ValidatePlanNode(ValidateNode):
@@ -53,38 +65,40 @@ class ValidatePlanNode(ValidateNode):
         return state["plan"]
 
     def context(self, state: dict) -> dict:
-        return {"settings": state["settings"], "prerequisites_to_cover": state.get("prerequisites_to_cover") or []}
+        return {"prerequisites_to_cover": state.get("prerequisites_to_cover") or []}
 
     def outcome(self, state: dict, problems: list[str], ctx: FlowContext) -> dict:
         if not problems:
             plan = state["plan"]
-            self.lesson(state).record(plan=plan, title=plan["title"][:200], level=LevelScheme.level_of(plan).value)
+            self.lesson(state).record(
+                plan=plan,
+                title=plan["title"][:200],
+                level=LevelScheme.level_of(plan).value,
+                test_blueprint=state["blueprint"],
+            )
         return super().outcome(state, problems, ctx)
 
 
 class AuthoringStatus:
-    """Which of the pages and the test still need another attempt, and which ran out of attempts."""
+    """Which of the pages still need another attempt, and which ran out of attempts. (The test's questions have their
+    own bookkeeping, `QuestionRound`.)"""
 
-    ITEMS = (*PAGE_KEYS, "test")
+    ITEMS = PAGE_KEYS
 
     @staticmethod
     def feedback_key(key: str) -> str:
-        return "test" if key == "test" else f"page:{key}"
-
-    @staticmethod
-    def node_key(key: str) -> str:
-        return "test.generate" if key == "test" else "page.generate"
+        return f"page:{key}"
 
     @classmethod
     def of(cls, state: dict) -> tuple[list[str], list[str]]:
         """→ (keys to try again, keys out of attempts that still have problems)."""
         retry, exhausted = [], []
+        budget = NodeBudget.of(state, "page.generate").max_attempts
         for key in cls.ITEMS:
             item = cls.feedback_key(key)
             if not (state.get("feedback") or {}).get(item):
                 continue
             attempts = (state.get("attempts") or {}).get(item, 0)
-            budget = NodeBudget.of(state, cls.node_key(key)).max_attempts
             (retry if attempts < budget else exhausted).append(key)
         return retry, exhausted
 
@@ -93,52 +107,62 @@ class AuthoringStatus:
         sends = []
         for key in keys:
             feedback = (fix or {}).get(key) or list((state.get("feedback") or {}).get(cls.feedback_key(key)) or [])
-            sends.append(
-                Send(
-                    "write_test" if key == "test" else "write_page", BranchBuilder.of(state, key=key, feedback=feedback)
-                )
-            )
+            sends.append(Send("write_page", BranchBuilder.of(state, key=key, feedback=feedback)))
         return sends
 
 
 class WritePageNode(Node):
-    """One of the three content pages, written in parallel with the others and the test."""
+    """One of the three content pages, written in parallel with the others and the test's batches."""
 
     name = "write_page"
 
     def run(self, state: dict, ctx: FlowContext) -> dict:
         key = state["key"]
         page, problems = ContentWriter(ctx).page(state, key, state.get("feedback"))
-        # The latest version is kept even with problems: authored_join decides whether to try again or accept it.
+        # The latest version is kept even with problems: the join decides whether to try again or accept it.
         return {"pages": {key: page}, "feedback": {f"page:{key}": problems}, "attempts": {f"page:{key}": 1}}
 
 
-class WriteTestNode(Node):
-    name = "write_test"
-
-    def run(self, state: dict, ctx: FlowContext) -> dict:
-        test, problems = ContentWriter(ctx).final_test(state, state.get("feedback"))
-        return {"final_test": test, "feedback": {"test": problems}, "attempts": {"test": 1}}
-
-
 class AuthoredJoinNode(Node):
+    """Waits for the pages and the test's batches. Re-sends what failed, plans the test's unfilled cells again, and when
+    everything has settled saves the pages and the test (and the test's questions on the record). A lesson test must
+    have all ten cells filled: if it cannot be, the run fails instead of keeping a test that is not the blueprint."""
+
     name = "authored_join"
+
+    def __init__(self, questions: QuestionRound | None = None, bank: QuestionBank | None = None):
+        self.questions = questions or QuestionRound()
+        self.bank = bank or QuestionBank()
 
     def run(self, state: dict, ctx: FlowContext) -> dict:
         retry, exhausted = AuthoringStatus.of(state)
+        result = self.questions.close(state, ctx)
+        if result.outcome in (QuestionRound.PENDING, QuestionRound.REPLAN, QuestionRound.SHORT):
+            return result.update  # pages that need another go wait for the questions' round to settle
         for key in retry:
             problems = (state.get("feedback") or {}).get(AuthoringStatus.feedback_key(key)) or [""]
-            node = "write_test" if key == "test" else f"write_page:{key}"
-            ctx.events({"type": "attempt", "node": node, "reason": problems[0]})
-        if retry:
-            return {}
-        warnings: list[str] = []
+            ctx.events({"type": "attempt", "node": f"write_page:{key}", "reason": problems[0]})
+        if result.outcome == QuestionRound.RETRY or retry:
+            return result.update
+        warnings: list[str] = list(result.update["warnings"])
         for key in exhausted:
             problems = state["feedback"][AuthoringStatus.feedback_key(key)]
-            name = "final test" if key == "test" else f"{key} page"
-            warnings += ctx.warn(f"The {name} was kept despite: {'; '.join(problems[:3])}")
-        self.lesson(state).record(pages=state["pages"], final_test=state["final_test"])
-        return {"warnings": warnings}
+            warnings += ctx.warn(f"The {key} page was kept despite: {'; '.join(problems[:3])}")
+        accepted = result.update["accepted"]
+        blueprint = LessonTestBlueprint.from_json(state["blueprint"])
+        questions = [accepted[str(cell.index)] for cell in blueprint.cells]
+        stored = self.bank.add(state["lesson_id"], self.batch(ctx), questions)
+        test = {"title": FinalTest(questions=[]).title, "questions": stored}
+        self.lesson(state).record(pages=state["pages"], final_test=test)
+        return result.update | {"final_test": test, "warnings": warnings}
+
+    @staticmethod
+    def batch(ctx: FlowContext) -> uuid.UUID | None:
+        """The run that wrote the questions, for the record."""
+        try:
+            return uuid.UUID(str(ctx.run_id))
+        except ValueError:
+            return None
 
 
 class PlanInteractivesNode(LLMNode):
@@ -329,8 +353,9 @@ class FixItemNode(Node):
 
     name = "fix_item"
 
-    def __init__(self, finder: MediaFinder | None = None):
+    def __init__(self, finder: MediaFinder | None = None, bank: QuestionBank | None = None):
         self._finder = finder
+        self.bank = bank or QuestionBank()
 
     @property
     def finder(self) -> MediaFinder:
@@ -347,8 +372,10 @@ class FixItemNode(Node):
             return self.kept(ctx, f"the {target_id} page", problems) or {"pages": {target_id: page}}
         if target == "final_test":
             feedback[0] += f" (question {target_id})"
-            test, problems = writer.final_test(state, feedback)
-            return self.kept(ctx, "the test", problems) or {"final_test": test}
+            question, problems = writer.question(state, target_id, feedback)
+            return self.kept(ctx, "the test", problems) or {
+                "final_test": self.replaced(state, ctx, target_id, question)
+            }
         spec = next(s for s in state["interactive_plan"]["specs"] if s["id"] == target_id)
         if target == "media" and spec["kind"] in MEDIA_KINDS:
             ref = self.finder.find(ctx, state, spec, feedback)
@@ -357,6 +384,17 @@ class FixItemNode(Node):
             return {"warnings": ctx.warn(f'Could not find better media for "{target_id}"')}
         component, problems = writer.component(state, spec, feedback)
         return self.kept(ctx, f'"{target_id}"', problems) or {"interactives": {target_id: component}}
+
+    def replaced(self, state: dict, ctx: FlowContext, question_id: str, question: dict) -> dict:
+        """The test with one question written again: the old one is retired on the record, the new one added."""
+        test = state["final_test"]
+        old = next(q for q in test["questions"] if q["id"] == question_id)
+        (stored,) = self.bank.add(state["lesson_id"], AuthoredJoinNode.batch(ctx), [question])
+        if old.get("question_id") and old["question_id"] != stored["question_id"]:
+            self.bank.retire(state["lesson_id"], old["question_id"])
+        fixed = {**test, "questions": [stored if q["id"] == question_id else q for q in test["questions"]]}
+        self.lesson(state).record(final_test=fixed)
+        return fixed
 
     @staticmethod
     def kept(ctx: FlowContext, what: str, problems: list[str]) -> dict | None:

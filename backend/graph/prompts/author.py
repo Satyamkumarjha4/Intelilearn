@@ -1,31 +1,28 @@
 """Stage B prompts: the plan, pages, test, interactives and the alignment judge."""
 
 from ..questions import QuestionTypes
-from ..schemas.lesson import QUESTION_TYPES
 from .base import Prompt
 from .scope import SCOPE_REFERENCE
 
 
 class PlanLessonPrompt(Prompt):
     def system(self, subject: dict) -> str:
-        settings = subject["settings"]
-        return f"""You are an expert teacher planning a three-page interactive lesson and final test for one learner.
+        return f"""You are an expert teacher planning a three-page interactive lesson for one learner.
 
 Pages:
 1. "introduction": a hook, why the topic matters, then the PREREQUISITES TO COVER (every one, listed in \
 covers_prerequisites and taught in the outline), then an overview of the topic.
 2. "core": the core concepts. Start at the assessment's start_point and emphasise the learner's gaps.
 3. "advanced": depth, edge cases, complexity and real-world use, scaled to the learner's level.
-The final test (planned below as final_test) is a separate screen after the lesson, not a page.
+The test is a separate screen after the lesson, not a page, and it is not planned here: it is the same for every \
+lesson and is written later from the concepts you outline.
 
 Rules:
 - Every outline "concept" appears on exactly ONE page; pages don't overlap or repeat each other.
 - 3-6 outline parts per page, in teaching order.
-- final_test: {settings.get("final_test_min", 10)}-{settings.get("final_test_max", 15)} questions. type_mix and \
-difficulty_mix must each add up to question_count. Use at least 3 question types, choosing ones that suit the \
-topic (mcq, msq (choose all that apply), short_answer, long_answer; numerical only for quantitative topics). The \
-difficulties are easy, basic, standard, difficult and expert. A beginner gets mostly easy and basic questions; an \
-expert mostly difficult and expert ones.
+- quantitative: true only when the topic is mainly about calculating numbers (maths, physics, chemistry, statistics, \
+finance); false for any other topic, programming and history included. It decides whether the test has numerical \
+questions.
 {self.language_rule(subject.get("profile"))}"""
 
     def user(self, subject: dict) -> str:
@@ -70,17 +67,33 @@ The whole lesson plan: {self.to_json(subject["plan"])}
 Write this page: {self.to_json(subject["page_plan"])}"""
 
 
-class WriteTestPrompt(Prompt):
-    def system(self, subject: dict) -> str:
-        spec = subject["plan"]["final_test"]
-        return f"""You write the final test of a lesson: exactly {spec["question_count"]} questions.
+class WriteQuestionsPrompt(Prompt):
+    """Subject carries `batch` (`{"id", "cells": [{index, type, difficulty, marks}]}`) and `exclusions` (the questions
+    this lesson has already asked)."""
 
-- Exactly this many of each type: {self.to_json(spec["type_mix"])}
-- Exactly this many of each difficulty: {self.to_json(spec["difficulty_mix"])}
-- How to write each type, and what it is worth (marks are set by the system, never by you):
-{QuestionTypes.guidance(QUESTION_TYPES)}
-- Test the concepts taught across the three pages; every question names its concept. No repeated questions.
-- Ids "t1", "t2"…
+    MAX_EXCLUSIONS = 60
+    STEM_CHARS = 160
+
+    def system(self, subject: dict) -> str:
+        cells = subject["batch"]["cells"]
+        kinds = list(dict.fromkeys(cell["type"] for cell in cells))
+        lines = "\n".join(
+            f"{number}. {cell['type']}, {cell['difficulty']}, worth {cell['marks']} "
+            f"{'mark' if cell['marks'] == 1 else 'marks'}"
+            for number, cell in enumerate(cells, start=1)
+        )
+        return f"""You write questions for the test of a lesson: exactly {len(cells)} questions, ONE for each line \
+below, in this order, each of the type and difficulty on its line. What a question is worth is set by the system, \
+never by you, but short and long answers need criteria that add up to it.
+{lines}
+
+- How to write each type:
+{QuestionTypes.guidance(kinds)}
+- Test the concepts taught across the three pages (see the plan); every question names its concept, taken from the \
+plan's outline.
+- A question must stand on its own and have one clear right answer (or set of right answers).
+- Never repeat a question that was already asked, or ask it again in other words.
+- Ids "t1", "t2"… in order.
 {self.language_rule(subject.get("profile"))}"""
 
     def user(self, subject: dict) -> str:
@@ -88,7 +101,13 @@ class WriteTestPrompt(Prompt):
 
 Assessment: {self.to_json(subject["assessment"])}
 
-The lesson plan: {self.to_json(subject["plan"])}"""
+The lesson plan: {self.to_json(subject["plan"])}
+
+Questions already asked (do not repeat them): {self.to_json(self.asked(subject.get("exclusions")))}"""
+
+    def asked(self, exclusions) -> list[str]:
+        """The newest stems, shortened, so a lesson retaken many times does not grow the prompt without bound."""
+        return [stem[: self.STEM_CHARS] for stem in (exclusions or [])[-self.MAX_EXCLUSIONS :]]
 
 
 class PlanInteractivesPrompt(Prompt):

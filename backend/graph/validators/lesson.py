@@ -1,9 +1,8 @@
-"""Stage B: the lesson plan, the content pages, the final test and the interactive plan."""
+"""Stage B: the lesson plan, the content pages, the questions of the test and the interactive plan."""
 
 import re
-from collections import Counter
 
-from ..schemas.lesson import DIFFICULTIES, PAGE_KEYS, QUESTION_TYPES
+from ..schemas.lesson import PAGE_KEYS
 from .base import LatexChecker, LatexRules, TextRules
 from .questions import QuestionRules
 
@@ -11,7 +10,7 @@ norm = TextRules.norm
 
 
 class PlanValidator:
-    def validate(self, plan: dict, *, settings: dict, prerequisites_to_cover: list[dict]) -> list[str]:
+    def validate(self, plan: dict, *, prerequisites_to_cover: list[dict]) -> list[str]:
         problems: list[str] = []
         keys = [page["key"] for page in plan["pages"]]
         if sorted(keys) != sorted(PAGE_KEYS):
@@ -30,21 +29,6 @@ class PlanValidator:
                     f'The introduction must cover the prerequisite "{prerequisite["name"]}" (list it in '
                     "covers_prerequisites and teach it in the outline)."
                 )
-        return problems + self._test_spec(plan["final_test"], settings)
-
-    @staticmethod
-    def _test_spec(spec: dict, settings: dict) -> list[str]:
-        problems = []
-        low, high = settings.get("final_test_min", 10), settings.get("final_test_max", 15)
-        count = spec["question_count"]
-        if not low <= count <= high:
-            problems.append(f"The final test must have {low}-{high} questions; the plan says {count}.")
-        if (types := sum(spec["type_mix"].values())) != count:
-            problems.append(f"type_mix adds up to {types}, not question_count {count}.")
-        if (levels := sum(spec["difficulty_mix"].values())) != count:
-            problems.append(f"difficulty_mix adds up to {levels}, not question_count {count}.")
-        if sum(1 for n in spec["type_mix"].values() if n) < 3:
-            problems.append("Mix at least 3 question types in the final test.")
         return problems
 
 
@@ -83,28 +67,29 @@ class PageValidator:
         return problems + self.latex.problems(expressions)
 
 
-class FinalTestValidator:
+class QuestionBatchValidator:
+    """The questions a model wrote for a list of cells: one for each cell, in order, of that cell's type and
+    difficulty, and each a good question of its kind. The same rules check a batch of a lesson test, of a retake, and
+    the one question written again after a review."""
+
     def __init__(self, latex: LatexChecker | None = None):
         self.latex = LatexRules(latex)
 
-    def validate(self, test: dict, *, spec: dict) -> list[str]:
-        questions = test["questions"]
+    def validate(self, questions: list[dict], *, cells) -> list[str]:
         problems = []
-        if len(questions) != spec["question_count"]:
-            problems.append(f"Write exactly {spec['question_count']} questions; there are {len(questions)}.")
-        kinds = QUESTION_TYPES + tuple(k for k in spec["type_mix"] if k not in QUESTION_TYPES)  # a plan from before msq
-        problems += self._mix(Counter(q["type"] for q in questions), spec["type_mix"], kinds)
-        problems += self._mix(Counter(q["difficulty"] for q in questions), spec["difficulty_mix"], DIFFICULTIES)
+        if len(questions) != len(cells):
+            problems.append(
+                f"Write exactly {len(cells)} questions, one for each cell, in order; there are {len(questions)}."
+            )
+        for cell, question in zip(cells, questions, strict=False):
+            if question["type"] != cell.type:
+                problems.append(
+                    f"Question {question['id']} must be a {cell.type} question; it is a {question['type']}."
+                )
+            if question["difficulty"] != cell.difficulty:
+                problems.append(f"Question {question['id']} must be {cell.difficulty}; it is {question['difficulty']}.")
         problems += QuestionRules.problems(questions)
         return problems + self.latex.problems([m for q in questions for m in TextRules.math_in(q["question"])])
-
-    @staticmethod
-    def _mix(actual: Counter, wanted: dict, kinds: tuple[str, ...]) -> list[str]:
-        return [
-            f"Write exactly {wanted.get(kind, 0)} {kind} questions; there are {actual.get(kind, 0)}."
-            for kind in kinds
-            if actual.get(kind, 0) != wanted.get(kind, 0)
-        ]
 
 
 class InteractivePlanValidator:
