@@ -88,6 +88,15 @@ class Canned(LessonCanned):
             "confidence": "medium",
         }
 
+    def build_PrerequisiteList(self) -> dict:
+        names = ["Counting and ordering", "Reading a simple list", "Comparing two values"]
+        return {
+            "prerequisites": [
+                {"name": f"{name} for {self.topic}", "why_needed": f"{self.topic} relies on {name.lower()}."}
+                for name in names
+            ]
+        }
+
     # --- Mastery path ---
 
     def _concept_text(self, number: int) -> str:

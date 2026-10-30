@@ -7,6 +7,8 @@ HTTP. This does, offline, and it validates the fake that the browser walk-throug
 Use cases:
 - a structured-output call (json_schema) returns a valid DiagnosticBundle, and the call is logged with tokens
 - a function-calling model gets the same bundle through a tool call
+- the prerequisite planner's list is served, valid and named for the topic, and a lesson plan for a Beginner whose
+  prerequisites it planned teaches them on the introduction page, passing the real plan validator with that shape
 - the three study sheets come back valid and pass the study validator for the concepts in the prompt
 - every Stage B output (plan, page, test, interactive plan, alignment report) passes the real validators, and each kind
   of widget code passes the real sandbox check
@@ -25,10 +27,11 @@ import re
 import pytest
 from e2e.fake_llm_server import FakeLLMServer
 from pydantic import BaseModel
-from support.lesson_data import make_state
+from support.lesson_data import make_assessment, make_state
 
 from graph.codegen import DocumentAssembler
 from graph.context import FlowContext
+from graph.levels import Level, LevelScheme
 from graph.media import MediaLibrary
 from graph.nodes.media_agent import MediaFinder
 from graph.prompts import (
@@ -39,6 +42,7 @@ from graph.prompts import (
     GradeTestPrompt,
     PlanInteractivesPrompt,
     PlanLessonPrompt,
+    PlanPrerequisitesPrompt,
     RuntimeRepairPrompt,
     StudyMaterialPrompt,
     WritePagePrompt,
@@ -56,13 +60,16 @@ from graph.schemas import (
     LearnerAssessment,
     LessonPlan,
     PageContent,
+    PrerequisiteList,
     QuestionBatch,
 )
+from graph.shapes import LessonShapes
 from graph.validators import (
     GradeReportValidator,
     InteractivePlanValidator,
     PageValidator,
     PlanValidator,
+    PrerequisiteListValidator,
     QuestionBatchValidator,
     StudyMaterialValidator,
 )
@@ -124,6 +131,33 @@ def test_a_schema_the_fake_does_not_know_fails_every_model(server, monkeypatch):
 
     with pytest.raises(AllModelsFailed, match="no canned output"):
         Gateway(sleep=lambda s: None).invoke("learner.assess", [], snapshot=snapshot, schema=Unknown)
+
+
+def test_the_prerequisite_list_is_served_valid_and_named_for_the_topic(server, monkeypatch):
+    snapshot = bind_fake(server, "json_schema", monkeypatch)
+    state = make_state() | {"assessment": make_assessment() | {"level": "beginner"}}
+
+    result = Gateway().invoke(
+        "prerequisites.plan", PlanPrerequisitesPrompt().messages(state), snapshot=snapshot, schema=PrerequisiteList
+    )
+
+    listed = result.output.model_dump(mode="json")
+    assert PrerequisiteListValidator().validate(listed, topic="Binary search") == []
+    assert all("Binary search" in item["name"] for item in listed["prerequisites"])
+
+
+def test_a_plan_for_a_beginner_teaches_the_planned_prerequisites_on_the_introduction_page(server, monkeypatch):
+    snapshot = bind_fake(server, "json_schema", monkeypatch)
+    planned = [{"name": "Counting", "why_needed": "x"}, {"name": "Ordering", "why_needed": "y"}]
+    state = make_state() | {"assessment": make_assessment() | {"level": "beginner"}, "prerequisites_to_cover": planned}
+
+    plan = Gateway().invoke("lesson.plan", PlanLessonPrompt().messages(state), snapshot=snapshot, schema=LessonPlan)
+
+    document = LevelScheme.stamp(plan.output.model_dump(mode="json") | {"level": "beginner"})
+    problems = PlanValidator().validate(
+        document, prerequisites_to_cover=planned, shape=LessonShapes.for_level(Level.BEGINNER)
+    )
+    assert problems == []
 
 
 def test_the_assessment_schema_is_served(server, monkeypatch):
