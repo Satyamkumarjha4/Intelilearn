@@ -77,10 +77,10 @@ def test_a_submitted_test_is_graded_with_feedback_for_every_question(built_lesso
     for q in questions:
         if q["type"] == "mcq":
             answers[q["id"]] = q["correct_index"]
+        elif q["type"] == "msq":
+            answers[q["id"]] = q["correct_indices"]
         elif q["type"] == "numerical":
             answers[q["id"]] = str(q["answer"])
-        elif q["type"] == "code":
-            answers[q["id"]] = q.get("reference_solution", "")
         else:
             answers[q["id"]] = q.get("model_answer", "")
 
