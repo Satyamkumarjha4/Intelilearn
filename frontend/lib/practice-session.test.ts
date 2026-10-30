@@ -6,6 +6,7 @@
  *
  * Use cases:
  * - records multiple-choice answers as numbers and numerical or written answers as text
+ * - a multiple-select answer is a list of options, and an empty list is no answer
  * - clearing a text answer removes it
  * - the payload carries only the answered questions
  * - revealing a solution is remembered per question
@@ -38,6 +39,16 @@ describe("PracticeSession", () => {
     expect(session.answerOf("t1")).toBe(2);
     expect(session.answerOf("t2")).toBe("4.0");
     expect(session.answered).toBe(3);
+  });
+
+  test("a multiple-select answer is a list, and an empty list is no answer", () => {
+    const session = new PracticeSession(questions);
+
+    session.setAnswer("t1", [0, 2]);
+    expect(session.answerOf("t1")).toEqual([0, 2]);
+    expect(session.payload()).toEqual({ t1: [0, 2] });
+    session.setAnswer("t1", []);
+    expect(session.answered).toBe(0);
   });
 
   test("clearing a text answer removes it", () => {

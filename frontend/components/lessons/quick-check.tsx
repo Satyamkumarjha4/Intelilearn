@@ -7,7 +7,7 @@ import { QuickCheckDone } from "@/components/lessons/quick-check-done";
 import { useDeck } from "@/components/lessons/use-deck";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ApiError } from "@/lib/api";
-import { DONT_KNOW } from "@/lib/deck-session";
+import { DONT_KNOW, type DeckAnswer } from "@/lib/deck-session";
 import { lessonsApi } from "@/lib/lessons-api";
 import { BAND_LABELS, BAND_ORDER } from "@/lib/stage-view";
 import type { LearnerQuestion, QuizForLearner, QuizKind, QuizResultSummary } from "@/lib/types";
@@ -124,7 +124,7 @@ function Cards({ quiz, lessonId, kind, onSubmitted, onAlreadyAttempted }: Props 
 
 function Card({ question, answer, locked, onAnswer, allowDontKnow }: {
   question: LearnerQuestion;
-  answer: number | string | undefined;
+  answer: DeckAnswer | undefined;
   locked: boolean;
   onAnswer: (value: number | typeof DONT_KNOW) => void;
   allowDontKnow: boolean;

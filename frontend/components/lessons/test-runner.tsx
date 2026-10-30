@@ -6,20 +6,19 @@ import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { FlashcardDeck } from "@/components/lessons/flashcard-deck";
+import { QuestionInputField } from "@/components/lessons/question-input";
 import { useDeck } from "@/components/lessons/use-deck";
 import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card as Panel, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { ApiError } from "@/lib/api";
 import type { DeckAnswer } from "@/lib/deck-session";
 import { lessonsApi } from "@/lib/lessons-api";
 import { RunEventStream, TERMINAL_EVENTS } from "@/lib/run-events";
 import { AlreadySubmitted, TestSubmitFlow } from "@/lib/test-session";
-import type { LearnerTest, LearnerTestQuestion, QuestionType, TestSubmission } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { QuestionInputs } from "@/lib/question-inputs";
+import type { LearnerTest, LearnerTestQuestion, TestSubmission } from "@/lib/types";
 
 type Props = {
   lessonId: string;
@@ -29,15 +28,6 @@ type Props = {
   /** The submission was created: the lesson (its Test tab badge, its journey) should be read again. */
   onChanged: () => void;
 };
-
-const TYPE_LABEL: Record<QuestionType, string> = {
-  mcq: "Multiple choice",
-  numerical: "Number",
-  short_answer: "Short answer",
-  long_answer: "Written answer",
-  code: "Code",
-};
-const LETTERS = ["A", "B", "C", "D", "E", "F"];
 
 /** The final test: one card per question, forward only, one attempt. The last card asks for a final yes, then the
  *  answers are sent and the marking is followed to its end. */
@@ -124,9 +114,9 @@ export function TestRunner({ lessonId, test, onSubmitted, onChanged }: Props) {
         onContinue={onContinue}
         onKey={(key, id) => {
           const question = byId.get(id);
-          if (question?.type !== "mcq" || !question.options) return;
-          const option = /^[1-9]$/.test(key) ? Number(key) - 1 : key.length === 1 ? key.charCodeAt(0) - 97 : -1;
-          if (option >= 0 && option < question.options.length) answer(option);
+          if (!question) return;
+          const next = QuestionInputs.of(question.type).onKey(question, deck.answerOf(id), key);
+          if (next !== undefined) answer(next);
         }}
         renderCard={(id, locked) => (
           <QuestionCard question={byId.get(id)!} answer={deck.answerOf(id)} locked={locked} onAnswer={answer} />
@@ -155,60 +145,16 @@ function QuestionCard({ question, answer, locked, onAnswer }: {
   locked: boolean;
   onAnswer: (value: DeckAnswer | null) => void;
 }) {
-  const text = typeof answer === "string" ? answer : "";
-  const edit = (value: string) => onAnswer(question.type === "code" && value.trim() === (question.starter_code ?? "").trim() ? null : value);
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-2 text-xs font-bold text-muted-foreground">
-        <span>{TYPE_LABEL[question.type]}</span>
+        <span>{QuestionInputs.of(question.type).label}</span>
         <span className="font-mono">
           {question.marks} {question.marks === 1 ? "mark" : "marks"}
         </span>
       </div>
       <Markdown className="font-heading text-lg leading-snug font-medium">{question.question}</Markdown>
-      {question.type === "mcq" && (
-        <div role="radiogroup" aria-label="Answers" className="flex flex-col gap-2">
-          {(question.options ?? []).map((option, index) => (
-            <button
-              key={index}
-              type="button"
-              role="radio"
-              data-deck-option
-              aria-checked={answer === index}
-              disabled={locked}
-              onClick={() => onAnswer(index)}
-              className={cn(
-                "flex items-center gap-3 rounded-xl border-2 px-3 py-2.5 text-left text-sm transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
-                answer === index ? "border-primary bg-primary-soft" : "border-border",
-              )}
-            >
-              <span className={cn("grid size-6 shrink-0 place-items-center rounded-md font-mono text-xs font-bold", answer === index ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>
-                {LETTERS[index]}
-              </span>
-              {option}
-            </button>
-          ))}
-        </div>
-      )}
-      {question.type === "numerical" && (
-        <div className="flex items-center gap-2">
-          <Input aria-label="Your answer" inputMode="decimal" autoComplete="off" disabled={locked} value={text} onChange={(e) => edit(e.target.value)} className="max-w-48" />
-          {question.unit && <span className="text-sm text-muted-foreground">{question.unit}</span>}
-        </div>
-      )}
-      {question.type === "short_answer" && <Input aria-label="Your answer" autoComplete="off" disabled={locked} value={text} onChange={(e) => edit(e.target.value)} />}
-      {question.type === "long_answer" && <Textarea aria-label="Your answer" rows={6} disabled={locked} value={text} onChange={(e) => edit(e.target.value)} />}
-      {question.type === "code" && (
-        <Textarea
-          aria-label={`Your ${question.language ?? "code"} answer`}
-          rows={10}
-          spellCheck={false}
-          disabled={locked}
-          value={answer === undefined ? (question.starter_code ?? "") : text}
-          onChange={(e) => edit(e.target.value)}
-          className="font-mono text-sm"
-        />
-      )}
+      <QuestionInputField question={question} answer={answer} label={QuestionInputs.of(question.type).answerLabel} disabled={locked} onAnswer={onAnswer} />
     </div>
   );
 }

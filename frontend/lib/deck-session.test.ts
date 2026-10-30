@@ -10,6 +10,7 @@
  * - the current card can be answered and re-answered until the learner continues; an answer for any other card, or an
  *   option that is not text, a number or "I don't know", is refused
  * - a blank text answer, or none (null), leaves the card unanswered; "I don't know" and option 0 are answers
+ * - a multiple-select answer is a sorted list of options (an empty list is no answer); a list of anything else is refused
  * - continuing needs an answer, locks the card and moves on; there is no way back
  * - continuing on the last card finishes the deck, and nothing can be answered after that
  * - the payload is every answer, only once finished
@@ -71,6 +72,24 @@ describe("DeckSession", () => {
     expect(() => deck.answer(1.5)).toThrow(RangeError);
     expect(() => deck.answer(Number.NaN)).toThrow(RangeError);
     expect(() => deck.answer({} as never)).toThrow(RangeError);
+  });
+
+  test("a multiple-select answer is a sorted list of options, and an empty list takes the answer away", () => {
+    const deck = new DeckSession(ids);
+
+    deck.answer([2, 0, 2]);
+    expect(deck.answerOf("a")).toEqual([0, 2]);
+    expect(deck.canContinue).toBe(true);
+    deck.answer([]);
+    expect([deck.answerOf("a"), deck.canContinue]).toEqual([undefined, false]);
+  });
+
+  test("a list that is not whole option numbers is refused", () => {
+    const deck = new DeckSession(ids);
+
+    expect(() => deck.answer([-1])).toThrow(RangeError);
+    expect(() => deck.answer([1.5])).toThrow(RangeError);
+    expect(() => deck.answer(["a"] as never)).toThrow(RangeError);
   });
 
   test("continuing needs an answer, locks the card and moves on", () => {

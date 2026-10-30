@@ -14,6 +14,8 @@
  *   a blank one says so
  * - the correct answer is the right option, the number (with unit), the model answer or the reference solution, and is
  *   missing when the marking scheme has none
+ * - a multiple-select question lists the options picked and the right ones, one to a line
+ * - a written answer's criteria say what each point earned
  * - a follow-up lesson is asked for on a topic, naming the lesson, within the API's length limits
  * - a refused follow-up (too many lessons) is explained, and other failures fall back to a general message
  */
@@ -69,6 +71,15 @@ describe("the learner's answer", () => {
     expect(TestReport.yourAnswer(question({ type: "short_answer" }), "Halve it")).toEqual({ text: "Halve it" });
   });
 
+  test("a multiple-select answer lists the options picked, one to a line, and none picked is no answer", () => {
+    const msq = question({ type: "msq", options: ["red", "green", "blue", "pink"] });
+
+    expect(TestReport.yourAnswer(msq, [0, 2])).toEqual({ text: "A. red\nC. blue" });
+    expect(TestReport.yourAnswer(msq, [])).toBeNull();
+    expect(TestReport.yourAnswer(msq, [9])).toBeNull();
+    expect(TestReport.yourAnswer(msq, "x")).toBeNull();
+  });
+
   test("code is shown as code", () => {
     expect(TestReport.yourAnswer(question({ type: "code" }), "def f(): pass")).toEqual({ text: "def f(): pass", code: true });
   });
@@ -120,5 +131,24 @@ describe("follow-up lesson", () => {
     expect(TestReport.followUpError(429)).toContain("a little while");
     expect(TestReport.followUpError(500)).toContain("couldn't start");
     expect(TestReport.followUpError(undefined)).toContain("couldn't start");
+  });
+});
+
+describe("multiple select and criteria", () => {
+  test("the correct answers of a multiple-select question are all the right options", () => {
+    const msq = question({ type: "msq", options: ["red", "green", "blue", "pink"] });
+
+    expect(TestReport.correctAnswer(msq, { correct_indices: [1, 3] })).toEqual({ text: "B. green\nD. pink" });
+    expect(TestReport.correctAnswer(msq, {})).toBeNull();
+  });
+
+  test("a written answer's criteria say what each earned", () => {
+    const marked = row({ criteria: [{ text: "names it", marks: 1, awarded: 1 }, { text: "explains it", marks: 2, awarded: 1 }] });
+
+    expect(TestReport.criteria(marked)).toEqual([
+      { text: "names it", earned: "1 of 1", full: true },
+      { text: "explains it", earned: "1 of 2", full: false },
+    ]);
+    expect(TestReport.criteria(row())).toEqual([]);
   });
 });

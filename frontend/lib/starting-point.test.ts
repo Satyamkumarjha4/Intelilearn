@@ -7,7 +7,7 @@
  * shown as a plain wrong answer when the review tells them apart.
  *
  * Use cases:
- * - the level maps to a meter of five segments with a label; an unknown level fills nothing and keeps its own word
+ * - the level maps to a meter of four segments with a label; an unknown level fills nothing and keeps its own word
  * - each band shows one dot per question: right answers first, then wrong ones, from the score alone
  * - with the review, a dot is right, wrong or "I don't know" for each question of the band
  * - bands come easiest first and bands that were not asked are left out
@@ -33,18 +33,17 @@ const review = (rows: [string, ReviewQuestion["answer"], boolean][]) => ({
 
 describe("level meter", () => {
   test.each([
-    ["novice", 1, "New to it"],
-    ["beginner", 2, "Finding your feet"],
-    ["intermediate", 3, "Getting comfortable"],
-    ["advanced", 4, "Confident"],
-    ["expert", 5, "Expert"],
-    ["Beginner ", 2, "Finding your feet"],
-  ])("%s fills %i of 5 segments and reads %s", (level, filled, label) => {
-    expect(StartingPoint.of(assessment({ level }), result()).level).toEqual({ filled, total: 5, label });
+    ["beginner", 1, "New to it"],
+    ["foundation", 2, "Finding your feet"],
+    ["proficient", 3, "Getting comfortable"],
+    ["expert", 4, "Expert"],
+    ["Foundation ", 2, "Finding your feet"],
+  ])("%s fills %i of 4 segments and reads %s", (level, filled, label) => {
+    expect(StartingPoint.of(assessment({ level }), result()).level).toEqual({ filled, total: 4, label });
   });
 
   test("an unknown level fills nothing and keeps its own word", () => {
-    expect(StartingPoint.of(assessment({ level: "wizard" }), result()).level).toEqual({ filled: 0, total: 5, label: "Wizard" });
+    expect(StartingPoint.of(assessment({ level: "wizard" }), result()).level).toEqual({ filled: 0, total: 4, label: "Wizard" });
   });
 });
 

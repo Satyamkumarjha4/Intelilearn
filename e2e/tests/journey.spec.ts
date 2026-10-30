@@ -58,7 +58,9 @@ test("a learner signs up, learns, takes the test once and cannot take it again",
   for (let cards = 0; cards < 40; cards++) {
     await page.waitForTimeout(450);
     const radios = page.getByRole("radiogroup", { name: "Answers" }).getByRole("radio");
+    const boxes = page.getByRole("group", { name: "Answers" }).getByRole("checkbox"); // choose all that apply
     if (await radios.count()) await radios.first().click();
+    else if (await boxes.count()) await boxes.first().click();
     else await page.getByRole("textbox").first().fill("42");
     const label = await testDeck.next.innerText();
     await testDeck.next.click();

@@ -82,7 +82,7 @@ export class LessonsApi {
     return this.client.request(`/lessons/${id}/materials/${kind}${query}`);
   }
 
-  gradePractice(id: string, answers: Record<string, number | string>): Promise<PracticeGrade> {
+  gradePractice(id: string, answers: Record<string, number | number[] | string>): Promise<PracticeGrade> {
     return this.client.request(`/lessons/${id}/materials/practice_sheet/grade`, { method: "POST", body: { answers } });
   }
 

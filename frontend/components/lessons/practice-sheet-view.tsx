@@ -4,16 +4,17 @@ import { EyeIcon } from "lucide-react";
 import { useMemo, useReducer, useState } from "react";
 import { toast } from "sonner";
 
+import { QuestionInputField } from "@/components/lessons/question-input";
 import { MutedBox, SheetHeading } from "@/components/lessons/sheet-parts";
 import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { ApiError } from "@/lib/api";
 import { lessonsApi } from "@/lib/lessons-api";
 import { PracticeSession } from "@/lib/practice-session";
+import { type AnswerValue } from "@/lib/question-inputs";
+import { QuestionSolution } from "@/lib/question-solution";
 import type { PracticeQuestion, PracticeSheet, Solution } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -23,15 +24,20 @@ type Props = {
   onSolutions?: (solutions: Record<string, Solution>) => void;
 };
 
-const LETTERS = ["A", "B", "C", "D", "E", "F"];
-
 function SolutionView({ question, solution }: { question: PracticeQuestion; solution: Solution }) {
+  const options = QuestionSolution.correctOptions(solution);
   return (
     <MutedBox className="bg-primary-soft text-sm">
       <p className="font-mono text-xs font-bold tracking-wider text-primary-text uppercase">
         Solution
       </p>
-      {solution.correct_index !== undefined && question.options && <p className="font-bold">{question.options[solution.correct_index]}</p>}
+      {options && question.options && (
+        <ul className="list-none font-bold">
+          {options.map((index) => (
+            <li key={index}>{question.options?.[index]}</li>
+          ))}
+        </ul>
+      )}
       {solution.answer !== undefined && (
         <p className="font-bold">
           {solution.answer}
@@ -39,6 +45,15 @@ function SolutionView({ question, solution }: { question: PracticeQuestion; solu
         </p>
       )}
       {solution.model_answer && <Markdown>{solution.model_answer}</Markdown>}
+      {solution.criteria && (
+        <ul className="list-disc pl-5">
+          {solution.criteria.map((criterion) => (
+            <li key={criterion.text}>
+              {criterion.text} <span className="font-mono text-xs text-muted-foreground">({QuestionSolution.marks(criterion.marks)})</span>
+            </li>
+          ))}
+        </ul>
+      )}
       {solution.key_points && (
         <ul className="list-disc pl-5">
           {solution.key_points.map((point) => (
@@ -94,8 +109,8 @@ export function PracticeSheetView({ lessonId, sheet, onSolutions }: Props) {
     }
   };
 
-  const set = (id: string, value: number | string) => {
-    session.setAnswer(id, value);
+  const set = (id: string, value: AnswerValue | null) => {
+    session.setAnswer(id, value ?? "");
     rerender();
   };
 
@@ -125,7 +140,7 @@ export function PracticeSheetView({ lessonId, sheet, onSolutions }: Props) {
         const solution = solutions[question.id];
         const shown = session.isRevealed(question.id) || grade !== undefined;
         const picked = session.answerOf(question.id);
-        const correctIndex = shown ? solution?.correct_index : undefined;
+        const correct = shown && solution ? QuestionSolution.correctOptions(solution) : undefined;
         return (
           <Card key={question.id} className="break-inside-avoid">
             <CardContent className="flex flex-col gap-3">
@@ -140,66 +155,13 @@ export function PracticeSheetView({ lessonId, sheet, onSolutions }: Props) {
               </div>
               <Markdown className="font-heading text-lg leading-snug font-medium">{question.question}</Markdown>
 
-              {question.type === "mcq" && question.options && (
-                <div role="radiogroup" aria-label={`Answer to question ${index + 1}`} className="flex flex-col gap-2">
-                  {question.options.map((option, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      role="radio"
-                      aria-checked={picked === i}
-                      onClick={() => set(question.id, i)}
-                      className={cn(
-                        "flex items-center gap-3 rounded-xl border-2 px-3 py-2.5 text-left text-sm transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
-                        picked === i ? "border-primary bg-primary-soft" : "border-border",
-                        correctIndex === i && "border-success bg-success-soft",
-                        correctIndex !== undefined && picked === i && picked !== correctIndex && "border-destructive bg-destructive-soft",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "grid size-6 shrink-0 place-items-center rounded-md font-mono text-xs font-bold",
-                          picked === i ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
-                        )}
-                      >
-                        {LETTERS[i]}
-                      </span>
-                      {option}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {question.type === "numerical" && (
-                <div className="flex items-center gap-2">
-                  <Input
-                    inputMode="decimal"
-                    autoComplete="off"
-                    aria-label={`Answer to question ${index + 1}`}
-                    className="max-w-48"
-                    value={String(picked ?? "")}
-                    onChange={(e) => set(question.id, e.target.value)}
-                  />
-                  {question.unit && <span className="text-sm text-muted-foreground">{question.unit}</span>}
-                </div>
-              )}
-              {question.type === "short_answer" && (
-                <Input
-                  autoComplete="off"
-                  aria-label={`Answer to question ${index + 1}`}
-                  value={String(picked ?? "")}
-                  onChange={(e) => set(question.id, e.target.value)}
-                />
-              )}
-              {(question.type === "long_answer" || question.type === "code") && (
-                <Textarea
-                  aria-label={`Answer to question ${index + 1}`}
-                  rows={question.type === "code" ? 8 : 5}
-                  spellCheck={question.type !== "code"}
-                  className={question.type === "code" ? "font-mono text-sm" : undefined}
-                  defaultValue={question.starter_code}
-                  onChange={(e) => set(question.id, e.target.value)}
-                />
-              )}
+              <QuestionInputField
+                question={question}
+                answer={picked}
+                label={`Answer to question ${index + 1}`}
+                correct={correct}
+                onAnswer={(value) => set(question.id, value)}
+              />
 
               {grade && grade.correct !== null && (
                 <p role="status" className={cn("text-sm font-extrabold", grade.correct ? "text-success-text" : "text-destructive-text")}>

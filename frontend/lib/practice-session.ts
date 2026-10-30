@@ -4,7 +4,7 @@ type GradeOf = PracticeGrade["results"][number];
 
 /** A learner's work on a practice sheet. Nothing is stored on the server, so this is the record. */
 export class PracticeSession {
-  private readonly answers = new Map<string, number | string>();
+  private readonly answers = new Map<string, number | number[] | string>();
   private readonly shown = new Set<string>();
   private grades = new Map<string, GradeOf>();
   score: PracticeGrade["score"] | null = null;
@@ -19,17 +19,18 @@ export class PracticeSession {
     return [...this.shown];
   }
 
-  answerOf(id: string): number | string | undefined {
+  answerOf(id: string): number | number[] | string | undefined {
     return this.answers.get(id);
   }
 
-  /** A multiple-choice answer is an option index; anything typed is text, and a blank answer is no answer. */
-  setAnswer(id: string, value: number | string): void {
-    if (typeof value === "string" && value.trim() === "") this.answers.delete(id);
+  /** A multiple-choice answer is an option index, a multiple-select one a list of them; anything typed is text. A blank
+   *  answer, or no option picked, is no answer. */
+  setAnswer(id: string, value: number | number[] | string): void {
+    if ((typeof value === "string" && value.trim() === "") || (Array.isArray(value) && value.length === 0)) this.answers.delete(id);
     else this.answers.set(id, value);
   }
 
-  payload(): Record<string, number | string> {
+  payload(): Record<string, number | number[] | string> {
     return Object.fromEntries([...this.answers].map(([id, value]) => [id, typeof value === "string" ? value.trim() : value]));
   }
 

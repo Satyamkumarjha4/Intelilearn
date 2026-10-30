@@ -3,6 +3,7 @@ import type { ReactElement } from "react";
 
 import { PlainText } from "@/lib/plain-text";
 import type { CheatSheet, MaterialKind, PracticeSheet, RevisionSheet, Solution } from "@/lib/types";
+import { QuestionSolution } from "@/lib/question-solution";
 
 const styles = StyleSheet.create({
   page: { padding: 36, fontSize: 10, fontFamily: "Helvetica", lineHeight: 1.4 },
@@ -116,7 +117,8 @@ export class StudyPdf {
   }
 
   private static solutionLine(options: string[] | undefined, solution: Solution): string {
-    if (solution.correct_index !== undefined && options) return `Answer: ${String.fromCharCode(65 + solution.correct_index)}`;
+    const correct = QuestionSolution.correctOptions(solution);
+    if (correct && options) return `Answer: ${correct.map((index) => String.fromCharCode(65 + index)).join(", ")}`;
     if (solution.answer !== undefined) return `Answer: ${solution.answer}${solution.unit ? ` ${solution.unit}` : ""}`;
     return `Answer: ${text(solution.model_answer ?? solution.reference_solution ?? "")}`;
   }

@@ -183,16 +183,22 @@ export type RevisionSheet = {
   final_tips: string[];
 };
 
-export type QuestionType = "mcq" | "numerical" | "short_answer" | "long_answer" | "code";
+/** `code` only appears in lessons written before code became a format of short and long answers. */
+export type QuestionType = "mcq" | "msq" | "numerical" | "short_answer" | "long_answer" | "code";
+export type QuestionDifficulty = "easy" | "basic" | "standard" | "difficult" | "expert";
+/** A point a written answer is marked on: what a good answer does, and its marks. */
+export type Criterion = { text: string; marks: number };
 export type PracticeQuestion = {
   id: string;
   type: QuestionType;
   concept: string;
-  difficulty: "easy" | "medium" | "hard";
+  difficulty: QuestionDifficulty;
   marks: number;
   question: string;
   options?: string[];
   unit?: string;
+  /** A hint for the number input (how many decimals), never a rule. */
+  decimal_precision?: number;
   language?: string;
   starter_code?: string;
 };
@@ -200,6 +206,8 @@ export type PracticeSheet = { title: string; instructions: string; questions: Pr
 
 export type Solution = {
   correct_index?: number;
+  correct_indices?: number[];
+  criteria?: Criterion[];
   answer?: number;
   tolerance?: number;
   unit?: string;
@@ -265,6 +273,8 @@ export type QuestionResult = {
   graded_by: "auto" | "model" | "none";
   feedback: string;
   solution: Record<string, unknown>;
+  /** A written answer marked by a model: what it was marked on, and what each point earned. */
+  criteria?: (Criterion & { awarded: number })[];
 };
 /** What a submitted lesson test scored (`TestSubmission.result`). */
 export type ScoreCard = {
@@ -295,6 +305,7 @@ export type LearnerTestQuestion = {
   marks: number;
   options?: string[];
   unit?: string;
+  decimal_precision?: number;
   language?: string;
   starter_code?: string;
 };

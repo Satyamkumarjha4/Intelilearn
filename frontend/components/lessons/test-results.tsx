@@ -17,17 +17,11 @@ import { DateText } from "@/lib/format";
 import { lessonsApi } from "@/lib/lessons-api";
 import { TestResultView } from "@/lib/test-session";
 import { TestReport, type AnswerText, type Status } from "@/lib/test-report";
-import type { LearnerTestQuestion, QuestionResult, QuestionType, TestSubmission } from "@/lib/types";
+import { QuestionInputs } from "@/lib/question-inputs";
+import type { LearnerTestQuestion, QuestionResult, TestSubmission } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const POLL_MS = 3000;
-const TYPE_TAG: Record<QuestionType, string> = {
-  mcq: "Multiple choice",
-  numerical: "Number",
-  short_answer: "Short answer",
-  long_answer: "Written answer",
-  code: "Code",
-};
 
 type Props = {
   lessonId: string;
@@ -245,14 +239,27 @@ function QuestionList({ rows, questions, answers }: { rows: QuestionResult[]; qu
                     <span className="mr-2 font-mono text-xs text-muted-foreground">{index + 1}</span>
                     <span className="line-clamp-2 font-semibold">{question?.question ?? row.concept}</span>
                   </span>
-                  {row.type !== "mcq" && <Badge variant="secondary" className="hidden sm:inline-flex">{TYPE_TAG[row.type]}</Badge>}
+                  {row.type !== "mcq" && <Badge variant="secondary" className="hidden sm:inline-flex">{QuestionInputs.of(row.type).label}</Badge>}
                   <span className="font-mono text-xs whitespace-nowrap text-muted-foreground">{TestResultView.label(row)}</span>
                   <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground motion-safe:transition-transform group-open:rotate-180" aria-hidden="true" />
                 </summary>
                 <div className="flex flex-col gap-3 border-t border-dashed border-border px-4 py-3 text-sm">
                   {question && <Markdown className="text-base">{question.question}</Markdown>}
                   <Answer label="Your answer" answer={yours} empty="You didn't answer this one." />
-                  {correct && <Answer label="Correct answer" answer={correct} />}
+                  {correct && <Answer label={question?.type === "msq" ? "Correct answers" : "Correct answer"} answer={correct} />}
+                  {TestReport.criteria(row).length > 0 && (
+                    <div className="flex flex-col gap-1">
+                      <p className="text-xs font-extrabold text-muted-foreground">What it was marked on</p>
+                      <ul className="flex flex-col gap-1">
+                        {TestReport.criteria(row).map((criterion) => (
+                          <li key={criterion.text} className="flex items-start justify-between gap-3">
+                            <span>{criterion.text}</span>
+                            <span className={cn("font-mono text-xs whitespace-nowrap", criterion.full ? "text-success-text" : "text-muted-foreground")}>{criterion.earned}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   {row.feedback && (
                     <div className="flex flex-col gap-1 rounded-xl bg-insight-soft px-3 py-2.5">
                       <p className="text-xs font-extrabold text-insight-text">Feedback{TestResultView.source(row) === "Graded by AI" ? " · graded by AI" : ""}</p>

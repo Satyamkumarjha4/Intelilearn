@@ -36,6 +36,7 @@ export class TestReport {
   /** What the learner answered, as they would say it; null when they gave no answer. */
   static yourAnswer(question: LearnerTestQuestion, value: unknown): AnswerText | null {
     if (question.type === "mcq") return typeof value === "number" ? TestReport.option(question, value) : null;
+    if (question.type === "msq") return Array.isArray(value) ? TestReport.options(question, value) : null;
     if (typeof value !== "string" || value.trim() === "") return null;
     const text = question.type === "numerical" && question.unit ? `${value.trim()} ${question.unit}` : value;
     return question.type === "code" ? { text, code: true } : { text };
@@ -43,6 +44,7 @@ export class TestReport {
 
   /** The right answer, from the marking scheme the server shows once the test is submitted; null when it has none. */
   static correctAnswer(question: LearnerTestQuestion, solution: Record<string, unknown>): AnswerText | null {
+    if (question.type === "msq") return Array.isArray(solution.correct_indices) ? TestReport.options(question, solution.correct_indices) : null;
     if (question.type === "mcq") return typeof solution.correct_index === "number" ? TestReport.option(question, solution.correct_index) : null;
     if (question.type === "numerical") {
       if (typeof solution.answer !== "number") return null;
@@ -66,6 +68,19 @@ export class TestReport {
     return status === 429
       ? "You've started a lot of lessons just now. Please wait a little while and try again."
       : "We couldn't start that lesson. Please try again.";
+  }
+
+  /** What a written answer was marked on and what each point earned, "1 of 2", or nothing when it has no breakdown. */
+  static criteria(row: QuestionResult): { text: string; earned: string; full: boolean }[] {
+    return (row.criteria ?? []).map((c) => ({ text: c.text, earned: `${c.awarded} of ${c.marks}`, full: c.awarded >= c.marks }));
+  }
+
+  private static options(question: LearnerTestQuestion, indices: unknown[]): AnswerText | null {
+    const lines = indices.flatMap((index) => {
+      const option = typeof index === "number" ? TestReport.option(question, index) : null;
+      return option ? [option.text] : [];
+    });
+    return lines.length ? { text: lines.join("\n") } : null;
   }
 
   private static option(question: LearnerTestQuestion, index: number): AnswerText | null {

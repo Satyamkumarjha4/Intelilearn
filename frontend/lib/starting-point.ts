@@ -12,12 +12,12 @@ export type StartingPointView = {
   confidence: { fraction: number; label: string };
 };
 
+/** The four levels (beginner, foundation, proficient, expert). The API only sends these names. */
 const LEVELS: Record<string, [number, string]> = {
-  novice: [1, "New to it"],
-  beginner: [2, "Finding your feet"],
-  intermediate: [3, "Getting comfortable"],
-  advanced: [4, "Confident"],
-  expert: [5, "Expert"],
+  beginner: [1, "New to it"],
+  foundation: [2, "Finding your feet"],
+  proficient: [3, "Getting comfortable"],
+  expert: [4, "Expert"],
 };
 const CONFIDENCE: Record<string, [number, string]> = {
   low: [1 / 3, "Still getting to know you"],
@@ -27,7 +27,7 @@ const CONFIDENCE: Record<string, [number, string]> = {
 
 /** What the "Your starting point" card shows, from the assessment and the quick check (docs/reference/frontend.md). */
 export class StartingPoint {
-  static readonly SEGMENTS = 5;
+  static readonly SEGMENTS = 4;
 
   /** `review` is optional: it tells "I don't know" from a wrong answer, which the score alone cannot. */
   static of(

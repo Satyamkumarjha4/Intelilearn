@@ -1,8 +1,8 @@
 /** "I don't know" is an answer, the useful one when unsure. */
 export const DONT_KNOW = "dont_know" as const;
 
-/** An option's index, the learner's own words, or "I don't know". */
-export type DeckAnswer = number | string;
+/** An option's index, the options picked in a multiple-select question (sorted), the learner's own words, or "I don't know". */
+export type DeckAnswer = number | number[] | string;
 export type Segment = "done" | "current" | "todo";
 export type DeckSnapshot = { index: number; answers: Record<string, DeckAnswer>; finished: boolean };
 
@@ -66,8 +66,13 @@ export class DeckSession {
   answer(value: DeckAnswer | null): void {
     const id = this.current;
     if (id === undefined) return;
-    if (value === null || (typeof value === "string" && value.trim() === "")) {
+    if (value === null || (typeof value === "string" && value.trim() === "") || (Array.isArray(value) && value.length === 0)) {
       this.answers.delete(id);
+      return;
+    }
+    if (Array.isArray(value)) {
+      if (!value.every((item) => Number.isInteger(item) && item >= 0)) throw new RangeError(`${String(value)} is not an answer`);
+      this.answers.set(id, [...new Set(value)].sort((a, b) => a - b));
       return;
     }
     if (typeof value === "number" ? !Number.isInteger(value) || value < 0 : typeof value !== "string") {
