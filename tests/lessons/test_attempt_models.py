@@ -42,7 +42,6 @@ class TestStates:
     def test_an_attempt_is_open_only_while_it_is_generating_or_in_progress(self, lesson, status, open_):
         assert attempt(lesson, status=status).is_open is open_
 
-    @pytest.mark.usefixtures("many_attempts")
     def test_the_newest_attempt_comes_first(self, lesson):
         for number in (1, 2, 3):
             attempt(lesson, attempt_no=number, status="graded")

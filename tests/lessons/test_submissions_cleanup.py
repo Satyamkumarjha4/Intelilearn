@@ -31,7 +31,7 @@ NOW = timezone.now()
 def old_schema():
     """The table as it was before the migration: without the constraints, so a lesson can have several rows (the
     attempt number did not exist yet). The DDL is rolled back with the test's transaction."""
-    names = {"unique_test_submission_per_lesson", "unique_attempt_no_per_lesson"}
+    names = {"unique_attempt_no_per_lesson"}
     with connection.schema_editor() as editor:
         for constraint in [c for c in TestSubmission._meta.constraints if c.name in names]:
             editor.remove_constraint(TestSubmission, constraint)

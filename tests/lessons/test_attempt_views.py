@@ -31,7 +31,7 @@ from support.lesson_data import make_blueprint_test, make_plan
 
 from lessons.models import Stage, TestSubmission
 
-pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("many_attempts")]
+pytestmark = pytest.mark.django_db
 
 TEST = make_blueprint_test()
 QUESTIONS = TEST["questions"]

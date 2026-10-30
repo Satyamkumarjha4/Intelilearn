@@ -1,5 +1,6 @@
-"""Unit under test: lessons migrations 0007 (`attempts_question_record_and_settings`) and 0008 (`attempt_backfill`),
-which turn "the" test submission into an attempt and write the record of questions.
+"""Unit under test: lessons migrations 0007 (`attempts_question_record_and_settings`), 0008 (`attempt_backfill`) and
+0010 (`many_attempts_per_lesson`), which turn "the" test submission into an attempt, write the record of questions and
+finally let a lesson have more than one.
 
 Why: they rewrite real learners' results. After them every existing submission must be attempt 1 with the questions it
 was answered against and the marks it scored, every question the old tests ever asked must be on the record (retired, so
@@ -14,6 +15,8 @@ Use cases:
 - the new settings have their defaults on the existing settings row
 - the migrations can be undone: the record and the attempt columns go, and the original rows are as they were
 - the constraints hold: one attempt number per lesson, at most one open attempt, one stem per lesson in the record
+- the last migration lets a lesson have many attempts; undoing it keeps the first attempt of each lesson and deletes the
+  retakes and any open attempt, so the old constraint can come back
 """
 
 import pytest
@@ -22,6 +25,8 @@ from django.db.migrations.executor import MigrationExecutor
 
 BEFORE = [("lessons", "0006_level_and_difficulty_names")]
 AFTER = [("lessons", "0008_attempt_backfill")]
+NINE = [("lessons", "0009_graphrun_retake_choices")]
+TEN = [("lessons", "0010_many_attempts_per_lesson")]
 
 
 def latest():
@@ -154,6 +159,35 @@ def test_the_constraints_keep_attempt_numbers_open_attempts_and_stems_unique(dja
         with pytest.raises(IntegrityError), transaction.atomic():
             Question.objects.create(
                 lesson=lesson, type="mcq", difficulty="easy", marks=1, payload={}, stem_hash="a" * 64
+            )
+    finally:
+        migrate(latest())
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_lesson_can_have_many_attempts_and_going_back_keeps_the_first(django_user_model):
+    old = migrate(NINE)
+    Lesson, Submission = old.get_model("lessons", "Lesson"), old.get_model("lessons", "TestSubmission")
+    owner = django_user_model.objects.create_user("t@example.com", password="x", name="T")
+    lesson = Lesson.objects.create(owner_id=owner.pk, topic="T", stage="ready")
+    one = Submission.objects.create(lesson_id=lesson.pk, attempt_no=1, status="graded")
+    with pytest.raises(IntegrityError), transaction.atomic():  # the old rule: a lesson has one submission
+        Submission.objects.create(lesson_id=lesson.pk, attempt_no=2, status="graded")
+
+    try:
+        new = migrate(TEN)
+        Submission = new.get_model("lessons", "TestSubmission")
+        Submission.objects.create(lesson_id=lesson.pk, attempt_no=2, status="graded")
+        Submission.objects.create(lesson_id=lesson.pk, attempt_no=3, status="in_progress")
+        assert Submission.objects.filter(lesson_id=lesson.pk).count() == 3
+
+        back = migrate(NINE)
+
+        kept = back.get_model("lessons", "TestSubmission").objects.filter(lesson_id=lesson.pk)
+        assert [row.pk for row in kept] == [one.pk]
+        with pytest.raises(IntegrityError), transaction.atomic():
+            back.get_model("lessons", "TestSubmission").objects.create(
+                lesson_id=lesson.pk, attempt_no=2, status="graded"
             )
     finally:
         migrate(latest())

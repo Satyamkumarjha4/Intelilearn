@@ -70,8 +70,6 @@ def test_effects_can_be_replaced(lesson):
 
 
 class TestAttemptGenerationEffect:
-    pytestmark = pytest.mark.usefixtures("many_attempts")
-
     def retake(self, lesson, status="generating"):
         TestSubmission.objects.create(lesson=lesson, attempt_no=1, status="graded")
         attempt = TestSubmission.objects.create(lesson=lesson, attempt_no=2, status=status)

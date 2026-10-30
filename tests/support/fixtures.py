@@ -5,9 +5,6 @@
 - `gateway` (`FakeGateway`), `sandbox` (`FakeSandbox`), `events` (`ListEvents`), `ctx` (a `FlowContext` made of them)
   and `runtime` (what LangGraph passes a node): the doubles a node test needs.
 - `lesson_state`: the state `load_context` would produce for `lesson`.
-- `many_attempts`: lets a lesson have several attempts. The one-attempt constraint stays on the table until the last
-  commit of phase 9.2, so the tests that need a retake take it off for their own transaction (the DDL is rolled back
-  with it). Delete this fixture, and every `usefixtures("many_attempts")`, in the commit that drops the constraint.
 - `make_snapshot_for_nodes(disabled=..., attempts=...)`: a registry snapshot where every node has a model chain.
 """
 
@@ -20,26 +17,6 @@ from graph.context import FlowContext
 
 from .fakes import FakeGateway, FakeSandbox, ListEvents
 from .quiz_data import DEFAULT_SETTINGS, make_prerequisites, make_questions
-
-
-@pytest.fixture
-def many_attempts(db):
-    from django.db import connection
-
-    from lessons.models import TestSubmission
-
-    constraint = next(c for c in TestSubmission._meta.constraints if c.name == "unique_test_submission_per_lesson")
-    table = TestSubmission._meta.db_table
-    with connection.cursor() as cursor:
-        present = constraint.name in connection.introspection.get_constraints(cursor, table)
-    if present:
-        with connection.schema_editor() as editor:
-            editor.remove_constraint(TestSubmission, constraint)
-    yield
-    if not connection.in_atomic_block:  # a transactional test: its DDL is not rolled back, so put the table right
-        TestSubmission.objects.all().delete()
-        with connection.schema_editor() as editor:
-            editor.add_constraint(TestSubmission, constraint)
 
 
 @pytest.fixture

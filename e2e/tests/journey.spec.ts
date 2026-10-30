@@ -1,19 +1,22 @@
 /**
  * The learner's whole path, in a browser, against the fake model: the landing page's question, sign-up with consent,
- * the five-step setup, a suggested topic, a forward-only quick check, the lesson book, a test that can be submitted
- * once, its read-only results, and a second submission refused by the API.
+ * the five-step setup, a suggested topic, a forward-only quick check, the lesson book, a test that is marked the moment
+ * it is handed in, Try again with questions written for the retake, the history with its trend, and what the API
+ * refuses afterwards (an attempt that is over cannot change).
  *
  * Why: each screen is unit-tested, but the seams (the cookie after sign-up, the guard's redirects, a run that builds
- * while the page polls, a test that must not be answerable twice) only show in the browser.
+ * while the page polls, a retake that waits for its questions, an attempt that must not be answerable twice) only show
+ * in the browser.
  */
 import { expect, test } from "@playwright/test";
 
 import { Api } from "../support/api";
+import { AttemptPage } from "../support/attempt";
 import { E2E } from "../support/config";
 import { Deck } from "../support/deck";
 import { Onboarding } from "../support/onboarding";
 
-test("a learner signs up, learns, takes the test once and cannot take it again", async ({ page }) => {
+test("a learner signs up, learns, takes the test, tries again with new questions and sees the trend", async ({ page }) => {
   const api = new Api(page);
 
   // The topic typed on the landing page survives sign-up, and consent is required.
@@ -48,35 +51,51 @@ test("a learner signs up, learns, takes the test once and cannot take it again",
   await expect(page.getByRole("menuitem", { name: "Reload this lesson" })).toBeVisible();
   await page.keyboard.press("Escape");
 
-  // The test: answer every card, confirm, and the marks stay read-only.
+  // The test: start it, answer every card wrongly on purpose, hand it in, and the marks are there at once.
   await page.goto(`/lessons/${lessonId}?tab=test`);
-  const testDeck = new Deck(page);
-  const start = page.getByRole("button", { name: /start|begin|take the test/i });
-  await start.or(testDeck.next).first().waitFor(); // an introduction first, or straight to the cards
-  if (await start.count()) await start.first().click();
-  await testDeck.next.waitFor();
-  for (let cards = 0; cards < 40; cards++) {
-    await page.waitForTimeout(450);
-    const radios = page.getByRole("radiogroup", { name: "Answers" }).getByRole("radio");
-    const boxes = page.getByRole("group", { name: "Answers" }).getByRole("checkbox"); // choose all that apply
-    if (await radios.count()) await radios.first().click();
-    else if (await boxes.count()) await boxes.first().click();
-    else await page.getByRole("textbox").first().fill("42");
-    const label = await testDeck.next.innerText();
-    await testDeck.next.click();
-    if (/submit/i.test(label)) break;
-  }
-  const confirm = page.getByRole("dialog");
-  if (await confirm.count()) await confirm.getByRole("button").last().click();
-  await api.until(lessonId, (lesson) => lesson.test_status === "graded");
-  await page.goto(`/lessons/${lessonId}?tab=test`);
-  await expect(page.getByText(/final/i).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: /retake|try the test again|answer again/i })).toHaveCount(0);
+  await page.getByRole("button", { name: /start the test/i }).click();
+  const attempt = new AttemptPage(page);
+  expect(await attempt.answerAll("wrong")).toBe(10);
+  await expect(page.getByText("Question by question")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/attempt 1/i).first()).toBeVisible();
+  await expect(page.getByText(/your test is final|only attempt|one attempt/i)).toHaveCount(0); // nothing says it is the last go
+  await expect(page.getByRole("button", { name: /try again/i })).toBeVisible();
+  const first = await api.call("GET", `/lessons/${lessonId}/test/attempts`);
+  expect(first.body.attempts).toHaveLength(1);
+  expect(first.body.attempts[0]).toMatchObject({ attempt_no: 1, status: "graded", band: "fail" });
 
-  // The API says no a second time, and never sends the answers with the questions.
-  const again = await api.call("POST", `/lessons/${lessonId}/test/submissions`, { answers: {} });
-  expect(again.status).toBe(409);
-  expect(again.body.code).toBe("already_submitted");
-  const questions = await api.call("GET", `/lessons/${lessonId}/test`);
-  expect(JSON.stringify(questions.body.questions)).not.toMatch(/correct_index|answer_key|marking|solution/);
+  // Try again: the questions are written for the retake, and the second go is a different set.
+  const started = page.waitForResponse((r) => r.url().endsWith(`/test/attempts`) && r.request().method() === "POST");
+  await page.getByRole("button", { name: /try again/i }).click();
+  expect((await started).status()).toBe(202); // a retake always generates
+  expect(await attempt.answerAll("right")).toBe(10);
+  await expect(page.getByText("Your tries")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/up 100 points on last time/i).first()).toBeVisible();
+  await expect(page.getByText("A new best").first()).toBeVisible();
+  await expect(page.getByText("100%").first()).toBeVisible();
+
+  const history = await api.call("GET", `/lessons/${lessonId}/test/attempts`);
+  expect(history.body.attempts.map((a: any) => [a.attempt_no, a.status, a.percent])).toEqual([[1, "graded", 0], [2, "graded", 100]]);
+  expect(history.body.trend.best_attempt_no).toBe(2);
+  const [one, two] = await Promise.all(
+    history.body.attempts.map((a: any) => api.call("GET", `/lessons/${lessonId}/test/attempts/${a.id}`)),
+  );
+  const asked = (reply: any) => reply.body.questions.map((q: any) => q.question);
+  expect(asked(one)).toHaveLength(10);
+  expect(asked(two).filter((text: string) => asked(one).includes(text))).toEqual([]); // no question comes back
+
+  // The lesson list says how the test went, whatever the last go was.
+  await page.goto("/lessons");
+  await expect(page.getByText(/Test done · best 100%/).first()).toBeVisible();
+
+  // An attempt that is over cannot change, the old single call is refused, and no answer key is ever sent.
+  const sealed = await api.call("PUT", `/lessons/${lessonId}/test/attempts/${two.body.id}/answers/t1`, { answer: 0 });
+  expect([sealed.status, sealed.body.code]).toEqual([409, "attempt_sealed"]);
+  const again = await api.call("POST", `/lessons/${lessonId}/test/attempts/${two.body.id}/submit`, {});
+  expect([again.status, again.body.code]).toEqual([409, "attempt_sealed"]);
+  const old = await api.call("POST", `/lessons/${lessonId}/test/submissions`, { answers: {} });
+  expect([old.status, old.body.code]).toEqual([409, "already_submitted"]);
+  const open = await api.call("GET", `/lessons/${lessonId}/test`);
+  expect(open.body.questions).toEqual([]); // nothing is open, so nothing is served
+  expect(JSON.stringify(open.body)).not.toMatch(/correct_index|correct_indices|answer_expr|tolerance|model_answer/);
 });

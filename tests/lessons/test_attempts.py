@@ -46,7 +46,7 @@ from lessons.errors import (
 from lessons.metering import ActionRefused
 from lessons.models import GraphRun, Stage, TestSubmission
 
-pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("many_attempts")]
+pytestmark = pytest.mark.django_db
 
 TEST = make_blueprint_test()
 QUESTIONS = TEST["questions"]

@@ -31,7 +31,7 @@ from graph.schemas import QuestionBatch
 from lessons.bank import QuestionBank
 from lessons.models import Lesson, Question, Stage, TestSubmission
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("many_attempts")]
+pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @pytest.fixture

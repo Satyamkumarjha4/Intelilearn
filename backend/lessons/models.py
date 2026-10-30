@@ -277,7 +277,6 @@ class TestSubmission(models.Model):
     class Meta:
         ordering = ["-attempt_no"]
         constraints = [
-            models.UniqueConstraint(fields=["lesson"], name="unique_test_submission_per_lesson"),
             models.UniqueConstraint(fields=["lesson", "attempt_no"], name="unique_attempt_no_per_lesson"),
             models.UniqueConstraint(
                 fields=["lesson"],
