@@ -20,6 +20,9 @@ Use cases:
 - another user's lesson and attempt are a 404, and no response carries an answer key
 - the lesson summary says how many attempts, the best and latest score, and whether one is open
 - the old single call keeps working for the first attempt
+- a retake that is still being prepared can be stopped through the run's cancel endpoint: the waiting attempt is gone
+  and its number is free again, the lesson stays ready and usable, the authorization settles cancelled once, and the
+  learner can start another retake that asks the gate afresh
 """
 
 import json
@@ -29,7 +32,7 @@ from rest_framework.throttling import SimpleRateThrottle
 from support.gates import RefusingGate, SharedCountingGate
 from support.lesson_data import make_blueprint_test, make_plan
 
-from lessons.models import Stage, TestSubmission
+from lessons.models import GraphRun, Lesson, Stage, TestSubmission
 
 pytestmark = pytest.mark.django_db
 
@@ -76,6 +79,55 @@ def graded(lesson, number, awarded):
             "topics_to_revisit": [],
         },
     )  # fmt: skip
+
+
+class TestStoppingAPreparingRetake:
+    def start(self, client, lesson):
+        graded(lesson, 1, 14)
+        return client.post(attempts_url(lesson)).json()
+
+    @pytest.mark.parametrize("status", ["queued", "running"])
+    def test_stopping_it_removes_the_waiting_attempt_and_leaves_the_lesson_ready(
+        self, signed_in_client, ready, queue, gate, status
+    ):
+        started = self.start(signed_in_client, ready)
+        GraphRun.objects.filter(pk=started["run_id"]).update(status=status)
+
+        response = signed_in_client.post(f"/api/runs/{started['run_id']}/cancel")
+
+        assert response.status_code == 202
+        assert not TestSubmission.objects.filter(lesson=ready, attempt_no=2).exists()
+        assert Lesson.objects.get(pk=ready.pk).stage == Stage.READY
+        assert GraphRun.objects.get(pk=started["run_id"]).status == "cancelled"
+        assert [(a, o.value) for a, o in gate.settled] == [("test.retake", "cancelled")]
+
+    def test_the_attempt_number_is_free_and_a_new_retake_asks_the_gate_again(
+        self, signed_in_client, ready, queue, gate
+    ):
+        started = self.start(signed_in_client, ready)
+        signed_in_client.post(f"/api/runs/{started['run_id']}/cancel")
+
+        again = signed_in_client.post(attempts_url(ready))
+
+        assert again.status_code == 202 and again.json()["attempt_no"] == 2
+        assert again.json()["run_id"] != started["run_id"] and len(gate.authorized) == 2
+
+    def test_stopping_twice_is_a_conflict_and_settles_once(self, signed_in_client, ready, queue, gate):
+        started = self.start(signed_in_client, ready)
+        signed_in_client.post(f"/api/runs/{started['run_id']}/cancel")
+
+        second = signed_in_client.post(f"/api/runs/{started['run_id']}/cancel")
+
+        assert second.status_code == 409 and second.json()["code"] == "run_ended" and len(gate.settled) == 1
+
+    def test_another_learner_cannot_stop_it(self, api_client, signed_in_client, ready, queue, other_user):
+        started = self.start(signed_in_client, ready)
+        api_client.credentials()
+        api_client.force_authenticate(other_user)
+
+        response = api_client.post(f"/api/runs/{started['run_id']}/cancel")
+
+        assert response.status_code == 404 and TestSubmission.objects.filter(lesson=ready, attempt_no=2).exists()
 
 
 class TestStart:
