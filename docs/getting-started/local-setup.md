@@ -148,6 +148,22 @@ make check           # lint + test: run before finishing any change
 make down            # stop; volumes are kept
 ```
 
+## Updating an install that has lessons in flight
+
+A lesson can wait at a quiz for days, with its place saved in the LangGraph checkpoint. A release that **removes or
+renames a graph node** leaves such a lesson pointing at nothing, and LangGraph does not say so: the lesson just never
+moves. So before (or right after) starting a build that changed the graph, **drain the stranded threads**:
+
+```bash
+docker compose exec backend python manage.py stranded_threads                 # list them, change nothing
+docker compose exec backend python manage.py stranded_threads --mark-failed   # end them
+```
+
+`--mark-failed` gives each lesson the message "This lesson was started before an update and cannot be carried on.
+Please delete it and start a new lesson." Lessons that are ready are never touched. Adding a node never strands a
+thread, so only releases that remove or rename one need this (9.2 removed `write_test`, so a deploy that crosses it needs this;
+9.3 only adds nodes). The release notes of such a release say so.
+
 ## Tests
 
 - Tests live in the repo-root `tests/` folder, **mirroring `backend/`**: `backend/core/sync.py` is tested in `tests/core/test_sync.py`.
