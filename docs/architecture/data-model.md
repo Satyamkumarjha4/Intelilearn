@@ -76,7 +76,7 @@ A lesson is a learner's request to learn one topic, from the diagnostic quiz thr
 | stage | enum | See the stage table below |
 | route | enum `prerequisite` \| `lesson` \| `mastery`, blank | Blank until the diagnostic (or a self-rating) sets it. A learner who aced the quick check and chose the Expert lesson goes from `mastery` to `lesson`, so the lesson has a test |
 | entry | enum `diagnostic` \| `self_rating` \| `followup` (\| `quiz_result` in a later phase), default `diagnostic` | How the level is found: the quick check, the learner's own rating, or (a follow-up) what the lesson is for |
-| intent | enum `lesson` \| `sheets`, default `lesson` | What was asked for. Only a lesson can be asked for until study sheets from a topic arrive (9.5) |
+| intent | enum `lesson` \| `sheets`, default `lesson` | What was asked for. `sheets` is a lesson that is only study sheets (a cheat sheet, a revision sheet, or both): no pages, no test, no route. Which sheets were asked for is not a column: it is in the start run's `payload["input"]["sheet_kinds"]` (`GET /lessons/{id}` shows it as `sheets_asked`). `Lesson.sheets_only` (a property, not a column) is true for `intent=sheets` and for a lesson that chose the sheets after a perfect quick check |
 | origin | enum `direct` \| `recommendation` \| `followup` \| `quiz_result`, default `direct` | Why the lesson was made. **Set and verified by the server**: a client may ask for `direct` or `recommendation`, and a recommendation must name the learner's own graded attempt and a topic it listed (`lessons/origins.py`) |
 | recommended_from | JSON, null | For `recommendation`: `{attempt_id, topic}` as verified |
 | level_source | enum `diagnostic` \| `self_rating` \| `test_score` \| `quiz_result`, blank | Where `level` came from. Migration 0012 credits `diagnostic` to every lesson that already had a level |
@@ -110,7 +110,7 @@ A lesson is a learner's request to learn one topic, from the diagnostic quiz thr
 | `awaiting_diagnostic` | Paused at `interrupt()` | Diagnostic quiz |
 | `awaiting_prerequisite` | Paused | Prerequisite quiz |
 | `awaiting_choice` | Paused (mastery) | "You know this well" and the choice: an Expert lesson, or the cheat sheet and revision sheet only (three sheet options for a lesson that was already waiting) |
-| `generating_material` | Writing the chosen sheet, or the two sheets together | Progress |
+| `generating_material` | Writing the chosen sheet, or the sheets together (also for a lesson that asked for sheets only, from the moment its level is being worked out) | Progress |
 | `generating_lesson` | Stages B and C | Pipeline progress |
 | `ready` | Done | Lesson viewer or sheet viewer |
 | `failed` | Unrecoverable error | Error and **Retry** (resumes from the last checkpoint) |
@@ -127,6 +127,8 @@ A lesson is a learner's request to learn one topic, from the diagnostic quiz thr
 | created_at | datetime | |
 
 `unique_together = (lesson, kind)`
+
+**Who has sheets, and no versions** (D16). Any ready lesson can have a cheat sheet and a revision sheet made for it; there is no column that says a lesson may, and no version column: a second request for a kind that exists is `409 already_exists`. A sheet made from an existing lesson is a `StudyMaterial` on that lesson (grounded in its content); a sheet from a topic is a `StudyMaterial` on a `Lesson(intent='sheets')`; the sheets of the mastery choice sit on the lesson that took the quick check (grounded in its concepts). One run writes the sheets asked for, and one persist step saves them. A practice sheet that exists is still served, but none can be asked for now (the kind stays so old ones load).
 
 ### `QuizAttempt`
 
@@ -229,7 +231,7 @@ There is one row per Celery execution segment of any graph, for example start, e
 | status | enum `queued` \| `running` \| `paused` \| `succeeded` \| `failed` \| `cancelled` | `paused` = ended at an `interrupt()` |
 | node_status | JSON | `{node: pending \| running \| done \| retrying \| degraded \| failed}` |
 | node_timings | JSON | `{node: {started_at, finished_at, retries}}`, kept by `GraphRunRecorder` next to `node_status`: the node's first start, its latest finish (null while it runs or waits) and how often the graph ran it again. Runs from before it existed have `{}`. The console's timeline reads it |
-| payload | JSON | What the run was started with. A resume after a quiz is `{"resume": <attempt id>}` and after the sheet choice `{"resume": <kind>}`; other graphs get `{"input": {...}}` (grading: `{"submission_id"}`; runtime repair: `{"repair_error", "expected_code_version"}`; extra sheet: `{"mastery_choice", "extra_material": true}`). A retry carries the answer the stopped run was about to give |
+| payload | JSON | What the run was started with. A resume after a quiz is `{"resume": <attempt id>}` and after the sheet choice `{"resume": <kind>}`; other graphs get `{"input": {...}}` (grading: `{"submission_id"}`; runtime repair: `{"repair_error", "expected_code_version"}`; more sheets: `{"sheet_kinds": [...], "extra_material": true}`; the start run of a lesson that asked for sheets: `{"sheet_kinds": [...]}`). A retry carries the answer the stopped run was about to give. A stopped flow run also carries `stopped_in`: the stage Retry puts the lesson back in, or `""` when the thread was not at a question (the lesson then stays `failed` until the first node that runs moves it) |
 | celery_task_id | char | |
 | error | text, blank | |
 | created_at | datetime | |
@@ -296,6 +298,8 @@ The tables `checkpoints`, `checkpoint_blobs`, `checkpoint_writes` and `checkpoin
 ## Level names and difficulties (migration 0006)
 
 Levels were novice, beginner, intermediate, advanced; they are now **beginner, foundation, proficient, expert**, and "beginner" is in both with different meanings. A stored document therefore says which it uses: `assessment` and `plan` carry `level_scheme: 2` when they use the new names, and `graph.levels.LevelScheme.level_of` reads one with `Level.parse` if it has the stamp and with `Level.parse_legacy` (old names by position) if it does not. The same marker is on the flow state of a new lesson. Migration `lessons/0006_level_and_difficulty_names` rewrites every lesson row once (`Lesson.level`, `assessment`, `plan`, and the difficulties below) and stamps the documents; **graph checkpoints are not rewritten**, and a checkpoint without the stamp is read as legacy. Undoing the migration is lossy for the two new difficulties (basic reads as easy, expert as hard).
+
+**Stage moves added with sheets from a topic.** `preparing_diagnostic → generating_material` (a rated lesson that asked for sheets goes straight to writing them) and `awaiting_diagnostic → generating_material` (a quick check that asked for sheets goes from the graded score to the assessment and the sheets, whatever the score).
 
 **Stage moves added with self-rating.** `preparing_diagnostic → generating_lesson` (a self-rated lesson has no quiz) and `awaiting_choice → generating_lesson` (the Expert lesson), next to the existing `awaiting_choice → generating_material` (sheets).
 

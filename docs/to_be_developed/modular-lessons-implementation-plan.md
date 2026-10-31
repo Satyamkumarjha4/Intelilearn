@@ -1,13 +1,20 @@
 # Implementation plan: Modular Lesson Parts
 
 **Spec:** [modular-lessons.md](modular-lessons.md) (finalized 2026-10-26)
-**Status:** Plan. Phases 9.0 (branches `refactor/levels`, `refactor/run-subject`, `refactor/action-gate`), 9.1 (`phase-9/questions`), 9.2 (`phase-9/retest`), 9.3 (`phase-9/self-rating`) and 9.4 (`phase-9/followups`) are built; phases 9.5 to 9.8 are not started.
+**Status:** Plan. Phases 9.0 (branches `refactor/levels`, `refactor/run-subject`, `refactor/action-gate`), 9.1 (`phase-9/questions`), 9.2 (`phase-9/retest`), 9.3 (`phase-9/self-rating`), 9.4 (`phase-9/followups`) and 9.5 (`phase-9/sheets`) are built; phases 9.6 to 9.8 are not started.
 **Last updated:** 2026-10-30 (third pass: doc fixes before phase 9.0, see the [changelog](#changelog))
 **Checked against:** the code and docs on branch `refactor/docs-layout` (Phases 0 to 8 built).
 
 This plan says what has to change to build the spec on top of today's Socra: architecture, database, API, graphs, marking, frontend, console, tests and docs. It also lists the places where the spec cannot be built as written, or where a different solution is cheaper and safer. Those are in [section 3](#3-where-the-spec-needs-rethinking) and [section 4](#4-decisions-needed). The product decisions in section 4 are now **confirmed** (D13 to D23); the technical ones are made and listed in [D24](#d24-technical-decisions-made-in-the-second-pass).
 
 ## Changelog
+
+Phase 9.5 (branch `phase-9/sheets`, from `main` after `phase-9/followups` was fast-forwarded into it). Decisions and changes made while building it.
+
+| # | Change | Sections touched |
+|---|---|---|
+| C36 | **Decisions from the 9.4 report.** (1) A follow-up carries its parent's `user_context` and **not** its concepts (the lesson, assessment and plan are the follow-up's own). (2) `POST /lessons/{id}/followups` refuses a sheets-only parent (`intent=sheets`, or a mastery lesson that chose sheets) with `400 sheets_only`: such a lesson has no test and never gets offers. (3) No grouping of follow-ups in the lesson list. (4) "Foundation lesson" naming stays. | 6.5, 8.3, 11.3 |
+| C37 | **Phase 9.5 built** (branch `phase-9/sheets`). Where the build differs from, or adds to, this plan: (a) **The sheets a lesson asked for are not a column.** They travel in the start run's payload (`input.sheet_kinds`, as an extra sheet's already did), and `GET /lessons/{id}` shows them as `sheets_asked`. (b) **`Lesson.sheets_only`** (a property: `intent=sheets`, or a mastery lesson that has made its choice) is the one rule for "no pages and no test", used by the follow-up refusal and exposed as `sheets_only` (with `intent`) on the list and the detail, so the frontend does not repeat it. (c) **A lesson that asked for sheets has no route.** It is neither a lesson nor a mastery lesson, so `route` stays empty and the quick check's score summary shows none; the page tells them apart by `intent`. (d) **One kind list.** `OfferedSheet` (cheat, revision) is what can be asked for; a practice sheet in `kind`/`kinds` is `400`, and the ones that exist still load (D8). The 409 names the requested kinds that exist. (e) **Grounding is a value** (`graph/grounding.py`): `lesson`, `quiz` or `none`, read once at `plan_sheets`; the quiz's concepts are listed once each; the prompt's "they already know this well" wording is now only for a learner who aced the check (a lesson that asked for sheets, whatever the score, is told its level or the lesson it studied). (f) **`Node.stage_of(state)`** lets a node shared with lessons work in `generating_material` for a sheets-only lesson; `preparing_diagnostic` and `awaiting_diagnostic` may go straight to it. (g) **The small graph is the same writer** (`plan_sheets` … `sheets_join`), so the single-sheet nodes remain only for lessons waiting at the old choice; a run queued before the change still writes its one kind. (h) **Metering:** `lesson.create` carries `sheets` and `grounding` (`quiz` or `none`); a sheets lesson's quick check asks `lesson.continue` once at submit with `choice: sheets_only`, `perfect` and the count; `sheet.generate` grounding is `lesson`, `quiz` or `none`. (i) **Root cause of the two stale-stage fixes (9.3 `b30adeb`, 9.4 `e431d6f`):** one cause, not two. Stop is noticed after the running step, so the stage read at the click can already be behind the thread; Retry restored it. The second patch had widened the first (one correction in `Node.__call__`, not two), but the cause stood. `StopPoint` now remembers a stage only when the thread is at a question (at the click for a run no worker started; from `FlowRunner._stopped`, which can read the thread, for one it had), and a lesson Retry leaves `failed` is moved by the first node that declares a stage. The waiting-to-building correction in `Node.__call__` is gone, and its unit-test rows became scenario tests that walk the graph from a failed lesson (`tests/graph/test_retry_stage.py`). `StopPoint` moved to `lessons/stop_point.py` (the runner imports it; `services.py` imports the runner through the erasure). (j) **Frontend:** the tab id is `sheets` (an old `?tab=lesson` link on a sheets-only lesson opens its first tab); `ChoiceCards` is the one radio-card group; the pipeline's sheet steps say "study sheets" for one or two and finish writing when the join starts. (k) `manage.py flow sheet` takes one or both kinds. | 5.2, 7.5, 8.1, 8.4, 9.1, 11.5, 14 |
 
 Phase 9.4 (branch `phase-9/followups`, from `main` after `phase-9/self-rating` was fast-forwarded into it). Decisions and changes made while building it.
 
@@ -1253,7 +1260,7 @@ Branch `phase-9/followups`.
 
 *Exit:* all six worked examples in the spec pass as a test table and also in the browser; a double click creates one lesson.
 
-### Phase 9.5: Modular sheets — M
+### Phase 9.5: Modular sheets — M ✅ built (see C36 and C37)
 
 Branch `phase-9/sheets`.
 

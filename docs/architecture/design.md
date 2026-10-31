@@ -38,6 +38,7 @@ Legend for status columns: ✅ in code · ◐ partly (functions still to wrap in
   - [4.19 `lessons` and `graph`: attempts and the questions pipeline (Phase 9.2)](#419-lessons-and-graph-attempts-and-the-questions-pipeline-phase-92)
   - [4.20 `graph` and `lessons`: the way in, lesson shapes and the mastery choice (Phase 9.3)](#420-graph-and-lessons-the-way-in-lesson-shapes-and-the-mastery-choice-phase-93)
   - [4.21 `graph` and `lessons`: follow-up lessons (Phase 9.4)](#421-graph-and-lessons-follow-up-lessons-phase-94)
+  - [4.22 `graph` and `lessons`: modular sheets (Phase 9.5)](#422-graph-and-lessons-modular-sheets-phase-95)
 - [5. How to extend](#5-how-to-extend)
 - [Refactor backlog](#refactor-backlog)
 
@@ -1403,7 +1404,7 @@ classDiagram
     HeroDemo ..> HeroResultCopy : picks
 ```
 
-- **Stop, Retry and the session.** `StopPoint` (`lessons/services.py`) is what `LessonService.cancel` leaves for `retry`: the stage the lesson was in and the answer the stopped run was about to give. `SessionProbe` asks the site's own `/api/session` whether the (httpOnly) session marker is there, so a signed-out page makes no `/auth/me` call to fail; `SetupMarker` is the one cookie the page itself sets, for the last onboarding step. `StopControl` keeps the stop dialog tied to the learner's action, not to the run. `ChartPalette` keeps provider and status colours in separate charts, enforced by `lib/console-charts.test.ts`.
+- **Stop, Retry and the session.** `StopPoint` (`lessons/stop_point.py`) is what `LessonService.cancel` leaves for `retry`: the answer the stopped run was about to give, and the stage the lesson waits in when the thread is at a question (see §4.22). `SessionProbe` asks the site's own `/api/session` whether the (httpOnly) session marker is there, so a signed-out page makes no `/auth/me` call to fail; `SetupMarker` is the one cookie the page itself sets, for the last onboarding step. `StopControl` keeps the stop dialog tied to the learner's action, not to the run. `ChartPalette` keeps provider and status colours in separate charts, enforced by `lib/console-charts.test.ts`.
 - Components call the shared `apiClient` instance (`apiClient.request<T>(path, options)`), so concurrent 401s share one refresh. `fetch` and the cookie reader are constructor parameters, so `lib/api.test.ts` drives the client with a scripted fake `fetch`.
 - The landing page (see [frontend.md](../reference/frontend.md#the-landing-page)) keeps every rule in a static class: `RouteGuard` is what the thin `proxy.ts` hook calls; `HeroDemo`, `Walkthrough` (an immutable value: each move returns the next state), `ScorePaths`, `SlideCycle`, `PendingTopic` (storage is a constructor parameter) and `RevealPolicy` are used by thin components in `components/landing/`. `DeckMotion` holds the fly-off and rise constants that `FlashcardDeck` and the try-it card share.
 - The console's Lesson runs page (`components/console/runs/`) follows the same split. `RunFilters` is the address (`?status=&job=&q=&run=`) as a value, and the only way a run id from the address reaches an API path (it must be a whole UUID). `RunText` writes every time, cost, status and stage; `RunTimeline.layout` turns timeline steps into phase groups, lanes and bar percentages (minimum width, waiting steps open-ended); `RunActions` runs Retry and Stop and explains each refusal. `RunFollower` keeps the open run current: events say *when* something changed and the console's detail says *what*, so it reloads on events and on a slow beat, falls back to polling when the stream is refused (the stream is open only to the learner who owns the run), spaces its loads for the console's throttle, and stops once the run is over. Its timers, stream and loader are constructor parameters, so `run-follower.test.ts` drives it with a fake clock.
@@ -2272,6 +2273,70 @@ classDiagram
 - **A new assessment source.** `FollowupSource` is one more class and one line in `AssessmentSources`; every source now also says where the lesson records its level as coming from (`level_source`: a follow-up's is the test score). A lesson made this way goes through the same entry segment as a self-rated one, and a Foundation follow-up, being a Beginner, gets its prerequisites planned as usual.
 - **Metering.** `FollowupService.create` is a metered run starter (`lesson.followup`, completed when the lesson is `ready`, size hint `followup_level`), found by the same scan test as the others; the endpoint counts against the new-lesson throttle.
 - **Frontend** (`frontend/lib/`): `FollowupOffers` (every case in words that never tell a learner they were wrong about their level; a pop-up the learner can skip, or a quiet note), `FollowupMaker` (makes the lesson, or opens the one that exists on a `409`), `FollowupLinks` (links both ways on the lesson page).
+
+### 4.22 `graph` and `lessons`: modular sheets (Phase 9.5)
+
+Study sheets can be asked for in three places, and all three are one writer. A ready lesson gets a cheat sheet, a revision sheet or both (the small `study_material` graph); a learner can ask for sheets **instead of** a lesson (`intent=sheets`, by quick check or by rating); and the choice after a perfect quick check writes both (built in 9.3). Sheets are never versioned: a kind exists once (D16).
+
+```mermaid
+classDiagram
+    direction LR
+    class SheetsSegment {
+        plan_sheets ‖ generate_sheet ‖ sheets_join
+    }
+    class SheetKinds {
+        +of(state)$ tuple
+        +CHOICE$
+    }
+    class SheetGrounding {
+        +of(state)$ Grounding
+    }
+    class Grounding {
+        <<frozen>>
+        +kind lesson|quiz|none
+        +audience mastered|level
+        +concepts / level / known / gaps / lesson
+    }
+    SheetGrounding ..> Grounding
+    SheetsSegment ..> SheetKinds
+    SheetsSegment ..> SheetGrounding
+    class SheetWriter {
+        +sheet(data, kind, feedback)
+    }
+    SheetsSegment ..> SheetWriter
+    class StudyMaterialPrompt
+    SheetWriter ..> StudyMaterialPrompt
+    class SheetRequest {
+        +kinds(asked)$ list
+        +of(lesson)$ list
+    }
+    class SheetGroundingHint {
+        +of(lesson)$ str
+    }
+    class MaterialService {
+        +request_extra(lesson, kinds, key) GraphRun
+        +listing(lesson) list
+    }
+    MaterialService ..> SheetRequest
+    MaterialService ..> SheetGroundingHint
+    LessonService ..> SheetRequest
+    QuizService ..> SheetRequest
+    class StopPoint {
+        +remember(run)
+        +settle(run, paused_at)
+        +of(subject)
+    }
+    FlowRunner ..> StopPoint
+    LessonService ..> StopPoint
+```
+
+- **One writer, three entries.** `SheetsSegment` is added to the main flow and to `StudyMaterialGraphBuilder`. A run writes `SheetKinds.of(state)` (the `sheet_kinds` it was given, cheat sheet first; both by default; a run queued before the change carries one `mastery_choice` kind and still writes it). `plan_sheets` leaves a ready lesson ready (`extra_material`); `sheets_join` saves every sheet asked for in one step.
+- **Grounding as a value.** `SheetGrounding.of(state)` finds what a sheet rests on once, at the plan, and returns a frozen `Grounding` stored as plain JSON in the state and handed to every branch (`BranchBuilder`). It is read in this order: a lesson with pages, a quick check, nothing but the topic and level. `StudyMaterialPrompt` tells the model who it writes for from it, and only a learner who aced the quick check is told they already know the topic.
+- **`intent=sheets` is routing, not a branch in every node.** `LevelRouter` sends every route to the assessment when `intent=sheets`; `LevelGate` plans no prerequisites for it; `IntentRouter` has a `sheets` destination (a graph without a sheets writer leaves it out, so the intent is refused with a reason). Nodes shared with lessons ask `Node.stage_of(state)` instead of reading a fixed `stage`, so they work in `generating_material` for sheets and `generating_lesson` for lessons.
+- **Requests.** `SheetRequest.kinds` is the one place that says which sheets can be asked for (the practice sheet is not). `MaterialService.request_extra` locks the lesson, refuses a kind that exists with `AlreadyExists(kinds)` before asking the gate or creating anything, and makes one run and one `sheet.generate` however many sheets. `LessonService.create` takes `sheets`, and `QuizService.authorization_for` asks `lesson.continue` once at submit with `choice: sheets_only` for a lesson that asked for sheets, whatever the score.
+- **Follow-ups and sheets.** `Lesson.sheets_only` (intent sheets, or route mastery once the choice is made) is the one rule for "no pages and no test": a follow-up of such a lesson is refused (`SheetsOnlyLesson`, 400), and the frontend reads the same flag. A follow-up carries its parent's note (`user_context`) and none of its concepts.
+- **Stop, Retry and the stage: one cause, one fix.** Stop is noticed after the step that is running, so a stage read at the click may be one the thread has left; Retry used to restore it, and the build failed at its last step. 9.3 and 9.4 each patched this in `Node.__call__` (the second widened the first); the cause is that the stage was trusted. `StopPoint` (`lessons/stop_point.py`, split out of `services.py`, which the runner would otherwise import in a cycle) now remembers a stage only when the thread is at a question: `remember` at the click for a run no worker had started, `settle` from `FlowRunner._stopped` once the worker has noticed the Stop and can read the thread's position. Otherwise the lesson stays `failed` until the first node with a stage moves it (the original rule, which is all `Node.__call__` does now).
+- **Frontend** (`frontend/lib/`): `NewLesson` (what to make and which sheets), `SheetTabs` and `SheetRequests` (which tabs, which can still be asked for and whether both, what a 409 says exists), `LessonTabs` (a Study sheets tab for every ready lesson, and only that for `sheets_only`), `Journey` (its own three steps), `PipelinePaths` (the sheets' steps for a sheets lesson, and for more sheets on a ready one), `LessonStatus` (pill and kind line). Components stay thin: `ChoiceCards` is the one radio-card group for all three questions of the new-lesson form.
 
 ## 5. How to extend
 

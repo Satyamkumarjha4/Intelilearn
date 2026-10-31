@@ -150,7 +150,12 @@ Specified in [modular-lessons.md](../to_be_developed/modular-lessons.md) and pla
   - [x] `Lesson.created_from_lesson` and `followup_level` with the one-per-level constraint; `FollowupService` and `POST /lessons/{id}/followups` (`lesson.followup` through the gate, `409 already_exists` with the lesson id, a real two-thread race test); deterministic names; `FollowupSource`
   - [x] `FollowupDialog`, the inline note for a low rater, links both ways on the lesson page; console funnel `retested` and `followups_started`
   - [x] From the 9.3 report: the "Basics check" copy, `seed_registry` binding nodes that have no binding, `entry` in the lesson list
-- [ ] 9.5 Modular sheets, any ready lesson, once per kind (`409` on repeat), no versions
+- [x] 9.5 Modular sheets, any ready lesson, once per kind (`409` on repeat), no versions:
+  - [x] `POST /lessons/{id}/materials` takes `kind` or `kinds` for any ready lesson (one run, one `sheet.generate`; `409 already_exists` with the kinds that exist, nothing made or asked); `GET` lists `[{kind, created_at}]`; no practice sheet can be asked for
+  - [x] One `SheetsSegment` for the mastery choice, `intent=sheets` lessons (quick check or rating, any score, no prerequisite quiz and no choice) and extra sheets on a ready lesson; sheets rest on the lesson, the quiz's concepts, or the topic and level
+  - [x] Metering hints for sheets (`sheets`, `grounding`, `choice: sheets_only`); `Lesson.sheets_only`; a follow-up refuses a sheets-only parent and carries the parent's note
+  - [x] New-lesson screen asks "A lesson" or "Study sheets" (and which); a Study sheets tab on every ready lesson with "Add both sheets"; a sheets-only lesson's own tabs, journey and pill
+  - [x] Root cause of the two stale-stage fixes: Retry restores a stage only when the thread is at a question (`StopPoint`), one correction fewer in `Node.__call__`
 - [ ] 9.6 Quick quiz: presets, calibration, up to 10 sources, difficulty mix, graphs, screens, code editor
 - [ ] 9.7 Concept tags, recommendations, deep links
 - [ ] 9.8 Drop the combined test call and `Lesson.final_test`; live and e2e suites; docs and spec moved out of `to_be_developed/`
