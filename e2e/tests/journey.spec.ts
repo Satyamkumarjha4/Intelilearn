@@ -57,6 +57,7 @@ test("a learner signs up, learns, takes the test, tries again with new questions
   const attempt = new AttemptPage(page);
   expect(await attempt.answerAll("wrong")).toBe(10);
   await expect(page.getByText("Question by question")).toBeVisible({ timeout: 30_000 });
+  await attempt.dismissOffer(); // a failed result offers a Foundation lesson, which this journey does not want
   await expect(page.getByText(/attempt 1/i).first()).toBeVisible();
   await expect(page.getByText(/your test is final|only attempt|one attempt/i)).toHaveCount(0); // nothing says it is the last go
   await expect(page.getByRole("button", { name: /try again/i })).toBeVisible();
@@ -70,6 +71,7 @@ test("a learner signs up, learns, takes the test, tries again with new questions
   expect((await started).status()).toBe(202); // a retake always generates
   expect(await attempt.answerAll("right")).toBe(10);
   await expect(page.getByText("Your tries")).toBeVisible({ timeout: 30_000 });
+  await attempt.dismissOffer(); // and an excellent one offers an Advanced lesson
   await expect(page.getByText(/up 100 points on last time/i).first()).toBeVisible();
   await expect(page.getByText("A new best").first()).toBeVisible();
   await expect(page.getByText("100%").first()).toBeVisible();

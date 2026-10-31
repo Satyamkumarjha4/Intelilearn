@@ -30,6 +30,16 @@ export class AttemptPage {
     return cards;
   }
 
+  /** A result can come with a pop-up offering a follow-up lesson. A learner who does not want it turns it down; so do tests
+   *  that are about something else. Waits briefly, because the result is read from the server after the hand-in. */
+  async dismissOffer(): Promise<void> {
+    const dialog = this.page.getByRole("dialog");
+    if (await dialog.waitFor({ timeout: 8_000 }).then(() => true, () => false)) {
+      await dialog.getByRole("button", { name: "Not now" }).click();
+      await dialog.waitFor({ state: "detached" });
+    }
+  }
+
   private async answerCard(mode: "right" | "wrong"): Promise<void> {
     const radios = this.page.getByRole("radiogroup", { name: "Answers" }).getByRole("radio");
     const boxes = this.page.getByRole("group", { name: "Answers" }).getByRole("checkbox");

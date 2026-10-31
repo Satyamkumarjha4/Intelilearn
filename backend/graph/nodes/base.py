@@ -30,7 +30,8 @@ class Node(ABC):
     #: lands just after the learner answered, Retry puts the lesson back to the stage the Stop found it in, and the
     #: thread (which went on to grade the answer, or to rate a lesson with no quiz) is already past it.
     stage: ClassVar[Stage | None] = None
-    #: the stages a lesson is in while it is being built, and the ones before them that a Retry can wrongly put it back in
+    #: the stages a lesson is in while it is being built, and the ones before them that a Retry can wrongly put it
+    #: back in
     BUILDING: ClassVar[frozenset[Stage]] = frozenset({Stage.GENERATING_LESSON, Stage.GENERATING_MATERIAL})
     WAITING: ClassVar[frozenset[Stage]] = frozenset(
         {Stage.PREPARING_DIAGNOSTIC, Stage.AWAITING_DIAGNOSTIC, Stage.AWAITING_PREREQUISITE, Stage.AWAITING_CHOICE}
