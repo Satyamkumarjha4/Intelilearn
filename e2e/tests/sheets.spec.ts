@@ -132,7 +132,7 @@ test("a lesson of sheets only can be asked for the sheet it lacks, and has no fo
   const api = new Api(page);
   await api.signUp(E2E.email("sheets-only"), E2E.PASSWORD);
   const created = await api.call("POST", "/lessons", {
-    topic: "Newton's laws", intent: "sheets", sheets: ["cheat_sheet"], entry: "self_rating", self_rating: 8,
+    topic: "Newton's laws", intent: "sheets", sheets: ["cheat_sheet"], entry: "self_rating", self_rating: 4,
   });
   expect(created.status).toBe(202);
   const lessonId = created.body.lesson_id as string;
