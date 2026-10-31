@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 import { FailedCard } from "@/components/lessons/failed-card";
 import { LessonHeader } from "@/components/lessons/lesson-header";
+import { FinishTestFirst } from "@/components/lessons/finish-test-first";
 import { LessonTabBar } from "@/components/lessons/lesson-tab-bar";
 import { LessonViewer } from "@/components/lessons/lesson-viewer";
 import { MasteryChoice } from "@/components/lessons/mastery-choice";
@@ -27,6 +28,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
 import { lessonsApi } from "@/lib/lessons-api";
 import { LessonTabs, type TabId } from "@/lib/lesson-tabs";
+import { TestGuard } from "@/lib/test-guard";
 import { PlainWarning } from "@/lib/plain-notes";
 import { StageView } from "@/lib/stage-view";
 import type { Entry, Intent, QuizKind, QuizResultSummary, Stage } from "@/lib/types";
@@ -135,9 +137,10 @@ function Workspace({ id }: { id: string }) {
     }
   };
 
+  const closed = <FinishTestFirst onGoToTest={() => selectTab("test")} />;
   const panels: Record<TabId, React.ReactNode> = {
-    lesson: <LessonViewer lessonId={lesson.id} testStatus={lesson.test_status} onGoToTest={() => selectTab("test")} />,
-    sheets: <StudyMaterialView lesson={lesson} pipeline={pipeline} onRequested={refresh} />,
+    lesson: TestGuard.blocks("lesson", lesson) ? closed : <LessonViewer lessonId={lesson.id} testStatus={lesson.test_status} onGoToTest={() => selectTab("test")} />,
+    sheets: TestGuard.blocks("sheets", lesson) ? closed : <StudyMaterialView lesson={lesson} pipeline={pipeline} onRequested={refresh} />,
     test: <TestTabPanel lessonId={lesson.id} lessonTitle={lesson.title || lesson.topic} onChanged={() => void refresh()} onOpenLesson={() => selectTab("lesson")} />,
     answers: lesson.results.diagnostic || lesson.results.prerequisite ? (
       <QuickCheckAnswers lesson={lesson} />

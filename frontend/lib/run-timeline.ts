@@ -25,6 +25,7 @@ const PHASES: { phase: Phase; label: string }[] = [
   { phase: "author", label: "Author" },
   { phase: "build", label: "Build" },
   { phase: "post", label: "After" },
+  { phase: "quiz", label: "Quick quiz" },
   { phase: "other", label: "Other" },
 ];
 

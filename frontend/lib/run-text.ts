@@ -1,4 +1,4 @@
-import type { CallOutcome, CallStatus, ConsoleGraph, Money, RunStatus, Stage } from "@/lib/types";
+import type { CallOutcome, CallStatus, ConsoleGraph, Money, QuizStage, RunStatus, Stage } from "@/lib/types";
 
 export type StatusTone = "ok" | "bad" | "run" | "wait" | "off";
 
@@ -7,6 +7,9 @@ const JOBS: Record<ConsoleGraph, string> = {
   study_material: "Study sheet",
   runtime_repair: "Repair",
   grade_test: "Grading",
+  question_bank: "New test questions",
+  quick_quiz: "Quick quiz",
+  grade_quiz: "Quiz grading",
 };
 
 const STATUSES: Record<RunStatus, { label: string; tone: StatusTone }> = {
@@ -18,7 +21,7 @@ const STATUSES: Record<RunStatus, { label: string; tone: StatusTone }> = {
   cancelled: { label: "Stopped", tone: "off" },
 };
 
-const STAGES: Record<Stage, string> = {
+const STAGES: Record<Stage | QuizStage, string> = {
   preparing_diagnostic: "Preparing quick check",
   awaiting_diagnostic: "Waiting for quick check",
   awaiting_prerequisite: "Waiting for basics check",
@@ -27,6 +30,8 @@ const STAGES: Record<Stage, string> = {
   generating_lesson: "Building lesson",
   ready: "Ready",
   failed: "Failed",
+  preparing: "Preparing quick quiz",
+  awaiting_calibration: "Waiting for calibration",
 };
 
 const MINUTE = 60;
@@ -76,7 +81,7 @@ export class RunText {
     return { label: call.status === "invalid_output" ? "invalid" : "failed", tone: "bad" };
   }
 
-  static stage(stage: Stage): string {
+  static stage(stage: Stage | QuizStage): string {
     return STAGES[stage] ?? String(stage).replaceAll("_", " ");
   }
 

@@ -2,7 +2,17 @@ import { ActionRefusedMessage } from "@/lib/action-refused";
 import { ApiError } from "@/lib/api";
 import type { DeckAnswer } from "@/lib/deck-session";
 import type { LessonsApi } from "@/lib/lessons-api";
-import type { LearnerTest, TestSubmission } from "@/lib/types";
+import type { AttemptStatus, LearnerTest, TestSubmission } from "@/lib/types";
+
+/**
+ * What the screens that take an attempt need of an API: the lesson's test and a quick quiz both have it. `A` is the
+ * attempt as that API reads it (a lesson's `TestSubmission`, a quiz's `QuizAttempt`).
+ */
+export type AttemptApi<A extends { status: AttemptStatus } = TestSubmission> = {
+  saveAnswer(ownerId: string, attemptId: string, questionId: string, answer: DeckAnswer): Promise<unknown>;
+  submitAttempt(ownerId: string, attemptId: string, answers?: Record<string, unknown>): Promise<{ run_id: string | null }>;
+  attempt(ownerId: string, attemptId: string): Promise<A>;
+};
 
 /** Follows a run to its end: calls `onEnd` once, and returns what stops following. */
 export type FollowRun = (runId: string, onEnd: () => void) => () => void;
@@ -134,11 +144,11 @@ export type LockResult = { ok: true } | { ok: false; sealed: boolean; message: s
  * click, a resumed attempt) counts as saved.
  */
 export class AnswerLocker {
-  constructor(private readonly api: Pick<LessonsApi, "saveAnswer">) {}
+  constructor(private readonly api: Pick<AttemptApi, "saveAnswer">) {}
 
-  async lock(lessonId: string, attemptId: string, questionId: string, answer: DeckAnswer): Promise<LockResult> {
+  async lock(ownerId: string, attemptId: string, questionId: string, answer: DeckAnswer): Promise<LockResult> {
     try {
-      await this.api.saveAnswer(lessonId, attemptId, questionId, answer);
+      await this.api.saveAnswer(ownerId, attemptId, questionId, answer);
       return { ok: true };
     } catch (error) {
       if (AttemptErrors.locked(error)) return { ok: true };
@@ -153,24 +163,24 @@ export class AnswerLocker {
  * in a run that is followed here, and the attempt is read again when it ends. An attempt that is already over (a second
  * tab, a double click) is simply read.
  */
-export class AttemptSubmitFlow {
+export class AttemptSubmitFlow<A extends { status: AttemptStatus } = TestSubmission> {
   private stop: (() => void) | null = null;
   private disposed = false;
 
   constructor(
-    private readonly api: Pick<LessonsApi, "submitAttempt" | "attempt">,
+    private readonly api: Pick<AttemptApi<A>, "submitAttempt" | "attempt">,
     private readonly follow: FollowRun,
   ) {}
 
   /** Resolves with the attempt as it ended (graded, or failed with its reason). `onUpdate` sees every state. */
-  async run(lessonId: string, attemptId: string, last: Record<string, unknown>, onUpdate: (attempt: TestSubmission) => void): Promise<TestSubmission> {
+  async run(ownerId: string, attemptId: string, last: Record<string, unknown>, onUpdate: (attempt: A) => void): Promise<A> {
     let runId: string | null = null;
     try {
-      runId = (await this.api.submitAttempt(lessonId, attemptId, last)).run_id;
+      runId = (await this.api.submitAttempt(ownerId, attemptId, last)).run_id;
     } catch (error) {
       if (!AttemptErrors.sealed(error)) throw error;
     }
-    let attempt = await this.api.attempt(lessonId, attemptId);
+    let attempt = await this.api.attempt(ownerId, attemptId);
     if (!this.disposed) onUpdate(attempt);
     if (attempt.status !== "grading" || !runId) return attempt;
     await new Promise<void>((resolve) => {
@@ -178,7 +188,7 @@ export class AttemptSubmitFlow {
       this.stop = this.follow(runId!, resolve);
     });
     this.stop = null;
-    attempt = await this.api.attempt(lessonId, attemptId);
+    attempt = await this.api.attempt(ownerId, attemptId);
     if (!this.disposed) onUpdate(attempt);
     return attempt;
   }

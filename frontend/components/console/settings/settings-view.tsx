@@ -130,6 +130,12 @@ export function SettingsView() {
             {numberRow("batch_max_long", "Long answers per batch", "At most this many in one call, unless only long answers are asked")}
           </Section>
 
+          <Section title="Quick quizzes">
+            {numberRow("quiz_max_source_lessons", "Lessons in one quiz", "At most 10; the questions are shared between them")}
+            {numberRow("quiz_source_token_budget", "Summary tokens per lesson", "How much of each lesson's plan the question writer is given")}
+            {numberRow("calibration_questions", "Calibration questions", "3 to 7; the spec's length is 5")}
+          </Section>
+
           <Section title="Quality checks">
             {numberRow("alignment_min_score", "Minimum level-fit score", "The judge scores 1–5 how well a lesson fits the learner")}
             {numberRow("alignment_max_rounds", "Rewrite rounds", "Times a lesson can be rewritten to fit better")}

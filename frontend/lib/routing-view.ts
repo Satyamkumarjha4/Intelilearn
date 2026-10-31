@@ -17,6 +17,7 @@ const PHASES: Record<NodePhase, string> = {
   author: "Author",
   build: "Build",
   post: "After",
+  quiz: "Quick quiz",
   onboarding: "Onboarding",
 };
 

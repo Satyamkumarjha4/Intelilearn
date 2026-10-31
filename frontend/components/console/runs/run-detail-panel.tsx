@@ -165,12 +165,13 @@ export function RunDetailPanel({ id, detail, error, onChanged, now }: Props) {
           </Button>
         )}
         <a
-          href={`/lessons/${detail.lesson_id}`}
+          href={detail.quiz_id ? `/quizzes/${detail.quiz_id}` : `/lessons/${detail.lesson_id}`}
           target="_blank"
           rel="noopener noreferrer"
           className={buttonVariants({ variant: "outline", size: "sm" })}
         >
-          <ExternalLinkIcon /> Open lesson<span className="sr-only"> (opens in a new tab)</span>
+          <ExternalLinkIcon /> {detail.quiz_id ? "Open quiz" : "Open lesson"}
+          <span className="sr-only"> (opens in a new tab)</span>
         </a>
         <Button size="sm" variant="outline" onClick={() => copy(detail.id, "Copied the run ID")}>
           <CopyIcon /> Copy run ID

@@ -63,7 +63,7 @@ export type Route = "prerequisite" | "lesson" | "mastery";
 /** What a learner asks for: a lesson (pages and a test) or study sheets only. */
 export type Intent = "lesson" | "sheets";
 /** How the learner's starting point was found: a quick check, or their own rating. */
-export type Entry = "diagnostic" | "self_rating" | "followup";
+export type Entry = "diagnostic" | "self_rating" | "followup" | "quiz_result";
 /** What kind of follow-up a lesson is (or an offer makes): the basics again, or the next step. */
 export type FollowupLevel = "foundation" | "advanced";
 /** What a finished attempt leads to, decided by the server. */
@@ -179,13 +179,15 @@ export type NodeStatus = "pending" | "running" | "done" | "retrying" | "degraded
 
 export type RunSnapshot = {
   status: RunStatus;
-  stage: Stage;
-  lesson_id: string;
+  /** A lesson stage, or a quiz stage for the run of a quick quiz. */
+  stage: Stage | QuizStage;
+  lesson_id: string | null;
+  quiz_id?: string | null;
   node_status: Record<string, NodeStatus>;
   error: string;
   /** When the run began (else when it was queued). */
   started_at?: string;
-  awaiting: "diagnostic" | "prerequisite" | "mastery_choice" | null;
+  awaiting: "diagnostic" | "prerequisite" | "mastery_choice" | "calibration" | null;
 };
 
 export type RunEvent =
@@ -194,7 +196,7 @@ export type RunEvent =
   | { name: "model"; data: { node: string; model: string; kind: "retry" | "fallback"; reason: string } }
   | { name: "warning"; data: { message: string } }
   | { name: "awaiting_input"; data: { kind: string; quiz_id?: string } }
-  | { name: "done"; data: { lesson_id: string; stage: Stage } }
+  | { name: "done"; data: { lesson_id?: string; quiz_id?: string; stage: Stage | QuizStage } }
   | { name: "error"; data: { message: string; code: string } }
   | { name: "cancelled"; data: Record<string, never> };
 
@@ -430,13 +432,118 @@ export type TrendPoint = {
 };
 export type AttemptHistory = { attempts: AttemptSummary[]; trend: { series: TrendPoint[]; best_attempt_no: number | null } };
 
+// --- Quick quizzes (docs/reference/api.md, "quick quizzes") ---
+
+export type QuizSourceType = "topic" | "lessons";
+export type QuizStage = "preparing" | "awaiting_calibration" | "ready" | "failed";
+/** How a quiz finds the level it is written at. */
+export type LevelMode = "self_rating" | "calibration" | "existing_score";
+/** The kinds of question a quiz can ask (there is no "code" here: code is a format of short and long answers). */
+export type QuizQuestionType = "mcq" | "msq" | "numerical" | "short_answer" | "long_answer";
+
+/** `POST /quick-quizzes/topic-traits`: which kinds suit a topic. `fallback`: not judged, so every kind is offered. */
+export type TopicTraits = { numerical: boolean; code: boolean; source: "model" | "cache" | "fallback" };
+
+export type QuizSummary = {
+  id: string;
+  topic: string;
+  source_type: QuizSourceType;
+  stage: QuizStage;
+  level: string;
+  num_questions: number;
+  attempts_count: number;
+  /** Percent of the latest graded attempt. */
+  latest_score: number | null;
+  best_score: number | null;
+  created_at: string;
+  updated_at: string;
+};
+export type QuizSourceRow = { lesson_id: string | null; title: string; level: string; share: number };
+export type QuizDetail = {
+  id: string;
+  topic: string;
+  source_type: QuizSourceType;
+  stage: QuizStage;
+  error: string;
+  /** Empty until the level is known. */
+  level: string;
+  level_source: string;
+  config: { num_questions: number; types: QuizQuestionType[]; level_mode: LevelMode; self_rating: number | null };
+  sources: QuizSourceRow[];
+  attempts: AttemptSummary[];
+  trend: AttemptHistory["trend"];
+  open_attempt: { id: string; attempt_no: number; status: AttemptStatus } | null;
+  /** The run making or retaking the quiz now. */
+  run_id: string | null;
+  can_create_lesson: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+/** The calibration walk: a question with no band and no hint, or the level once the five are answered. */
+export type CalibrationQuestion = { id: string; question: string; options: string[] };
+export type Calibration =
+  | { done: false; step: number; total: number; question: CalibrationQuestion }
+  | { done: true; level: string };
+
+/** What to do after an attempt: a topic quiz offers a lesson, a quiz from lessons says which to study. */
+export type QuizRecommendations = {
+  kind: "topic" | "lessons";
+  topics: string[];
+  lessons: { lesson_id: string | null; title: string; level: string; marks_lost: number; topics: string[] }[];
+};
+/** One attempt at a quiz: its questions while it is open, and its result once it is over. */
+export type QuizAttempt = {
+  id: string;
+  attempt_no: number;
+  status: AttemptStatus;
+  error: string;
+  questions: LearnerTestQuestion[];
+  total_marks: number | null;
+  answers: Record<string, unknown>;
+  result: ScoreCard | null;
+  awarded: number | null;
+  available: number | null;
+  band: ScoreBand;
+  duration_s: number | null;
+  recommendations: QuizRecommendations | null;
+  started_at: string;
+  submitted_at: string | null;
+  graded_at: string | null;
+};
+export type QuizSubmitted = {
+  attempt_id: string;
+  attempt_no: number;
+  run_id: string | null;
+  status: AttemptStatus;
+  awarded: number | null;
+  available: number | null;
+  band: ScoreBand;
+  result: ScoreCard | null;
+};
+export type QuizLevelRequest = { mode: LevelMode; rating?: number };
+export type QuizSourceRequest = { type: "topic"; topic: string } | { type: "lessons"; lesson_ids: string[] };
+export type QuizCreateRequest = {
+  source: QuizSourceRequest;
+  num_questions: number;
+  types: QuizQuestionType[];
+  level: QuizLevelRequest;
+};
+
 
 // --- The console (staff only, /api/console; docs/reference/api.md) -------------------------------------------------------------
 
 /** US dollars as a decimal string with six places, for example "0.012345" (`Number()` it only to draw). */
 export type Money = string;
 export type ConsoleRange = "today" | "7d" | "30d";
-export type ConsoleGraph = "flow" | "study_material" | "runtime_repair" | "grade_test";
+export type ConsoleGraph =
+  | "flow"
+  | "study_material"
+  | "runtime_repair"
+  | "grade_test"
+  | "question_bank"
+  | "quick_quiz"
+  | "grade_quiz";
 export type RunTrigger =
   | "start"
   | "resume_diagnostic"
@@ -445,9 +552,11 @@ export type RunTrigger =
   | "retry"
   | "repair"
   | "grade"
-  | "extra_material";
+  | "extra_material"
+  | "retake"
+  | "resume_calibration";
 export type Effort = "none" | "low" | "medium" | "high";
-export type NodePhase = "diagnose" | "author" | "build" | "post" | "onboarding";
+export type NodePhase = "diagnose" | "author" | "build" | "post" | "quiz" | "onboarding";
 /** worked first time, worked on a retry (attempt above 1), or did not work (any other status). */
 export type CallOutcome = "ok" | "retried" | "failed";
 export type CallStatus = "ok" | "retryable_error" | "fatal_error" | "invalid_output";
@@ -548,14 +657,16 @@ export type ConsoleUsage = {
 
 export type RunRow = {
   id: string;
-  lesson_id: string;
+  /** Null for the run of a quick quiz, which has `quiz_id` instead. */
+  lesson_id: string | null;
+  quiz_id: string | null;
   topic: string;
   learner_name: string;
   graph: ConsoleGraph;
   trigger: RunTrigger;
   status: RunStatus;
-  /** Where the lesson itself is. */
-  stage: Stage;
+  /** Where the lesson (or the quiz) itself is. */
+  stage: Stage | QuizStage;
   /** So far for a run in progress; null if it has not started. */
   duration_s: number | null;
   calls: number;
@@ -566,7 +677,7 @@ export type RunQuery = { status?: RunStatus | RunStatus[] | ""; graph?: ConsoleG
 export type TimelineState = "ran" | "retried" | "failed" | "waiting";
 export type TimelineStep = {
   node: string;
-  phase: "diagnose" | "author" | "build" | "post" | "other";
+  phase: "diagnose" | "author" | "build" | "post" | "quiz" | "other";
   /** Seconds after the run started; null for a run from before times were kept. */
   start_offset_s: number | null;
   /** Null while waiting for the learner, or when unknown. */
@@ -733,8 +844,12 @@ export type FlowSettingsValues = {
   question_batch_size: number;
   batch_max_long: number;
   batch_max_short: number;
-  /** Retakes of one lesson in 24 hours. */
+  /** Retakes of one lesson (or quick quiz) in 24 hours. */
   retakes_per_day: number;
+  /** The most lessons one quick quiz can combine, the tokens of summary per lesson, and the length of the calibration. */
+  quiz_max_source_lessons: number;
+  quiz_source_token_budget: number;
+  calibration_questions: number;
   alignment_min_score: number;
   alignment_max_rounds: number;
   render_check_max_rounds: number;

@@ -8,10 +8,10 @@
  * Use cases:
  * - writes a duration as seconds, minutes or hours, and "—" when there is none
  * - writes a cost with more places while it is under a cent, so a cheap run is not shown as free
- * - shortens a run id and names the job (lesson flow, study sheet, repair, grading)
+ * - shortens a run id and names the job (lesson flow, study sheet, repair, grading, new test questions, quick quiz)
  * - gives each run status a label and a tone (a paused run reads "Waiting for learner")
  * - gives a model call's result a label and a tone (worked, worked on a retry, invalid output, failed)
- * - describes where the lesson is in words, and what it does not know yet as it is
+ * - describes where the lesson (or the quick quiz) is in words, and what it does not know yet as it is
  * - writes how long ago a run started, and its exact time for the hover title
  */
 import { describe, expect, test } from "bun:test";
@@ -60,6 +60,9 @@ describe("ids and jobs", () => {
     ["study_material", "Study sheet"],
     ["runtime_repair", "Repair"],
     ["grade_test", "Grading"],
+    ["question_bank", "New test questions"],
+    ["quick_quiz", "Quick quiz"],
+    ["grade_quiz", "Quiz grading"],
   ] as const)("names the %s job %p", (graph, name) => {
     expect(RunText.job(graph)).toBe(name);
   });
@@ -107,6 +110,8 @@ describe("stage", () => {
     ["generating_lesson", "Building lesson"],
     ["ready", "Ready"],
     ["failed", "Failed"],
+    ["preparing", "Preparing quick quiz"],
+    ["awaiting_calibration", "Waiting for calibration"],
   ] as const)("%s reads %p", (stage, text) => {
     expect(RunText.stage(stage)).toBe(text);
   });

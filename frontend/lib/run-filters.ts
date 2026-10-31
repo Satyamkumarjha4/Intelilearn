@@ -20,6 +20,9 @@ export class RunFilters {
     { id: "study_material", label: "Study sheet" },
     { id: "runtime_repair", label: "Repair" },
     { id: "grade_test", label: "Grading" },
+    { id: "question_bank", label: "New test questions" },
+    { id: "quick_quiz", label: "Quick quiz" },
+    { id: "grade_quiz", label: "Quiz grading" },
   ];
 
   static readonly DEFAULT: RunFilterState = { status: "all", job: "", q: "", run: null };

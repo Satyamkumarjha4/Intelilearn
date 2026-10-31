@@ -122,6 +122,8 @@ describe("failed count", () => {
 describe("tabs and jobs", () => {
   test("offer All, Running, Failed and Finished, and the four kinds of job", () => {
     expect(RunFilters.TABS.map((t) => t.label)).toEqual(["All", "Running", "Failed", "Finished"]);
-    expect(RunFilters.JOBS.map((j) => j.label)).toEqual(["Lesson flow", "Study sheet", "Repair", "Grading"]);
+    expect(RunFilters.JOBS.map((j) => j.label)).toEqual([
+      "Lesson flow", "Study sheet", "Repair", "Grading", "New test questions", "Quick quiz", "Quiz grading",
+    ]);
   });
 });

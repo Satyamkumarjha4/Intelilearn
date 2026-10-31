@@ -3,8 +3,10 @@
 import { CheckIcon } from "lucide-react";
 import type { ComponentType } from "react";
 
+import { CodeEditorLoader } from "@/components/lessons/code-editor-loader";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { CodeLanguages } from "@/lib/code-languages";
 import { type AnswerValue, type InputQuestion, QuestionInputs, type Widget } from "@/lib/question-inputs";
 import { cn } from "@/lib/utils";
 
@@ -112,14 +114,12 @@ function Paragraph({ answer, label, disabled, onAnswer }: QuestionInputProps) {
 
 function Code({ question, answer, label, disabled, onAnswer }: QuestionInputProps) {
   return (
-    <Textarea
-      aria-label={question.language ? `${label} (${question.language})` : label}
-      rows={10}
-      spellCheck={false}
+    <CodeEditorLoader
+      label={question.language ? `${label} (${CodeLanguages.label(question.language)})` : label}
+      language={question.language}
       disabled={disabled}
       value={QuestionInputs.code.text(question, answer)}
-      onChange={(e) => onAnswer(QuestionInputs.code.isStarter(question, e.target.value) ? null : e.target.value)}
-      className="font-mono text-sm"
+      onChange={(text) => onAnswer(QuestionInputs.code.isStarter(question, text) ? null : text)}
     />
   );
 }
@@ -136,7 +136,7 @@ const WIDGETS: Record<Widget, ComponentType<QuestionInputProps>> = {
 
 /** Where a learner answers a question, whatever its kind; the test screen and the practice sheet both use it. */
 export function QuestionInputField(props: QuestionInputProps) {
-  const input = QuestionInputs.of(props.question.type);
+  const input = QuestionInputs.forQuestion(props.question);
   const Widget = WIDGETS[input.widget];
   const hint = input.instruction(props.question);
   return (

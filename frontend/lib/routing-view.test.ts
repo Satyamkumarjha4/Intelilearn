@@ -41,6 +41,7 @@ describe("phase", () => {
     ["author", "Author"],
     ["build", "Build"],
     ["post", "After"],
+    ["quiz", "Quick quiz"],
     ["onboarding", "Onboarding"],
   ] as const)("%s reads %s", (phase, label) => {
     expect(RoutingView.phase(phase)).toBe(label);

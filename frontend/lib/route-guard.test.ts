@@ -10,7 +10,7 @@
  * - a signed-in visitor to "/" goes to their lessons, or to onboarding if they have not finished it
  * - "/auth" is open to a signed-out visitor; a signed-in one is sent on like "/" does, to `next` when it is a safe path on
  *   this site (an address that could leave the site is ignored, however it is encoded)
- * - the app pages ("/lessons", "/profile", "/onboarding" and what is under them) send a signed-out visitor to
+ * - the app pages ("/lessons", "/quizzes", "/profile", "/onboarding" and what is under them) send a signed-out visitor to
  *   "/auth" with `next` set to where they were going, query string included
  * - a signed-in visitor who has not been onboarded is sent to "/onboarding" from the other app pages, with the page they
  *   wanted kept as `next`, and stays on it
@@ -70,7 +70,7 @@ describe("RouteGuard", () => {
     expect(RouteGuard.redirectFor("/auth", search, half)).toBe("/onboarding");
   });
 
-  test.each(["/lessons", "/lessons/abc", "/profile", "/onboarding"])("a signed-out visitor to %s is asked to sign in first", (path) => {
+  test.each(["/lessons", "/lessons/abc", "/quizzes", "/quizzes/new", "/quizzes/abc", "/profile", "/onboarding"])("a signed-out visitor to %s is asked to sign in first", (path) => {
     expect(RouteGuard.redirectFor(path, "", out)).toBe(`/auth?next=${encodeURIComponent(path)}`);
   });
 

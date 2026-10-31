@@ -121,7 +121,7 @@ class LongTextInput extends QuestionInput {
 class CodeInput extends QuestionInput {
   readonly type = "code";
   readonly widget = "code";
-  readonly label = "Code";
+  readonly label: string = "Code";
 
   /** What is in the box: the learner's code, or the starter code until they change it. */
   text(question: InputQuestion, answer: AnswerValue | undefined): string {
@@ -134,6 +134,16 @@ class CodeInput extends QuestionInput {
   }
 }
 
+/** A short or long answer about code: the same question, answered in the code editor instead of a text box. */
+class CodeAnswerInput extends CodeInput {
+  readonly label = "Code answer";
+  readonly answerLabel = "Your code";
+
+  instruction(): string {
+    return "Write your code in the editor";
+  }
+}
+
 /** The input of each kind of question, found by its `type`. */
 export class QuestionInputs {
   static readonly mcq = new McqInput();
@@ -142,6 +152,7 @@ export class QuestionInputs {
   static readonly short = new ShortTextInput();
   static readonly long = new LongTextInput();
   static readonly code = new CodeInput();
+  static readonly codeAnswer = new CodeAnswerInput();
 
   private static readonly BY_TYPE: Record<QuestionType, QuestionInput> = {
     mcq: QuestionInputs.mcq,
@@ -155,5 +166,14 @@ export class QuestionInputs {
   /** A kind the server may add before this page knows it is answered in a text box: still something to answer with. */
   static of(type: string): QuestionInput {
     return QuestionInputs.BY_TYPE[type as QuestionType] ?? QuestionInputs.long;
+  }
+
+  /**
+   * The input for a question as it was written: a short or long answer that names a language is about code and is
+   * answered in the code editor; anything else is its kind's input.
+   */
+  static forQuestion(question: Pick<InputQuestion, "type" | "language">): QuestionInput {
+    const written = question.type === "short_answer" || question.type === "long_answer";
+    return written && question.language?.trim() ? QuestionInputs.codeAnswer : QuestionInputs.of(question.type);
   }
 }

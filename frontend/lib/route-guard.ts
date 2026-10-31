@@ -3,7 +3,7 @@ import { RedirectPolicy } from "@/lib/safe-redirect";
 /** `settingUp`: in the last step of the setup, whose profile is saved already (see `SetupMarker`). */
 export type Visitor = { signedIn: boolean; onboarded: boolean; settingUp?: boolean };
 
-const PROTECTED = ["/onboarding", "/profile", "/lessons"];
+const PROTECTED = ["/onboarding", "/profile", "/lessons", "/quizzes"];
 
 /**
  * Where a visitor may be, from the marker cookies the API sets (backend/accounts/cookies.py). `proxy.ts` asks it and

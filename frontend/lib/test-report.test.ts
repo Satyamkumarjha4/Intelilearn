@@ -16,6 +16,7 @@
  *   missing when the marking scheme has none
  * - a multiple-select question lists the options picked and the right ones, one to a line
  * - a written answer's criteria say what each point earned
+ * - a short or long answer that names a language is shown as code, both what the learner wrote and the model answer
  * - a follow-up lesson is asked for on a topic, naming the lesson, within the API's length limits
  * - a refused follow-up (too many lessons) is explained, an action the server refused is told in its own words, and other
  *   failures fall back to a general message
@@ -157,5 +158,24 @@ describe("multiple select and criteria", () => {
       { text: "explains it", earned: "1 of 2", full: false },
     ]);
     expect(TestReport.criteria(row())).toEqual([]);
+  });
+});
+
+describe("a written answer about code", () => {
+  const coding = (type: "short_answer" | "long_answer") => ({ id: "t1", type, question: "Write f.", marks: 2, language: "python" });
+
+  test("is shown as code, both the learner's and the model answer", () => {
+    expect(TestReport.yourAnswer(coding("short_answer"), "def f(): pass")).toEqual({ text: "def f(): pass", code: true });
+    expect(TestReport.correctAnswer(coding("long_answer"), { model_answer: "def f():\n    return 1" })).toEqual({
+      text: "def f():\n    return 1", code: true,
+    });
+  });
+
+  test("a written answer with no language is plain text", () => {
+    const plain = { id: "t1", type: "short_answer" as const, question: "Why?", marks: 2 };
+
+    expect(TestReport.yourAnswer(plain, "Because.")).toEqual({ text: "Because." });
+    expect(TestReport.isCode(plain)).toBe(false);
+    expect(TestReport.isCode({ type: "code" })).toBe(true);
   });
 });

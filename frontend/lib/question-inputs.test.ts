@@ -16,6 +16,8 @@
  *   and mean nothing for an option that is not there or for other kinds
  * - blank text, an empty selection and a missing answer are unanswered; any option, even the first, is an answer
  * - untouched starter code is not an answer
+ * - a short or long answer that names a language is answered in the code editor, with its own label and hint; one that does
+ *   not name one, and every other kind, keeps its own input
  */
 import { describe, expect, test } from "bun:test";
 
@@ -161,5 +163,33 @@ describe("code", () => {
   test("untouched starter code is not an answer", () => {
     expect(QuestionInputs.code.isStarter(question, "def f():\n    pass")).toBe(true);
     expect(QuestionInputs.code.isStarter(question, "def f(): return 1")).toBe(false);
+  });
+});
+
+describe("a written answer about code", () => {
+  test.each(["short_answer", "long_answer"] as const)("a %s that names a language is answered in the code editor", (type) => {
+    const input = QuestionInputs.forQuestion({ type, language: "Python 3" });
+
+    expect(input.widget).toBe("code");
+    expect(input.label).toBe("Code answer");
+    expect(input.answerLabel).toBe("Your code");
+    expect(input.instruction({ type })).toBe("Write your code in the editor");
+  });
+
+  test.each(["short_answer", "long_answer"] as const)("a %s with no language keeps its text box", (type) => {
+    expect(QuestionInputs.forQuestion({ type }).widget).toBe(QuestionInputs.of(type).widget);
+    expect(QuestionInputs.forQuestion({ type, language: "  " }).widget).toBe(QuestionInputs.of(type).widget);
+  });
+
+  test("other kinds keep their own input whatever language they carry", () => {
+    expect(QuestionInputs.forQuestion({ type: "mcq", language: "python" })).toBe(QuestionInputs.mcq);
+    expect(QuestionInputs.forQuestion({ type: "code", language: "python" })).toBe(QuestionInputs.code);
+  });
+
+  test("an empty box is not an answer, and neither is starter code nobody changed", () => {
+    const input = QuestionInputs.forQuestion({ type: "short_answer", language: "python" });
+
+    expect(input.isAnswered("")).toBe(false);
+    expect(input.isAnswered("print(1)")).toBe(true);
   });
 });

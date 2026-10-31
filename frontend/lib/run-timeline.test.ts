@@ -12,7 +12,7 @@
  * - sizes the lanes by the run's own time when that is longer than the last step (a run waiting for the learner)
  * - draws a step that is still waiting from its start to the end of the run, with no duration written
  * - draws no bar for a step whose time was not kept, and writes "—" for its duration
- * - groups steps under their phase in the order diagnose, author, build, after, other, keeping start order inside it
+ * - groups steps under their phase in the order diagnose, author, build, after, quick quiz, other, keeping start order inside it
  * - leaves out a phase that has no steps, and handles a run with no steps at all
  * - writes the hover text of a bar (node, state, start, duration, whether it ran more than once) and where the
  *   hover text sits so it stays on screen
@@ -103,10 +103,11 @@ describe("bar position", () => {
 });
 
 describe("phases", () => {
-  test("groups steps by phase in the order diagnose, author, build, after, other", () => {
+  test("groups steps by phase in the order diagnose, author, build, after, quick quiz, other", () => {
     const view = RunTimeline.layout(
       [
-        step({ node: "g", phase: "other", start_offset_s: 1 }),
+        step({ node: "h", phase: "other", start_offset_s: 0.5 }),
+        step({ node: "g", phase: "quiz", start_offset_s: 1 }),
         step({ node: "f", phase: "post", start_offset_s: 2 }),
         step({ node: "e", phase: "build", start_offset_s: 3 }),
         step({ node: "d", phase: "author", start_offset_s: 4 }),
@@ -120,6 +121,7 @@ describe("phases", () => {
       ["author", "Author"],
       ["build", "Build"],
       ["post", "After"],
+      ["quiz", "Quick quiz"],
       ["other", "Other"],
     ]);
   });

@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpenIcon, LayoutDashboardIcon, LogOutIcon, UserIcon } from "lucide-react";
+import { BookOpenIcon, LayoutDashboardIcon, ListChecksIcon, LogOutIcon, UserIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -48,6 +48,11 @@ export function SiteHeader() {
         </Link>
 
         <div className="flex items-center gap-1">
+          {user ? (
+            <Link href="/quizzes" className={buttonVariants({ variant: "ghost", className: "gap-1.5" })}>
+              <ListChecksIcon aria-hidden="true" /> Quizzes
+            </Link>
+          ) : null}
           <ThemeToggle />
           {loading ? null : user ? (
             <DropdownMenu>
@@ -67,6 +72,9 @@ export function SiteHeader() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => router.push("/lessons")}>
                   <BookOpenIcon /> Your lessons
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push("/quizzes")}>
+                  <ListChecksIcon /> Your quizzes
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => router.push("/profile")}>
                   <UserIcon /> Profile

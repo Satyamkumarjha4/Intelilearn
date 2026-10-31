@@ -41,7 +41,12 @@ export class TestReport {
     if (question.type === "msq") return Array.isArray(value) ? TestReport.options(question, value) : null;
     if (typeof value !== "string" || value.trim() === "") return null;
     const text = question.type === "numerical" && question.unit ? `${value.trim()} ${question.unit}` : value;
-    return question.type === "code" ? { text, code: true } : { text };
+    return TestReport.isCode(question) ? { text, code: true } : { text };
+  }
+
+  /** A legacy code question, or a short or long answer that names a language (the answer is code). */
+  static isCode(question: Pick<LearnerTestQuestion, "type" | "language">): boolean {
+    return question.type === "code" || Boolean(question.language?.trim());
   }
 
   /** The right answer, from the marking scheme the server shows once the test is submitted; null when it has none. */
@@ -54,7 +59,7 @@ export class TestReport {
       return { text: `${solution.answer}${unit}` };
     }
     if (question.type === "code") return typeof solution.reference_solution === "string" ? { text: solution.reference_solution, code: true } : null;
-    return typeof solution.model_answer === "string" ? { text: solution.model_answer } : null;
+    return typeof solution.model_answer === "string" ? { text: solution.model_answer, ...(TestReport.isCode(question) ? { code: true } : {}) } : null;
   }
 
   /** The request that makes a lesson on a topic worth another look. */
