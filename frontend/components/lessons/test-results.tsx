@@ -11,8 +11,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AttemptHistory } from "@/components/lessons/attempt-history";
+import { FollowupDialog } from "@/components/lessons/followup-dialog";
+import { FollowupOfferCard } from "@/components/lessons/followup-offer-card";
 import { ApiError } from "@/lib/api";
 import { AttemptHistoryView } from "@/lib/attempt-history";
+import { FollowupOffers } from "@/lib/followup-offer";
 import { DateText } from "@/lib/format";
 import { lessonsApi } from "@/lib/lessons-api";
 import { TestResultView } from "@/lib/test-session";
@@ -29,6 +32,8 @@ type Props = {
   /** The attempt on show: just handed in, or chosen from the history. */
   attempt: TestSubmission;
   history: History | null;
+  /** The result was just handed in (not chosen from the history): an offer that comes with it opens as a pop-up. */
+  fresh?: boolean;
   /** Asking for another try is on its way. */
   trying: boolean;
   onTryAgain: () => void;
@@ -42,8 +47,10 @@ type Props = {
  * seconds); if that failed it says so and offers to mark again on the answers already given. Below, the history of
  * every try.
  */
-export function TestResults({ lessonId, lessonTitle, attempt: shown, history, trying, onTryAgain, onSelect, onOpenLesson }: Props) {
+export function TestResults({ lessonId, lessonTitle, attempt: shown, history, fresh = false, trying, onTryAgain, onSelect, onOpenLesson }: Props) {
   const [attempt, setAttempt] = useState<TestSubmission>(shown);
+  const offer = attempt.status === "graded" ? FollowupOffers.parse(attempt.followup) : null;
+  const [dialogOpen, setDialogOpen] = useState(fresh && offer !== null && FollowupOffers.view(offer).surface === "dialog");
   const [regrading, setRegrading] = useState(false);
   const grading = attempt.status === "grading";
 
@@ -108,6 +115,10 @@ export function TestResults({ lessonId, lessonTitle, attempt: shown, history, tr
       )}
 
       {card && attempt.status === "graded" && <Hero card={card} changes={row?.changes ?? []} />}
+      {offer && <FollowupOfferCard lessonId={lessonId} offer={offer} />}
+      {offer && FollowupOffers.view(offer).surface === "dialog" && (
+        <FollowupDialog lessonId={lessonId} offer={offer} open={dialogOpen} onOpenChange={setDialogOpen} />
+      )}
       {attempt.status === "graded" && (
         <Card>
           <CardContent className="flex flex-wrap items-center justify-between gap-3">

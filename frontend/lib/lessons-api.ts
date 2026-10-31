@@ -5,6 +5,7 @@ import type {
   AttemptStarted,
   AttemptSubmitted,
   Answer,
+  FollowupLevel,
   LearnerTest,
   LessonDetail,
   LessonDocument,
@@ -62,6 +63,11 @@ export class LessonsApi {
       });
     }
     return this.client.request("/lessons", { method: "POST", body });
+  }
+
+  /** A Foundation or Advanced lesson from a ready one. `409 already_exists` carries the id of the one that exists. */
+  makeFollowup(id: string, level: FollowupLevel): Promise<{ lesson_id: string; run_id: string }> {
+    return this.client.request(`/lessons/${id}/followups`, { method: "POST", body: { level } });
   }
 
   get(id: string): Promise<LessonDetail> {

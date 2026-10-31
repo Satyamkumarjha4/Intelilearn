@@ -61,7 +61,7 @@ function overview(patch: Partial<ConsoleOverview> = {}): ConsoleOverview {
     calls: { total: 1476, ok: 1200, retried: 84, failed: 192, fallbacks: 61 },
     daily_spend: [],
     daily_activity: [],
-    funnel: { started: 48, quick_check_done: 41, built: 33, test_submitted: 19, study_sheets: 6, failed_building: 5, waiting: 3 },
+    funnel: { started: 48, quick_check_done: 41, built: 33, test_submitted: 19, retested: 8, followups_started: 5, study_sheets: 6, failed_building: 5, waiting: 3 },
     slowest_steps: [],
     attention: [],
     ...patch,
@@ -316,6 +316,8 @@ describe("FunnelChart", () => {
       ["quick_check_done", 41, 85],
       ["built", 33, 69],
       ["test_submitted", 19, 40],
+      ["retested", 8, 17],
+      ["followups_started", 5, 10],
       ["study_sheets", 6, 13],
     ]);
   });
@@ -327,8 +329,8 @@ describe("FunnelChart", () => {
   });
 
   test("has no notes when everything got through, and no shares when nothing started", () => {
-    const clean = FunnelChart.rows({ started: 4, quick_check_done: 4, built: 4, test_submitted: 4, study_sheets: 0, failed_building: 0, waiting: 0 });
-    const empty = FunnelChart.rows({ started: 0, quick_check_done: 0, built: 0, test_submitted: 0, study_sheets: 0, failed_building: 0, waiting: 0 });
+    const clean = FunnelChart.rows({ started: 4, quick_check_done: 4, built: 4, test_submitted: 4, retested: 1, followups_started: 0, study_sheets: 0, failed_building: 0, waiting: 0 });
+    const empty = FunnelChart.rows({ started: 0, quick_check_done: 0, built: 0, test_submitted: 0, retested: 0, followups_started: 0, study_sheets: 0, failed_building: 0, waiting: 0 });
 
     expect(clean[1]!.note).toBeUndefined();
     expect(clean[2]!.note).toBeUndefined();

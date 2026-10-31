@@ -12,7 +12,9 @@
  *   percent) or could not be marked, and a ready mastery lesson counts its sheets
  * - a ready lesson says "Ready" until all three of its pages have been read here, then "Take the test"; once the test is
  *   marked it says "Test done · best 77%", whatever was read; a retake in progress keeps the best score in view
- * - the kind line is "Lesson · <level>", "Study sheets · Mastered" or "Quick check" before the route is known
+ * - the kind line is "Lesson · <level>", "Study sheets · Mastered" or "Quick check" before the route is known, and a lesson
+ *   made from a test result says which follow-up it is
+ * - a lesson with no quick check (a rating, or a follow-up) is never described as preparing one
  * - a lesson needs the learner when it waits for an answer, or is a ready lesson whose test is not taken
  * - the filter chips map to stages (several at once), and All to none
  * - times read as just now, minutes, hours, yesterday, days, then a date
@@ -24,9 +26,24 @@ import { LessonStatus, LESSON_FILTERS } from "./lesson-status";
 import type { LessonSummary } from "./types";
 
 const lesson = (over: Partial<LessonSummary> = {}): LessonSummary => ({
-  id: "1", topic: "T", stage: "ready", route: "lesson", title: "", level: "beginner", created_at: "2026-10-20T10:00:00Z",
+  id: "1", topic: "T", stage: "ready", route: "lesson", title: "", level: "beginner", entry: "diagnostic", followup_level: "", created_at: "2026-10-20T10:00:00Z",
   updated_at: "2026-10-20T10:00:00Z", test_status: "not_started", test_score: null, latest_score: null, best_score: null,
   attempts_count: 0, has_open_attempt: false, material_count: 0, ...over,
+});
+
+describe("a lesson with no quick check", () => {
+  test.each(["self_rating", "followup"] as const)("%s is not described as preparing a quick check", (entry) => {
+    expect(LessonStatus.of(lesson({ stage: "preparing_diagnostic", entry }))).toEqual({
+      label: "Getting your lesson started", tone: "primary", spinner: true, action: "Watch",
+    });
+    expect(LessonStatus.of(lesson({ stage: "preparing_diagnostic", entry: "diagnostic" })).label).toBe("Preparing your quick check");
+  });
+
+  test("a follow-up says which kind it is on its kind line, and a plain lesson does not", () => {
+    expect(LessonStatus.kind(lesson({ followup_level: "foundation" }))).toBe("Foundation follow-up");
+    expect(LessonStatus.kind(lesson({ followup_level: "advanced" }))).toBe("Advanced follow-up");
+    expect(LessonStatus.kind(lesson({ followup_level: "" }))).toBe("Lesson · Beginner");
+  });
 });
 
 describe("pill", () => {

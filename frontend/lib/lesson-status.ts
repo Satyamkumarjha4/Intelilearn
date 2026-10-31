@@ -23,6 +23,8 @@ export class LessonStatus {
   static of(lesson: LessonSummary, pagesRead = 0): Pill {
     switch (lesson.stage) {
       case "preparing_diagnostic":
+        // A lesson with no quick check (a rating, or a follow-up) never prepares one.
+        if (lesson.entry && lesson.entry !== "diagnostic") return pill("Getting your lesson started", "primary", "Watch", true);
         return pill("Preparing your quick check", "primary", "Watch", true);
       case "awaiting_diagnostic":
         return pill("Your quick check is waiting", "marigold", "Start");
@@ -42,8 +44,10 @@ export class LessonStatus {
   }
 
   /** "Lesson · Beginner", "Study sheets · Mastered", or "Quick check" while the route is not known yet. */
-  static kind(lesson: Pick<LessonSummary, "route" | "level">): string {
+  static kind(lesson: Pick<LessonSummary, "route" | "level"> & { followup_level?: LessonSummary["followup_level"] }): string {
     if (lesson.route === "mastery") return "Study sheets · Mastered";
+    if (lesson.followup_level === "foundation") return "Foundation follow-up";
+    if (lesson.followup_level === "advanced") return "Advanced follow-up";
     if (!lesson.route) return "Quick check";
     const level = lesson.level.trim();
     return level ? `Lesson · ${level.charAt(0).toUpperCase()}${level.slice(1).toLowerCase()}` : "Lesson";

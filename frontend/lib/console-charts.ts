@@ -299,6 +299,8 @@ export class FunnelChart {
       row("quick_check_done", "Quick check done", funnel.quick_check_done, unanswered > 0 ? `${ConsoleFormat.count(unanswered)} have not answered it` : ""),
       row("built", "Lesson built", funnel.built, stuck.filter(Boolean).join(" · ")),
       row("test_submitted", "Test submitted", funnel.test_submitted),
+      row("retested", "Tried the test again", funnel.retested),
+      row("followups_started", "Made a follow-up lesson", funnel.followups_started, "A Foundation or an Advanced lesson, made from a result"),
       row("study_sheets", "Study sheets", funnel.study_sheets, "Learners who answered the whole quick check right"),
     ];
   }

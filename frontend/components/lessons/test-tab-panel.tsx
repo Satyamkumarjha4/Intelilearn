@@ -23,7 +23,7 @@ type View =
   | { kind: "intro" }
   | { kind: "preparing" }
   | { kind: "taking"; test: LearnerTest }
-  | { kind: "results"; attempt: TestSubmission };
+  | { kind: "results"; attempt: TestSubmission; fresh?: boolean };
 
 /**
  * The Test tab. It shows whatever the server says the test is: an attempt to take (resumed after a refresh, with the
@@ -109,7 +109,7 @@ export function TestTabPanel({ lessonId, lessonTitle, onChanged, onOpenLesson }:
   }, [lessonId]);
 
   const handedIn = async (attempt: TestSubmission) => {
-    setView({ kind: "results", attempt });
+    setView({ kind: "results", attempt, fresh: true });
     setHistory(await lessonsApi.attempts(lessonId));
     onChanged();
   };
@@ -146,6 +146,7 @@ export function TestTabPanel({ lessonId, lessonTitle, onChanged, onOpenLesson }:
           lessonTitle={lessonTitle}
           attempt={view.attempt}
           history={history}
+          fresh={view.fresh}
           trying={trying}
           onTryAgain={() => void begin()}
           onSelect={(id) => void select(id)}

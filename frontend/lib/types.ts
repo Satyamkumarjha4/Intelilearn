@@ -61,7 +61,15 @@ export type Stage =
 
 export type Route = "prerequisite" | "lesson" | "mastery";
 /** How the learner's starting point was found: a quick check, or their own rating. */
-export type Entry = "diagnostic" | "self_rating";
+export type Entry = "diagnostic" | "self_rating" | "followup";
+/** What kind of follow-up a lesson is (or an offer makes): the basics again, or the next step. */
+export type FollowupLevel = "foundation" | "advanced";
+/** What a finished attempt leads to, decided by the server. */
+export type OfferKind = "foundation" | "advanced" | "inline_suggestion";
+export type OfferAction = "generate" | "revisit" | "open" | "revisit_or_related";
+export type FollowupOffer = { kind: OfferKind; action: OfferAction; lesson_id: string | null };
+/** A lesson this one is linked to. */
+export type LessonLink = { id: string; title: string };
 export type Origin = "direct" | "recommendation" | "followup" | "quiz_result";
 export type LevelSource = "diagnostic" | "self_rating" | "test_score" | "quiz_result" | "";
 /** What a learner who aced the quick check can pick; a sheet kind is what a lesson already waiting at the old choice takes. */
@@ -76,6 +84,10 @@ export type LessonSummary = {
   route: Route | "";
   title: string;
   level: string;
+  /** How the learner's level was found. */
+  entry: Entry;
+  /** What kind of follow-up this lesson is; empty for a lesson that is not one. */
+  followup_level: FollowupLevel | "";
   created_at: string;
   updated_at: string;
   /** How the latest attempt at the test stands. */
@@ -104,7 +116,7 @@ export type QuizResultSummary = {
 export type Assessment = {
   level: string;
   /** Where the level came from; an assessment from before self-rating has none. */
-  source?: LevelSource;
+  source?: LevelSource | "followup";
   known_concepts: string[];
   gaps: string[];
   start_point: string;
@@ -112,7 +124,10 @@ export type Assessment = {
 };
 
 export type LessonDetail = LessonSummary & {
-  entry: Entry;
+  /** The lesson this one was made from, if it still exists; `level` is what kind of follow-up this one is. */
+  followup_of: (LessonLink & { level: FollowupLevel }) | null;
+  /** The follow-up lessons made from this one; null for a level not made yet. */
+  followups: Record<FollowupLevel, LessonLink | null>;
   intent: "lesson" | "sheets";
   origin: Origin;
   level_source: LevelSource;
@@ -322,8 +337,8 @@ export type TestSubmission = {
   band: ScoreBand;
   /** Seconds, measured by the server. */
   duration_s: number | null;
-  /** The offer that followed the score (none until follow-up lessons exist). */
-  followup: Record<string, unknown> | null;
+  /** The offer that followed the score, or null. */
+  followup: FollowupOffer | null;
   started_at: string;
   submitted_at: string | null;
   graded_at: string | null;
@@ -378,7 +393,7 @@ export type AttemptSubmitted = {
   awarded?: number | null;
   available?: number | null;
   band?: ScoreBand;
-  followup?: Record<string, unknown> | null;
+  followup?: FollowupOffer | null;
   result?: ScoreCard | null;
 };
 export type AttemptSummary = {
@@ -463,6 +478,8 @@ export type ConsoleOverview = {
     quick_check_done: number;
     built: number;
     test_submitted: number;
+    retested: number;
+    followups_started: number;
     study_sheets: number;
     failed_building: number;
     waiting: number;

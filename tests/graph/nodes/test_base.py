@@ -3,15 +3,17 @@
 Why: LangGraph runs nodes on pool threads, and Django gives each thread its own database connection. If a node left
 its connection open, every lesson run would leak connections until Postgres refused new ones. A node that declares its
 stage also keeps the lesson's stage honest when the thread has moved on without it: after a Stop and a Retry the
-lesson is put back in the stage it was stopped in, which for a lesson that skips the quick check can be one the thread
-has already left, and the build would then fail at its last step.
+lesson is put back in the stage it was stopped in, which can be one the thread has already left (a Stop that lands just
+after a quiz is answered, or before a self-rated lesson's first step finishes), and the build would then fail at its
+last step.
 
 Use cases:
 - a node run on a worker thread closes that thread's database connection when it ends, even if it raised
 - a node run on the main thread (tests, management commands) leaves the connection alone
-- a node that declares a stage moves a failed lesson to it (a Retry), and a lesson still reading "preparing the quick
-  check" to it (a self-rated lesson put back too far by a Retry), but never moves a lesson that is in any other stage,
-  and a node that declares no stage never moves it
+- a node of a building stage moves a failed lesson to it (a Retry), and a lesson still reading as one of the waiting
+  stages (preparing, or waiting for a quiz or the choice) to it, as a Retry can put it back too far; a node never moves
+  a lesson that is in any other stage, a node of a waiting stage never moves a lesson on, and a node that declares no
+  stage never moves it
 """
 
 import threading
@@ -79,8 +81,12 @@ class Declares(Node):
     (Stage.PREPARING_DIAGNOSTIC, Stage.GENERATING_LESSON, Stage.GENERATING_LESSON),
     (Stage.PREPARING_DIAGNOSTIC, Stage.GENERATING_MATERIAL, Stage.GENERATING_MATERIAL),
     (Stage.PREPARING_DIAGNOSTIC, Stage.PREPARING_DIAGNOSTIC, Stage.PREPARING_DIAGNOSTIC),
-    (Stage.AWAITING_CHOICE, Stage.GENERATING_LESSON, Stage.AWAITING_CHOICE),  # the node moves that one itself
-    (Stage.AWAITING_DIAGNOSTIC, Stage.GENERATING_LESSON, Stage.AWAITING_DIAGNOSTIC),
+    (Stage.AWAITING_DIAGNOSTIC, Stage.GENERATING_LESSON, Stage.GENERATING_LESSON),  # a Stop just after the answer
+    (Stage.AWAITING_PREREQUISITE, Stage.GENERATING_LESSON, Stage.GENERATING_LESSON),
+    (Stage.AWAITING_CHOICE, Stage.GENERATING_LESSON, Stage.GENERATING_LESSON),
+    (Stage.AWAITING_CHOICE, Stage.GENERATING_MATERIAL, Stage.GENERATING_MATERIAL),
+    (Stage.AWAITING_DIAGNOSTIC, Stage.AWAITING_PREREQUISITE, Stage.AWAITING_DIAGNOSTIC),  # a waiting stage never moves on
+    (Stage.GENERATING_MATERIAL, Stage.GENERATING_LESSON, Stage.GENERATING_MATERIAL),
     (Stage.GENERATING_LESSON, Stage.PREPARING_DIAGNOSTIC, Stage.GENERATING_LESSON),
     (Stage.READY, Stage.GENERATING_LESSON, Stage.READY),
 ])  # fmt: skip

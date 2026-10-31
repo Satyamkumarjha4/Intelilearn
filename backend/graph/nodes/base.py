@@ -26,17 +26,22 @@ class Node(ABC):
     name: ClassVar[str]
     #: The stage the lesson is in while this node works. A node that runs while the lesson is `failed` means a
     #: retry resumed here, so the lesson goes back to this stage without the node having to know about retries. A node
-    #: of a later stage that runs while the lesson still reads "preparing the quick check" means the same thing for a
-    #: lesson that has no quick check: a Stop before the first step finished, and a Retry that put the lesson back to
-    #: where the Stop found it, while the thread had already gone on.
+    #: of the building stages that runs while the lesson still reads as one of the waiting stages means the same: a Stop
+    #: lands just after the learner answered, Retry puts the lesson back to the stage the Stop found it in, and the
+    #: thread (which went on to grade the answer, or to rate a lesson with no quiz) is already past it.
     stage: ClassVar[Stage | None] = None
+    #: the stages a lesson is in while it is being built, and the ones before them that a Retry can wrongly put it back in
+    BUILDING: ClassVar[frozenset[Stage]] = frozenset({Stage.GENERATING_LESSON, Stage.GENERATING_MATERIAL})
+    WAITING: ClassVar[frozenset[Stage]] = frozenset(
+        {Stage.PREPARING_DIAGNOSTIC, Stage.AWAITING_DIAGNOSTIC, Stage.AWAITING_PREREQUISITE, Stage.AWAITING_CHOICE}
+    )
 
     def __call__(self, state: dict, runtime) -> Any:
         ctx: FlowContext = runtime.context
         if self.stage:
             Lesson.objects.filter(pk=state["lesson_id"], stage=Stage.FAILED).update(stage=self.stage, error="")
-            if self.stage != Stage.PREPARING_DIAGNOSTIC:
-                Lesson.objects.filter(pk=state["lesson_id"], stage=Stage.PREPARING_DIAGNOSTIC).update(stage=self.stage)
+            if self.stage in self.BUILDING:
+                Lesson.objects.filter(pk=state["lesson_id"], stage__in=self.WAITING).update(stage=self.stage)
         ctx.events({"type": "node", "node": self.name, "status": "running"})
         try:
             return self.run(state, ctx)
