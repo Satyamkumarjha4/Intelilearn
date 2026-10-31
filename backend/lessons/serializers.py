@@ -11,6 +11,7 @@ from graph.scoring import AttemptTrend
 
 from .attempts import AttemptQuestions
 from .models import GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt, TestSubmission
+from .sheet_requests import SheetRequest
 from .stages import (
     Entry,
     FollowupLevel,
@@ -251,6 +252,7 @@ class LessonDetailSerializer(LessonSummarySerializer):
         "that was already waiting) the three sheets.",
     )
     self_rating = serializers.SerializerMethodField()
+    sheets_asked = serializers.SerializerMethodField()
     followup_of = serializers.SerializerMethodField()
     followups = serializers.SerializerMethodField()
 
@@ -263,6 +265,7 @@ class LessonDetailSerializer(LessonSummarySerializer):
             "level_source",
             "mastery_options",
             "self_rating",
+            "sheets_asked",
             "user_context",
             "error",
             "warnings",
@@ -277,6 +280,15 @@ class LessonDetailSerializer(LessonSummarySerializer):
     @extend_schema_field(serializers.FloatField(allow_null=True, help_text="Stars, 0.5 to 5; null unless self-rated."))
     def get_self_rating(self, lesson: Lesson) -> float | None:
         return None if lesson.self_rating_halves is None else lesson.self_rating_halves / 2
+
+    @extend_schema_field(
+        serializers.ListField(
+            child=serializers.ChoiceField(choices=OFFERED_SHEETS),
+            help_text="The sheets a lesson that asked for sheets was started with; empty for any other lesson.",
+        )
+    )
+    def get_sheets_asked(self, lesson: Lesson) -> list[str]:
+        return SheetRequest.of(lesson) if lesson.intent == Intent.SHEETS else []
 
     @staticmethod
     def _link(lesson: Lesson) -> dict:

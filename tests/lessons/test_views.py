@@ -16,7 +16,7 @@ Use cases:
 - a lesson says where it came from only after the server verified it: a recommendation must name the caller's own graded
   attempt and a topic it listed
 - a lesson's detail says its entry, intent, origin, level source and (stars) self-rating, and whether it is only sheets
-  (the list says the same, with its intent)
+  (the list says the same, with its intent) and which sheets a sheets lesson asked for
 - a lesson's detail hides the page writers' notes, reports the active run and keeps the quiz scores after a reload
 - another user's lesson, quiz or run is a 404, and so is an id that is not a UUID
 - deleting a lesson removes it; retrying is only for failed lessons
@@ -427,6 +427,18 @@ class TestDetail:
 
         assert detail["sheets_only"] is sheets_only and row["sheets_only"] is sheets_only
         assert row["intent"] == lesson.intent == detail["intent"]
+
+    def test_a_lesson_that_asked_for_sheets_says_which_and_any_other_lesson_says_none(
+        self, signed_in_client, make_lesson
+    ):
+        sheets = make_lesson(intent="sheets")
+        GraphRun.objects.create(
+            lesson=sheets, trigger=GraphRun.Trigger.START, payload={"input": {"sheet_kinds": ["revision_sheet"]}}
+        )
+        plain = make_lesson()
+
+        assert signed_in_client.get(f"/api/lessons/{sheets.id}").json()["sheets_asked"] == ["revision_sheet"]
+        assert signed_in_client.get(f"/api/lessons/{plain.id}").json()["sheets_asked"] == []
 
     def test_the_assessment_says_where_it_came_from_when_it_is_known(self, signed_in_client, lesson):
         Lesson.objects.filter(pk=lesson.pk).update(assessment={
