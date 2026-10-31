@@ -156,7 +156,13 @@ Specified in [modular-lessons.md](../to_be_developed/modular-lessons.md) and pla
   - [x] Metering hints for sheets (`sheets`, `grounding`, `choice: sheets_only`); `Lesson.sheets_only`; a follow-up refuses a sheets-only parent and carries the parent's note
   - [x] New-lesson screen asks "A lesson" or "Study sheets" (and which); a Study sheets tab on every ready lesson with "Add both sheets"; a sheets-only lesson's own tabs, journey and pill
   - [x] Root cause of the two stale-stage fixes: Retry restores a stage only when the thread is at a question (`StopPoint`), one correction fewer in `Node.__call__`
-- [ ] 9.6 Quick quiz: presets, calibration, up to 10 sources, difficulty mix, graphs, screens, code editor
+- [x] 9.6 Quick quiz: presets, calibration, up to 10 sources, difficulty mix, graphs, screens, code editor:
+  - [x] Decisions from the 9.5 report: only lessons with pages are quiz sources; the revision-sheet coverage rule kept; "Finish your test first" on the Study sheets tab during an attempt
+  - [x] `quizzes` app (`QuickQuiz`, `QuickQuizSource`, `QuickQuizAttempt`), abstract `GradableAttempt`, `GraphRun.quick_quiz` and a nullable `lesson` with the exactly-one constraint, flow settings and throttles, quiz deletion erases everything
+  - [x] `DifficultyMix`, presets and kinds by topic, `SourceSplit` and `ConceptSummaries`, `AdaptiveLadder`, the three new assessment sources
+  - [x] `topic.traits`, `quick_quiz` graph with calibration, `GradeAttemptGraphBuilder` as `grade_test` and `grade_quiz` over `AttemptStore`, retakes with an exclusion list
+  - [x] Endpoints, leak tests, `quiz.create` and `quiz.retake` through the gate, create-a-lesson-from-a-result, console runs and usage by quiz
+  - [x] `/quizzes`, `/quizzes/new`, `/quizzes/[id]`, calibration runner, results with recommendations, CodeMirror editor, header link
 - [ ] 9.7 Concept tags, recommendations, deep links
 - [ ] 9.8 Drop the combined test call and `Lesson.final_test`; live and e2e suites; docs and spec moved out of `to_be_developed/`
 

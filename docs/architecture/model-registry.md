@@ -138,9 +138,12 @@ class NodeSpec:
 | `code.repair` | build | text (TSX) | n/a | 32k | medium | |
 | `runtime.repair` | post | text (TSX) | n/a | 32k | medium | |
 | `test.grade` | post | structured → `GradeReport` | structured_output | 4k | medium | One whole award per criterion per question; `GradeReportValidator` checks them |
+| `topic.traits` | quiz | structured → `TopicTraitsJudgement` | structured_output, context ≥ 8k | 1k | **low** | ✓ |
 | `onboarding.suggest_topics` | onboarding | structured → `TopicSuggestions` | structured_output, context ≥ 8k | 2k | **low** | ✓ |
 
 `prerequisites.plan` is new in phase 9.3: a required, light node that lists 3 to 6 prerequisites for a Beginner who rated themselves (nobody tested them), and runs only on that path. It is bound on every profile like the other light diagnose steps (gpt-oss-20b, then Gemini Flash), and `lessons.create` refuses to start a Beginner's self-rated lesson while it has no model (a lesson for any other level needs `lesson.plan`, and a quick check needs `diagnostic.generate`). `study.generate` is also asked once for each of the cheat sheet and the revision sheet when a learner who aced the quick check chooses "sheets".
+
+`topic.traits` is new in phase 9.6 and follows the onboarding suggester's rules: a learner is waiting on it (the quick quiz wizard asks it when the topic is typed), so it is optional, one attempt, 4 seconds a call, no retry on a model, cached per topic (`TOPIC_TRAITS_TTL_S`, 30 days) and **never an error**: with it off, unbound, slow or failing, the wizard offers every kind of question the count allows (numerical on, code off). It judges two things, whether the topic is mainly calculation and whether it is about programming. A quiz made from lessons needs no call: the traits come from the lessons' plans and pages. `diagnostic.generate` is also asked, without the prerequisite half, for the calibration walk's pool of ten questions (two for each band), and `test.generate` writes a quiz's questions with the same batching as a lesson test. The console groups the node in its own **Quick quiz** phase, between After and Onboarding.
 
 Adding a node takes three steps: add a `NodeSpec`, write the node, and run `migrate`, which creates its `NodeConfig`. Then bind models in the admin or add them to `llm_registry/seed.py`.
 
@@ -293,7 +296,7 @@ There is no Gemini Pro model: it has no free quota. The Groq free tier allows ab
 |---|---|
 | diagnostic.generate, test.grade | gpt-oss-120b, gemini-3.5-flash |
 | diagnostic.review, learner.assess, interactive.plan, media.search | gpt-oss-20b, gemini-3.5-flash |
-| onboarding.suggest_topics | gpt-oss-20b, gemini-3.5-flash-lite (low effort, one attempt, `timeout_s` 4, `max_retries` 0 on both: the next model is the retry) |
+| onboarding.suggest_topics, topic.traits | gpt-oss-20b, gemini-3.5-flash-lite (low effort, one attempt, `timeout_s` 4, `max_retries` 0 on both: the next model is the retry) |
 | lesson.plan | gemini-3.5-flash, gpt-oss-120b, gemini-3.5-flash-lite |
 | study.generate, page.generate, test.generate, interactive.generate, alignment.judge, page.compile, code.repair, runtime.repair, media.verify | gemini-3.5-flash, gemini-3.5-flash-lite |
 
@@ -308,6 +311,6 @@ Two more profiles sit between the free-tier default and the cheap one:
 - **balanced** (`--profile balanced`): Gemini Flash (then Flash-Lite) leads the steps where a lesson's quality is decided (`diagnostic.generate`, `learner.assess`, `study.generate`, `lesson.plan`, `page.generate`, `test.generate`, `interactive.generate`, `alignment.judge`, `test.grade`, `media.verify`); the mechanical steps (compiling, repairing, planning interactives, media search, the quiz reviewer) use the cheap chains. Every step runs at its own spec's reasoning effort.
 - **quality** (`--profile quality`): Gemini Flash first on every step, with the big Groq model behind it where Groq can take the reply (the steps the default also gives a Groq model) and Flash-Lite last; every step thinks one level harder than its spec asks (none stays none). The slowest and most expensive.
 
-Neither changes `onboarding.suggest_topics`: the learner is waiting for it, so all four profiles leave it as the default seeds it. The console previews any profile against the live registry (`POST /console/profiles/{name}/preview`) before anything is saved.
+Neither changes `onboarding.suggest_topics` or `topic.traits`: the learner is waiting for them, so all four profiles leave them as the default seeds them. The console previews any profile against the live registry (`POST /console/profiles/{name}/preview`) before anything is saved.
 
 A full lesson makes roughly 20–35 LLM calls. The rate limiter queues calls over a model's `rpm_limit` instead of failing them.

@@ -39,6 +39,7 @@ Legend for status columns: ✅ in code · ◐ partly (functions still to wrap in
   - [4.20 `graph` and `lessons`: the way in, lesson shapes and the mastery choice (Phase 9.3)](#420-graph-and-lessons-the-way-in-lesson-shapes-and-the-mastery-choice-phase-93)
   - [4.21 `graph` and `lessons`: follow-up lessons (Phase 9.4)](#421-graph-and-lessons-follow-up-lessons-phase-94)
   - [4.22 `graph` and `lessons`: modular sheets (Phase 9.5)](#422-graph-and-lessons-modular-sheets-phase-95)
+  - [4.23 `quizzes`, `graph` and `lessons`: quick quizzes (Phase 9.6)](#423-quizzes-graph-and-lessons-quick-quizzes-phase-96)
 - [5. How to extend](#5-how-to-extend)
 - [Refactor backlog](#refactor-backlog)
 
@@ -2337,6 +2338,127 @@ classDiagram
 - **Follow-ups and sheets.** `Lesson.sheets_only` (intent sheets, or route mastery once the choice is made) is the one rule for "no pages and no test": a follow-up of such a lesson is refused (`SheetsOnlyLesson`, 400), and the frontend reads the same flag. A follow-up carries its parent's note (`user_context`) and none of its concepts.
 - **Stop, Retry and the stage: one cause, one fix.** Stop is noticed after the step that is running, so a stage read at the click may be one the thread has left; Retry used to restore it, and the build failed at its last step. 9.3 and 9.4 each patched this in `Node.__call__` (the second widened the first); the cause is that the stage was trusted. `StopPoint` (`lessons/stop_point.py`, split out of `services.py`, which the runner would otherwise import in a cycle) now remembers a stage only when the thread is at a question: `remember` at the click for a run no worker had started, `settle` from `FlowRunner._stopped` once the worker has noticed the Stop and can read the thread's position. Otherwise the lesson stays `failed` until the first node with a stage moves it (the original rule, which is all `Node.__call__` does now).
 - **Frontend** (`frontend/lib/`): `NewLesson` (what to make and which sheets), `SheetTabs` and `SheetRequests` (which tabs, which can still be asked for and whether both, what a 409 says exists), `LessonTabs` (a Study sheets tab for every ready lesson, and only that for `sheets_only`), `Journey` (its own three steps), `PipelinePaths` (the sheets' steps for a sheets lesson, and for more sheets on a ready one), `LessonStatus` (pill and kind line). Components stay thin: `ChoiceCards` is the one radio-card group for all three questions of the new-lesson form.
+
+### 4.23 `quizzes`, `graph` and `lessons`: quick quizzes (Phase 9.6)
+
+A quick quiz is a set of questions on a topic or on up to ten of the learner's own lessons, at a level found by a self-rating, a short adaptive calibration, or the learner's existing test scores. It is its own module (`backend/quizzes/`), with the same shape as a lesson's test: a stage machine, a graph that writes the questions, a second graph that grades, and an attempt that is a `GradableAttempt`.
+
+```mermaid
+classDiagram
+    direction LR
+    class GradableAttempt {
+        <<abstract model>>
+        +answers / score / band / status
+        +seal()
+    }
+    GradableAttempt <|-- TestSubmission
+    GradableAttempt <|-- QuickQuizAttempt
+    class RunSubject {
+        <<Protocol>>
+        +subject_key
+        +stage / set_stage()
+    }
+    RunSubject <|.. Lesson
+    RunSubject <|.. QuickQuiz
+    class QuickQuiz {
+        +config / config_hash
+        +level / calibration
+        +stage
+    }
+    class QuickQuizSource
+    class QuickQuizAttempt
+    QuickQuiz "1" --> "*" QuickQuizSource
+    QuickQuiz "1" --> "*" QuickQuizAttempt
+    class QuizStageTransitions {
+        +check(from, to)$
+    }
+    QuickQuiz ..> QuizStageTransitions
+    class QuizConfig {
+        <<frozen>>
+        +validate()$
+        +hash()
+    }
+    class QuizPresets
+    class QuestionTypes {
+        +for_topic(traits, count)$
+    }
+    class TopicTraits
+    QuizConfig ..> QuizPresets
+    QuizConfig ..> QuestionTypes
+    QuestionTypes ..> TopicTraits
+    class QuickQuizService {
+        +create(user, body, key)
+        +retake(quiz, key)
+        +delete(quiz)
+    }
+    class CalibrationService {
+        +next(quiz)
+        +answer(quiz, qid, choice)
+    }
+    class QuizAttemptService {
+        +start / answer / submit / regrade
+    }
+    QuickQuizService ..> ActionGate
+    QuickQuizService ..> QuizSources
+    QuickQuizService ..> QuizConfig
+    CalibrationService ..> AdaptiveLadder
+    QuizAttemptService ..> AttemptStore
+    class QuizSources {
+        +resolve(user, body) list~SourceRow~
+    }
+    class SourceSplit {
+        +of(count, lessons)$
+    }
+    class ConceptSummaries {
+        +within(plan, budget)
+    }
+    QuizSources ..> SourceSplit
+    class DifficultyMix {
+        +for_level(level, n)$
+    }
+    class QuizBlueprint {
+        +for_topic()$
+        +for_lessons()$
+    }
+    class AdaptiveLadder {
+        +next_band(walk)
+        +level(walk)
+    }
+    QuizBlueprint ..> DifficultyMix
+    class AssessmentSource {
+        <<Protocol>>
+    }
+    AssessmentSource <|.. CalibrationSource
+    AssessmentSource <|.. TestScoreSource
+    AssessmentSource <|.. QuizResultSource
+    CalibrationSource ..> AdaptiveLadder
+    class AttemptStore {
+        <<Protocol>>
+        +load(state)
+        +save(card)
+    }
+    AttemptStore <|.. LessonAttemptStore
+    AttemptStore <|.. QuizAttemptStore
+    class GradeAttemptGraphBuilder
+    GradeAttemptGraphBuilder o-- AttemptStore
+    class TopicTraitsService {
+        +traits(topic)
+    }
+    TopicTraitsService ..> TraitsCache
+    TopicTraitsService ..> GatewayTopicTraits
+    class QuizErasure
+    QuickQuizService ..> QuizErasure
+```
+
+- **A run belongs to one subject.** `GraphRun.lesson` is nullable and `GraphRun.quick_quiz` is new; a check constraint says exactly one is set. `RunSubject` (9.1) is the port the runner, the stop point, the dispatcher and the console read, so none of them branch on "lesson or quiz"; `subject_key` (`lesson_id` / `quiz_id`) is the one name for the state key and the usage join.
+- **`GradableAttempt`** (abstract model, `lessons/gradable.py`) holds the fields and `seal()` a graded attempt shares; `TestSubmission` and `QuickQuizAttempt` extend it, and `AttemptStore` (a port) is what lets one `GradeAttemptGraphBuilder` register as `grade_test` and `grade_quiz` (Strategy; `QuizAttemptStore` gives no follow-up offers).
+- **The config is checked in one place.** `QuizConfig.validate` is the server's rule and the wizard's mirror: presets only, short and long answers only from 10 questions, kinds the topic offers (`QuestionTypes.for_topic`), the level mode. It is immutable once the quiz exists, and `config_hash` groups attempts at "the same quiz".
+- **Sources and the split are code, not a model.** `SourceSplit` (at most 10 lessons, count at least the number of lessons, even split, remainder to the most recent), `ConceptSummaries` (from the stored plan within the token budget, lowest-priority concepts dropped first) and `LevelMean` (the middle level shown for a quiz from lessons). The model never sees lesson text.
+- **Level.** The assessment sources of 9.3 gain `CalibrationSource`, `TestScoreSource` (D7: the latest graded attempt, excellent one level up, fail one down, via `BandShift`) and `QuizResultSource`. `AdaptiveLadder` is a pure table (start at the standard band, MCQ only, five steps scaled for 3-7, a pool of two questions a band, nearest band when one is used up) tested over every path; the pool lives on `QuickQuiz.calibration` and is never sent in full to the browser.
+- **Calibration is driven by the API.** `CalibrationService` serves one question at a time, forward only, without the tier; the graph pauses once at an interrupt of kind `calibration` and resumes once, from the answer that ends the walk, with the authorization carried over (`ActionMetering.carry`), so the pause is not a settlement and the completion point of `quiz.create` and `quiz.retake` is the end of the run.
+- **`topic.traits`** (`quizzes/traits.py`) follows the onboarding suggester: optional, one attempt, a short timeout, cached per topic (`TraitsCache`), never an error (`TraitsAnswer` falls back to `TopicTraits.everything()`). A quiz from lessons derives its traits from the plan and pages with no model (`TopicTraits.of_lessons`).
+- **Deleting a quiz** is `QuizErasure`: checkpoints, `ModelCall` rows by quiz id, the calibration column, and any open authorization settled cancelled, in one place, like a lesson's.
+- **Frontend** (`frontend/lib/`): `QuizzesApi`, `QuizConfigForm`, `QuestionTypeCatalog`, `LevelChoice`, `QuizStageView`, `CalibrationWalk`, `QuizResults`, `QuizProgress`, `QuizMessages`, `QuizList`, `TestGuard` ("Finish your test first"), `CodeLanguages`, `AttemptWords`. `AttemptRunner` is reused through an `AttemptApi<A>` port and a `kind` prop; the code editor is CodeMirror 6 behind `next/dynamic`, with a language pack loaded on demand.
 
 ## 5. How to extend
 

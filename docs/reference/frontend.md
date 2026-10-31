@@ -25,6 +25,9 @@ After sign-in, `/auth?next=…` only redirects to a path on this site (`Redirect
 | `/lessons` | "My lessons": a "Continue where you left off" card, filter chips (All, Needs you, Building, Ready, Couldn't finish), search, and lesson cards (3 / 2 / 1 columns) whose pill says the next action (`LessonStatus`) |
 | `/lessons/new` | "What do you want to learn?": a big topic input with an "n / 200" counter, example chips, what to make (a lesson, or study sheets and which: both, a cheat sheet or a revision sheet), how to find the level, an optional note, and the steps ahead (`NewLesson` holds the rules and the plain-words error messages) |
 | `/lessons/[id]` | **Stage-driven view** (below) |
+| `/quizzes` | "Quick quizzes": filter chips and quiz cards (kind line: topic or lessons, questions, best score), a "New quiz" button |
+| `/quizzes/new` | The quiz wizard: source (a topic, or up to 10 of your lessons that have pages), how many questions (5, 10, 15, 20, 25, 30), kinds of question, and how to find your level |
+| `/quizzes/[id]` | **Stage-driven quiz view** (see "Quick quizzes" below) |
 
 `proxy.ts` (Next 16 renamed `middleware.ts` to `proxy.ts`; it runs on the Node.js runtime) is a thin hook: it reads the `lc_session`, `lc_onboarded` and `lc_setting_up` cookies and asks `RouteGuard.redirectFor` (`lib/route-guard.ts`). `/` and `/auth` are for signed-out visitors: with `lc_session` they go to `?next=` when it is a safe path on this site (`RedirectPolicy.safeNext`), else `/lessons`, or through `/onboarding` without `lc_onboarded`. `/onboarding`, `/profile` and `/lessons/*` need the marker: without it they redirect to `/auth?next=…`, and without `lc_onboarded` to `/onboarding?next=…`, so the page they wanted is kept. An onboarded visitor has nothing to set up and is sent on from `/onboarding`, except in the last step: the profile is saved at step 4, which makes them onboarded, so the page sets the `lc_setting_up` cookie (`SetupMarker`) then and clears it when the setup ends, and a refresh on step 5 stays there with the landing page's topic still offered. The API still authorises every request.
 
@@ -156,6 +159,22 @@ Sheets render Markdown with KaTeX (`components/markdown.tsx`: `react-markdown`, 
 - **Read ticks** are kept in `localStorage` per lesson (`ReadPages`); without storage the book works and shows none after a reload.
 
 A crash the runtime reports shows an alert under the toolbar; while a repair runs a friendly overlay covers the page ("Fixing a glitch on this page…"), and when it finishes the document is reloaded and the new `code_version` is rendered in the same iframe. When the repair fails or the limit is reached the alert says plainly that something did not work (never the page's own error text) and points to Reload and Versions.
+
+## Quick quizzes (`/quizzes`, Phase 9.6)
+
+The copy says "Quick quiz" (never "diagnostic" or "test"); "Quick check" and "Test" keep their lesson meanings. `proxy.ts` guards `/quizzes/*` like `/lessons/*`, and the header has a **Quizzes** link beside **My lessons**.
+
+**Logic lives in `lib/`**, tested with `bun test`; components stay thin.
+
+- `QuizzesApi` (`lib/quizzes-api.ts`): the endpoints, an `Idempotency-Key` on create and retake, and the `AttemptApi<A>` port that lets `AttemptRunner` run a quiz attempt or a lesson test.
+- `QuizConfigForm`, `QuestionTypeCatalog`, `LevelChoice`: the wizard's rules, mirroring the server's `QuizConfig`. The counts below the number of chosen lessons are hidden and at most 10 lessons can be picked; short and long answers are hidden below 10 questions and numerical ones for a non-quantitative topic (from `POST /quick-quizzes/topic-traits`, which falls back to offering everything); the level defaults to "your scores" when every chosen lesson has a graded attempt, else a self-rating, and the learner can choose any mode ("your scores" is only offered for lessons). Lessons that are sheets-only are not listed.
+- `QuizStageView` maps the quiz and its open attempt to one screen: building ("Getting your quiz ready", with Cancel), calibration, the question deck, grading, the result, failed.
+- `CalibrationWalk`: one multiple-choice question at a time, forward only, resumed after a refresh; it never shows the band. `QuizResults`, `QuizProgress`, `QuizMessages` (plain-words errors and `ActionRefusedMessage`), `QuizList`.
+- `TestGuard`: while a lesson has an `in_progress` attempt its Study sheets tab says "Finish your test first".
+
+**The quiz page.** The header holds the title and the sources. The body is `CalibrationRunner` (a short "Where are you?" check) then the shared `AttemptRunner` deck, then the result: score and band, the per-question review, recommendations ("Create a lesson for this" for a topic quiz, which makes a lesson at the level the result implies; links to the lessons that need work for a lesson quiz), the attempt history and **Retake** (a fresh set of questions, never the old ones). A quiz can be deleted (a dialog), which erases it and everything it made.
+
+**Code answers.** For a short or long answer to a programming topic, the answer box can be a code editor: CodeMirror 6 loaded with `next/dynamic` (never on the server), the language pack on demand (`CodeLanguages`). Tab indents; the visible hint "Press Esc then Tab to leave" gives the keyboard a way out (the editor uses `temporarilySetTabFocusMode`). The editor and the plain text box produce the same answer string.
 
 ## `sandbox/` runtime (shared with backend validation)
 

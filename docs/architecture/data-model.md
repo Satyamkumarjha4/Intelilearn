@@ -6,7 +6,7 @@ All tables live in one Postgres database: the docker `db` service by default, or
 
 Conventions that hold for every table:
 
-- **Primary keys** are UUIDs for `accounts` and `lessons`. The `llm_registry`, `marketing` and `console` tables use auto-incrementing integers.
+- **Primary keys** are UUIDs for `accounts`, `lessons` and `quizzes`. The `llm_registry`, `marketing` and `console` tables use auto-incrementing integers.
 - **Optional text is an empty string, not NULL.** A text column that may be left blank is stored as `''` (`blank=True` without `null=True`). Only the columns marked "null" below can hold NULL. JSON columns marked "null" are NULL until their stage has run; JSON lists and dicts default to `[]` and `{}`.
 - **Choice columns are plain `varchar`.** The allowed values are enforced by Django validation and the serializers, not by a database CHECK constraint.
 - **Foreign keys have no `ON DELETE` rule in the database.** Django cascades in code, so a delete done by hand in SQL has to remove children first. What a lesson delete does and does not remove is under [Deleting a lesson](#deleting-a-lesson).
@@ -187,7 +187,7 @@ Indexes on `(lesson, type, difficulty)` and `(lesson, concept)`.
 
 ### `TestSubmission` (an attempt)
 
-The model, table and URL names stay from when a lesson had one submission; in prose and in the app it is an **attempt**.
+The model, table and URL names stay from when a lesson had one submission; in prose and in the app it is an **attempt**. Since phase 9.6 it shares its fields and `seal()` with a quick quiz's attempt through the abstract base `GradableAttempt` (`lessons/gradable.py`): everything below except `lesson` and `followup` is the base's. The base adds no table and no migration; the two models stay separate tables.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -225,9 +225,10 @@ There is one row per Celery execution segment of any graph, for example start, e
 | Field | Type | Notes |
 |---|---|---|
 | id | UUID | SSE channel `run:{id}:events` |
-| lesson | FK | |
-| graph | enum `flow` \| `study_material` \| `runtime_repair` \| `grade_test` | |
-| trigger | enum `start` \| `resume_diagnostic` \| `resume_prerequisite` \| `resume_choice` \| `retry` \| `repair` \| `grade` \| `extra_material` | |
+| lesson | FK, null | The lesson the run belongs to (null for a quick quiz's run) |
+| quick_quiz | FK, null | The quick quiz the run belongs to (phase 9.6). **Exactly one of `lesson` and `quick_quiz` is set**: a check constraint (`a_run_belongs_to_one_subject`) says so, and `GraphRun.subject` returns whichever it is. `lesson` is nullable for the same reason |
+| graph | enum `flow` \| `study_material` \| `runtime_repair` \| `grade_test` \| `question_bank` \| `quick_quiz` \| `grade_quiz` | |
+| trigger | enum `start` \| `resume_diagnostic` \| `resume_prerequisite` \| `resume_choice` \| `retry` \| `repair` \| `grade` \| `extra_material` \| `retake` \| `resume_calibration` | |
 | status | enum `queued` \| `running` \| `paused` \| `succeeded` \| `failed` \| `cancelled` | `paused` = ended at an `interrupt()` |
 | node_status | JSON | `{node: pending \| running \| done \| retrying \| degraded \| failed}` |
 | node_timings | JSON | `{node: {started_at, finished_at, retries}}`, kept by `GraphRunRecorder` next to `node_status`: the node's first start, its latest finish (null while it runs or waits) and how often the graph ran it again. Runs from before it existed have `{}`. The console's timeline reads it |
@@ -254,9 +255,56 @@ There is one row per Celery execution segment of any graph, for example start, e
 | band_fail_below / band_excellent_above | 30 / 90 (percent: under the first is a Fail, over the second Excellent; the first must be below the second) |
 | question_batch_size | 5 (5 to 10: questions written per model call) |
 | batch_max_long / batch_max_short | 1 / 2 (written answers per batch; off when only short or long answers were asked) |
-| retakes_per_day | 3 (per lesson, in 24 hours; attempt 1 does not count) |
+| retakes_per_day | 3 (per lesson or per quick quiz, in 24 hours; attempt 1 does not count) |
+| quiz_max_source_lessons | 10 (1 to 10: the most lessons one quick quiz combines) |
+| quiz_source_token_budget | 1500 (200 to 6000: tokens of concept summary per source lesson, estimated as characters divided by four) |
+| calibration_questions | 5 (3 to 7: the length of the calibration walk; the table that gives the level is written for five and scaled) |
 | media_sources | `["wikimedia", "openverse"]` |
 | allowed_media_licenses | `["cc0", "pdm", "cc-by", "cc-by-sa"]` |
+
+## `quizzes` (phase 9.6)
+
+A quick quiz is its own aggregate, not a lesson: no pages, no plan, no test. Primary keys are UUIDs. Every row hangs off `QuickQuiz.owner`; the API filters by the requesting user.
+
+### `QuickQuiz`
+
+| Field | Type | Notes |
+|---|---|---|
+| id, owner | UUID, FK | |
+| source_type | enum `topic` \| `lessons` | |
+| topic | char | The topic, or for a quiz from lessons a title made from their topics (`Binary search + 2 more`) |
+| config | JSON | `{num_questions, types, level_mode, self_rating_halves, traits}`: `num_questions` is one of 5, 10, 15, 20, 25, 30; `types` is some of `mcq`, `msq`, `numerical`, `short_answer`, `long_answer` (the written kinds only from 10 questions); `level_mode` is `self_rating`, `calibration` or `existing_score`; `traits` is what the topic judge said (`{quantitative, programming}`, or null: not judged). **Immutable** |
+| config_hash | char(64), indexed | sha256 of the settings (source, count, kinds, level mode): the same settings give the same hash, however the topic is spelled or the lessons and kinds are ordered, so attempts can be grouped across quizzes. A different setting is a different quiz |
+| stage | enum `preparing` \| `awaiting_calibration` \| `ready` \| `failed` | `QuizStageTransitions`: preparing to calibration, to ready or to failed; calibration back to preparing (the walk is over and the questions are being written) or to failed; nothing leaves ready or failed. A retake leaves the quiz `ready`, and a failed retake does not fail it |
+| assessment | JSON, null | The `LearnerAssessment` once the level is known (`source` is `self_rating`, `test_score` or `calibration`) |
+| calibration | JSON, null | `{pool, walk}`: the ten pool questions **with their answer keys** and the walk so far `[{question_id, band, correct}]`. **Server-side only**: no response carries it, and deleting the quiz removes it |
+| config_snapshot, settings_snapshot | JSON | The registry and `FlowSettings` at creation, like a lesson |
+| error, created_at, updated_at | | |
+
+`QuickQuiz` implements the run port (`RunSubject`), so the runner, Stop and the console treat it like a lesson. Changing a setting of an existing quiz (`config`, `config_hash`, `source_type`, `topic`, `owner`) is refused by `save()` and by `record()`.
+
+### `QuickQuizSource` (through table)
+
+| Field | Type | Notes |
+|---|---|---|
+| quiz | FK | |
+| lesson | FK, null, `SET_NULL` | The lesson. If it is deleted later the row stays, so the quiz keeps its shares; a retake is then refused (`409 source_missing`) |
+| lesson_ref | UUID | The lesson's id when the quiz was made, kept when the lesson goes: a question names its lesson by it |
+| title | char | The lesson's title when the quiz was made |
+| level | char | The level of this lesson's questions (its own moved by its latest test when the level mode is `existing_score`; otherwise its own, shown only) |
+| share | smallint | How many of the quiz's questions are about this lesson: an even split, the remainder one each to the most recent lessons by creation date. The shares add up to `num_questions`, and there are at most 10 rows |
+
+`UniqueConstraint(quiz, lesson)`.
+
+### `QuickQuizAttempt`
+
+An attempt at a quiz (`GradableAttempt`, the same base as `TestSubmission`): `quiz`, `attempt_no`, `questions` (the snapshot, with answer keys, and each question's `source`: the lesson key), `answers`, `result` (the `ScoreCard`), `status` (`generating`, `in_progress`, `grading`, `graded`, `failed`), `awarded`, `available`, `band`, `started_at`, `submitted_at`, `graded_at`, `duration_s`, `all_blank`, `error`. `UniqueConstraint(quiz, attempt_no)`; **one open attempt per quiz** (partial unique on `status in (generating, in_progress)`). The first attempt is created with the quiz, `generating`. A **retake** is a new attempt and a new generation run; its question writer is given every stem the quiz has asked so far. `seal()` is the only way out of `in_progress`, as for a lesson. A run that ends without the questions (failed or stopped) deletes the `generating` attempt, so the number is never used up.
+
+Migrations: `quizzes/0001` creates the three tables; `lessons/0015` adds the three quiz settings to `FlowSettings`; `lessons/0016` adds `GraphRun.quick_quiz`, makes `lesson` nullable, adds the check constraint and the new `graph` and `trigger` values (undoing it deletes the quiz runs, because a run with no lesson cannot exist before it); `llm_registry/0006` adds the `topic.traits` node key.
+
+### Deleting a quick quiz
+
+`DELETE /api/quick-quizzes/{id}` (`QuickQuizService.delete`) cancels any active run, settles the open authorization as cancelled, then `QuizErasure` removes what the cascade does not reach: the LangGraph checkpoint threads (`<quiz id>` for the first run and the calibration resume, `<quiz id>:<run id>` for every retake and grading run) and the `ModelCall` rows with the quiz's `quiz_id`. The quiz row goes last, with its sources, attempts, runs and calibration pool.
 
 ## `console`
 
@@ -284,7 +332,7 @@ The tables `checkpoints`, `checkpoint_blobs`, `checkpoint_writes` and `checkpoin
 | Field | Type | Notes |
 |---|---|---|
 | id | integer | |
-| lesson_id / run_id / quiz_id | UUID, null, indexed | **Plain columns, not foreign keys**, so a call can outlive a deleted run. `quiz_id` is for the quick quiz a call was made for (phase 9.6); it is empty today. A lesson's calls are deleted with the lesson (see [Deleting a lesson](#deleting-a-lesson)) |
+| lesson_id / run_id / quiz_id | UUID, null, indexed | **Plain columns, not foreign keys**, so a call can outlive a deleted run. `quiz_id` is for the quick quiz a call was made for (phase 9.6; a call is for a lesson or a quiz, never both). A lesson's calls are deleted with the lesson (see [Deleting a lesson](#deleting-a-lesson)) |
 | node_key / provider_key / model_name | char | The step and the model that answered |
 | attempt / fallback_index | smallint | Which retry, and how far down the fallback chain |
 | status | enum | `ok`, `retryable_error`, `fatal_error` or `invalid_output` |
