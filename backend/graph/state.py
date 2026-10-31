@@ -41,7 +41,7 @@ class FlowState(TypedDict, total=False):
     level_scheme: int  # which level names this flow's documents use; a checkpoint from before the rename lacks it
     # how the lesson began (every key is optional: a thread checkpointed before self-rating has none, and means a quiz)
     entry: str  # diagnostic or self_rating
-    intent: str  # lesson (sheets from a topic come later)
+    intent: str  # lesson, or sheets (no pages and no test)
     self_rating_halves: int | None
     followup_level: str  # foundation or advanced, for a lesson made from a test result (else empty)
     level_source: str  # where the level came from
@@ -64,6 +64,8 @@ class FlowState(TypedDict, total=False):
     sheets: Annotated[dict[str, dict], Reducers.merge_dicts]  # kind → sheet, written in parallel by "sheets"
     sheets_outcome: str  # what the sheets' join decided: retry, failed or complete
     concepts: list[str]  # what the sheets must cover
+    sheet_kinds: list[str]  # the sheets this run was asked for (else both); set at the start or by plan_sheets
+    grounding: dict  # Grounding: what the sheets rest on (the lesson, the quiz, or the topic and level alone)
 
     # Stage B (parallel writers → reducers)
     plan: dict  # LessonPlan

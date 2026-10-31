@@ -8,7 +8,8 @@ Use cases:
 - a valid output goes on
 - an invalid output is retried while attempts remain
 - an invalid output with the error set (attempts spent) goes to the failure node
-- the level router sends each route to its configured destination
+- the level router sends each route to its configured destination, and every score of a lesson that asked for sheets to
+  the assessment (it has no prerequisite quiz and no mastery choice)
 """
 
 import pytest
@@ -37,3 +38,9 @@ def test_level_router_sends_each_route_to_its_destination():
     level = LevelRouter({"mastery": "m", "prerequisite": "p", "lesson": "l"})
 
     assert [level({"route": r}) for r in ("mastery", "prerequisite", "lesson")] == ["m", "p", "l"]
+
+
+def test_level_router_sends_every_score_of_a_sheets_lesson_to_the_assessment():
+    level = LevelRouter({"mastery": "m", "prerequisite": "p", "lesson": "l"})
+
+    assert [level({"route": r, "intent": "sheets"}) for r in ("mastery", "prerequisite", "lesson")] == ["l"] * 3

@@ -14,6 +14,8 @@ Use cases:
   stages (preparing, or waiting for a quiz or the choice) to it, as a Retry can put it back too far; a node never moves
   a lesson that is in any other stage, a node of a waiting stage never moves a lesson on, and a node that declares no
   stage never moves it
+- a node may choose its working stage from the state (a lesson that is only sheets works in "writing the study sheet"
+  where a lesson works in "building the lesson"), and the same corrections then move the lesson to that one
 """
 
 import threading
@@ -96,6 +98,29 @@ def test_a_node_that_declares_a_stage_corrects_only_a_failed_or_too_early_lesson
     Lesson.objects.filter(pk=lesson.pk).update(stage=before, error="boom")
 
     Declares(declared)({"lesson_id": str(lesson.pk)}, runtime)
+
+    assert Lesson.objects.get(pk=lesson.pk).stage == after
+
+
+class ChoosesItsStage(Node):
+    """A node whose working stage depends on what the lesson is for: building a lesson, or writing sheets only."""
+
+    name = "chooses"
+
+    def stage_of(self, state):
+        return Stage.GENERATING_MATERIAL if state.get("intent") == "sheets" else Stage.GENERATING_LESSON
+
+    def run(self, state, ctx):
+        return {}
+
+
+@pytest.mark.parametrize(("intent", "after"), [
+    ("sheets", Stage.GENERATING_MATERIAL), ("lesson", Stage.GENERATING_LESSON), (None, Stage.GENERATING_LESSON),
+])  # fmt: skip
+def test_a_node_that_chooses_its_stage_from_the_state_corrects_to_that_one(lesson, runtime, intent, after):
+    Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.FAILED, error="boom")
+
+    ChoosesItsStage()({"lesson_id": str(lesson.pk), "intent": intent}, runtime)
 
     assert Lesson.objects.get(pk=lesson.pk).stage == after
 

@@ -178,7 +178,9 @@ class EntrySegment(Segment):
             CheckRouter("prerequisites", ok="intent_router", retry="plan_prerequisites", fail=exits["failed"]),
             ["intent_router", "plan_prerequisites", exits["failed"]],
         )
-        graph.add_conditional_edges("intent_router", IntentRouter({"lesson": exits["lesson"]}), [exits["lesson"]])
+        # A graph with no sheets writer leaves `sheets` out, so asking for them is refused with a reason.
+        destinations = {"lesson": exits["lesson"]} | ({"sheets": exits["sheets"]} if exits["sheets"] != END else {})
+        graph.add_conditional_edges("intent_router", IntentRouter(destinations), sorted(set(destinations.values())))
 
 
 class MasterySegment(Segment):
@@ -375,34 +377,23 @@ class FlowGraphBuilder(GraphBuilder):
 
 
 class StudyMaterialGraphBuilder(GraphBuilder):
-    """Another sheet for a lesson that is already ready: generate → validate → persist, in its own thread.
+    """More sheets for a lesson that is already ready: the same writer as the mastery choice and a sheets-only lesson
+    (`SheetsSegment`), in its own thread. The lesson stays ready throughout.
 
-    Input: `{"lesson_id", "mastery_choice": kind, "extra_material": True}`. There is no Retry: a failed run ends with
-    its reason and the learner asks again.
+    Input: `{"lesson_id", "sheet_kinds": [...], "extra_material": True}`. There is no Retry: a failed run ends with its
+    reason and the learner asks again.
     """
 
     def add_nodes(self, graph: StateGraph) -> None:
-        for node in (
-            LoadContextNode(),
-            GenerateStudyMaterialNode(),
-            ValidateStudyMaterialNode(),
-            PersistStudyMaterialNode(),
-            FailStudyMaterialNode(),
-        ):
+        for node in (LoadContextNode(), FailStudyMaterialNode()):
             graph.add_node(node.name, node)
+        SheetsSegment().add_nodes(graph)
 
     def add_edges(self, graph: StateGraph) -> None:
+        segment = SheetsSegment()
         graph.add_edge(START, "load_context")
-        graph.add_edge("load_context", "generate_study_material")
-        graph.add_edge("generate_study_material", "validate_study_material")
-        graph.add_conditional_edges(
-            "validate_study_material",
-            CheckRouter(
-                "material", ok="persist_study_material", retry="generate_study_material", fail="fail_study_material"
-            ),
-            ["persist_study_material", "generate_study_material", "fail_study_material"],
-        )
-        graph.add_edge("persist_study_material", END)
+        graph.add_edge("load_context", segment.provides["sheets"])
+        segment.add_edges(graph, {"failed": "fail_study_material"})
 
 
 class RuntimeRepairGraphBuilder(GraphBuilder):

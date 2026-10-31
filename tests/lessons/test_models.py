@@ -11,6 +11,9 @@ Use cases:
 - advance_to to the current stage is allowed (a node that re-runs on retry)
 - fail records a readable error and moves the lesson to failed, except from ready
 - a retry can leave failed for the stage the failed node belongs to
+- a sheets-only lesson (it has no pages and no test) is one that asked for sheets, or one that chose them after a
+  perfect check; a lesson still waiting at that choice is not decided yet
+- a sheets lesson may go from either of its first stages straight to writing the sheets
 - owned_by returns only the user's lessons, and active() excludes finished ones
 - public_questions strips the correct answer, explanation and concept from every question
 - a lesson has at most one quiz of each kind, and a quiz at most one attempt
@@ -25,6 +28,31 @@ from django.db import IntegrityError, transaction
 
 from lessons.models import FlowSettings, GraphRun, Lesson, Quiz, QuizAttempt, Stage, TestSubmission
 from lessons.stages import IllegalTransition
+
+
+class TestSheetsOnly:
+    @pytest.mark.parametrize(("fields", "expected"), [
+        ({}, False),
+        ({"route": "lesson"}, False),
+        ({"route": "prerequisite"}, False),
+        ({"intent": "sheets"}, True),
+        ({"intent": "sheets", "stage": Stage.READY}, True),
+        ({"route": "mastery", "stage": Stage.GENERATING_MATERIAL}, True),
+        ({"route": "mastery", "stage": Stage.READY}, True),
+        ({"route": "mastery", "stage": Stage.AWAITING_CHOICE}, False),
+    ])  # fmt: skip
+    def test_only_a_lesson_that_asked_for_or_chose_sheets_is_sheets_only(self, make_lesson, fields, expected):
+        assert make_lesson(**fields).sheets_only is expected
+
+
+class TestSheetsStages:
+    @pytest.mark.parametrize("before", [Stage.PREPARING_DIAGNOSTIC, Stage.AWAITING_DIAGNOSTIC])
+    def test_a_sheets_lesson_goes_from_either_first_stage_to_writing_sheets(self, make_lesson, before):
+        lesson = make_lesson(stage=before, intent="sheets")
+
+        lesson.advance_to(Stage.GENERATING_MATERIAL)
+
+        assert Lesson.objects.get(pk=lesson.pk).stage == Stage.GENERATING_MATERIAL
 
 
 class TestLessonStage:

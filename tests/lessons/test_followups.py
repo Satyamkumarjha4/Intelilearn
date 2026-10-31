@@ -18,7 +18,10 @@ Use cases:
 - a second request for the same level is refused with the id of the lesson that exists, asks the gate nothing, and makes
   nothing; the other level is still allowed
 - two requests at the same moment make one lesson (the parent is locked), in real threads and real transactions
+- a follow-up carries the parent's note (user_context) and nothing else of its content: no concepts, assessment or plan
 - a parent that is not ready makes nothing
+- a parent that is only sheets (intent sheets, or a perfect check that chose the sheets) has no test, so it is refused
+  with 400 and nothing is asked or made; an Expert lesson chosen after a perfect check is a lesson like any other
 - the gate is asked once for lesson.followup, with the level, before anything is created; a refusal creates nothing and
   queues nothing; the authorization completes when the lesson is ready and is stored on the run
 - a Foundation follow-up needs the prerequisite planner bound as well as the lesson planner; an Advanced one needs only
@@ -32,7 +35,7 @@ import threading
 import pytest
 from support.gates import CountingGate, RefusingGate
 
-from lessons.errors import FollowupExists, LessonNotConfigured, WrongStage
+from lessons.errors import FollowupExists, LessonNotConfigured, SheetsOnlyLesson, WrongStage
 from lessons.followups import FollowupNames, FollowupService
 from lessons.metering import ActionRefused, MeteredAction, RunStarters
 from lessons.models import FlowSettings, GraphRun, Lesson, Stage
@@ -116,7 +119,7 @@ class TestCreate:
         assert (made.entry, made.origin, made.intent) == ("followup", "followup", "lesson")
         assert (made.created_from_lesson, made.followup_level) == (ready, level)
         assert made.self_rating_halves is None and made.level == "" and made.pk != ready.pk
-        assert "Binary search" in made.user_context
+        assert made.user_context == ""  # the parent had no note, so the follow-up has none
         assert (
             made.settings_snapshot == FlowSettings.load().snapshot() and "lesson.plan" in made.config_snapshot["nodes"]
         )
@@ -124,6 +127,17 @@ class TestCreate:
             made, GraphRun.Graph.FLOW, GraphRun.Trigger.START, GraphRun.Status.QUEUED,
         )  # fmt: skip
         assert queue.runs == [run]
+
+    def test_it_carries_the_parents_note_but_not_its_concepts(self, make_lesson, queue, bound_registry):
+        parent = make_lesson(
+            stage=Stage.READY, user_context="For my exam on Friday.", assessment={"known_concepts": ["loops"]},
+            plan={"title": "T"}, settings_snapshot={},
+        )  # fmt: skip
+
+        made, _ = service(queue).create(parent, "advanced")
+
+        assert made.user_context == "For my exam on Friday."
+        assert made.assessment is None and made.plan is None and made.prerequisites_to_cover == []
 
     def test_the_parent_is_not_changed(self, ready, queue, bound_registry):
         service(queue).create(ready, "foundation")
@@ -160,6 +174,27 @@ class TestCreate:
 
         assert Lesson.objects.filter(followup_level="foundation").count() == 0
         assert gate.authorized == [] and queue.runs == []
+
+    @pytest.mark.parametrize("fields", [{"intent": "sheets"}, {"route": "mastery"}])
+    def test_a_lesson_that_is_only_sheets_has_no_test_and_gets_no_followup(
+        self, make_lesson, queue, bound_registry, fields
+    ):
+        gate = CountingGate()
+        sheets = make_lesson(stage=Stage.READY, settings_snapshot={}, **fields)
+
+        with pytest.raises(SheetsOnlyLesson) as caught:
+            service(queue, gate).create(sheets, "foundation")
+
+        assert caught.value.status_code == 400 and caught.value.default_code == "sheets_only"
+        assert Lesson.objects.filter(followup_level="foundation").count() == 0
+        assert gate.authorized == [] and queue.runs == []
+
+    def test_an_expert_lesson_chosen_after_a_perfect_check_is_not_sheets_only(self, make_lesson, queue, bound_registry):
+        chosen = make_lesson(stage=Stage.READY, route="lesson", settings_snapshot={})
+
+        made, _ = service(queue).create(chosen, "advanced")
+
+        assert made.created_from_lesson == chosen
 
     def test_an_unknown_level_makes_nothing(self, ready, queue, bound_registry):
         with pytest.raises(ValueError, match="follow-up level"):

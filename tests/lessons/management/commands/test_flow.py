@@ -12,7 +12,7 @@ Use cases:
 - answer refuses a lesson that is not waiting, with the service's reason
 - a lesson can be named by a prefix of its id; an unknown or ambiguous prefix is an error
 - show prints the report and --json prints the stored fields
-- choose resumes a mastery lesson with the sheet, writes it, and show lists it; sheet asks for another one
+- choose resumes a mastery lesson with the sheet, writes it, and show lists it; sheet asks for more, for any lesson
 - choose and sheet refuse a lesson in the wrong stage with the service's reason
 - retry resumes a failed lesson from its checkpoint, and refuses one that did not fail
 - runs lists the lesson's runs
@@ -245,5 +245,5 @@ def test_choose_and_sheet_refuse_the_wrong_stage(inline, user, make_lesson):
 
     with pytest.raises(CommandError, match="not waiting for a study sheet"):
         flow("choose", str(lesson.id), "cheat_sheet", "--inline")
-    with pytest.raises(CommandError, match="only available once a mastery lesson is ready"):
+    with pytest.raises(CommandError, match="can be added once the lesson is ready"):
         flow("sheet", str(lesson.id), "cheat_sheet", "--inline")

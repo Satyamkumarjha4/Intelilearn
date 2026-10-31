@@ -14,6 +14,9 @@ Use cases:
 - the assessment prompt asks the model to copy the deterministic prerequisites, and includes the prerequisite quiz
   only when there was one
 - the study prompt carries the instructions for the chosen sheet and the concepts to cover
+- a study prompt with no grounding is the mastery wording; with one it tells the model who the learner is and what the
+  sheet must follow: the lesson they studied (its summary and the headings of its pages), the quiz's concepts with what
+  they know and what they find hard, or just the topic and level; only a learner who aced the check is called an expert
 - the plan prompt asks for the quantitative flag and says nothing about a test mix
 - the plan prompt describes the lesson shape of the learner's level: the role of each of the three slots, and the level
   the plan must carry
@@ -332,6 +335,53 @@ def test_study_prompt_carries_the_instructions_for_the_chosen_sheet(kind, phrase
 
     assert phrase in messages[0].content
     assert "Halving the range" in messages[1].content
+
+
+def grounded(kind, audience="level", **fields):
+    base = {"kind": "cheat_sheet", "concepts": ["Halving the range"]}
+    grounding = {"kind": kind, "audience": audience, "level": "foundation", "known": [], "gaps": [], **fields}
+    return subject() | base | {"grounding": grounding}
+
+
+def test_study_prompt_without_a_grounding_is_the_mastery_wording():
+    system = StudyMaterialPrompt().messages(subject() | {"kind": "cheat_sheet"})[0].content
+
+    assert "ALREADY KNOWS this topic well" in system
+
+
+def test_study_prompt_from_a_lesson_follows_that_lesson():
+    lesson = {
+        "title": "Binary search", "level": "proficient", "summary": "Find a value by halving the range.",
+        "pages": [{"title": "Core page", "headings": ["Halving the range", "The loop invariant"]}],
+    }  # fmt: skip
+
+    system, user = (m.content for m in StudyMaterialPrompt().messages(grounded("lesson", lesson=lesson)))
+
+    assert "just studied" in system and "ALREADY KNOWS" not in system
+    assert "Find a value by halving the range." in user and "The loop invariant" in user and "Core page" in user
+
+
+def test_study_prompt_from_a_quiz_names_what_the_learner_knows_and_finds_hard():
+    messages = StudyMaterialPrompt().messages(grounded("quiz", known=["Loops"], gaps=["Recursion"]))
+
+    system, user = (m.content for m in messages)
+    assert "ALREADY KNOWS" not in system and "foundation" in user.lower()
+    assert "Loops" in user and "Recursion" in user
+
+
+def test_study_prompt_from_the_topic_alone_asks_only_for_the_level():
+    messages = StudyMaterialPrompt().messages(grounded("none") | {"concepts": []})
+
+    system, user = (m.content for m in messages)
+    assert "foundation" in user.lower() and "ALREADY KNOWS" not in system
+    assert "Key concepts that must be covered: []" not in user
+
+
+def test_only_a_learner_who_aced_the_check_is_called_an_expert():
+    mastered = StudyMaterialPrompt().messages(grounded("quiz", audience="mastered"))[0].content
+    others = StudyMaterialPrompt().messages(grounded("quiz", audience="level"))[0].content
+
+    assert "ALREADY KNOWS this topic well" in mastered and "ALREADY KNOWS" not in others
 
 
 def test_verify_media_prompt_is_one_multimodal_message_with_the_image():

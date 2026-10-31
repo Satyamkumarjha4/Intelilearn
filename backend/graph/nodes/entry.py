@@ -8,7 +8,7 @@ junction nodes (`entry_router`, `level_gate`, `intent_router`) only carry a deci
 class, so it is table-tested without a graph.
 """
 
-from lessons.models import Stage
+from lessons.models import Intent, Stage
 
 from ..assessment import AssessmentRequest, AssessmentSources
 from ..context import FlowContext
@@ -63,13 +63,15 @@ class LevelGate(Router):
     def __call__(self, state: dict) -> str:
         if state.get("entry", DIAGNOSTIC) == DIAGNOSTIC or state.get("prerequisites_to_cover"):
             return self.otherwise
+        if state.get("intent") == Intent.SHEETS:
+            return self.otherwise  # sheets only: there is no lesson to prepare them for
         level = LevelScheme.level_of(state["assessment"])
         return self.plan if level is Level.BEGINNER else self.otherwise
 
 
 class IntentRouter(Router):
-    """Where each thing a learner can ask for goes. Only a lesson is wired; sheets from a topic arrive later, as one
-    more entry here."""
+    """Where each thing a learner can ask for goes: a lesson to the planner, sheets to the sheets writer. A graph that
+    lacks a destination refuses the intent with a reason."""
 
     def __init__(self, destinations: dict[str, str]):
         self.destinations = destinations
@@ -87,6 +89,9 @@ class AssessFromSourceNode(Node):
     name = "assess_from_source"
     stage = Stage.GENERATING_LESSON
 
+    def stage_of(self, state: dict) -> Stage:
+        return Stage.GENERATING_MATERIAL if state.get("intent") == Intent.SHEETS else self.stage
+
     def run(self, state: dict, ctx: FlowContext) -> dict:
         source = AssessmentSources.for_key(state["entry"])
         request = AssessmentRequest(
@@ -94,17 +99,19 @@ class AssessFromSourceNode(Node):
         )
         assessment = source.assess(request)
         level = LevelScheme.level_of(assessment)
+        sheets = state.get("intent") == Intent.SHEETS
+        # Sheets only is neither kind of lesson, so it has no route.
+        route = {} if sheets else {"route": "lesson"}
         self.lesson(state).advance_to(
-            Stage.GENERATING_LESSON,
-            route="lesson",
+            self.stage_of(state),
+            **route,
             prerequisites_to_cover=[],
             assessment=assessment,
             level=level.value,
             level_source=source.level_source,
         )
         return {
-            "assessment": assessment, "route": "lesson", "prerequisites_to_cover": [],
-            "level_source": source.level_source,
+            "assessment": assessment, **route, "prerequisites_to_cover": [], "level_source": source.level_source,
         }  # fmt: skip
 
 

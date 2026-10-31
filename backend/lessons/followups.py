@@ -13,7 +13,7 @@ from django.db import transaction
 
 from graph.followups import FollowupTargets
 
-from .errors import FollowupExists, WrongStage
+from .errors import FollowupExists, SheetsOnlyLesson, WrongStage
 from .metering import ActionGate, MeteredAction
 from .models import Entry, FlowSettings, FollowupLevel, GraphRun, Intent, Lesson, Origin, Stage
 from .services import LessonService, TaskQueue
@@ -83,6 +83,8 @@ class FollowupService:
             parent = Lesson.objects.select_for_update().get(pk=parent.pk)
             if parent.stage != Stage.READY:
                 raise WrongStage("A follow-up can be made once the lesson is ready.")
+            if parent.sheets_only:
+                raise SheetsOnlyLesson()
             if existing := parent.followups.filter(followup_level=level).first():
                 raise FollowupExists(existing.pk)
             snapshot = self.lessons.resolver.snapshot()
@@ -100,7 +102,7 @@ class FollowupService:
                     id=lesson_id,
                     owner=parent.owner,
                     topic=self.names.topic_for(parent, level),
-                    user_context=f"A follow-up to my lesson on {(parent.title or parent.topic)[:200]}.",
+                    user_context=parent.user_context,  # what the learner told us still holds; their concepts do not
                     entry=Entry.FOLLOWUP,
                     intent=Intent.LESSON,
                     origin=Origin.FOLLOWUP,

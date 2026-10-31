@@ -37,12 +37,17 @@ class Node(ABC):
         {Stage.PREPARING_DIAGNOSTIC, Stage.AWAITING_DIAGNOSTIC, Stage.AWAITING_PREREQUISITE, Stage.AWAITING_CHOICE}
     )
 
+    def stage_of(self, state: dict) -> Stage | None:
+        """The stage this run of the node works in. Most nodes always have the same one; a node shared by lessons and
+        sheets-only lessons says which from the state."""
+        return self.stage
+
     def __call__(self, state: dict, runtime) -> Any:
         ctx: FlowContext = runtime.context
-        if self.stage:
-            Lesson.objects.filter(pk=state["lesson_id"], stage=Stage.FAILED).update(stage=self.stage, error="")
-            if self.stage in self.BUILDING:
-                Lesson.objects.filter(pk=state["lesson_id"], stage__in=self.WAITING).update(stage=self.stage)
+        if stage := self.stage_of(state):
+            Lesson.objects.filter(pk=state["lesson_id"], stage=Stage.FAILED).update(stage=stage, error="")
+            if stage in self.BUILDING:
+                Lesson.objects.filter(pk=state["lesson_id"], stage__in=self.WAITING).update(stage=stage)
         ctx.events({"type": "node", "node": self.name, "status": "running"})
         try:
             return self.run(state, ctx)

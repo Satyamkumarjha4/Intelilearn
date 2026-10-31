@@ -49,7 +49,7 @@ from support.fakes import FakeSandbox
 from support.fixtures import budget_snapshot
 from support.lesson_data import make_final_test, make_state
 from support.quiz_data import make_questions
-from support.study_data import CONCEPTS, make_practice_sheet, make_revision_sheet
+from support.study_data import CONCEPTS, make_cheat_sheet, make_revision_sheet
 
 from graph.builders import FlowGraphBuilder
 from graph.context import FlowContext
@@ -484,7 +484,7 @@ def ready_mastery_lesson(lesson):
 
 
 def extra_run(lesson, kind):
-    payload = {"input": {"mastery_choice": kind, "extra_material": True}}
+    payload = {"input": {"sheet_kinds": [kind], "extra_material": True}}
     return new_run(lesson, GraphRun.Trigger.EXTRA_MATERIAL, payload, graph="study_material")
 
 
@@ -506,14 +506,15 @@ def test_an_extra_sheet_that_fails_its_checks_fails_the_run_but_not_the_lesson(
     make_runner, prepared, gateway, publisher
 ):
     ready_mastery_lesson(prepared)
-    short = make_practice_sheet(14)
-    gateway.script("study.generate", short, short)
-    run = extra_run(prepared, "practice_sheet")
+    thin = make_cheat_sheet()
+    thin["sections"] = thin["sections"][:1]
+    gateway.script("study.generate", thin, thin)
+    run = extra_run(prepared, "cheat_sheet")
 
     make_runner().execute(run.id)
 
     run.refresh_from_db()
-    assert run.status == GraphRun.Status.FAILED and "The practice sheet still failed its checks" in run.error
+    assert run.status == GraphRun.Status.FAILED and "still failed their checks" in run.error
     assert publisher.of("error")[-1]["message"] == run.error
     assert Lesson.objects.get(pk=prepared.pk).stage == Stage.READY and not StudyMaterial.objects.exists()
 

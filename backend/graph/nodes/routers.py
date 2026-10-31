@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
+from lessons.models import Intent
+
 
 class Router(ABC):
     @abstractmethod
@@ -23,10 +25,12 @@ class CheckRouter(Router):
 
 
 class LevelRouter(Router):
-    """After the diagnostic is graded: where each route goes."""
+    """After the diagnostic is graded: where each route goes. A learner who asked for sheets only has no prerequisite
+    quiz and no mastery choice (they already chose sheets), so every score goes to the assessment."""
 
     def __init__(self, destinations: dict[str, str]):
         self.destinations = destinations
 
     def __call__(self, state: dict) -> str:
-        return self.destinations[state["route"]]
+        route = "lesson" if state.get("intent") == Intent.SHEETS else state["route"]
+        return self.destinations[route]

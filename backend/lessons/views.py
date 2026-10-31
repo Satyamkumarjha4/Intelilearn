@@ -36,7 +36,8 @@ from .serializers import (
     LessonSummarySerializer,
     LessonVersionSerializer,
     MasteryChoiceSerializer,
-    MaterialKindSerializer,
+    MaterialRequestSerializer,
+    MaterialSummarySerializer,
     PracticeGradeRequestSerializer,
     PracticeGradeSerializer,
     QuizAttemptRequestSerializer,
@@ -310,28 +311,45 @@ class MaterialChoiceView(OwnedLessons, APIView):
 class MaterialRequestView(OwnedLessons, APIView):
     @extend_schema(
         tags=MATERIALS_TAG,
-        summary="Ask for another study sheet",
+        summary="List a lesson's study sheets",
+        description="The sheets the lesson has, oldest first, without their content, so the tab row knows which exist.",
+        parameters=[LESSON_ID],
+        responses={200: MaterialSummarySerializer(many=True)},
+    )
+    def get(self, request, lesson_id):
+        return Response(
+            MaterialSummarySerializer(MaterialService().listing(self.lesson_of(request, lesson_id)), many=True).data
+        )
+
+    @extend_schema(
+        tags=MATERIALS_TAG,
+        summary="Ask for study sheets",
         description=(
-            "For a ready mastery lesson. Runs the small `study_material` graph; the lesson stays `ready`. An optional "
-            "`Idempotency-Key` header makes a repeated request return the first answer."
+            "For any ready lesson: a cheat sheet, a revision sheet, or both at once (`kind`, or `kinds` for several). "
+            "One request is one run and one action for the action gate; the lesson stays `ready`. A sheet is made "
+            "once and has no versions: if any requested sheet exists the answer is `409 already_exists` with the "
+            "`kinds` that exist, and nothing is made or asked, so the client opens those and asks only for the "
+            "others. The practice sheet cannot be asked for. An optional `Idempotency-Key` header makes a repeated "
+            "request return the first answer."
         ),
         parameters=[LESSON_ID, IDEMPOTENCY_KEY],
-        request=MaterialKindSerializer,
+        request=MaterialRequestSerializer,
         responses={
             202: RunStartedSerializer,
             400: OpenApiResponse(description="Invalid body, or an invalid `Idempotency-Key`."),
             409: OpenApiResponse(
-                description="Wrong stage, exists, a run is active, or the same keyed request is still being handled."
+                description="Not ready, a sheet exists (`already_exists`, with `kinds`), a run is active, or the same "
+                "keyed request is still being handled."
             ),
         },
     )
     def post(self, request, lesson_id):
-        serializer = MaterialKindSerializer(data=request.data)
+        serializer = MaterialRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         lesson = self.lesson_of(request, lesson_id)
 
         def ask(client_key: str) -> Response:
-            run = MaterialService().request_extra(lesson, serializer.validated_data["kind"], client_key)
+            run = MaterialService().request_extra(lesson, serializer.validated_data["kinds"], client_key)
             return Response({"run_id": run.id}, status=status.HTTP_202_ACCEPTED)
 
         return IdempotentRequest().run(request, f"materials.request:{lesson.id}", serializer.validated_data, ask)

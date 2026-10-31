@@ -269,6 +269,7 @@ SPECTACULAR_SETTINGS = {
         "FollowupLevelEnum": "lessons.stages.FollowupLevel",
         "StageEnum": "lessons.stages.Stage",
         "MaterialKindEnum": "lessons.stages.MaterialKind",
+        "OfferedSheetEnum": "lessons.stages.OfferedSheet",
         "QuizKindEnum": "lessons.models.Quiz.Kind",
         "RunStatusEnum": "lessons.models.GraphRun.Status",
         "TestSubmissionStatusEnum": "lessons.models.TestSubmission.Status",

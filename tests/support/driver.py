@@ -32,8 +32,9 @@ class GraphDriver:
                     self.nodes.append(node)
         return self
 
-    def start(self):
-        return self.stream({"lesson_id": str(self.lesson.id)})
+    def start(self, **input):
+        """`input` is what the run's payload adds to the first input (for example the sheets asked for)."""
+        return self.stream({"lesson_id": str(self.lesson.id), **input})
 
     def answer(self, kind: str, right: int):
         quiz = Quiz.objects.get(lesson=self.lesson, kind=kind)

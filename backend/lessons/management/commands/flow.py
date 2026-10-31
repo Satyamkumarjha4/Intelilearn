@@ -3,7 +3,7 @@
     manage.py flow start "Binary search" --email ada@example.com --inline
     manage.py flow answer <lesson> diagnostic --correct 5 --inline
     manage.py flow choose <lesson> cheat_sheet --inline        (after a perfect diagnostic)
-    manage.py flow sheet <lesson> revision_sheet --inline      (another sheet later)
+    manage.py flow sheet <lesson> revision_sheet --inline      (more sheets later, for any ready lesson)
     manage.py flow show <lesson>          (add --json for the raw rows)
     manage.py flow retry <lesson> --inline
     manage.py flow runs <lesson>
@@ -24,6 +24,7 @@ from accounts.models import User
 from lessons.models import Lesson, MaterialKind, Quiz
 from lessons.reports import LessonReport
 from lessons.services import LessonService, MaterialService, QuizService
+from lessons.sheet_requests import SheetRequest
 from lessons.tasks import InlineTaskQueue
 
 
@@ -149,16 +150,16 @@ class ChooseFlow(Subcommand):
 
 
 class SheetFlow(Subcommand):
-    name, help = "sheet", "Ask for another study sheet for a ready mastery lesson."
+    name, help = "sheet", "Ask for more study sheets (one or both) for a ready lesson."
 
     def add_arguments(self, parser):
         parser.add_argument("lesson")
-        parser.add_argument("kind", choices=MaterialKind.values)
+        parser.add_argument("kinds", nargs="+", choices=SheetRequest.OFFERED)
 
     def run(self, command, options):
         lesson = self.lesson(options["lesson"])
         try:
-            run = MaterialService(queue=self.queue(options)).request_extra(lesson, options["kind"])
+            run = MaterialService(queue=self.queue(options)).request_extra(lesson, options["kinds"])
         except APIException as exc:
             raise CommandError(str(exc.detail)) from exc
         command.stdout.write(f"run {run.id}" + ("" if options["inline"] else " (queued)"))

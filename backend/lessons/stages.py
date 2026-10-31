@@ -77,6 +77,14 @@ class MaterialKind(models.TextChoices):
     PRACTICE_SHEET = "practice_sheet", "Practice sheet"
 
 
+class OfferedSheet(models.TextChoices):
+    """The sheets that can be asked for. The practice sheet is not offered any more: the ones that exist can still be
+    opened (`MaterialKind`)."""
+
+    CHEAT_SHEET = "cheat_sheet", "Cheat sheet"
+    REVISION_SHEET = "revision_sheet", "Revision sheet"
+
+
 class IllegalTransition(ValueError):
     """The lesson cannot move from one stage to the other."""
 
@@ -89,10 +97,19 @@ class StageTransitions:
     """
 
     TABLE: dict[Stage, frozenset[Stage]] = {
-        # a self-rated lesson has no quiz, so it goes straight to building the lesson
-        Stage.PREPARING_DIAGNOSTIC: frozenset({Stage.AWAITING_DIAGNOSTIC, Stage.GENERATING_LESSON, Stage.FAILED}),
+        # a self-rated lesson has no quiz, so it goes straight to building the lesson; one that asked for sheets only
+        # goes straight to writing them
+        Stage.PREPARING_DIAGNOSTIC: frozenset(
+            {Stage.AWAITING_DIAGNOSTIC, Stage.GENERATING_LESSON, Stage.GENERATING_MATERIAL, Stage.FAILED}
+        ),
         Stage.AWAITING_DIAGNOSTIC: frozenset(
-            {Stage.AWAITING_PREREQUISITE, Stage.AWAITING_CHOICE, Stage.GENERATING_LESSON, Stage.FAILED}
+            {
+                Stage.AWAITING_PREREQUISITE,
+                Stage.AWAITING_CHOICE,
+                Stage.GENERATING_LESSON,
+                Stage.GENERATING_MATERIAL,
+                Stage.FAILED,
+            }
         ),
         Stage.AWAITING_PREREQUISITE: frozenset({Stage.GENERATING_LESSON, Stage.FAILED}),
         # the Expert lesson or the sheets (two sheets are written at once, and the lesson says so when it starts)

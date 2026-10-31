@@ -124,6 +124,12 @@ class Lesson(models.Model):
     def __str__(self):
         return f"{self.topic} ({self.get_stage_display()})"
 
+    @property
+    def sheets_only(self) -> bool:
+        """The lesson is study sheets and nothing else: no pages and no test. It asked for sheets, or it chose them
+        after a perfect quick check (a lesson still waiting at that choice has not decided)."""
+        return self.intent == Intent.SHEETS or (self.route == Route.MASTERY and self.stage != Stage.AWAITING_CHOICE)
+
     def advance_to(self, stage: Stage, **fields) -> None:
         """Move to `stage` (and set `fields`) if that is a legal move from the *stored* stage.
 

@@ -56,6 +56,7 @@ from .models import (
     StudyMaterial,
 )
 from .origins import OriginVerifier
+from .sheet_requests import SheetGroundingHint, SheetRequest
 from .subjects import RunSubject
 
 
@@ -134,6 +135,8 @@ class LessonService:
     }
     #: what is also needed by a Beginner who took no quick check: nobody tested them, so their prerequisites are planned
     BEGINNER_NODES = ("prerequisites.plan",)
+    #: a lesson that is only sheets needs the sheet writer, and no lesson planner (nor prerequisites to plan)
+    SHEETS_NODES = ("study.generate",)
 
     def __init__(
         self,
@@ -165,20 +168,23 @@ class LessonService:
         intent: str = Intent.LESSON,
         origin: str = Origin.DIRECT,
         recommended_from: dict | None = None,
+        sheets: list[str] | None = None,
     ) -> tuple[Lesson, GraphRun]:
         """A new lesson with its registry and settings snapshotted, and a queued start run. The origin is verified and
         the action gate is asked first (`lesson.create`), so a refusal creates nothing. A quick check starts with the
-        quiz; a self-rated lesson has none and goes straight to the plan (`covers: all`)."""
+        quiz; a self-rated lesson has none and goes straight to the plan (`covers: all`). A lesson that asks for
+        `sheets` (intent sheets) is written as those sheets and has no pages and no test."""
         if entry == Entry.SELF_RATING and self_rating_halves is None:
             raise ValueError("A self-rated lesson needs the learner's rating.")
+        kinds = SheetRequest.kinds(sheets) if intent == Intent.SHEETS else self.no_sheets(sheets)
         verified = self.origins.verify(user, origin, recommended_from)
         snapshot = self.resolver.snapshot()
-        self.require_models(snapshot, entry, self_rating_halves)
+        self.require_models(snapshot, entry, self_rating_halves, intent=intent)
         lesson_id = uuid.uuid4()
         authorization = self.metering.authorize(
             user,
             MeteredAction.LESSON_CREATE,
-            size=self.size_of(entry, intent, verified.origin),
+            size=self.size_of(entry, intent, verified.origin, len(kinds)),
             subject_id=lesson_id,
             client_key=idempotency_key,
         )
@@ -200,30 +206,50 @@ class LessonService:
                 lesson=lesson,
                 graph=GraphRun.Graph.FLOW,
                 trigger=GraphRun.Trigger.START,
-                payload=self.metering.payload(authorization),
+                payload={
+                    **self.metering.payload(authorization),
+                    **({"input": {"sheet_kinds": kinds}} if kinds else {}),
+                },
             )
         self.dispatcher.dispatch(run)
         return lesson, run
 
     @staticmethod
-    def size_of(entry: str, intent: str, origin: str) -> dict:
+    def no_sheets(sheets: list[str] | None) -> list[str]:
+        """A lesson takes no list of sheets: that is asked for with the intent."""
+        if sheets:
+            raise ValueError("Only a lesson that asks for sheets takes a list of sheets.")
+        return []
+
+    @staticmethod
+    def size_of(entry: str, intent: str, origin: str, sheets: int = 0) -> dict:
         """What `lesson.create` is asked with. A quick check asks for the quiz stage only; a self-rated lesson has no
-        quiz, so it covers everything."""
-        return {
+        quiz, so it covers everything. A lesson that asks for sheets also says how many, and what they rest on."""
+        size = {
             "entry": str(entry), "intent": str(intent), "origin": str(origin),
             "covers": "all" if entry == Entry.SELF_RATING else "diagnostic",
         }  # fmt: skip
+        if intent == Intent.SHEETS:
+            size |= {"sheets": sheets, "grounding": "quiz" if entry == Entry.DIAGNOSTIC else "none"}
+        return size
 
     def require_models(
-        self, snapshot, entry: str, self_rating_halves: int | None = None, followup_level: str | None = None
+        self,
+        snapshot,
+        entry: str,
+        self_rating_halves: int | None = None,
+        followup_level: str | None = None,
+        intent: str = Intent.LESSON,
     ) -> None:
         """Every step the first stretch of this lesson needs has a model, or the lesson would fail at once."""
         needed = list(self.FIRST_NODES[Entry(entry)])
+        if intent == Intent.SHEETS:
+            needed = [key for key in needed if key != "lesson.plan"] + list(self.SHEETS_NODES)
         level = {
             Entry.SELF_RATING: lambda: StarRating(self_rating_halves).level(),
             Entry.FOLLOWUP: lambda: FollowupTargets.level_for(followup_level),
         }.get(Entry(entry))
-        if level and level() is Level.BEGINNER:
+        if intent != Intent.SHEETS and level and level() is Level.BEGINNER:
             needed += self.BEGINNER_NODES
         for key in needed:
             node = snapshot.node(key)
@@ -335,12 +361,29 @@ class QuizService:
                     payload={"resume": str(attempt.id), **self.metering_payload(lesson, kind, authorization)},
                 )
         self.dispatcher.dispatch(run)
-        return result.summary(route), run
+        # A lesson that asked for sheets is neither a lesson nor a mastery lesson, so it is shown no route.
+        return result.summary(None if lesson.intent == Intent.SHEETS else route), run
 
     def authorization_for(self, lesson: Lesson, kind: str, route: str | None):
         """`lesson.continue` is asked when a diagnostic leads to a lesson (not a perfect score: that learner chooses
-        first, and `MaterialService.choose` asks). The prerequisite quiz asks nothing; it carries on the open one."""
-        if kind != Quiz.Kind.DIAGNOSTIC or route == Route.MASTERY:
+        first, and `MaterialService.choose` asks). A lesson that asked for sheets is asked at once, whatever the score:
+        the choice was made when it was asked for. The prerequisite quiz asks nothing; it carries on the open one."""
+        if kind != Quiz.Kind.DIAGNOSTIC:
+            return None
+        if lesson.intent == Intent.SHEETS:
+            return self.metering.authorize(
+                lesson.owner,
+                MeteredAction.LESSON_CONTINUE,
+                size={
+                    "choice": "sheets_only",
+                    "perfect": route == Route.MASTERY,
+                    "intent": "sheets",
+                    "sheets": len(SheetRequest.of(lesson)),
+                    "grounding": "quiz",
+                },  # fmt: skip
+                subject_id=lesson.id,
+            )
+        if route == Route.MASTERY:
             return None
         return self.metering.authorize(
             lesson.owner,
@@ -441,20 +484,24 @@ class MaterialService:
             return {"choice": "lesson", "perfect": True}
         return {"choice": "sheets_only", "perfect": True, "sheets": 2 if choice == "sheets" else 1, "grounding": "quiz"}
 
-    def request_extra(self, lesson: Lesson, kind: str, idempotency_key: str = "") -> GraphRun:
-        """Another sheet for a ready mastery lesson, written by the small `study_material` graph."""
+    def request_extra(self, lesson: Lesson, asked: str | list[str], idempotency_key: str = "") -> GraphRun:
+        """More sheets for a ready lesson, whichever kind of lesson it is: one cheat sheet, one revision sheet, or both
+        at once, written by the small `study_material` graph. If any of them exists nothing is made or asked, and the
+        error names the ones that do (a sheet is never made twice, and has no versions). One request is one run and
+        one `sheet.generate`."""
+        kinds = SheetRequest.kinds(asked)
         with transaction.atomic():
             lesson = Lesson.objects.select_for_update().get(pk=lesson.pk)
-            if lesson.stage != Stage.READY or lesson.route != "mastery":
-                raise WrongStage("More study sheets are only available once a mastery lesson is ready.")
-            if StudyMaterial.objects.filter(lesson=lesson, kind=kind).exists():
-                raise AlreadyExists()
+            if lesson.stage != Stage.READY:
+                raise WrongStage("Study sheets can be added once the lesson is ready.")
+            if existing := [k for k in kinds if StudyMaterial.objects.filter(lesson=lesson, kind=k).exists()]:
+                raise AlreadyExists(existing)
             if has_active_run(lesson):
                 raise RunInProgress()
             authorization = self.metering.authorize(
                 lesson.owner,
                 MeteredAction.SHEET_GENERATE,
-                size={"sheets": 1, "grounding": "quiz"},  # a mastery lesson has no pages: the sheet rests on the quiz
+                size={"sheets": len(kinds), "grounding": SheetGroundingHint.of(lesson)},
                 subject_id=lesson.id,
                 client_key=idempotency_key,
             )
@@ -464,12 +511,16 @@ class MaterialService:
                     graph=GraphRun.Graph.STUDY_MATERIAL,
                     trigger=GraphRun.Trigger.EXTRA_MATERIAL,
                     payload={
-                        "input": {"mastery_choice": kind, "extra_material": True},
+                        "input": {"sheet_kinds": kinds, "extra_material": True},
                         **self.metering.payload(authorization),
                     },
                 )
         self.dispatcher.dispatch(run)
         return run
+
+    def listing(self, lesson: Lesson) -> list[dict]:
+        """The sheets the lesson has, oldest first, so the tab row knows which exist."""
+        return list(lesson.materials.order_by("created_at").values("kind", "created_at"))
 
     def kinds(self, lesson: Lesson) -> list[str]:
         return sorted(lesson.materials.values_list("kind", flat=True))

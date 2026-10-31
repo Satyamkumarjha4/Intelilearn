@@ -11,7 +11,17 @@ from graph.scoring import AttemptTrend
 
 from .attempts import AttemptQuestions
 from .models import GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt, TestSubmission
-from .stages import Entry, FollowupLevel, Intent, LevelSource, MasteryOptions, MaterialKind, Origin, Route
+from .stages import (
+    Entry,
+    FollowupLevel,
+    Intent,
+    LevelSource,
+    MasteryOptions,
+    MaterialKind,
+    OfferedSheet,
+    Origin,
+    Route,
+)
 
 
 class StarsField(serializers.FloatField):
@@ -21,6 +31,10 @@ class StarsField(serializers.FloatField):
         if isinstance(data, bool):
             self.fail("invalid")
         return super().to_internal_value(data)
+
+
+#: the sheets that can be asked for (the practice sheet is not offered any more)
+OFFERED_SHEETS = OfferedSheet.choices
 
 
 class RecommendedFromSerializer(serializers.Serializer):
@@ -40,7 +54,14 @@ class LessonCreateSerializer(serializers.Serializer):
         required=False, min_value=0.5, max_value=5, help_text="Stars, 0.5 to 5 in half steps. Needed for `self_rating`."
     )
     intent = serializers.ChoiceField(
-        choices=[Intent.LESSON], default=Intent.LESSON, help_text="Only a lesson can be asked for for now."
+        choices=Intent.choices,
+        default=Intent.LESSON,
+        help_text="`lesson` (pages and a test) or `sheets` (study sheets only: no pages, no test, no follow-ups).",
+    )
+    sheets = serializers.ListField(
+        child=serializers.ChoiceField(choices=OFFERED_SHEETS),
+        required=False,
+        help_text="For `intent: sheets`: `cheat_sheet`, `revision_sheet`, or both, each once.",
     )
     origin = serializers.ChoiceField(
         choices=Origin.choices,
@@ -52,6 +73,7 @@ class LessonCreateSerializer(serializers.Serializer):
     )
 
     def validate(self, attrs: dict) -> dict:
+        self.check_sheets(attrs)
         rating = attrs.pop("self_rating", None)
         if attrs["entry"] == Entry.SELF_RATING:
             if rating is None:
@@ -63,6 +85,19 @@ class LessonCreateSerializer(serializers.Serializer):
         elif rating is not None:
             raise serializers.ValidationError({"self_rating": ["A rating goes with `entry: self_rating`."]})
         return attrs
+
+    @staticmethod
+    def check_sheets(attrs: dict) -> None:
+        """Sheets go with the intent that asks for them: at least one, none repeated; and with no other intent."""
+        sheets = attrs.get("sheets")
+        if attrs["intent"] != Intent.SHEETS:
+            if sheets is not None:
+                raise serializers.ValidationError({"sheets": ["Sheets go with `intent: sheets`."]})
+            return
+        if not sheets:
+            raise serializers.ValidationError({"sheets": ["Pick a cheat sheet, a revision sheet, or both."]})
+        if len(set(sheets)) != len(sheets):
+            raise serializers.ValidationError({"sheets": ["Each sheet can be asked for once."]})
 
 
 class LessonCreatedSerializer(serializers.Serializer):
@@ -99,6 +134,12 @@ class FollowupsSerializer(serializers.Serializer):
 
 class LessonSummarySerializer(serializers.ModelSerializer):
     entry = serializers.ChoiceField(choices=Entry.choices, read_only=True)
+    intent = serializers.ChoiceField(choices=Intent.choices, read_only=True)
+    sheets_only = serializers.BooleanField(
+        read_only=True,
+        help_text="The lesson is study sheets and nothing else: no pages and no test. It asked for sheets, or chose "
+        "them after a perfect quick check.",
+    )
     followup_level = serializers.ChoiceField(choices=FollowupLevel.choices, read_only=True)
     test_status = serializers.SerializerMethodField()
     test_score = serializers.SerializerMethodField()
@@ -111,7 +152,8 @@ class LessonSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = Lesson
         fields = [
-            "id", "topic", "stage", "route", "title", "level", "entry", "followup_level", "created_at", "updated_at",
+            "id", "topic", "stage", "route", "title", "level", "entry", "intent", "sheets_only", "followup_level",
+            "created_at", "updated_at",
             "test_status", "test_score", "latest_score", "best_score", "attempts_count", "has_open_attempt",
             "material_count",
         ]  # fmt: skip
@@ -200,7 +242,6 @@ class LessonDetailSerializer(LessonSummarySerializer):
     active_run_id = serializers.SerializerMethodField()
     results = serializers.SerializerMethodField()
     materials = serializers.SerializerMethodField()
-    intent = serializers.ChoiceField(choices=Intent.choices, read_only=True)
     origin = serializers.ChoiceField(choices=Origin.choices, read_only=True)
     level_source = serializers.ChoiceField(choices=LevelSource.choices, read_only=True)
     mastery_options = serializers.ChoiceField(
@@ -218,7 +259,6 @@ class LessonDetailSerializer(LessonSummarySerializer):
             *LessonSummarySerializer.Meta.fields,
             "followup_of",
             "followups",
-            "intent",
             "origin",
             "level_source",
             "mastery_options",
@@ -330,8 +370,27 @@ class RunSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class MaterialKindSerializer(serializers.Serializer):
+class MaterialRequestSerializer(serializers.Serializer):
+    """The sheets to make: `kind` for one, or `kinds` for several at once. Only a cheat sheet and a revision sheet can
+    be asked for; a practice sheet that exists can still be opened."""
+
+    kind = serializers.ChoiceField(choices=OFFERED_SHEETS, required=False)
+    kinds = serializers.ListField(child=serializers.ChoiceField(choices=OFFERED_SHEETS), required=False)
+
+    def validate(self, attrs: dict) -> dict:
+        if ("kind" in attrs) == ("kinds" in attrs):
+            raise serializers.ValidationError({"kind": ["Send `kind`, or `kinds` for several at once."]})
+        kinds = attrs["kinds"] if "kinds" in attrs else [attrs["kind"]]
+        if not kinds or len(set(kinds)) != len(kinds):
+            raise serializers.ValidationError({"kinds": ["Pick a cheat sheet, a revision sheet, or both, each once."]})
+        return {"kinds": kinds}
+
+
+class MaterialSummarySerializer(serializers.Serializer):
+    """A sheet a lesson has, without its content."""
+
     kind = serializers.ChoiceField(choices=MaterialKind.choices)
+    created_at = serializers.DateTimeField()
 
 
 class FollowupRequestSerializer(serializers.Serializer):

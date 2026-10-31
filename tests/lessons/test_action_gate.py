@@ -23,8 +23,13 @@ Use cases:
 - a failed run settles failed; Stop settles cancelled; neither settles twice
 - Stop then Retry asks exactly once, with `resume`, for the same action and size; a refused Retry leaves the lesson
   failed and creates no run; a Retry of work that was kept asks nothing
-- an extra sheet asks `sheet.generate` once (one sheet, grounded on the quiz); a refusal creates no run; a sheet that
-  exists, a wrong stage or a run in progress never ask; the run ending settles it
+- an extra sheet asks `sheet.generate` once (the number of sheets, and what they rest on: the lesson, the quiz or
+  nothing but the topic); a refusal creates no run; a sheet that exists, a wrong stage or a run in progress never ask;
+  the run ending settles it
+- a lesson that asks for sheets asks `lesson.create` with the intent, the number of sheets and what they rest on; its
+  quick check asks `lesson.continue` once at submit, with `sheets_only` whatever the score and whether it was perfect,
+  and
+  shows no route; a self-rated one asks nothing more after the one `lesson.create` that covers all
 - deleting a lesson settles an open authorization as cancelled and leaves a settled one alone
 - with the open gate nothing is stored on the run
 - a replayed `Idempotency-Key` on starting a lesson or asking for a sheet returns the first answer and authorizes once
@@ -417,8 +422,33 @@ class TestRequestingAnExtraSheet:
         assert (asked.action, asked.subject_id) == (SHEET_GENERATE, lesson.id)
         assert asked.size == {"sheets": 1, "grounding": "quiz"}
         assert asked.key.endswith(":k")
-        assert run.payload["input"] == {"mastery_choice": "revision_sheet", "extra_material": True}
+        assert run.payload["input"] == {"sheet_kinds": ["revision_sheet"], "extra_material": True}
         assert run.payload["authorization"]["action"] == "sheet.generate"
+
+    @pytest.mark.parametrize(("kinds", "count"), [("cheat_sheet", 1), (["cheat_sheet", "revision_sheet"], 2)])
+    def test_the_gate_is_asked_once_whatever_the_number_of_sheets_and_told_how_many(
+        self, make_lesson, queue, kinds, count
+    ):
+        gate = CountingGate()
+
+        MaterialService(queue=queue, gate=gate).request_extra(self.ready(make_lesson), kinds)
+
+        assert len(gate.authorized) == 1 and gate.authorized[0].size["sheets"] == count
+
+    @pytest.mark.parametrize(("fields", "grounding"), [
+        ({"plan": {"x": 1}, "pages": {"core": {}}, "route": "lesson"}, "lesson"),
+        ({"route": "mastery"}, "quiz"),
+        ({"intent": "sheets"}, "quiz"),
+        ({"intent": "sheets", "entry": "self_rating", "self_rating_halves": 5}, "none"),
+    ])  # fmt: skip
+    def test_the_sheets_rest_on_the_lesson_the_quiz_or_nothing_but_the_topic(
+        self, make_lesson, queue, fields, grounding
+    ):
+        gate = CountingGate()
+
+        MaterialService(queue=queue, gate=gate).request_extra(make_lesson(stage=Stage.READY, **fields), "cheat_sheet")
+
+        assert gate.authorized[0].size["grounding"] == grounding
 
     def test_a_refusal_creates_no_run(self, make_lesson, queue):
         with pytest.raises(ActionRefused):
@@ -456,6 +486,59 @@ class TestRequestingAnExtraSheet:
         other = MaterialService(queue=queue, gate=gate).request_extra(lesson, "cheat_sheet")
         settlement(gate).on_stopped(other, "boom")
         assert gate.settled[-1] == ("sheet.generate", RunOutcome.FAILED)
+
+
+class TestASheetsLesson:
+    def waiting(self, make_lesson, kinds=("cheat_sheet", "revision_sheet"), **fields):
+        lesson = make_lesson(intent="sheets", **fields)
+        GraphRun.objects.create(
+            lesson=lesson, trigger=GraphRun.Trigger.START, status=GraphRun.Status.PAUSED,
+            payload={"input": {"sheet_kinds": list(kinds)}},
+        )  # fmt: skip
+        return lesson, make_quiz(lesson)
+
+    @pytest.mark.parametrize(("right", "perfect"), [(1, False), (6, False), (10, True)])
+    def test_the_quick_check_asks_lesson_continue_once_with_sheets_only_whatever_the_score(
+        self, make_lesson, queue, right, perfect
+    ):
+        lesson, quiz = self.waiting(make_lesson)
+        gate = CountingGate()
+
+        summary, run = QuizService(queue=queue, gate=gate).submit(lesson, "diagnostic", answers_for(quiz, right))
+
+        (asked,) = gate.authorized
+        assert asked.action == LESSON_CONTINUE and asked.subject_id == lesson.id
+        assert asked.size == {
+            "choice": "sheets_only", "perfect": perfect, "intent": "sheets", "sheets": 2, "grounding": "quiz",
+        }  # fmt: skip
+        assert asked.completes_at.to_payload() == {"kind": "stage", "stage": "ready"}
+        assert run.payload["authorization"]["action"] == "lesson.continue"
+        assert "route" not in summary and summary["correct"] == right  # it is neither kind of lesson
+
+    def test_it_counts_the_sheets_that_were_asked_for(self, make_lesson, queue):
+        lesson, quiz = self.waiting(make_lesson, kinds=("revision_sheet",))
+        gate = CountingGate()
+
+        QuizService(queue=queue, gate=gate).submit(lesson, "diagnostic", answers_for(quiz, 5))
+
+        assert gate.authorized[0].size["sheets"] == 1
+
+    def test_a_refusal_at_submit_stores_no_attempt_and_queues_no_run(self, make_lesson, queue):
+        lesson, quiz = self.waiting(make_lesson)
+
+        with pytest.raises(ActionRefused):
+            QuizService(queue=queue, gate=RefusingGate()).submit(lesson, "diagnostic", answers_for(quiz, 10))
+
+        assert QuizAttempt.objects.count() == 0 and queue.runs == []
+
+    def test_a_lesson_made_by_a_mastery_choice_is_not_asked_again_at_submit(self, make_lesson, queue):
+        lesson = make_lesson()
+        quiz = make_quiz(lesson)
+        gate = CountingGate()
+
+        QuizService(queue=queue, gate=gate).submit(lesson, "diagnostic", answers_for(quiz, 10))
+
+        assert gate.authorized == []  # the perfect score of a lesson that asked for a lesson still waits for its choice
 
 
 class TestDeletingALesson:

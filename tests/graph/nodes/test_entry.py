@@ -13,10 +13,15 @@ Use cases:
 - the level gate plans prerequisites for a Beginner who took no quiz, and for no one else: not a quick check, not a
   level above Beginner, not a lesson that already has prerequisites
 - the level gate reads the level by the scheme the assessment was written under
-- the intent router sends a lesson on, treats a missing intent as a lesson, and refuses an intent that is not wired
+- the level gate plans nothing for a lesson that asked for sheets only, whatever the level: there is no lesson to
+  prepare for
+- the intent router sends a lesson on, sheets to the sheets writer, treats a missing intent as a lesson, and refuses an
+  intent that is not wired
 - the junction nodes change nothing
 - assess_from_source turns the rating into the assessment, records it on the lesson with the level, the level source,
   the lesson route and no prerequisites, and moves the lesson from the quiz stage to building
+- assess_from_source for a lesson that asked for sheets moves it to writing sheets, records no lesson route, and leaves
+  the level and the source as for any rating
 - assess_from_source takes a follow-up's level from what it is for and records the test score as the level source
 - assess_from_source recovers a failed lesson to building, and refuses an entry that has no source
 - plan_prerequisites asks the model for a prerequisite list and counts the attempt
@@ -97,6 +102,12 @@ class TestLevelGate:
     def test_a_thread_from_before_self_rating_is_a_quick_check(self):
         assert LevelGate()({"assessment": assessment("beginner")}) == "intent_router"
 
+    @pytest.mark.parametrize("entry", ["self_rating", "diagnostic"])
+    def test_a_lesson_that_asked_for_sheets_has_nothing_planned_even_for_a_beginner(self, entry):
+        state = {"entry": entry, "intent": "sheets", "assessment": assessment("beginner"), "prerequisites_to_cover": []}
+
+        assert LevelGate()(state) == "intent_router"
+
     def test_an_assessment_without_the_scheme_marker_is_read_by_the_old_names(self):
         old = {"level": "beginner"}  # meant Foundation then
         assert LevelGate()({"entry": "self_rating", "assessment": old}) == "intent_router"
@@ -106,12 +117,17 @@ class TestIntentRouter:
     def test_a_lesson_goes_on(self):
         assert IntentRouter({"lesson": "plan_lesson"})({"intent": "lesson"}) == "plan_lesson"
 
+    def test_sheets_go_to_the_sheets_writer(self):
+        router = IntentRouter({"lesson": "plan_lesson", "sheets": "plan_sheets"})
+
+        assert router({"intent": "sheets"}) == "plan_sheets"
+
     def test_a_missing_intent_is_a_lesson(self):
         assert IntentRouter({"lesson": "plan_lesson"})({}) == "plan_lesson"
 
     def test_an_intent_that_is_not_wired_is_refused_with_a_reason(self):
         with pytest.raises(RunFailed, match="sheets"):
-            IntentRouter({"lesson": "plan_lesson"})({"intent": "sheets"})
+            IntentRouter({"lesson": "plan_lesson"})({"intent": "sheets"})  # a graph that does not write sheets
 
 
 @pytest.mark.parametrize("node", [EntryRouterNode, LevelGateNode, IntentRouterNode])
@@ -146,6 +162,22 @@ class TestAssessFromSource:
 
         stored = Lesson.objects.get(pk=lesson.pk)
         assert (stored.stage, stored.error, stored.level) == (Stage.GENERATING_LESSON, "", "beginner")
+
+    @pytest.mark.parametrize("before", [Stage.PREPARING_DIAGNOSTIC, Stage.FAILED])
+    def test_a_lesson_that_asked_for_sheets_moves_to_writing_them_with_no_lesson_route(
+        self, lesson, lesson_state, runtime, before
+    ):
+        self.start(lesson, intent="sheets", stage=before)
+
+        update = AssessFromSourceNode()(
+            lesson_state | {"entry": "self_rating", "self_rating_halves": 2, "intent": "sheets"}, runtime
+        )
+
+        stored = Lesson.objects.get(pk=lesson.pk)
+        assert (stored.stage, stored.route, stored.level, stored.level_source) == (
+            Stage.GENERATING_MATERIAL, "", "beginner", "self_rating",
+        )  # fmt: skip
+        assert "route" not in update and update["prerequisites_to_cover"] == []
 
     def test_an_entry_with_no_source_is_refused(self, lesson_state, runtime):
         with pytest.raises(KeyError, match="quiz_result"):

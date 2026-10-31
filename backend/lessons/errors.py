@@ -69,9 +69,17 @@ class MaterialNotFound(LessonError):
 
 
 class AlreadyExists(LessonError):
+    """A sheet is never made twice. `extra.kinds` names the requested ones that exist, so the client opens them and asks
+    only for the others."""
+
     status_code = status.HTTP_409_CONFLICT
     default_code = "already_exists"
     default_detail = "The lesson already has that study sheet."
+
+    def __init__(self, kinds: list[str] | None = None):
+        super().__init__()
+        if kinds:
+            self.extra = {"kinds": list(kinds)}
 
 
 class FollowupExists(LessonError):
@@ -84,6 +92,14 @@ class FollowupExists(LessonError):
     def __init__(self, lesson_id):
         super().__init__()
         self.extra = {"lesson_id": str(lesson_id)}
+
+
+class SheetsOnlyLesson(LessonError):
+    """A follow-up grows out of a test result, and a lesson that is only study sheets has no test."""
+
+    status_code = status.HTTP_400_BAD_REQUEST
+    default_code = "sheets_only"
+    default_detail = "This lesson is study sheets only, so it has no test to follow up on."
 
 
 class StaleCodeVersion(LessonError):

@@ -11,7 +11,7 @@ Use cases:
   topic of its level and the follow-up's entry and origin
 - asking again for a level that exists is a 409 `already_exists` that names the lesson, and the other level is allowed
 - a lesson that is not ready is a 409 `wrong_stage`; another learner's lesson is a 404; an unknown or missing level is
-  a 400
+  a 400; a lesson that is only study sheets has no test and is a 400 `sheets_only`
 - the Idempotency-Key returns the first answer and asks the gate once
 - it counts against the new-lesson rate limit, and a refused action creates nothing
 - `POST /lessons` still refuses a client that claims `origin: followup`
@@ -76,6 +76,17 @@ class TestMaking:
         response = signed_in_client.post(url(building), {"level": "foundation"}, format="json")
 
         assert response.status_code == 409 and response.json()["code"] == "wrong_stage"
+
+    @pytest.mark.parametrize("fields", [{"intent": "sheets"}, {"route": "mastery"}])
+    def test_a_lesson_that_is_only_sheets_is_a_400_and_makes_nothing(
+        self, signed_in_client, make_lesson, queue, bound_registry, fields
+    ):
+        sheets = make_lesson(stage=Stage.READY, settings_snapshot={}, **fields)
+
+        response = signed_in_client.post(url(sheets), {"level": "foundation"}, format="json")
+
+        assert response.status_code == 400 and response.json()["code"] == "sheets_only"
+        assert not Lesson.objects.filter(created_from_lesson=sheets).exists() and queue.runs == []
 
     def test_another_learners_lesson_is_a_404(self, signed_in_client, make_lesson, other_user, bound_registry):
         theirs = make_lesson(owner=other_user, stage=Stage.READY)

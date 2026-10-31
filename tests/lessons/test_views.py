@@ -15,7 +15,8 @@ Use cases:
   other than a lesson and an origin the server alone may set are 400s that name the field and create nothing
 - a lesson says where it came from only after the server verified it: a recommendation must name the caller's own graded
   attempt and a topic it listed
-- a lesson's detail says its entry, intent, origin, level source and (stars) self-rating
+- a lesson's detail says its entry, intent, origin, level source and (stars) self-rating, and whether it is only sheets
+  (the list says the same, with its intent)
 - a lesson's detail hides the page writers' notes, reports the active run and keeps the quiz scores after a reload
 - another user's lesson, quiz or run is a 404, and so is an id that is not a UUID
 - deleting a lesson removes it; retrying is only for failed lessons
@@ -24,7 +25,11 @@ Use cases:
 - a run can be read, followed as an event stream (a browser's EventSource gets 200, not 406) and cancelled once
 - the choice after a perfect quick check takes the Expert lesson or the sheets (or, for a lesson already waiting, one
   sheet kind), needs exactly one known choice, and is refused outside the choice
-- more sheets can be requested for a ready mastery lesson
+- sheets can be asked for on a new lesson (`intent: sheets` with the kinds, one or both, by quick check or rating) and
+  a body that asks for none, one that is not offered, a repeat, or sheets for a lesson is a 400 naming the field
+- more sheets can be requested for any ready lesson, as `kind` or `kinds`; a kind that exists is a 409 `already_exists`
+  naming the kinds that exist and nothing is made; a practice sheet cannot be requested; the sheets a lesson has are
+  listed with when each was made
 - a sheet is served without practice solutions, which a reveal adds
 - practice answers are graded on submit; another user's sheets are a 404
 - the lesson detail lists its sheets
@@ -50,7 +55,7 @@ from asgiref.sync import async_to_sync
 from rest_framework.throttling import SimpleRateThrottle
 from support.lesson_data import make_final_test
 from support.quiz_data import make_questions
-from support.study_data import make_cheat_sheet, make_practice_sheet
+from support.study_data import make_cheat_sheet, make_practice_sheet, make_revision_sheet
 
 from lessons.models import GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt, Stage, StudyMaterial, TestSubmission
 
@@ -70,6 +75,7 @@ PATHS = [
     ("post", "/api/runs/{run}/cancel"),
     ("post", "/api/lessons/{lesson}/choice"),
     ("post", "/api/lessons/{lesson}/materials"),
+    ("get", "/api/lessons/{lesson}/materials"),
     ("get", "/api/lessons/{lesson}/materials/cheat_sheet"),
     ("post", "/api/lessons/{lesson}/materials/practice_sheet/grade"),
     ("get", "/api/lessons/{lesson}/document"),
@@ -132,6 +138,8 @@ class TestList:
             "title",
             "level",
             "entry",
+            "intent",
+            "sheets_only",
             "followup_level",
             "created_at",
             "updated_at",
@@ -263,7 +271,6 @@ class TestCreate:
         assert Lesson.objects.count() == 0 and queue.runs == []
 
     @pytest.mark.parametrize(("body", "field"), [
-        ({"intent": "sheets"}, "intent"),
         ({"intent": "poster"}, "intent"),
         ({"origin": "followup"}, "origin"),
         ({"origin": "quiz_result"}, "origin"),
@@ -279,6 +286,48 @@ class TestCreate:
 
         assert response.status_code == 400 and field in response.json()["fields"]
         assert Lesson.objects.count() == 0 and queue.runs == []
+
+    @pytest.mark.parametrize(("extra", "kinds"), [
+        ({"sheets": ["cheat_sheet", "revision_sheet"]}, ["cheat_sheet", "revision_sheet"]),
+        ({"sheets": ["revision_sheet"]}, ["revision_sheet"]),
+        ({"sheets": ["cheat_sheet"], "entry": "self_rating", "self_rating": 2}, ["cheat_sheet"]),
+    ])  # fmt: skip
+    def test_a_lesson_can_be_asked_for_as_sheets(self, signed_in_client, user, queue, bound_registry, extra, kinds):
+        body = {"topic": "Binary search", "intent": "sheets"} | extra
+
+        response = signed_in_client.post("/api/lessons", body, format="json")
+
+        assert response.status_code == 202
+        made = Lesson.objects.get(owner=user)
+        assert made.intent == "sheets" and made.sheets_only
+        assert queue.runs[0].payload["input"] == {"sheet_kinds": kinds}
+
+    @pytest.mark.parametrize("body", [
+        {"intent": "sheets"},  # no sheets
+        {"intent": "sheets", "sheets": []},
+        {"intent": "sheets", "sheets": ["practice_sheet"]},
+        {"intent": "sheets", "sheets": ["cheat_sheet", "poster"]},
+        {"intent": "sheets", "sheets": ["cheat_sheet", "cheat_sheet"]},
+        {"intent": "sheets", "sheets": "cheat_sheet"},
+        {"intent": "lesson", "sheets": ["cheat_sheet"]},
+        {"sheets": ["cheat_sheet"]},
+    ])  # fmt: skip
+    def test_sheets_that_do_not_fit_are_a_400_naming_the_field(self, signed_in_client, queue, bound_registry, body):
+        response = signed_in_client.post("/api/lessons", {"topic": "Binary search"} | body, format="json")
+
+        assert response.status_code == 400 and "sheets" in response.json()["fields"]
+        assert Lesson.objects.count() == 0 and queue.runs == []
+
+    def test_a_lesson_asked_for_as_sheets_needs_the_sheet_writer_bound(self, signed_in_client, queue, db):
+        from llm_registry.node_configs import NodeConfigSync
+
+        NodeConfigSync().ensure()
+        body = {"topic": "Binary search", "intent": "sheets", "sheets": ["cheat_sheet"], "entry": "self_rating",
+                "self_rating": 3}  # fmt: skip
+
+        response = signed_in_client.post("/api/lessons", body, format="json")
+
+        assert response.status_code == 503 and response.json()["code"] == "llm_not_configured"
 
     def test_a_recommendation_for_the_callers_own_graded_attempt_and_topic_is_stored(
         self, signed_in_client, user, queue, bound_registry, lesson
@@ -363,6 +412,21 @@ class TestDetail:
         assert (rated["entry"], rated["self_rating"], rated["level"], rated["level_source"], rated["origin"]) == (
             "self_rating", 3.5, "foundation", "self_rating", "recommendation",
         )  # fmt: skip
+
+    @pytest.mark.parametrize(("fields", "sheets_only"), [
+        ({}, False), ({"route": "lesson"}, False), ({"intent": "sheets"}, True), ({"route": "mastery"}, True),
+        ({"route": "mastery", "stage": Stage.AWAITING_CHOICE}, False),
+    ])  # fmt: skip
+    def test_says_whether_the_lesson_is_only_sheets_in_the_detail_and_the_list(
+        self, signed_in_client, make_lesson, fields, sheets_only
+    ):
+        lesson = make_lesson(**fields)
+
+        detail = signed_in_client.get(f"/api/lessons/{lesson.id}").json()
+        (row,) = signed_in_client.get("/api/lessons").json()["results"]
+
+        assert detail["sheets_only"] is sheets_only and row["sheets_only"] is sheets_only
+        assert row["intent"] == lesson.intent == detail["intent"]
 
     def test_the_assessment_says_where_it_came_from_when_it_is_known(self, signed_in_client, lesson):
         Lesson.objects.filter(pk=lesson.pk).update(assessment={
@@ -667,7 +731,74 @@ class TestMaterials:
         fresh = signed_in_client.post(f"/api/lessons/{lesson.id}/materials", {"kind": "revision_sheet"}, format="json")
 
         assert again.status_code == 409 and again.json()["code"] == "already_exists"
+        assert again.json()["kinds"] == ["cheat_sheet"]
         assert fresh.status_code == 202 and queue.runs[0].graph == "study_material"
+
+    def test_any_ready_lesson_can_have_sheets_made_for_it(self, signed_in_client, make_lesson, queue):
+        lesson = make_lesson(stage=Stage.READY, route="lesson")
+
+        response = signed_in_client.post(f"/api/lessons/{lesson.id}/materials", {"kind": "cheat_sheet"}, format="json")
+
+        assert response.status_code == 202 and response.json() == {"run_id": str(queue.runs[0].id)}
+
+    def test_both_sheets_can_be_asked_for_at_once_as_one_run(self, signed_in_client, make_lesson, queue):
+        lesson = make_lesson(stage=Stage.READY, route="lesson")
+        body = {"kinds": ["revision_sheet", "cheat_sheet"]}
+
+        response = signed_in_client.post(f"/api/lessons/{lesson.id}/materials", body, format="json")
+
+        assert response.status_code == 202 and len(queue.runs) == 1
+        assert queue.runs[0].payload["input"]["sheet_kinds"] == ["cheat_sheet", "revision_sheet"]
+
+    def test_asking_for_both_while_one_exists_names_it_and_makes_nothing(self, signed_in_client, make_lesson, queue):
+        lesson = make_lesson(stage=Stage.READY, route="lesson")
+        StudyMaterial.objects.create(lesson=lesson, kind="revision_sheet", content=make_revision_sheet())
+        body = {"kinds": ["cheat_sheet", "revision_sheet"]}
+
+        response = signed_in_client.post(f"/api/lessons/{lesson.id}/materials", body, format="json")
+
+        assert response.status_code == 409 and response.json()["kinds"] == ["revision_sheet"]
+        assert queue.runs == [] and GraphRun.objects.count() == 0
+
+    @pytest.mark.parametrize("body", [
+        {}, {"kind": "practice_sheet"}, {"kind": "poster"}, {"kinds": []}, {"kinds": ["practice_sheet"]},
+        {"kinds": ["cheat_sheet", "cheat_sheet"]}, {"kind": "cheat_sheet", "kinds": ["revision_sheet"]},
+        {"kinds": "cheat_sheet"},
+    ])  # fmt: skip
+    def test_the_sheets_asked_for_must_be_one_or_both_of_the_two_offered(
+        self, signed_in_client, make_lesson, queue, body
+    ):
+        lesson = make_lesson(stage=Stage.READY, route="lesson")
+
+        response = signed_in_client.post(f"/api/lessons/{lesson.id}/materials", body, format="json")
+
+        assert response.status_code == 400 and response.json()["fields"] and queue.runs == []
+
+    def test_a_lesson_that_is_not_ready_is_a_conflict(self, signed_in_client, make_lesson, queue):
+        lesson = make_lesson(stage=Stage.GENERATING_LESSON)
+
+        response = signed_in_client.post(f"/api/lessons/{lesson.id}/materials", {"kind": "cheat_sheet"}, format="json")
+
+        assert response.status_code == 409 and response.json()["code"] == "wrong_stage"
+
+    def test_lists_the_sheets_with_when_each_was_made(self, signed_in_client, lesson):
+        StudyMaterial.objects.create(lesson=lesson, kind="revision_sheet", content={})
+        StudyMaterial.objects.create(lesson=lesson, kind="cheat_sheet", content={})
+
+        response = signed_in_client.get(f"/api/lessons/{lesson.id}/materials")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert [row["kind"] for row in body] == ["revision_sheet", "cheat_sheet"]  # oldest first
+        assert all(set(row) == {"kind", "created_at"} and row["created_at"] for row in body)
+
+    def test_a_lesson_with_no_sheets_lists_none_and_another_learners_lesson_is_a_404(
+        self, signed_in_client, lesson, make_lesson, other_user
+    ):
+        theirs = make_lesson(owner=other_user)
+
+        assert signed_in_client.get(f"/api/lessons/{lesson.id}/materials").json() == []
+        assert signed_in_client.get(f"/api/lessons/{theirs.id}/materials").status_code == 404
 
     def test_serves_a_sheet(self, signed_in_client, lesson):
         StudyMaterial.objects.create(lesson=lesson, kind="cheat_sheet", content=make_cheat_sheet())

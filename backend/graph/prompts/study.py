@@ -24,15 +24,31 @@ difficult, expert).
 
 
 class StudyMaterialPrompt(Prompt):
-    """Subject also carries `kind` (the sheet to write) and `concepts` (what it must cover)."""
+    """Subject also carries `kind` (the sheet to write), `concepts` (what it must cover) and, when the sheet is asked
+    for from a lesson or a topic, `grounding` (graph/grounding.py): what it rests on and who it is for. Without a
+    grounding this is the mastery path's wording, for a learner who aced the quick check."""
+
+    MASTERED = """You write study material for a learner who ALREADY KNOWS this topic well (they aced a \
+diagnostic quiz). Consolidate and sharpen; don't teach from scratch."""
+    FROM_A_LESSON = """You write study material for a learner who has just studied the lesson described below. The \
+sheet must follow that lesson: use its terms and notation, cover what it teaches, and add nothing it does not \
+teach. Consolidate and sharpen; don't teach from scratch."""
+    FROM_A_LEVEL = """You write study material for a learner at the level given below. Pitch it for that level: a \
+Beginner needs the basics in plain words, an Expert needs it dense and exam-ready. Write for what they are likely to \
+know; don't assume more."""
 
     @staticmethod
     def instructions(kind: str) -> str:
         return STUDY_INSTRUCTIONS[kind].replace("{guidance}", QuestionTypes.guidance(QUESTION_TYPES))
 
+    def opening(self, subject: dict) -> str:
+        grounding = subject.get("grounding")
+        if grounding is None or grounding["audience"] == "mastered":
+            return self.MASTERED
+        return self.FROM_A_LESSON if grounding["kind"] == "lesson" else self.FROM_A_LEVEL
+
     def system(self, subject: dict) -> str:
-        return f"""You write study material for a learner who ALREADY KNOWS this topic well (they aced a \
-diagnostic quiz). Consolidate and sharpen; don't teach from scratch.
+        return f"""{self.opening(subject)}
 
 {self.instructions(subject["kind"])}
 
@@ -40,9 +56,34 @@ Use Markdown; LaTeX between $…$ for inline maths (in Markdown fields). Be accu
 {self.language_rule(subject.get("profile"))}"""
 
     def user(self, subject: dict) -> str:
+        grounding = subject.get("grounding")
         return f"""{self.topic_text(subject)}
 
 The learner:
 {self.learner_text(subject.get("profile"))}
+{self.grounding_text(grounding)}
+{self.concepts_text(subject, grounding)}"""
 
-Key concepts that must be covered: {self.to_json(subject.get("concepts") or [])}"""
+    @staticmethod
+    def concepts_text(subject: dict, grounding: dict | None) -> str:
+        concepts = subject.get("concepts") or []
+        if grounding is not None and not concepts:
+            return ""  # nothing to cover but the topic itself
+        return f"\nKey concepts that must be covered: {Prompt.to_json(concepts)}"
+
+    @staticmethod
+    def grounding_text(grounding: dict | None) -> str:
+        """What the sheet rests on, as the user message tells it: the lesson, the quiz's findings, or the level."""
+        if grounding is None:
+            return ""
+        lines = []
+        if grounding["level"]:
+            lines.append(f"The learner's level: {grounding['level']}.")
+        if lesson := grounding.get("lesson"):
+            pages = "\n".join(f"- {page['title']}: {'; '.join(page['headings'])}" for page in lesson["pages"])
+            lines.append(f'The lesson they studied: "{lesson["title"]}". {lesson["summary"]}\nIts pages:\n{pages}')
+        if grounding["known"]:
+            lines.append(f"What their quick check showed they know: {'; '.join(grounding['known'])}.")
+        if grounding["gaps"]:
+            lines.append(f"What they found hard: {'; '.join(grounding['gaps'])}. Give these extra care.")
+        return ("\n" + "\n".join(lines)) if lines else ""

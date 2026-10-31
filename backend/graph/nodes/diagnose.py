@@ -6,7 +6,7 @@ grade_diagnostic → (prerequisite: publish → await → grade) → assess_lear
 
 from typing import Any
 
-from lessons.models import Lesson, Quiz, QuizAttempt, Stage
+from lessons.models import Intent, Lesson, Quiz, QuizAttempt, Stage
 from llm_registry.gateway import AllModelsFailed
 
 from ..assessment import AssessmentRequest, AssessmentSource, AssessmentSources
@@ -136,7 +136,10 @@ class GradeDiagnosticNode(Node):
         result = QuizResult.from_dict(attempt.result)
         route = self.policy.route_for(result, state["settings"])
         lesson = self.lesson(state)
-        if route == "lesson":
+        if state.get("intent") == Intent.SHEETS:
+            # Whatever the score, they asked for sheets: it is neither kind of lesson, so no route is recorded.
+            lesson.advance_to(Stage.GENERATING_MATERIAL, prerequisites_to_cover=[])
+        elif route == "lesson":
             lesson.advance_to(Stage.GENERATING_LESSON, route=route, prerequisites_to_cover=[])
         else:
             lesson.record(route=route)
@@ -189,6 +192,9 @@ class AssessLearnerNode(LLMNode):
 
     def __init__(self, source: AssessmentSource | None = None):
         self.source = source or AssessmentSources.for_key("diagnostic")
+
+    def stage_of(self, state: dict) -> Stage:
+        return Stage.GENERATING_MATERIAL if state.get("intent") == Intent.SHEETS else self.stage
 
     def before(self, state: dict) -> None:
         """The learner who aced the quiz and chose the Expert lesson comes here straight from the choice: the lesson

@@ -20,8 +20,11 @@ Use cases:
 - publish_prerequisite stores the prerequisite quiz with its prerequisites
 - grade_diagnostic routes by the stored result and records the route on the lesson
 - grade_diagnostic moves a lesson-route learner straight to generating_lesson
+- grade_diagnostic sends a lesson that asked for sheets to writing them whatever the score, with no route recorded
 - grade_prerequisite turns the stored result into the prerequisites to cover
 - assess_learner asks for a LearnerAssessment, overrides the model's prerequisites, and saves the assessment
+- assess_learner for a lesson that asked for sheets works in the stage of writing sheets (also after a Retry) and
+  records no lesson route
 """
 
 import pytest
@@ -338,6 +341,21 @@ class TestGradeDiagnostic:
 
         assert Lesson.objects.get(pk=lesson.pk).stage == Stage.GENERATING_LESSON
 
+    @pytest.mark.parametrize("right", [0, 5, 10])
+    def test_a_lesson_that_asked_for_sheets_goes_straight_to_writing_them_whatever_the_score(
+        self, lesson, lesson_state, runtime, right
+    ):
+        Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.AWAITING_DIAGNOSTIC, intent="sheets")
+        attempt = attempt_for(lesson, "diagnostic", make_questions(), right)
+
+        update = GradeDiagnosticNode()(
+            lesson_state | {"intent": "sheets", "diagnostic_attempt_id": str(attempt.id)}, runtime
+        )
+
+        stored = Lesson.objects.get(pk=lesson.pk)
+        assert (stored.stage, stored.route) == (Stage.GENERATING_MATERIAL, "")  # no route: it is neither kind of lesson
+        assert update["diagnostic_result"]["correct"] == right and update["prerequisites_to_cover"] == []
+
     def test_the_other_routes_leave_the_stage_for_the_next_publish_node(self, lesson, lesson_state, runtime):
         Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.AWAITING_DIAGNOSTIC)
         attempt = attempt_for(lesson, "diagnostic", make_questions(), 0)
@@ -400,6 +418,28 @@ class TestAssessLearner:
         stored = Lesson.objects.get(pk=lesson.pk)
         assert stored.assessment == update["assessment"]
         assert stored.level == "beginner"
+
+    def test_a_lesson_that_asked_for_sheets_stays_in_the_stage_of_writing_them(
+        self, lesson, lesson_state, gateway, runtime, valid_bundle
+    ):
+        Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.GENERATING_MATERIAL, intent="sheets")
+        gateway.script("learner.assess", self.ASSESSMENT)
+
+        update = AssessLearnerNode()(self.state(lesson_state, valid_bundle, []) | {"intent": "sheets"}, runtime)
+
+        stored = Lesson.objects.get(pk=lesson.pk)
+        assert (stored.stage, stored.route, stored.level) == (Stage.GENERATING_MATERIAL, "", "beginner")
+        assert "route" not in update
+
+    def test_a_failed_sheets_lesson_that_retries_here_goes_back_to_writing_sheets(
+        self, lesson, lesson_state, gateway, runtime, valid_bundle
+    ):
+        Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.FAILED, error="boom", intent="sheets")
+        gateway.script("learner.assess", self.ASSESSMENT)
+
+        AssessLearnerNode()(self.state(lesson_state, valid_bundle, []) | {"intent": "sheets"}, runtime)
+
+        assert Lesson.objects.get(pk=lesson.pk).stage == Stage.GENERATING_MATERIAL
 
     def test_sends_the_quiz_results_but_never_the_answers_to_the_model(
         self, lesson, lesson_state, gateway, runtime, valid_bundle

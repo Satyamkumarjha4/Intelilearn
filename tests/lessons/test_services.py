@@ -28,7 +28,13 @@ Use cases:
 - incomplete or invalid answers are refused with the reason, and nothing is stored
 - reviewing shows the learner's answers next to the correct ones, only after an attempt
 - choosing a sheet resumes the flow, only while the lesson waits for the choice and with no run active
-- an extra sheet can be requested for a ready mastery lesson, once per kind, in its own graph
+- creating a lesson that asks for sheets stores the intent, hands the run the sheets asked for, covers the quiz stage
+  (or the whole lesson when self-rated) in its one `lesson.create` with the number of sheets and what they rest on,
+  needs the sheet writer (and not the lesson planner) bound, plans no prerequisites for any stars, and refuses a body
+  that asks for no sheets, an unknown sheet or sheets for a lesson
+- sheets can be requested for any ready lesson (one with pages, a mastery lesson, a sheets-only one), as one kind
+  or several at once, in the small graph; a request for a kind that exists names the kinds that exist and creates and
+  asks nothing; a practice sheet cannot be requested; the lesson must be ready and have no run active
 - a sheet is served with its practice solutions hidden until revealed (by id, several ids or all)
 - a practice sheet is graded on submit: multiple choice and numerical are marked, the rest show their solution
 - the kinds of sheet a lesson has are listed
@@ -214,6 +220,98 @@ class TestCreateSelfRated:
         lesson.refresh_from_db()
 
         assert (retry.trigger, lesson.stage) == (GraphRun.Trigger.RETRY, Stage.GENERATING_LESSON)
+
+
+class TestCreateSheets:
+    def create(self, user, queue, sheets=("cheat_sheet", "revision_sheet"), gate=None, **extra):
+        return LessonService(queue=queue, gate=gate).create(
+            user, "Binary search", intent="sheets", sheets=list(sheets), **extra
+        )
+
+    def test_stores_the_intent_and_hands_the_run_the_sheets_asked_for(self, user, queue, bound_registry):
+        lesson, run = self.create(user, queue, sheets=("revision_sheet",))
+
+        assert (lesson.intent, lesson.entry, lesson.stage, lesson.route) == (
+            "sheets", "diagnostic", Stage.PREPARING_DIAGNOSTIC, "",
+        )  # fmt: skip
+        assert run.payload["input"] == {"sheet_kinds": ["revision_sheet"]} and queue.runs == [run]
+
+    def test_a_quick_check_asks_for_the_quiz_stage_with_the_sheets_resting_on_the_quiz(
+        self, user, queue, bound_registry
+    ):
+        gate = CountingGate()
+
+        _, run = self.create(user, queue, gate=gate)
+
+        (asked,) = gate.authorized
+        assert asked.size == {
+            "entry": "diagnostic", "intent": "sheets", "origin": "direct", "covers": "diagnostic", "sheets": 2,
+            "grounding": "quiz",
+        }  # fmt: skip
+        assert asked.completes_at.to_payload() == {"kind": "stage", "stage": "awaiting_diagnostic"}
+
+    def test_a_self_rated_lesson_covers_everything_with_the_sheets_resting_on_the_level_alone(
+        self, user, queue, bound_registry
+    ):
+        gate = CountingGate()
+
+        lesson, _ = self.create(
+            user, queue, sheets=("cheat_sheet",), gate=gate, entry="self_rating", self_rating_halves=2
+        )
+
+        (asked,) = gate.authorized
+        assert asked.size == {
+            "entry": "self_rating", "intent": "sheets", "origin": "direct", "covers": "all", "sheets": 1,
+            "grounding": "none",
+        }  # fmt: skip
+        assert asked.completes_at.to_payload() == {"kind": "stage", "stage": "ready"}
+        assert (lesson.entry, lesson.self_rating_halves) == ("self_rating", 2)
+
+    def test_it_needs_the_sheet_writer_bound_and_not_the_lesson_planner(self, user, queue, bound_registry):
+        from llm_registry.models import NodeModelBinding
+
+        NodeModelBinding.objects.filter(node__node_key__in=["lesson.plan", "prerequisites.plan"]).delete()
+        assert self.create(user, queue, entry="self_rating", self_rating_halves=2)[0].intent == "sheets"
+        NodeModelBinding.objects.filter(node__node_key="study.generate").delete()
+
+        with pytest.raises(LessonNotConfigured, match="study.generate"):
+            self.create(user, queue, entry="self_rating", self_rating_halves=2)
+        with pytest.raises(LessonNotConfigured, match="study.generate"):
+            self.create(user, queue)
+
+    def test_a_quick_check_for_sheets_needs_the_quiz_writer_too(self, user, queue, bound_registry):
+        from llm_registry.models import NodeModelBinding
+
+        NodeModelBinding.objects.filter(node__node_key="diagnostic.generate").delete()
+
+        with pytest.raises(LessonNotConfigured, match="diagnostic.generate"):
+            self.create(user, queue)
+
+    @pytest.mark.parametrize("sheets", [(), ("practice_sheet",), ("poster",)])
+    def test_the_sheets_asked_for_must_be_one_or_both_of_the_two_offered(self, user, queue, bound_registry, sheets):
+        with pytest.raises(ValueError, match="sheet"):
+            self.create(user, queue, sheets=sheets)
+
+        assert Lesson.objects.count() == 0 and queue.runs == []
+
+    def test_a_kind_asked_for_twice_is_written_once_and_in_the_order_they_are_written(
+        self, user, queue, bound_registry
+    ):
+        lesson, run = self.create(user, queue, sheets=("revision_sheet", "cheat_sheet", "revision_sheet"))
+
+        assert run.payload["input"] == {"sheet_kinds": ["cheat_sheet", "revision_sheet"]}
+
+    def test_a_lesson_that_is_not_sheets_takes_no_sheets(self, user, queue, bound_registry):
+        with pytest.raises(ValueError, match="sheet"):
+            LessonService(queue=queue).create(user, "Binary search", sheets=["cheat_sheet"])
+
+        assert Lesson.objects.count() == 0
+
+    def test_a_refused_ask_creates_nothing(self, user, queue, bound_registry):
+        with pytest.raises(ActionRefused):
+            self.create(user, queue, gate=RefusingGate())
+
+        assert Lesson.objects.count() == 0 and queue.runs == []
 
 
 class TestCreateOrigin:
@@ -609,31 +707,78 @@ class TestChoose:
 
 
 class TestRequestExtra:
-    def test_queues_the_study_material_graph_with_its_input(self, make_lesson, queue):
+    def ready(self, make_lesson, **fields):
+        return make_lesson(stage=Stage.READY, **{"route": "lesson", **fields})
+
+    def test_queues_the_study_material_graph_with_the_sheets_asked_for(self, make_lesson, queue):
         lesson = mastery_lesson(make_lesson, Stage.READY)
 
         run = MaterialService(queue=queue).request_extra(lesson, "revision_sheet")
 
         assert (run.graph, run.trigger) == (GraphRun.Graph.STUDY_MATERIAL, GraphRun.Trigger.EXTRA_MATERIAL)
-        assert run.payload == {"input": {"mastery_choice": "revision_sheet", "extra_material": True}}
+        assert run.payload == {"input": {"sheet_kinds": ["revision_sheet"], "extra_material": True}}
         assert queue.runs == [run]
 
-    def test_a_kind_the_lesson_already_has_is_refused(self, make_lesson, queue):
+    @pytest.mark.parametrize("fields", [{"route": "lesson"}, {"route": "mastery"}, {"intent": "sheets", "route": ""}])
+    def test_any_ready_lesson_can_get_sheets(self, make_lesson, queue, fields):
+        lesson = make_lesson(stage=Stage.READY, **fields)
+
+        run = MaterialService(queue=queue).request_extra(lesson, "cheat_sheet")
+
+        assert run.graph == GraphRun.Graph.STUDY_MATERIAL and queue.runs == [run]
+
+    @pytest.mark.parametrize("kinds", [["cheat_sheet", "revision_sheet"], ("revision_sheet", "cheat_sheet")])
+    def test_both_can_be_asked_for_in_one_request_in_the_order_they_are_written(self, make_lesson, queue, kinds):
+        lesson = self.ready(make_lesson)
+
+        run = MaterialService(queue=queue).request_extra(lesson, kinds)
+
+        assert run.payload["input"]["sheet_kinds"] == ["cheat_sheet", "revision_sheet"]
+        assert len(queue.runs) == 1  # one request, one run
+
+    def test_a_kind_the_lesson_already_has_is_refused_naming_it(self, make_lesson, queue):
         lesson = mastery_lesson(make_lesson, Stage.READY)
         StudyMaterial.objects.create(lesson=lesson, kind="cheat_sheet", content=make_cheat_sheet())
 
-        with pytest.raises(AlreadyExists):
+        with pytest.raises(AlreadyExists) as caught:
             MaterialService(queue=queue).request_extra(lesson, "cheat_sheet")
 
-    @pytest.mark.parametrize(
-        ("stage", "route"),
-        [(Stage.AWAITING_CHOICE, "mastery"), (Stage.GENERATING_LESSON, "lesson"), (Stage.READY, "lesson")],
-    )
-    def test_only_a_ready_mastery_lesson_can_get_more_sheets(self, make_lesson, queue, stage, route):
-        with pytest.raises(WrongStage):
-            MaterialService(queue=queue).request_extra(make_lesson(stage=stage, route=route), "cheat_sheet")
+        assert caught.value.extra == {"kinds": ["cheat_sheet"]} and queue.runs == []
 
-    def test_one_extra_sheet_at_a_time(self, make_lesson, queue):
+    def test_asking_for_both_while_one_exists_names_the_one_that_exists_and_creates_nothing(self, make_lesson, queue):
+        from support.gates import CountingGate
+
+        lesson = self.ready(make_lesson)
+        StudyMaterial.objects.create(lesson=lesson, kind="revision_sheet", content=make_revision_sheet())
+        gate = CountingGate()
+
+        with pytest.raises(AlreadyExists) as caught:
+            MaterialService(queue=queue, gate=gate).request_extra(lesson, ["cheat_sheet", "revision_sheet"])
+
+        assert caught.value.extra == {"kinds": ["revision_sheet"]}
+        assert GraphRun.objects.count() == 0 and gate.authorized == [] and queue.runs == []
+
+    def test_the_missing_one_can_be_asked_for_alone_afterwards(self, make_lesson, queue):
+        lesson = self.ready(make_lesson)
+        StudyMaterial.objects.create(lesson=lesson, kind="revision_sheet", content=make_revision_sheet())
+
+        run = MaterialService(queue=queue).request_extra(lesson, ["cheat_sheet"])
+
+        assert run.payload["input"]["sheet_kinds"] == ["cheat_sheet"]
+
+    @pytest.mark.parametrize("kinds", ["practice_sheet", ["cheat_sheet", "practice_sheet"], "poster", [], ()])
+    def test_only_a_cheat_sheet_and_a_revision_sheet_can_be_asked_for(self, make_lesson, queue, kinds):
+        with pytest.raises(ValueError, match="sheet"):
+            MaterialService(queue=queue).request_extra(self.ready(make_lesson), kinds)
+
+        assert GraphRun.objects.count() == 0
+
+    @pytest.mark.parametrize("stage", [Stage.AWAITING_CHOICE, Stage.GENERATING_LESSON, Stage.FAILED])
+    def test_a_lesson_that_is_not_ready_cannot_get_sheets(self, make_lesson, queue, stage):
+        with pytest.raises(WrongStage):
+            MaterialService(queue=queue).request_extra(make_lesson(stage=stage, route="lesson"), "cheat_sheet")
+
+    def test_one_run_at_a_time(self, make_lesson, queue):
         lesson = mastery_lesson(make_lesson, Stage.READY)
         MaterialService(queue=queue).request_extra(lesson, "cheat_sheet")
 

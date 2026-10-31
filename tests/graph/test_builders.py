@@ -11,7 +11,8 @@ Use cases:
 - 10 correct answers: the route is mastery and the run pauses for the sheet choice
 - the chosen sheet is written, checked and saved
 - an invalid sheet is regenerated with feedback; one that stays invalid fails the run and Retry resumes at generation
-- the extra-sheet graph writes another sheet for a ready lesson, leaving its stage, and ends with the reason on failure
+- the extra-sheet graph writes more sheets for a ready lesson with the same nodes as the other sheet paths, leaving its
+  stage, and ends with the reason on failure; a run queued before it (one `mastery_choice` kind) still writes that sheet
 - the interrupt payloads name the quiz, and publishing (side effects) happens before the node that waits
 - an invalid bundle is regenerated with the validator's feedback and then accepted
 - a bundle that stays invalid fails the run; Retry resumes at generation with fresh attempt counters
@@ -158,13 +159,14 @@ def test_a_sheet_that_stays_invalid_fails_the_run_and_retry_resumes_at_generatio
 class ExtraRun:
     """The extra-sheet graph, run on its own thread for an already ready lesson."""
 
-    def __init__(self, lesson, ctx, lesson_state, kind="revision_sheet"):
+    def __init__(self, lesson, ctx, lesson_state, kinds=("revision_sheet",), legacy=False):
         Lesson.objects.filter(pk=lesson.pk).update(
             config_snapshot=lesson_state["snapshot"], settings_snapshot=lesson_state["settings"], stage=Stage.READY
         )
         self.graph = StudyMaterialGraphBuilder().build(InMemorySaver())
         self.config = {"configurable": {"thread_id": "extra"}}
-        self.input = {"lesson_id": str(lesson.id), "mastery_choice": kind, "extra_material": True}
+        asked = {"mastery_choice": kinds[0]} if legacy else {"sheet_kinds": list(kinds)}
+        self.input = {"lesson_id": str(lesson.id), "extra_material": True, **asked}
         self.ctx = ctx
 
     def run(self):
@@ -181,9 +183,22 @@ def test_an_extra_sheet_is_written_without_changing_a_ready_lesson(lesson, ctx, 
 
     nodes = extra.run()
 
-    assert nodes == ["load_context", "generate_study_material", "validate_study_material", "persist_study_material"]
+    assert nodes == ["load_context", "plan_sheets", "generate_sheet", "sheets_join"]
     assert StudyMaterial.objects.get(lesson=lesson).kind == "revision_sheet"
     assert Lesson.objects.get(pk=lesson.pk).stage == Stage.READY
+
+
+def test_an_extra_sheet_run_queued_before_the_change_still_writes_its_one_kind(
+    lesson, ctx, lesson_state, gateway, valid_bundle
+):
+    from support.study_data import make_revision_sheet
+
+    Quiz.objects.create(lesson=lesson, kind="diagnostic", questions=mastery_bundle(valid_bundle)["diagnostic"])
+    gateway.script("study.generate", make_revision_sheet())
+
+    ExtraRun(lesson, ctx, lesson_state, legacy=True).run()
+
+    assert StudyMaterial.objects.get(lesson=lesson).kind == "revision_sheet"
 
 
 def test_a_failed_extra_sheet_ends_with_the_reason_and_leaves_the_lesson_alone(
@@ -192,11 +207,12 @@ def test_a_failed_extra_sheet_ends_with_the_reason_and_leaves_the_lesson_alone(
     from graph.errors import RunFailed
 
     Quiz.objects.create(lesson=lesson, kind="diagnostic", questions=mastery_bundle(valid_bundle)["diagnostic"])
-    short = make_practice_sheet(14)
-    gateway.script("study.generate", short, short)
-    extra = ExtraRun(lesson, ctx, lesson_state, kind="practice_sheet")
+    thin = make_cheat_sheet()
+    thin["sections"] = thin["sections"][:1]
+    gateway.script("study.generate", thin, thin)
+    extra = ExtraRun(lesson, ctx, lesson_state, kinds=("cheat_sheet",))
 
-    with pytest.raises(RunFailed, match="The practice sheet still failed"):
+    with pytest.raises(RunFailed, match="still failed their checks"):
         extra.run()
 
     assert Lesson.objects.get(pk=lesson.pk).stage == Stage.READY and not StudyMaterial.objects.exists()

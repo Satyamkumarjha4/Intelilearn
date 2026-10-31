@@ -10,8 +10,8 @@ promised.
 Use cases:
 - the choice router sends the Expert lesson to the assessment, the sheets to the planner, and a sheet kind from before
   the two-way choice to the single-sheet writer
-- plan_sheets moves the lesson to writing, reads the quiz's concepts, and clears the sheets, problems and attempts so a
-  Retry starts both sheets again; the plan router then sends one branch for each sheet, with the concepts
+- plan_sheets moves the lesson to writing, reads the quiz's concepts (each once), and clears the sheets, problems and
+  attempts so a Retry starts both sheets again; the plan router then sends one branch for each sheet, with the concepts
 - generate_sheet writes one sheet of its kind, keeps it (with its problems) and counts the attempt for that sheet only
 - generate_sheet is held to the rules of the single-sheet path: a sheet that lacks the concepts has problems, and the
   problems of the last attempt reach the model
@@ -20,10 +20,18 @@ Use cases:
 - sheets_join gives up when a sheet is out of attempts: a readable error, a retry at plan_sheets, both sheets' counters
   reset, and nothing saved
 - the sheets router finishes, retries only the failed sheet, or leaves for the failure node
+- a run asked for one sheet plans, writes, checks and saves only that one; the kinds it was asked for are kept in the
+  state, so a retry of a round writes the same ones
+- a sheet asked for on a lesson that is already ready leaves the lesson ready all the way through (it is not "writing"
+  and not "ready again"), and a failure there reaches the failure node of the small graph
+- a sheets lesson from a topic (intent sheets) moves to writing from either of its first stages
+- the grounding is read once at the plan and reaches every sheet: a sheet made from a lesson is told the lesson, a sheet
+  from a topic alone has no concepts to cover
 """
 
 import pytest
 from langgraph.graph import END
+from support.lesson_data import make_pages, make_plan
 from support.quiz_data import make_questions
 from support.study_data import CONCEPTS, make_cheat_sheet, make_revision_sheet
 
@@ -72,7 +80,8 @@ class TestPlanSheets:
         update = PlanSheetsNode()(quiz_state(lesson_state), runtime)
 
         assert Lesson.objects.get(pk=lesson.pk).stage == Stage.GENERATING_MATERIAL
-        assert update["concepts"] == [q["concept"] for q in quiz_state(lesson_state)["bundle"]["diagnostic"]]
+        questions = quiz_state(lesson_state)["bundle"]["diagnostic"]
+        assert update["concepts"] == list(dict.fromkeys(q["concept"] for q in questions))  # each once
 
     def test_it_clears_the_sheets_the_problems_and_the_attempts_for_a_fresh_start(self, lesson, lesson_state, runtime):
         Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.AWAITING_CHOICE)
@@ -189,3 +198,117 @@ class TestSheetsRouter:
 
         assert send.node == "generate_sheet" and send.arg["key"] == "revision_sheet"
         assert send.arg["feedback"] == ["Cover every subtopic."]
+
+
+class TestOneSheet:
+    def test_the_plan_keeps_the_kinds_and_clears_only_those(self, lesson, lesson_state, runtime):
+        Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.GENERATING_MATERIAL)
+
+        update = PlanSheetsNode()(quiz_state(lesson_state, sheet_kinds=["revision_sheet"]), runtime)
+
+        assert update["sheet_kinds"] == ["revision_sheet"] and update["sheets"] == {"revision_sheet": None}
+        assert update["feedback"] == {"sheet:revision_sheet": None} == update["attempts"]
+
+    def test_the_router_sends_only_the_kinds_asked_for(self, lesson_state):
+        sends = PlanSheetsRouter()(lesson_state | {"sheet_kinds": ["cheat_sheet"], "concepts": CONCEPTS})
+
+        assert [s.arg["key"] for s in sends] == ["cheat_sheet"]
+
+    def test_the_join_saves_only_the_sheet_that_was_asked_for(self, lesson, lesson_state, runtime):
+        Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.GENERATING_MATERIAL)
+        state = lesson_state | {
+            "sheet_kinds": ["cheat_sheet"], "sheets": {"cheat_sheet": WRITTEN["cheat_sheet"]},
+            "feedback": {"sheet:cheat_sheet": []}, "attempts": {"sheet:cheat_sheet": 1},
+        }  # fmt: skip
+
+        update = SheetsJoinNode()(state, runtime)
+
+        assert update == {"sheets_outcome": "complete"}
+        assert list(StudyMaterial.objects.filter(lesson=lesson).values_list("kind", flat=True)) == ["cheat_sheet"]
+
+    def test_a_failure_resets_only_the_counters_of_the_kinds_asked_for(self, lesson, lesson_state, runtime):
+        state = lesson_state | {
+            "sheet_kinds": ["revision_sheet"], "sheets": {"revision_sheet": WRITTEN["revision_sheet"]},
+            "feedback": {"sheet:revision_sheet": ["Cover every subtopic."]}, "attempts": {"sheet:revision_sheet": 2},
+        }  # fmt: skip
+
+        update = SheetsJoinNode()(state, runtime)
+
+        assert update["sheets_outcome"] == "failed" and update["retry_keys"] == ["sheet:revision_sheet"]
+
+    def test_status_looks_only_at_the_kinds_asked_for(self, lesson_state):
+        state = joined(lesson_state, cheat=["x"], attempts=(1, 1)) | {"sheet_kinds": ["revision_sheet"]}
+
+        assert SheetStatus.of(state) == ([], [])
+
+
+class TestOnAReadyLesson:
+    def extra(self, lesson_state, **more):
+        return lesson_state | {"extra_material": True, "sheet_kinds": ["cheat_sheet"]} | more
+
+    def test_planning_leaves_a_ready_lesson_ready(self, lesson, lesson_state, runtime):
+        Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.READY)
+
+        PlanSheetsNode()(self.extra(lesson_state), runtime)
+
+        assert Lesson.objects.get(pk=lesson.pk).stage == Stage.READY
+
+    def test_the_join_saves_and_leaves_the_lesson_ready(self, lesson, lesson_state, runtime):
+        Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.READY)
+        state = self.extra(
+            lesson_state, sheets={"cheat_sheet": WRITTEN["cheat_sheet"]}, feedback={"sheet:cheat_sheet": []},
+            attempts={"sheet:cheat_sheet": 1},
+        )  # fmt: skip
+
+        SheetsJoinNode()(state, runtime)
+
+        assert Lesson.objects.get(pk=lesson.pk).stage == Stage.READY
+        assert StudyMaterial.objects.filter(lesson=lesson, kind="cheat_sheet").exists()
+
+    def test_a_failure_leaves_for_the_failure_node_of_the_small_graph(self):
+        assert SheetsRouter(on_fail="fail_study_material")({"sheets_outcome": "failed"}) == "fail_study_material"
+
+
+class TestASheetsLesson:
+    @pytest.mark.parametrize(
+        "before", [Stage.PREPARING_DIAGNOSTIC, Stage.AWAITING_DIAGNOSTIC, Stage.GENERATING_MATERIAL]
+    )
+    def test_it_moves_to_writing_from_either_first_stage(self, lesson, lesson_state, runtime, before):
+        Lesson.objects.filter(pk=lesson.pk).update(stage=before, intent="sheets")
+
+        PlanSheetsNode()(lesson_state | {"intent": "sheets"}, runtime)
+
+        assert Lesson.objects.get(pk=lesson.pk).stage == Stage.GENERATING_MATERIAL
+
+
+class TestGrounded:
+    def test_a_lesson_is_read_once_at_the_plan(self, lesson, lesson_state, runtime):
+        plan = make_plan()
+        Lesson.objects.filter(pk=lesson.pk).update(
+            stage=Stage.READY, plan=plan, pages=make_pages(plan), level="proficient"
+        )
+
+        update = PlanSheetsNode()(lesson_state | {"extra_material": True}, runtime)
+
+        assert update["grounding"]["kind"] == "lesson" and update["concepts"] == update["grounding"]["concepts"]
+
+    def test_the_grounding_reaches_the_model_through_the_branch(self, lesson, lesson_state, gateway, runtime):
+        plan = make_plan()
+        Lesson.objects.filter(pk=lesson.pk).update(
+            stage=Stage.READY, plan=plan, pages=make_pages(plan), level="proficient"
+        )
+        planned = PlanSheetsNode()(lesson_state | {"extra_material": True}, runtime)
+        gateway.script("study.generate", WRITTEN["cheat_sheet"])
+
+        sends = PlanSheetsRouter()(lesson_state | planned | {"sheet_kinds": ["cheat_sheet"]})
+        GenerateSheetNode()(sends[0].arg, runtime)
+
+        user = gateway.called("study.generate")[0].messages[1].content
+        assert plan["summary"] in user and "just studied" in gateway.called("study.generate")[0].messages[0].content
+
+    def test_a_topic_alone_has_no_concepts_to_cover(self, lesson, lesson_state, runtime):
+        state = lesson_state | {"intent": "sheets", "assessment": {"level": "expert", "known_concepts": [], "gaps": []}}
+
+        update = PlanSheetsNode()(state, runtime)
+
+        assert update["concepts"] == [] and update["grounding"]["kind"] == "none"

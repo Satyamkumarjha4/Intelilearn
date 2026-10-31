@@ -12,12 +12,24 @@ from .questions import QuestionFinisher
 from .schemas import MATERIAL_SCHEMAS
 from .validators import StudyMaterialValidator
 
-CHEAT_SHEET, REVISION_SHEET = "cheat_sheet", "revision_sheet"
+CHEAT_SHEET, REVISION_SHEET, PRACTICE_SHEET = "cheat_sheet", "revision_sheet", "practice_sheet"
 
 
 class SheetKinds:
-    #: what the "sheets" choice writes, in this order
+    #: what the "sheets" choice writes, in this order; also the only kinds that can be asked for now (the practice sheet
+    #: is not offered any more, though the ones that exist can still be opened)
     CHOICE = (CHEAT_SHEET, REVISION_SHEET)
+
+    @classmethod
+    def of(cls, state: dict) -> tuple[str, ...]:
+        """The sheets this run writes: the ones it was asked for, cheat sheet first, else both. A run queued before
+        sheets could be asked for in pairs carried the one kind it wanted as `mastery_choice`."""
+        asked = state.get("sheet_kinds")
+        if not asked and state.get("extra_material") and state.get("mastery_choice"):
+            return (state["mastery_choice"],)
+        if not asked:
+            return cls.CHOICE
+        return tuple(kind for kind in (*cls.CHOICE, PRACTICE_SHEET) if kind in asked)
 
     @staticmethod
     def feedback_key(kind: str) -> str:
@@ -31,7 +43,7 @@ class SheetWriter:
     def sheet(self, data: dict, kind: str, feedback: list[str] | None) -> tuple[dict, list[str]]:
         """→ (the sheet, the validator's problems with it). The sheet is returned even when it has problems."""
         concepts = data.get("concepts") or []
-        subject = data | {"kind": kind, "concepts": concepts}
+        subject = data | {"kind": kind, "concepts": concepts}  # `grounding` rides along in `data` when there is one
         messages = StudyMaterialPrompt().messages(subject, feedback)
         output = self.ctx.invoke(data, "study.generate", messages, schema=MATERIAL_SCHEMAS[kind]).output
         material = output.model_dump(mode="json")
