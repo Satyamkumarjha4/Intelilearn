@@ -145,7 +145,11 @@ Specified in [modular-lessons.md](../to_be_developed/modular-lessons.md) and pla
   - [x] `POST /lessons` takes `entry`, `self_rating`, `intent` and a server-verified `origin`; `POST /lessons/{id}/choice` takes `{choice}`
   - [x] `manage.py stranded_threads` lists (and with `--mark-failed` ends) lessons stuck at a node a release removed; Cancel on the "getting your questions ready" state
   - [x] New-lesson toggle and `StarRating`, journey and starting-point variants, `MasteryChoice` with two options, "Basics first", one handler for a refused action
-- [ ] 9.4 Follow-up lessons and the pop-up policy
+- [x] 9.4 Follow-up lessons and the pop-up policy:
+  - [x] `FollowupPolicy` (pure; the spec's six worked examples are its test table), the rater category (stars, or the level of the lesson), `AttemptOutcome` runs it on the submit path and the legacy `grade_test` path
+  - [x] `Lesson.created_from_lesson` and `followup_level` with the one-per-level constraint; `FollowupService` and `POST /lessons/{id}/followups` (`lesson.followup` through the gate, `409 already_exists` with the lesson id, a real two-thread race test); deterministic names; `FollowupSource`
+  - [x] `FollowupDialog`, the inline note for a low rater, links both ways on the lesson page; console funnel `retested` and `followups_started`
+  - [x] From the 9.3 report: the "Basics check" copy, `seed_registry` binding nodes that have no binding, `entry` in the lesson list
 - [ ] 9.5 Modular sheets, any ready lesson, once per kind (`409` on repeat), no versions
 - [ ] 9.6 Quick quiz: presets, calibration, up to 10 sources, difficulty mix, graphs, screens, code editor
 - [ ] 9.7 Concept tags, recommendations, deep links

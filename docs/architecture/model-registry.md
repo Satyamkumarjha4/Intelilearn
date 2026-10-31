@@ -269,6 +269,7 @@ raise AllModelsFailed(node_key, errors)
 - **NodeConfig**: shows the spec (read-only requirements), inline bindings ordered by priority, and each binding's **effective** parameters and reasoning setting. It warns when a required node has no enabled binding.
 - **ModelCall**: read-only list with filters. The changelist shows failure rate and fallback rate per node and model.
 - **Export / import**: exports the registry as JSON. `manage.py seed_registry --file registry.json` loads it.
+- **A release that adds a node**: `manage.py seed_registry` on an install that already has bindings leaves them alone except for **nodes that have no binding at all**: those are bound from the chosen profile, using only models the install already has (it creates no provider or model), in the profile's order. It says which nodes it bound and which it could not (none of the profile's models is on this install). `--force` still resets everything.
 - **`manage.py probe_models`** runs the same probes from the command line (`--model provider/name`, repeatable), plus, with `--node key`, one real call through that node's whole chain. It exits non-zero if anything fails.
 
 ## Secrets in errors

@@ -37,6 +37,7 @@ Legend for status columns: ✅ in code · ◐ partly (functions still to wrap in
   - [4.18 `lessons`: the action gate (Phase 9, metering seam)](#418-lessons-the-action-gate-phase-9-metering-seam)
   - [4.19 `lessons` and `graph`: attempts and the questions pipeline (Phase 9.2)](#419-lessons-and-graph-attempts-and-the-questions-pipeline-phase-92)
   - [4.20 `graph` and `lessons`: the way in, lesson shapes and the mastery choice (Phase 9.3)](#420-graph-and-lessons-the-way-in-lesson-shapes-and-the-mastery-choice-phase-93)
+  - [4.21 `graph` and `lessons`: follow-up lessons (Phase 9.4)](#421-graph-and-lessons-follow-up-lessons-phase-94)
 - [5. How to extend](#5-how-to-extend)
 - [Refactor backlog](#refactor-backlog)
 
@@ -2211,6 +2212,66 @@ classDiagram
 - **Metering.** A self-rated `lesson.create` is asked with `covers: all`, so `CompletionPoints.of(action, size)` completes it when the lesson is `ready` rather than when a quiz is served; the mastery choice asks `lesson.continue` with `choice` (`lesson` or `sheets_only`) and `perfect: true`.
 - **Operations.** `StrandedThreads` reads the raw checkpoint (the compiled graph hides a thread waiting at a node it no longer has) and `manage.py stranded_threads` lists such lessons and, with `--mark-failed`, ends them with a message that tells the learner to start a new lesson.
 - **Frontend** (`frontend/lib/`, all pure and tested): `StarScale` (the ten half-star values with their approved sentences and the keys that move along them), `NewLesson` (the two ways in, the request), `MasteryOptions` (the two cards, the button, the words for a refusal; `legacy` for a lesson that was waiting at the old cards), `ActionRefusedMessage` (the one place a refused action becomes words), `PipelinePaths` (the steps of a lesson with no quick check, and the Beginner's extra step), and `AttemptPreparation.cancel` (stops the wait for a retake's questions).
+
+### 4.21 `graph` and `lessons`: follow-up lessons (Phase 9.4)
+
+A finished attempt can lead to an offer (a Foundation lesson, an Advanced lesson, or a quiet note), and accepting it makes a lesson of its own. The rule is pure (`graph/followups.py`); what it needs is read in `lessons/offers.py`; making the lesson is `lessons/followups.py`.
+
+```mermaid
+classDiagram
+    direction LR
+    class FollowupPolicy {
+        +decide(band, rater, passed_once, existing, blank) Offer
+    }
+    class Offer {
+        <<frozen>>
+        +kind str
+        +action str
+        +lesson_id
+        +to_json() / from_json()
+    }
+    class Passes {
+        +once(scores, fail_below)$ bool
+    }
+    class FollowupTargets {
+        +level_for(followup_level)$ Level
+    }
+    FollowupPolicy ..> Offer
+    class RaterCategories {
+        +of(lesson)$ RaterCategory
+    }
+    class PolicyFollowups {
+        +offer(lesson, facts) dict
+    }
+    PolicyFollowups o-- FollowupPolicy
+    PolicyFollowups ..> RaterCategories
+    PolicyFollowups ..> Passes
+    class FollowupHook {
+        <<Protocol>>
+        +offer(lesson, facts) dict
+    }
+    FollowupHook <|.. PolicyFollowups
+    AttemptOutcome o-- FollowupHook
+    class FollowupService {
+        +create(parent, level, key) Lesson, GraphRun
+    }
+    class FollowupNames {
+        +topic_for(parent, level) str
+    }
+    FollowupService o-- FollowupNames
+    FollowupService o-- LessonService
+    FollowupSource ..> FollowupTargets
+    AssessmentSource <|-- FollowupSource
+```
+
+- **Policy and facts apart.** `FollowupPolicy.decide` takes the band, the rater category, whether an earlier attempt passed and the follow-ups that exist, and returns an `Offer` or none; it has no database, and its test table is the spec's pseudocode and all six worked examples. An attempt of blank answers gets no offer at all (it scores 0 and must not be used to collect lessons). `Passes.once` judges "passed" on whole marks against the lesson's own Fail line, and only over attempts *before* the current one.
+- **Strategy / Protocol.** `FollowupHook` (the seam built in 9.2) now has `PolicyFollowups`; `AttemptOutcome` calls it on both paths (a lesson attempt graded at submit, and a legacy attempt graded later by `grade_test`), so there is one rule with two callers. Quizzes, when they arrive, simply have no hook. The stub `NoFollowup` is gone.
+- **Who the learner is.** `RaterCategories.of(lesson)` is read from the stars when they rated themselves, else from the level of the lesson's assessment (through `LevelScheme`). A follow-up's level is fixed by `FollowupTargets` (Foundation: Beginner, Advanced: Expert), which is also its category (low, high), so chains of follow-ups stop on their own. The target is one method, so "one step below or above the parent's level" would change nowhere else.
+- **Once for each level, even when two requests race.** `FollowupService.create` locks the parent (`select_for_update`), looks for the follow-up, and only then asks the gate and creates the lesson; the database refuses a duplicate anyway (`one_followup_per_level`). A second request is told which lesson exists (`FollowupExists`, `409 already_exists` with `lesson_id`), asks the gate nothing and makes nothing. A real two-thread test with `transaction=True` covers it.
+- **Names without a model.** `FollowupNames` sets the topic from a template (`Foundations of X`, `Advanced X`), strips a template already on a parent that is itself a follow-up, adds a suffix on a collision with another of the learner's lessons, and never re-links an existing lesson (D6). The display title is written by `lesson.plan`, which is told the style.
+- **A new assessment source.** `FollowupSource` is one more class and one line in `AssessmentSources`; every source now also says where the lesson records its level as coming from (`level_source`: a follow-up's is the test score). A lesson made this way goes through the same entry segment as a self-rated one, and a Foundation follow-up, being a Beginner, gets its prerequisites planned as usual.
+- **Metering.** `FollowupService.create` is a metered run starter (`lesson.followup`, completed when the lesson is `ready`, size hint `followup_level`), found by the same scan test as the others; the endpoint counts against the new-lesson throttle.
+- **Frontend** (`frontend/lib/`): `FollowupOffers` (every case in words that never tell a learner they were wrong about their level; a pop-up the learner can skip, or a quiet note), `FollowupMaker` (makes the lesson, or opens the one that exists on a `409`), `FollowupLinks` (links both ways on the lesson page).
 
 ## 5. How to extend
 

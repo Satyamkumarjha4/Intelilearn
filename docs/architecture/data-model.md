@@ -75,11 +75,13 @@ A lesson is a learner's request to learn one topic, from the diagnostic quiz thr
 | user_context | text, blank | Optional extra context from the learner ("for my DSA exam, I know arrays") |
 | stage | enum | See the stage table below |
 | route | enum `prerequisite` \| `lesson` \| `mastery`, blank | Blank until the diagnostic (or a self-rating) sets it. A learner who aced the quick check and chose the Expert lesson goes from `mastery` to `lesson`, so the lesson has a test |
-| entry | enum `diagnostic` \| `self_rating` (\| `followup` \| `quiz_result` in later phases), default `diagnostic` | How the level is found: the quick check, or the learner's own rating |
+| entry | enum `diagnostic` \| `self_rating` \| `followup` (\| `quiz_result` in a later phase), default `diagnostic` | How the level is found: the quick check, the learner's own rating, or (a follow-up) what the lesson is for |
 | intent | enum `lesson` \| `sheets`, default `lesson` | What was asked for. Only a lesson can be asked for until study sheets from a topic arrive (9.5) |
 | origin | enum `direct` \| `recommendation` \| `followup` \| `quiz_result`, default `direct` | Why the lesson was made. **Set and verified by the server**: a client may ask for `direct` or `recommendation`, and a recommendation must name the learner's own graded attempt and a topic it listed (`lessons/origins.py`) |
 | recommended_from | JSON, null | For `recommendation`: `{attempt_id, topic}` as verified |
 | level_source | enum `diagnostic` \| `self_rating` \| `test_score` \| `quiz_result`, blank | Where `level` came from. Migration 0012 credits `diagnostic` to every lesson that already had a level |
+| created_from_lesson | FK to Lesson (self), null, `SET_NULL`, related name `followups` | The lesson a follow-up was made from. Metadata only: a follow-up is a lesson of its own. Deleting the parent clears the link; the follow-up stays |
+| followup_level | enum `foundation` \| `advanced`, blank | What kind of follow-up this is. Kept when the parent is deleted. Constraints: a lesson with a parent has a level (`a_followup_has_a_level`; the reverse is not required, because deleting a parent clears the link and not the level), no lesson is its own parent, and **one follow-up of each level for a parent** (`one_followup_per_level`, a partial unique on `(created_from_lesson, followup_level)` where the level is set). The foreign key's own index serves the "does one exist" lookup |
 | self_rating_halves | smallint, null | The learner's stars times two (1 to 10; a check constraint refuses others). The API shows stars (`self_rating`, 0.5 to 5) |
 | mastery_options | enum `three_sheets` \| `lesson_or_sheets`, default `three_sheets` | Which choice a learner who aced the quick check was shown. The default is what a lesson already waiting at the choice had (migration 0013), so it keeps its three cards; `publish_mastery_options` records `lesson_or_sheets` from now on |
 | assessment | JSON, null | `LearnerAssessment`, stamped `level_scheme: 2`: which level names the document uses (see below) |
@@ -199,7 +201,7 @@ The model, table and URL names stay from when a lesson had one submission; in pr
 | awarded / available | smallint, null | Whole marks, filled when graded: trends and bands need no JSON |
 | band | char | `fail`, `normal` or `excellent` once graded (blank before) |
 | duration_s | int, null | Measured by the server, `started_at` to `submitted_at` |
-| followup | JSON, null | The offer decided with the band (none until phase 9.4) |
+| followup | JSON, null | The offer decided with the band: `{kind: foundation \| advanced \| inline_suggestion, action: generate \| revisit \| open \| revisit_or_related, lesson_id}`, or null (`FollowupPolicy`, §4.21 of design.md). Decided when the attempt is graded and never changed |
 | all_blank | bool | Every answer was blank: stored and scored 0, but not counted toward the Foundation offer (phase 9.4) |
 
 **One open attempt at a time**: a partial unique constraint on `lesson` where `status in ('generating', 'in_progress')`, so a double click cannot draw two sets or authorize twice.

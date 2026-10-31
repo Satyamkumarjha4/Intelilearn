@@ -1,13 +1,20 @@
 # Implementation plan: Modular Lesson Parts
 
 **Spec:** [modular-lessons.md](modular-lessons.md) (finalized 2026-10-26)
-**Status:** Plan. Phases 9.0 (branches `refactor/levels`, `refactor/run-subject`, `refactor/action-gate`), 9.1 (`phase-9/questions`), 9.2 (`phase-9/retest`) and 9.3 (`phase-9/self-rating`) are built; phases 9.4 to 9.8 are not started.
+**Status:** Plan. Phases 9.0 (branches `refactor/levels`, `refactor/run-subject`, `refactor/action-gate`), 9.1 (`phase-9/questions`), 9.2 (`phase-9/retest`), 9.3 (`phase-9/self-rating`) and 9.4 (`phase-9/followups`) are built; phases 9.5 to 9.8 are not started.
 **Last updated:** 2026-10-30 (third pass: doc fixes before phase 9.0, see the [changelog](#changelog))
 **Checked against:** the code and docs on branch `refactor/docs-layout` (Phases 0 to 8 built).
 
 This plan says what has to change to build the spec on top of today's Socra: architecture, database, API, graphs, marking, frontend, console, tests and docs. It also lists the places where the spec cannot be built as written, or where a different solution is cheaper and safer. Those are in [section 3](#3-where-the-spec-needs-rethinking) and [section 4](#4-decisions-needed). The product decisions in section 4 are now **confirmed** (D13 to D23); the technical ones are made and listed in [D24](#d24-technical-decisions-made-in-the-second-pass).
 
 ## Changelog
+
+Phase 9.4 (branch `phase-9/followups`, from `main` after `phase-9/self-rating` was fast-forwarded into it). Decisions and changes made while building it.
+
+| # | Change | Sections touched |
+|---|---|---|
+| C34 | **Decisions from the 9.3 report.** (1) The prerequisite quiz is the **"Basics check"** wherever a learner reads it (copy only; "Foundations check" shared the word D4 keeps for the level). (2) **`seed_registry` binds nodes that have no binding** on an existing install, from the chosen profile and using only models the install already has; it never overwrites a binding or creates a provider or model, and reports what it could not bind. (3) **`entry` is in the lesson list summary**, so a self-rated lesson's pill is right from the start. | 9.1, 11.7, 12.4 |
+| C35 | **Phase 9.4 built** (branch `phase-9/followups`). Where the build differs from, or adds to, this plan: (a) **The 7.1 check constraint is one-directional.** "`created_from_lesson` is set if and only if `followup_level` is set" cannot hold with `on_delete=SET_NULL`: deleting the parent clears the link and the constraint would refuse the delete. The database says a lesson *with a parent has a level* (and is not its own parent, and the partial unique `one_followup_per_level` holds); a lesson whose parent was deleted keeps its level. No extra index: the foreign key has one. (b) **Offer actions are `generate`, `revisit` (a Foundation lesson that exists), `open` (an Advanced one) and `revisit_or_related` (the note)**, as the brief and spec word them, rather than 6.5's `generate \| open`. The offer is stored as `{kind, action, lesson_id}` on the attempt. (c) **An attempt of blank answers gets no offer at all**, not only no Foundation offer: it scores 0, is not a pass, and an inline note for it would mean nothing. (d) **`NoFollowup` is removed**; `PolicyFollowups` (in `lessons/offers.py`, apart from the service so the `grade_test` graph can import it) is the default hook. (e) **`FollowupSource`** is the sixth assessment source in spirit but the third class: the level comes from `FollowupTargets` (D5, one method), and every source now says its `level_source` (a follow-up's is `test_score`). (f) **A follow-up's category comes from its level** (Foundation follow-up: Beginner, low; Advanced: Expert, high); a mastery-choice Expert lesson is high because its assessment is Expert. (g) **Names:** the topic is the template over the parent's plain topic (a template or a `(n)` already on a follow-up parent is stripped, so "Advanced Foundations of X" does not happen), with a suffix against the learner's other lessons only; `lesson.plan` is told the style of the title. (h) **The offer shows twice in the browser:** a pop-up on a result just handed in, and a card under every result with the same words and button, so skipping the pop-up does not lose the offer. (i) **Found by the new e2e run, fixed:** a Stop that lands just after a quiz is answered recorded the waiting stage while the worker still graded the answer, and Retry then restored a stage the thread had left; the build failed at its last step (`awaiting_diagnostic` to `ready`). `Node.__call__` now moves a lesson that reads as any waiting stage to the stage of a building node when it runs (the 9.3 fix for a self-rated lesson, generalised). It is a race, so it showed in one of three full runs. (j) Console funnel: `retested` and `followups_started` (deferred from 9.2). | 3, 6.5, 7.1, 8.3, 11.3, 12.2, 14 |
 
 Phase 9.3 (branch `phase-9/self-rating`, from `main` after `phase-9/retest` was fast-forwarded into it). Decisions and changes made while building it.
 
@@ -1237,7 +1244,7 @@ Branch `phase-9/self-rating`.
 
 *Exit:* a self-rated learner reaches a lesson with no quiz, at each of the four levels, with the right page roles; a perfect diagnostic shows the two-option choice and each option reaches `ready` (an Expert lesson with a test, or two sheets); lessons already waiting at the old choice still resume; the mid-flow Stop and Retry still work on the new path.
 
-### Phase 9.4: Follow-up lessons — M
+### Phase 9.4: Follow-up lessons — M ✅ built (see C34 and C35)
 
 Branch `phase-9/followups`.
 
