@@ -13,7 +13,8 @@ class DiagnosticValidator:
     def __init__(self, latex: LatexChecker | None = None):
         self.latex = LatexRules(latex)
 
-    def validate(self, bundle: dict, *, settings: dict) -> list[str]:
+    def validate(self, bundle: dict, *, settings: dict, include_prerequisites: bool = True) -> list[str]:
+        """`include_prerequisites` is false for the calibration quiz's pool, which has only the diagnostic's half."""
         per_band = settings.get("diagnostic_questions_per_band", 2)
         questions = bundle["diagnostic"]
         problems = self._counts(questions, per_band)
@@ -24,7 +25,8 @@ class DiagnosticValidator:
         for q in questions:
             problems += TextRules.option_problems(f"Question {q['id']}", q["options"])
         problems += self._independence(questions)
-        problems += self._prerequisites(bundle, settings.get("prerequisite_question_count", 5))
+        if include_prerequisites:
+            problems += self._prerequisites(bundle, settings.get("prerequisite_question_count", 5))
         return problems + self._latex(bundle)
 
     @staticmethod

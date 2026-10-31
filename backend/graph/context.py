@@ -30,6 +30,7 @@ class LLMGateway(Protocol):
         tools: Sequence[Any] | None = None,
         lesson_id: Any = None,
         run_id: Any = None,
+        quiz_id: Any = None,
         on_event: EventSink | None = None,
     ) -> Any:
         """→ an object with `.output` (the parsed schema, a message or text)."""
@@ -96,6 +97,7 @@ class FlowContext:
             tools=tools,
             lesson_id=state.get("lesson_id"),
             run_id=self.run_id,
+            quiz_id=state.get("quiz_id"),
             on_event=self.events,
         )
 

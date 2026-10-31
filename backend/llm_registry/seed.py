@@ -90,6 +90,18 @@ _NODES = {
             "max_retries": 0,
         },
     ),
+    # The quiz wizard waits on this one as well: the smallest model, low effort, one attempt and 4 s a call. When it is
+    # off or slow the wizard simply offers every kind of question.
+    "topic.traits": (
+        [GPT_OSS_SMALL, LITE],
+        {
+            "params_override": {"temperature": 0},
+            "reasoning_effort": "low",
+            "max_attempts": 1,
+            "timeout_s": 4,
+            "max_retries": 0,
+        },
+    ),
 }
 
 
@@ -155,7 +167,9 @@ _JUDGEMENT_NODES = frozenset({
     "diagnostic.generate", "learner.assess", "study.generate", "lesson.plan", "page.generate", "test.generate",
     "interactive.generate", "alignment.judge", "test.grade", "media.verify",
 })  # fmt: skip
-_QUICK_NODES = frozenset({"onboarding.suggest_topics"})  # the learner is waiting: every profile keeps these as seeded
+_QUICK_NODES = frozenset(
+    {"onboarding.suggest_topics", "topic.traits"}
+)  # the learner is waiting: every profile keeps these as seeded
 
 
 def _own_effort(key: str) -> str:

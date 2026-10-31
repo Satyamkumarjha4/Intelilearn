@@ -6,7 +6,7 @@ from typing import Any
 SHARED_KEYS = (
     "lesson_id", "topic", "user_context", "profile", "snapshot", "settings", "assessment", "plan", "pages",
     "interactive_plan", "media", "prerequisites_to_cover", "final_test", "blueprint", "exclusions", "concepts",
-    "grounding",
+    "grounding", "quiz_id", "quiz",
 )  # fmt: skip
 
 

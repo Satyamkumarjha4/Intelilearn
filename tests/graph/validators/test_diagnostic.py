@@ -13,6 +13,8 @@ Use cases:
 - options must differ, and "all/none of the above" is refused
 - one question must not reveal another's answer (short and numeric answers are exempt)
 - there must be the configured number of prerequisites, each with exactly one question that uses its exact name
+- a pool for the calibration quiz (no prerequisite half) is held to every rule about the diagnostic questions and to
+  none about prerequisites
 - LaTeX that does not parse is reported, and the checker is only asked when there is maths
 - the assessment guard replaces the LLM's prerequisites with the deterministic ones
 - a planned prerequisite list has 3 to 6 prerequisites, each with a name and a reason, all different, and none is the
@@ -305,3 +307,28 @@ class TestPrerequisiteList:
         with pytest.raises(ValueError):
             PrerequisiteList.model_validate(listed(*"ABCDEFG"))
         assert len(PrerequisiteList.model_validate(listed("A", "B", "C")).prerequisites) == 3
+
+
+class TestAPoolForCalibration:
+    """The calibration quiz reuses the diagnostic's questions (two for each band) and has no prerequisite half."""
+
+    @pytest.fixture
+    def pool(self, valid_bundle):
+        return {"diagnostic": valid_bundle["diagnostic"], "prerequisites": [], "prerequisite_questions": []}
+
+    def test_a_pool_without_prerequisites_is_valid(self, pool, flow_settings):
+        assert DiagnosticValidator().validate(pool, settings=flow_settings, include_prerequisites=False) == []
+
+    def test_the_same_pool_is_refused_when_prerequisites_are_asked_for(self, pool, flow_settings):
+        problems = DiagnosticValidator().validate(pool, settings=flow_settings)
+
+        assert any("prerequisites" in p for p in problems)
+
+    def test_the_question_rules_still_apply(self, pool, flow_settings):
+        pool["diagnostic"].pop()
+        pool["diagnostic"][0]["options"][1] = pool["diagnostic"][0]["options"][0]
+
+        problems = DiagnosticValidator().validate(pool, settings=flow_settings, include_prerequisites=False)
+
+        assert any("exactly 10 questions" in p for p in problems)
+        assert any("different" in p or "same" in p or "distinct" in p for p in problems)

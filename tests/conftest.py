@@ -13,7 +13,10 @@ import pytest
 from django.core.cache import cache
 from rest_framework.test import APIClient
 
-pytest_plugins = ["support.fixtures"]  # graph and flow fixtures, shared by tests/graph and tests/lessons
+pytest_plugins = [
+    "support.fixtures",
+    "support.quiz_fixtures",
+]  # graph and flow fixtures, shared by tests/graph and tests/lessons
 
 PASSWORD = "correct-horse-battery-staple"
 

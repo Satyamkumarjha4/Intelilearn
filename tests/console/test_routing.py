@@ -65,7 +65,7 @@ def flat(body):
 def test_nodes_are_grouped_by_phase_in_lesson_order_with_what_each_needs(staff_client, registry):
     body = staff_client.get("/api/console/nodes").json()
 
-    assert [group["phase"] for group in body["phases"]] == ["diagnose", "author", "build", "post", "onboarding"]
+    assert [group["phase"] for group in body["phases"]] == ["diagnose", "author", "build", "post", "quiz", "onboarding"]
     nodes = flat(body)
     assert set(nodes) == set(NODE_SPECS)
     assert [n["key"] for n in body["phases"][0]["nodes"]][:2] == ["diagnostic.generate", "diagnostic.review"]

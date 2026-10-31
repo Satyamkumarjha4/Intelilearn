@@ -11,8 +11,9 @@ Use cases:
   effort
 - quality leads every node with Gemini Flash (but the onboarding suggester, which must stay quick), with the nodes'
   reasoning effort one step up
-- whatever the profile, the onboarding suggester keeps its quick settings: 4 seconds a call, one attempt, no retry on a
-  model, so a learner at step 5 waits for the catalogue after seconds, not minutes
+- whatever the profile, the onboarding suggester and the quiz's topic judge keep their quick settings: 4 seconds a call,
+  one attempt, no retry on a model, so a learner waits for the catalogue (or the full list of question types) after
+  seconds, not minutes
 - the heavy steps never lead with a Groq model in the new profiles, and the picture check only uses vision models
 """
 
@@ -30,6 +31,7 @@ FLASH, LITE = "gemini-3.5-flash", "gemini-3.5-flash-lite"
 HEAVY = ("study.generate", "page.generate", "test.generate", "interactive.generate", "page.compile", "code.repair",
          "runtime.repair")  # fmt: skip
 ONBOARDING = "onboarding.suggest_topics"
+QUICK = (ONBOARDING, "topic.traits")  # a learner is waiting on these: every profile keeps them as seeded
 
 
 def test_the_profiles_on_offer_describe_themselves():
@@ -60,7 +62,7 @@ def test_balanced_lets_flash_write_and_judge_and_flash_lite_do_the_mechanical_st
     for key in ("page.compile", "code.repair", "runtime.repair"):
         assert chain_of(key)[0] == LITE, key
     for key in NODE_SPECS:
-        if key != ONBOARDING:  # the suggester keeps its own quick settings
+        if key not in QUICK:  # the quick steps keep their own settings
             assert NodeConfig.objects.get(node_key=key).reasoning_effort == NODE_SPECS[key].default_reasoning, key
 
 
@@ -69,18 +71,20 @@ def test_quality_leads_every_node_with_flash_and_raises_the_reasoning_effort_a_s
 
     raised = {Effort.NONE: "none", Effort.LOW: "medium", Effort.MEDIUM: "high", Effort.HIGH: "high"}
     for key, spec in NODE_SPECS.items():
-        if key == ONBOARDING:
+        if key in QUICK:
             continue
         assert chain_of(key)[0] == FLASH, key
         assert NodeConfig.objects.get(node_key=key).reasoning_effort == raised[spec.default_reasoning], key
-    assert chain_of(ONBOARDING)[0] == "openai/gpt-oss-20b"  # the learner is waiting: still the quick model
+    for key in QUICK:
+        assert chain_of(key)[0] == "openai/gpt-oss-20b", key  # the learner is waiting: still the quick model
 
 
+@pytest.mark.parametrize("key", QUICK)
 @pytest.mark.parametrize("name", list(SEED_PROFILES))
-def test_the_onboarding_suggester_keeps_its_four_second_timeout_in_every_profile(name):
+def test_the_quick_steps_keep_their_four_second_timeout_in_every_profile(name, key):
     RegistrySerializer().load(SEED_PROFILES[name]().build())
 
-    config = NodeConfig.objects.get(node_key=ONBOARDING)
+    config = NodeConfig.objects.get(node_key=key)
     bindings = NodeModelBinding.objects.filter(node=config)
 
     assert (config.max_attempts, config.timeout_s) == (1, 4)

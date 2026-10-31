@@ -46,6 +46,9 @@ class RunQuery:
                 Q(lesson__topic__icontains=search)
                 | Q(lesson__owner__name__icontains=search)
                 | Q(lesson__owner__email__icontains=search)
+                | Q(quick_quiz__topic__icontains=search)
+                | Q(quick_quiz__owner__name__icontains=search)
+                | Q(quick_quiz__owner__email__icontains=search)
             )
         return runs
 
@@ -62,18 +65,20 @@ class TimelinePhase(StrEnum):
     AUTHOR = "author"
     BUILD = "build"
     POST = "post"
+    QUIZ = "quiz"
     OTHER = "other"
 
 
 class NodePhases:
     """The phase of the lesson a graph node belongs to, read from the code module that defines it (so a new node is
     placed by where it is written, with nothing to keep in step): diagnose, author, build, post (after the lesson is
-    built: repairs and grading) or other (failure handling, or a name no node has)."""
+    built: repairs and grading), quiz (a quick quiz's own steps) or other (failure handling, or a name no node has)."""
 
     MODULES = {
         "diagnose": TimelinePhase.DIAGNOSE, "mastery": TimelinePhase.DIAGNOSE, "author": TimelinePhase.AUTHOR,
         "authoring_media": TimelinePhase.AUTHOR, "media_agent": TimelinePhase.AUTHOR, "build": TimelinePhase.BUILD,
-        "repair": TimelinePhase.POST, "grading": TimelinePhase.POST, "failure": TimelinePhase.OTHER,
+        "repair": TimelinePhase.POST, "grading": TimelinePhase.POST, "quiz": TimelinePhase.QUIZ,
+        "failure": TimelinePhase.OTHER,
     }  # fmt: skip
     OTHER = TimelinePhase.OTHER
 

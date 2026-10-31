@@ -5,7 +5,7 @@ Why: a lesson is written from one `LearnerAssessment` (level, known concepts, ga
 come from a quiz or from the learner's own rating. Each way is one source that produces the same document, stamped
 with where it came from, so everything after it (the level gate, the plan, the pages) does not care. The diagnostic
 source also carries a rule: a learner who aced the quiz and chose the Expert lesson is an Expert, whatever the model
-said. The other sources arrive in later phases, each as one class and one line in the registry.
+said. The calibration and score sources of the quick quiz are tested in `test_quiz_assessment.py`.
 
 Use cases:
 - the diagnostic source keeps the model's assessment, replaces its prerequisites with the ones found by the quiz, stamps
@@ -167,6 +167,7 @@ class TestFollowupSource:
 def test_each_source_says_where_the_lesson_records_its_level_as_coming_from():
     assert {s.key: s.level_source for s in map(AssessmentSources.for_key, AssessmentSources.keys())} == {
         "diagnostic": "diagnostic", "self_rating": "self_rating", "followup": "test_score",
+        "calibration": "calibration", "test_score": "test_score", "quiz_result": "quiz_result",
     }  # fmt: skip
 
 
@@ -176,8 +177,10 @@ class TestRegistry:
         assert isinstance(AssessmentSources.for_key("self_rating"), SelfRatingSource)
 
     def test_the_keys_are_listed(self):
-        assert AssessmentSources.keys() == ("diagnostic", "self_rating", "followup")
+        assert AssessmentSources.keys() == (
+            "diagnostic", "self_rating", "followup", "calibration", "test_score", "quiz_result",
+        )  # fmt: skip
 
     def test_an_unknown_key_is_refused(self):
-        with pytest.raises(KeyError, match="calibration"):
-            AssessmentSources.for_key("calibration")
+        with pytest.raises(KeyError, match="telepathy"):
+            AssessmentSources.for_key("telepathy")

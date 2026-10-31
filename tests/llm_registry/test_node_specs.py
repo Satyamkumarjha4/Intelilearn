@@ -22,6 +22,7 @@ DOCUMENTED_NODES = {
     "diagnostic.generate", "diagnostic.review", "learner.assess", "study.generate", "lesson.plan", "page.generate",
     "test.generate", "interactive.plan", "media.search", "media.verify", "interactive.generate", "alignment.judge",
     "page.compile", "code.repair", "runtime.repair", "test.grade", "onboarding.suggest_topics", "prerequisites.plan",
+    "topic.traits",
 }  # fmt: skip
 
 
@@ -29,9 +30,21 @@ def test_every_documented_node_has_a_spec():
     assert set(NODE_SPECS) == DOCUMENTED_NODES
 
 
-def test_only_judges_vision_check_and_topic_suggester_are_optional():
-    assert {s.key for s in NODE_SPECS.optional()} == {"diagnostic.review", "media.verify", "onboarding.suggest_topics"}
-    assert len(NODE_SPECS.required()) == len(NODE_SPECS) - 3
+def test_only_judges_vision_check_and_the_two_quick_judgements_of_a_topic_are_optional():
+    assert {s.key for s in NODE_SPECS.optional()} == {
+        "diagnostic.review", "media.verify", "onboarding.suggest_topics", "topic.traits",
+    }  # fmt: skip
+    assert len(NODE_SPECS.required()) == len(NODE_SPECS) - 4
+
+
+def test_the_topic_traits_judge_is_a_cheap_optional_structured_node_in_the_quiz_phase():
+    spec = NODE_SPECS["topic.traits"]
+
+    assert spec.optional is True and spec.stage.value == "quiz"
+    assert spec.output == OutputMode.STRUCTURED and spec.schema_name == "TopicTraitsJudgement"
+    assert Capability.STRUCTURED_OUTPUT in spec.requires
+    assert (spec.default_reasoning, spec.default_max_attempts) == (Effort.LOW, 1)
+    assert spec.min_output_tokens <= 2048
 
 
 def test_the_prerequisite_planner_is_a_required_light_structured_node_in_the_diagnose_phase():

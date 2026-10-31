@@ -8,6 +8,7 @@ Use cases:
 - masks secrets and truncates long errors
 - has no cost when the model has no prices or usage is missing
 - keeps how long the call waited for a rate-limit window (none by default)
+- keeps the quick quiz a call was for, next to the lesson (either may be absent), so a quiz's cost can be told
 - a failing write is logged, not raised
 """
 
@@ -59,6 +60,15 @@ def test_keeps_the_rate_limit_wait(resolved_model):
     record(ModelCallRecorder(), resolved_model("m"))
 
     assert sorted(ModelCall.objects.values_list("rate_limit_wait_ms", flat=True)) == [0, 1800]
+
+
+def test_keeps_the_quiz_a_call_was_for(resolved_model):
+    quiz = "6f1c1b0e-6d7e-4a43-9d38-0c5c3d2b9a11"
+    record(ModelCallRecorder(), resolved_model("m"), quiz_id=quiz)
+    record(ModelCallRecorder(), resolved_model("m"))
+
+    assert sorted(str(q) for q in ModelCall.objects.values_list("quiz_id", flat=True) if q) == [quiz]
+    assert ModelCall.objects.filter(quiz_id__isnull=True).count() == 1
 
 
 def test_a_failing_write_is_logged_not_raised(resolved_model, monkeypatch, caplog):

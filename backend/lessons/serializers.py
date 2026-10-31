@@ -47,9 +47,15 @@ class LessonCreateSerializer(serializers.Serializer):
     topic = serializers.CharField(min_length=2, max_length=200)
     user_context = serializers.CharField(max_length=1000, required=False, allow_blank=True, default="")
     entry = serializers.ChoiceField(
-        choices=[Entry.DIAGNOSTIC, Entry.SELF_RATING],
+        choices=[Entry.DIAGNOSTIC, Entry.SELF_RATING, Entry.QUIZ_RESULT],
         default=Entry.DIAGNOSTIC,
-        help_text="How the learner's level is found: a quick check (`diagnostic`) or their own rating (`self_rating`).",
+        help_text="How the learner's level is found: a quick check (`diagnostic`), their own rating (`self_rating`) or "
+        "the result of a quick quiz about the topic (`quiz_result`, which needs `quiz_attempt_id`).",
+    )
+    quiz_attempt_id = serializers.UUIDField(
+        required=False,
+        help_text="For `entry: quiz_result`: a graded attempt at the learner's own quick quiz about a topic. The topic "
+        "of the lesson is the quiz's.",
     )
     self_rating = StarsField(
         required=False, min_value=0.5, max_value=5, help_text="Stars, 0.5 to 5 in half steps. Needed for `self_rating`."
@@ -67,7 +73,8 @@ class LessonCreateSerializer(serializers.Serializer):
     origin = serializers.ChoiceField(
         choices=Origin.choices,
         default=Origin.DIRECT,
-        help_text="Checked by the server: `direct` or `recommendation`. The others are refused for now.",
+        help_text="Checked by the server: `direct`, `recommendation`, or `quiz_result` (with `entry: quiz_result`). A "
+        "follow-up is made only from a test result's own button.",
     )
     recommended_from = RecommendedFromSerializer(
         required=False, help_text="For `recommendation`: the learner's own graded attempt and one of its topics."
@@ -75,6 +82,7 @@ class LessonCreateSerializer(serializers.Serializer):
 
     def validate(self, attrs: dict) -> dict:
         self.check_sheets(attrs)
+        self.check_quiz_result(attrs)
         rating = attrs.pop("self_rating", None)
         if attrs["entry"] == Entry.SELF_RATING:
             if rating is None:
@@ -86,6 +94,26 @@ class LessonCreateSerializer(serializers.Serializer):
         elif rating is not None:
             raise serializers.ValidationError({"self_rating": ["A rating goes with `entry: self_rating`."]})
         return attrs
+
+    @staticmethod
+    def check_quiz_result(attrs: dict) -> None:
+        """A lesson from a quiz result names the attempt, and says so in its entry and its origin; nothing else may."""
+        attempt = attrs.pop("quiz_attempt_id", None)
+        if attrs["entry"] == Entry.QUIZ_RESULT:
+            if attempt is None:
+                raise serializers.ValidationError(
+                    {"quiz_attempt_id": ["Say which quiz result the lesson is made from."]}
+                )
+            if attrs["origin"] not in (Origin.DIRECT, Origin.QUIZ_RESULT) or attrs.get("recommended_from"):
+                raise serializers.ValidationError(
+                    {"origin": ["A lesson from a quiz result has that origin and no other."]}
+                )
+            attrs["origin"] = Origin.QUIZ_RESULT
+            attrs["recommended_from"] = {"attempt_id": str(attempt)}
+        elif attempt is not None:
+            raise serializers.ValidationError({"quiz_attempt_id": ["A quiz result goes with `entry: quiz_result`."]})
+        elif attrs["origin"] == Origin.QUIZ_RESULT:
+            raise serializers.ValidationError({"origin": ["A quiz result goes with `entry: quiz_result`."]})
 
     @staticmethod
     def check_sheets(attrs: dict) -> None:
@@ -374,11 +402,14 @@ class QuizReviewSerializer(serializers.Serializer):
 
 
 class RunSerializer(serializers.ModelSerializer):
-    lesson_id = serializers.UUIDField(read_only=True)
+    lesson_id = serializers.UUIDField(read_only=True, allow_null=True, help_text="Null for the run of a quick quiz.")
+    quiz_id = serializers.UUIDField(
+        source="quick_quiz_id", read_only=True, allow_null=True, help_text="A quick quiz's run."
+    )
 
     class Meta:
         model = GraphRun
-        fields = ["id", "lesson_id", "graph", "trigger", "status", "node_status", "error"]
+        fields = ["id", "lesson_id", "quiz_id", "graph", "trigger", "status", "node_status", "error"]
         read_only_fields = fields
 
 

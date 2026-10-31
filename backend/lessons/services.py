@@ -13,11 +13,14 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.module_loading import import_string
 
+from graph.assessment import AssessmentSources
 from graph.followups import FollowupTargets
 from graph.grading import AnswerError, AnswerGrader, QuizGrader, RoutingPolicy, Solution
 from graph.levels import Level, StarRating
 from graph.schemas import public_question
 from llm_registry.resolver import RegistryResolver
+from quizzes.models import QuickQuizAttempt
+from quizzes.results import QuizResultFacts
 
 from .document import LessonDocumentBuilder
 from .effects import RunEffects
@@ -96,6 +99,7 @@ class LessonService:
         Entry.DIAGNOSTIC: ("diagnostic.generate",),
         Entry.SELF_RATING: ("lesson.plan",),
         Entry.FOLLOWUP: ("lesson.plan",),
+        Entry.QUIZ_RESULT: ("lesson.plan",),
     }
     #: what is also needed by a Beginner who took no quick check: nobody tested them, so their prerequisites are planned
     BEGINNER_NODES = ("prerequisites.plan",)
@@ -142,8 +146,13 @@ class LessonService:
             raise ValueError("A self-rated lesson needs the learner's rating.")
         kinds = SheetRequest.kinds(sheets) if intent == Intent.SHEETS else self.no_sheets(sheets)
         verified = self.origins.verify(user, origin, recommended_from)
+        quiz_level = None
+        if entry == Entry.QUIZ_RESULT:
+            # The lesson is about the quiz's topic, and its level is found now (not at the first node) so a Beginner's
+            # prerequisites can be checked for a model before anything is created.
+            topic, quiz_level = verified.recommended_from["topic"], self.quiz_result_level(verified.recommended_from)
         snapshot = self.resolver.snapshot()
-        self.require_models(snapshot, entry, self_rating_halves, intent=intent)
+        self.require_models(snapshot, entry, self_rating_halves, intent=intent, quiz_level=quiz_level)
         lesson_id = uuid.uuid4()
         authorization = self.metering.authorize(
             user,
@@ -179,6 +188,13 @@ class LessonService:
         return lesson, run
 
     @staticmethod
+    def quiz_result_level(source: dict) -> Level:
+        """The level a lesson made from this quiz result starts at: the quiz's, moved by how the attempt went."""
+        attempt = QuickQuizAttempt.objects.select_related("quiz").get(pk=source["attempt_id"])
+        facts = QuizResultFacts.of(attempt)
+        return Level.parse(AssessmentSources.for_key("quiz_result").assess(facts.request())["level"])
+
+    @staticmethod
     def no_sheets(sheets: list[str] | None) -> list[str]:
         """A lesson takes no list of sheets: that is asked for with the intent."""
         if sheets:
@@ -191,7 +207,7 @@ class LessonService:
         quiz, so it covers everything. A lesson that asks for sheets also says how many, and what they rest on."""
         size = {
             "entry": str(entry), "intent": str(intent), "origin": str(origin),
-            "covers": "all" if entry == Entry.SELF_RATING else "diagnostic",
+            "covers": "diagnostic" if entry == Entry.DIAGNOSTIC else "all",
         }  # fmt: skip
         if intent == Intent.SHEETS:
             size |= {"sheets": sheets, "grounding": "quiz" if entry == Entry.DIAGNOSTIC else "none"}
@@ -204,6 +220,7 @@ class LessonService:
         self_rating_halves: int | None = None,
         followup_level: str | None = None,
         intent: str = Intent.LESSON,
+        quiz_level: Level | None = None,
     ) -> None:
         """Every step the first stretch of this lesson needs has a model, or the lesson would fail at once."""
         needed = list(self.FIRST_NODES[Entry(entry)])
@@ -212,6 +229,7 @@ class LessonService:
         level = {
             Entry.SELF_RATING: lambda: StarRating(self_rating_halves).level(),
             Entry.FOLLOWUP: lambda: FollowupTargets.level_for(followup_level),
+            Entry.QUIZ_RESULT: lambda: quiz_level,
         }.get(Entry(entry))
         if intent != Intent.SHEETS and level and level() is Level.BEGINNER:
             needed += self.BEGINNER_NODES

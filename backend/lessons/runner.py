@@ -169,7 +169,7 @@ class FlowRunner:
         if interrupt is None:
             self.recorder.finish(run, GraphRun.Status.SUCCEEDED)
             self.effects.on_finished(run, ended=True)
-            self._publish(run, RunEvent("done", {"lesson_id": str(subject.id), "stage": subject.stage}))
+            self._publish(run, RunEvent("done", {run.subject_key: str(subject.id), "stage": subject.stage}))
         elif interrupt.get("kind") == "retry":  # the graph gave up and recorded why on the subject
             self._fail(run, subject.error, subject_already_failed=True)
         else:
@@ -220,15 +220,23 @@ class FlowRunner:
             return None
         if snapshot.values:
             return self.NOTHING_TO_DO  # the thread already ran to its end (a redelivered task)
-        return {"lesson_id": str(run.subject_id), **run.payload.get("input", {})}
+        return {run.subject_key: str(run.subject_id), **run.payload.get("input", {})}
 
     @staticmethod
     def thread_id(run: GraphRun) -> str:
-        """The main flow is one thread per subject; the small graphs get a fresh thread per run."""
-        return str(run.subject_id) if run.graph == GraphRun.Graph.FLOW else f"{run.subject_id}:{run.id}"
+        """The main flow is one thread per subject. So is a quiz's first run, which a calibration walk pauses and a
+        second run resumes. The small graphs, and every retake, get a fresh thread per run."""
+        shared = run.graph == GraphRun.Graph.FLOW or (
+            run.graph == GraphRun.Graph.QUICK_QUIZ
+            and run.trigger in (GraphRun.Trigger.START, GraphRun.Trigger.RESUME_CALIBRATION)
+        )
+        return str(run.subject_id) if shared else f"{run.subject_id}:{run.id}"
+
+    #: the graphs whose failure fails their subject (a lesson, or a quiz that is still being made)
+    FAILING = (GraphRun.Graph.FLOW, GraphRun.Graph.QUICK_QUIZ)
 
     def _fail(self, run: GraphRun, message: str, *, subject_already_failed: bool = False) -> None:
-        if run.graph == GraphRun.Graph.FLOW and not subject_already_failed:
+        if run.graph in self.FAILING and not subject_already_failed:
             run.fresh_subject().fail(message)
         self.effects.on_stopped(run, message)
         self.recorder.finish(run, GraphRun.Status.FAILED, message)

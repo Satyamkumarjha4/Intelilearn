@@ -22,6 +22,7 @@ class GatewayCall:
     snapshot: dict
     lesson_id: Any
     run_id: Any
+    quiz_id: Any = None
 
 
 class FakeGateway:
@@ -44,8 +45,8 @@ class FakeGateway:
         return [call for call in self.calls if call.node_key == node_key]
 
     def invoke(self, node_key, messages, *, snapshot, schema=None, tools=None, lesson_id=None, run_id=None,
-               on_event=None):  # fmt: skip
-        self.calls.append(GatewayCall(node_key, list(messages), schema, tools, snapshot, lesson_id, run_id))
+               quiz_id=None, on_event=None):  # fmt: skip
+        self.calls.append(GatewayCall(node_key, list(messages), schema, tools, snapshot, lesson_id, run_id, quiz_id))
         queue = self.scripts.get(node_key)
         if queue:
             item = queue.pop(0)
@@ -159,3 +160,19 @@ class RecordingCache:
 
     def delete(self, key):
         self.items.pop(key, None)
+
+
+class FakeTopicTraits:
+    """The quick quiz's `TopicTraitsModel` port without a model: answers from a script (a `TopicTraits`, or an
+    exception to
+    raise), or with the same traits for every topic, and remembers what it was asked."""
+
+    def __init__(self, traits=None, *scripted):
+        self.traits, self.scripted, self.asked = traits, list(scripted), []
+
+    def judge(self, topic):
+        self.asked.append(topic)
+        answer = self.scripted.pop(0) if self.scripted else self.traits
+        if isinstance(answer, Exception):
+            raise answer
+        return answer

@@ -49,3 +49,13 @@ class SharedCountingGate:
 
     def settle(self, authorization: Authorization, outcome: RunOutcome) -> None:
         type(self).settled.append((authorization.action, outcome))
+
+
+class RefusingSharedGate:
+    """A gate that refuses everything, for tests that reach it through the `ACTION_GATE` setting (the views)."""
+
+    def authorize(self, context: ActionContext) -> Authorization:
+        raise ActionRefused("Not available.", code="test_refused")
+
+    def settle(self, authorization: Authorization, outcome: RunOutcome) -> None:
+        pass

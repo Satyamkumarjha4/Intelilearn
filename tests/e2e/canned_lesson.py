@@ -180,12 +180,16 @@ class LessonCanned:
 
     def build_QuestionBatch(self) -> dict:
         """One question for each line of the prompt. The wording depends on how many questions the lesson has asked
-        already (the prompt lists them), so a retake is never a repeat, and on a short code per question, so two
-        questions never look alike to the duplicate check."""
+        already (the prompt lists them), so a retake is never a repeat, and on a few words of code per question, so two
+        questions never look alike to the duplicate check. Two batches of one quiz (two lessons) have the same
+        positions, kinds and difficulties, so the whole prompt goes into the wording too."""
         asked = len(self._json_after("Questions already asked (do not repeat them):"))
+        batch = hashlib.md5(self.text.encode()).hexdigest()[:8]
         questions = []
         for number, (kind, difficulty) in enumerate(self.LINE.findall(self.text), start=1):
-            code = hashlib.md5(f"{asked}-{number}-{kind}-{difficulty}".encode()).hexdigest()[:6]
+            digest = hashlib.md5(f"{batch}-{asked}-{number}-{kind}-{difficulty}".encode()).hexdigest()
+            # words, not just a code: the duplicate check compares the words two questions share
+            code = " ".join(f"w{digest[i : i + 3]}" for i in range(0, 12, 3))
             questions.append(
                 canned_question(
                     kind,

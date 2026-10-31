@@ -20,6 +20,9 @@ Use cases:
 - a crashed interactive is answered with a replacement that passes the real sandbox check
 - a text prompt the fake does not know is refused
 - a schema the fake does not know is refused, and the gateway reports every model failed
+- the quick quiz's steps are served: the topic judge (calculation and programming words), the calibration pool (a bundle
+  with no prerequisite half that passes the pool rules), and a quiz's batch of questions for its cells, which pass the
+  real batch validator
 """
 
 import re
@@ -47,8 +50,9 @@ from graph.prompts import (
     StudyMaterialPrompt,
     WritePagePrompt,
     WriteQuestionsPrompt,
+    WriteQuizQuestionsPrompt,
 )
-from graph.questions import LessonTestBlueprint, MarksPolicy, QuestionFinisher
+from graph.questions import LessonTestBlueprint, MarksPolicy, QuestionFinisher, QuizBlueprint
 from graph.sandbox import SandboxRunner
 from graph.schemas import (
     MATERIAL_SCHEMAS,
@@ -65,6 +69,7 @@ from graph.schemas import (
 )
 from graph.shapes import LessonShapes
 from graph.validators import (
+    DiagnosticValidator,
     GradeReportValidator,
     InteractivePlanValidator,
     PageValidator,
@@ -77,6 +82,7 @@ from llm_registry.gateway import AllModelsFailed, Gateway
 from llm_registry.models import LLMModel, ModelCall, NodeConfig, NodeModelBinding, Provider
 from llm_registry.node_configs import NodeConfigSync
 from llm_registry.resolver import RegistryResolver
+from quizzes.traits import GatewayTopicTraits
 
 pytestmark = pytest.mark.django_db
 
@@ -359,3 +365,49 @@ def test_the_media_agent_finds_downloads_and_stores_a_picture_end_to_end(server,
     assert ref["kind"] == "image" and ref["license"] == "cc-by-sa" and ref["attribution"] == "Fake Photographer"
     assert (tmp_path / ref["file"]).read_bytes()[:4] == b"\x89PNG" and re.fullmatch(r"[0-9a-f-]{36}", ref["asset_id"])
     assert ModelCall.objects.filter(node_key="media.search", status="ok").count() == 2  # the search, then the submit
+
+
+@pytest.mark.parametrize(
+    ("topic", "quantitative", "programming"),
+    [
+        ("Solving quadratic equations", True, False),
+        ("Python loops", False, True),
+        ("The French revolution", False, False),
+    ],
+)
+def test_the_topic_judge_calls_calculation_and_programming_topics_by_their_words(
+    server, monkeypatch, topic, quantitative, programming
+):
+    bind_fake(server, "json_schema", monkeypatch)
+
+    traits = GatewayTopicTraits().judge(topic)
+
+    assert (traits.quantitative, traits.programming) == (quantitative, programming)
+
+
+def test_the_calibration_pool_is_a_bundle_the_pool_rules_accept(server, monkeypatch):
+    snapshot = bind_fake(server, "json_schema", monkeypatch)
+    state = STATE | {"settings": {"diagnostic_questions_per_band": 2}, "include_prerequisites": False}
+
+    result = Gateway().invoke(
+        "diagnostic.generate", DiagnosticPrompt().messages(state), snapshot=snapshot, schema=DiagnosticBundle
+    )
+
+    bundle = result.output.model_dump(mode="json")
+    assert DiagnosticValidator().validate(bundle, settings=state["settings"], include_prerequisites=False) == []
+
+
+def test_a_quizs_questions_come_back_one_for_each_cell_and_pass_the_real_batch_validator(server, monkeypatch):
+    snapshot = bind_fake(server, "json_schema", monkeypatch)
+    blueprint = QuizBlueprint.for_topic(5, ("mcq", "msq"), Level.FOUNDATION)
+    batch = {"id": "b1-1", "cells": [cell.as_dict() for cell in blueprint.cells]}
+    quiz = {"level": "foundation", "code_format": False, "sources": {}}
+    messages = WriteQuizQuestionsPrompt().messages(STATE | {"batch": batch, "quiz": quiz, "exclusions": []})
+
+    result = Gateway().invoke("test.generate", messages, snapshot=snapshot, schema=QuestionBatch)
+
+    written = [q.model_dump(mode="json") for q in result.output.questions]
+    for cell, question in zip(blueprint.cells, written, strict=True):
+        question["id"] = cell.question_id
+    finished, finishing = QuestionFinisher().finish(written)
+    assert finishing == [] and QuestionBatchValidator().validate(finished, cells=blueprint.cells) == []

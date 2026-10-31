@@ -97,6 +97,14 @@ class Canned(LessonCanned):
             ]
         }
 
+    def build_TopicTraitsJudgement(self) -> dict:
+        """A topic is calculation when it says so, and programming when it names code: enough for the wizard's rules."""
+        topic = self.topic.lower()
+        return {
+            "quantitative": any(word in topic for word in ("math", "equation", "calcul", "physics", "arithmetic")),
+            "programming": any(word in topic for word in ("python", "code", "program", "javascript")),
+        }
+
     # --- Mastery path ---
 
     def _concept_text(self, number: int) -> str:

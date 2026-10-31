@@ -21,6 +21,7 @@ Use cases:
 - the rate limiter is asked before each call, per provider and per model
 - the time a call waited for a rate-limit window is logged on its ModelCall row, and is zero when it did not wait
 - cost is computed from the model's prices
+- the lesson and the quick quiz a call was for are logged on its ModelCall row
 """
 
 import pytest
@@ -269,6 +270,17 @@ def test_the_wait_for_a_rate_limit_window_is_logged_on_the_call(resolved_model, 
     )
 
     assert ModelCall.objects.get().rate_limit_wait_ms == 2500
+
+
+def test_the_quiz_a_call_was_for_is_logged_on_the_call(resolved_model, make_snapshot, FakeChat):
+    snapshot = make_snapshot("learner.assess", "structured", [resolved_model("primary")])
+    quiz = "6f1c1b0e-6d7e-4a43-9d38-0c5c3d2b9a11"
+    gateway = Gateway(lambda model, timeout: FakeChat(ok(1)), sleep=lambda s: None, limiter=NoRateLimit())
+
+    gateway.invoke("learner.assess", MESSAGES, snapshot=snapshot, schema=Answer, quiz_id=quiz)
+
+    call = ModelCall.objects.get()
+    assert str(call.quiz_id) == quiz and call.lesson_id is None
 
 
 def test_a_call_that_did_not_wait_logs_no_wait(resolved_model, make_snapshot, FakeChat):

@@ -147,7 +147,7 @@ class UsageCsv:
     COLUMNS = [
         "created_at", "node", "provider", "model", "attempt", "fallback_index", "status", "outcome", "latency_ms",
         "rate_limit_wait_ms", "tokens_in", "tokens_out", "reasoning_tokens", "tool_calls", "cost", "lesson_id",
-        "run_id", "error",
+        "quiz_id", "run_id", "error",
     ]  # fmt: skip
     #: a cell starting with one of these is read by a spreadsheet as a formula
     FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r")
@@ -168,7 +168,7 @@ class UsageCsv:
             call.created_at.isoformat(), call.node_key, call.provider_key, call.model_name, call.attempt,
             call.fallback_index, call.status, CallOutcomes.name_of(call.status, call.attempt), call.latency_ms,
             call.rate_limit_wait_ms, call.input_tokens, call.output_tokens, call.reasoning_tokens, call.tool_calls,
-            cost, call.lesson_id, call.run_id, call.error,
+            cost, call.lesson_id, call.quiz_id, call.run_id, call.error,
         ]  # fmt: skip
         return ["" if value is None else self._defused(value) for value in values]
 

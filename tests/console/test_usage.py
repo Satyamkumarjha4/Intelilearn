@@ -288,3 +288,11 @@ def test_dates_are_ignored_unless_the_range_is_custom(staff_client, spread):
     body = staff_client.get("/api/console/usage?range=today&start=2026-03-01&end=2026-03-02").json()
 
     assert body["range"] == "today" and body["kpis"]["calls"] == 1
+
+
+def test_a_quizs_calls_name_the_quiz_and_not_a_lesson(staff_client, make_call, quiz):
+    make_call(quiz_id=quiz.id)
+
+    [row] = read_csv(staff_client.get("/api/console/usage/export.csv"))
+
+    assert row["quiz_id"] == str(quiz.id) and row["lesson_id"] == ""

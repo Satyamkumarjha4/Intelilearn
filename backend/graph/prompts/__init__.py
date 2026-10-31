@@ -13,6 +13,7 @@ from .build import CompilePagePrompt, RepairCodePrompt, RuntimeRepairPrompt
 from .diagnose import AssessLearnerPrompt, DiagnosticPrompt, DiagnosticReviewPrompt, PlanPrerequisitesPrompt
 from .grading import GradeTestPrompt
 from .media import MediaAgentPrompt, VerifyMediaPrompt
+from .quiz import WriteQuizQuestionsPrompt
 from .scope import SCOPE_REFERENCE
 from .study import StudyMaterialPrompt
 
@@ -21,5 +22,5 @@ __all__ = [
     "DiagnosticReviewPrompt", "GenerateInteractivePrompt", "GradeTestPrompt", "MediaAgentPrompt",
     "PlanInteractivesPrompt", "PlanLessonPrompt", "PlanPrerequisitesPrompt", "Prompt", "RepairCodePrompt",
     "RuntimeRepairPrompt",
-    "StudyMaterialPrompt", "VerifyMediaPrompt", "WritePagePrompt", "WriteQuestionsPrompt",
+    "StudyMaterialPrompt", "VerifyMediaPrompt", "WritePagePrompt", "WriteQuestionsPrompt", "WriteQuizQuestionsPrompt",
 ]  # fmt: skip

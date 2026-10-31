@@ -1,10 +1,12 @@
 """GraphRegistry: `GraphRun.graph` name → the builder that assembles that graph."""
 
+from .attempt_stores import LessonAttemptStore, QuizAttemptStore
 from .builders import (
     FlowGraphBuilder,
-    GradeTestGraphBuilder,
+    GradeAttemptGraphBuilder,
     GraphBuilder,
     QuestionBankGraphBuilder,
+    QuickQuizGraphBuilder,
     RuntimeRepairGraphBuilder,
     StudyMaterialGraphBuilder,
 )
@@ -23,8 +25,10 @@ class GraphRegistry:
                 "flow": FlowGraphBuilder(),
                 "study_material": StudyMaterialGraphBuilder(),
                 "runtime_repair": RuntimeRepairGraphBuilder(),
-                "grade_test": GradeTestGraphBuilder(),
+                "grade_test": GradeAttemptGraphBuilder(LessonAttemptStore()),
+                "grade_quiz": GradeAttemptGraphBuilder(QuizAttemptStore()),
                 "question_bank": QuestionBankGraphBuilder(),
+                "quick_quiz": QuickQuizGraphBuilder(),
             }
         )
 

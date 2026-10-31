@@ -372,6 +372,26 @@
           "is_enabled": true
         }
       ]
+    },
+    {
+      "node_key": "topic.traits",
+      "is_enabled": true,
+      "reasoning_effort": "none",
+      "params_override": {},
+      "max_attempts": 1,
+      "max_tool_steps": null,
+      "timeout_s": 60,
+      "bindings": [
+        {
+          "provider": "fake",
+          "model": "fake-model",
+          "priority": 0,
+          "params_override": {},
+          "reasoning_effort": "",
+          "max_retries": 1,
+          "is_enabled": true
+        }
+      ]
     }
   ]
 }

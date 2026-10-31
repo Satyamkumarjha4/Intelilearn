@@ -153,9 +153,12 @@ class NumericalType(QuestionType):
 
 
 class OpenEndedType(QuestionType):
-    """A question only a judgement can mark, against criteria that each carry whole marks."""
+    """A question only a judgement can mark, against criteria that each carry whole marks. When the topic is programming
+    the answer may be code: the question then names its `language` (and may give `starter_code`), which the learner's
+    editor needs; the criteria judge the code, which is read and never run."""
 
     auto_scored = False
+    own_public_fields = ("language", "starter_code")
     solution_fields = ("model_answer", "criteria")
 
     def score(self, question: dict, answer: Any) -> Score:

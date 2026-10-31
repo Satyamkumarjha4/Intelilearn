@@ -7,6 +7,8 @@ lesson; one that spends its retries badly either loops or gives up early.
 
 Use cases:
 - load_context reads the topic, the profile (without name or email) and the snapshots from the lesson
+- every key load_context returns is declared in the flow's state, because the graph drops the ones that are not
+  (a lesson made from a quiz result lost its attempt id this way and failed at its first step)
 - generate_diagnostic asks the model for a DiagnosticBundle and counts the attempt
 - a node that runs while the lesson is failed (a retry) moves it back to the node's working stage, and only then
 - generate_diagnostic passes the validator's problems to the model as feedback on a retry
@@ -27,6 +29,8 @@ Use cases:
   records no lesson route
 """
 
+from typing import get_type_hints
+
 import pytest
 from support.quiz_data import make_prerequisites, make_questions
 
@@ -42,6 +46,7 @@ from graph.nodes.diagnose import (
     ValidateDiagnosticNode,
 )
 from graph.schemas import DiagnosticBundle, LearnerAssessment, QuizReview
+from graph.state import FlowState
 from lessons.models import Lesson, Quiz, QuizAttempt, Stage
 from llm_registry.gateway import AllModelsFailed
 
@@ -94,6 +99,16 @@ class TestLoadContext:
         assert (update["entry"], update["intent"], update["self_rating_halves"], update["followup_level"]) == (
             "followup", "lesson", None, "advanced",
         )  # fmt: skip
+
+    def test_every_key_it_returns_is_declared_in_the_flow_state(self, lesson, runtime):
+        Lesson.objects.filter(pk=lesson.pk).update(
+            entry="quiz_result", recommended_from={"attempt_id": "5c1c3a58-0000-4000-8000-000000000000"}
+        )
+
+        update = LoadContextNode()({"lesson_id": str(lesson.id)}, runtime)
+
+        assert update["quiz_attempt_id"] == "5c1c3a58-0000-4000-8000-000000000000"
+        assert set(update) <= set(get_type_hints(FlowState))
 
     def test_never_puts_the_name_or_email_in_the_profile(self, lesson, runtime):
         update = LoadContextNode()({"lesson_id": str(lesson.id)}, runtime)

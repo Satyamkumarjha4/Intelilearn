@@ -44,7 +44,17 @@ class FlowState(TypedDict, total=False):
     intent: str  # lesson, or sheets (no pages and no test)
     self_rating_halves: int | None
     followup_level: str  # foundation or advanced, for a lesson made from a test result (else empty)
+    quiz_attempt_id: str | None  # the graded quiz attempt a lesson made from a quiz result grew out of
     level_source: str  # where the level came from
+
+    # a quick quiz (the quick_quiz graph; its run has a quiz instead of a lesson)
+    quiz_id: str
+    config: dict  # QuizConfig: the count, the kinds and the level mode
+    traits: dict | None  # TopicTraits, as the quiz stored them
+    source_type: str  # topic or lessons
+    sources: list[dict]  # {key, title, level, share, summary}: the lessons a quiz is made from
+    quiz: dict  # what the question writer is told: {level, code_format, sources: {key: {title, level, summary}}}
+    batch_capped: bool  # whether the per-batch cap on short and long answers applies
 
     # Stage A
     bundle: dict  # DiagnosticBundle
@@ -69,7 +79,7 @@ class FlowState(TypedDict, total=False):
 
     # Stage B (parallel writers → reducers)
     plan: dict  # LessonPlan
-    blueprint: dict  # LessonTestBlueprint: the ten cells of the test
+    blueprint: dict  # a LessonTestBlueprint (the ten cells of a test) or a QuizBlueprint (a quiz's cells)
     pages: Annotated[dict[str, dict], Reducers.merge_dicts]  # introduction / core / advanced → PageContent
     final_test: dict | None  # FinalTest
     # the questions pipeline (graph/nodes/questions.py), shared by the author stage and the retake graph
@@ -131,6 +141,8 @@ class Branch(TypedDict, total=False):
     assessment: dict
     plan: dict
     blueprint: dict
+    quiz_id: str
+    quiz: dict
     exclusions: list[str]
     pages: dict
     interactive_plan: dict

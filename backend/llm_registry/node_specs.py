@@ -34,6 +34,7 @@ class Stage(StrEnum):
     AUTHOR = "author"
     BUILD = "build"
     POST = "post"
+    QUIZ = "quiz"
     ONBOARDING = "onboarding"
 
 
@@ -109,6 +110,10 @@ _SPECS = [
     NodeSpec("test.grade", Stage.POST, OutputMode.STRUCTURED,
              "Grade short, long and code answers against the model answer or rubric.",
              "GradeReport", frozenset({_S})),
+    NodeSpec("topic.traits", Stage.QUIZ, OutputMode.STRUCTURED,
+             "Judge a topic for the quick quiz wizard: is it mainly calculation, is it programming?",
+             "TopicTraitsJudgement", frozenset({_S}), min_output_tokens=1024, min_context=8_000,
+             default_reasoning=Effort.LOW, default_max_attempts=1, optional=True),
     NodeSpec("onboarding.suggest_topics", Stage.ONBOARDING, OutputMode.STRUCTURED,
              "Suggest first topics when the curated catalogue has no match, and translate the catalogue's topics.",
              "TopicSuggestions", frozenset({_S}), min_output_tokens=2048, min_context=8_000,

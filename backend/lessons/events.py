@@ -17,6 +17,8 @@ import redis.asyncio
 from asgiref.sync import sync_to_async
 from django.conf import settings
 
+from quizzes.stages import QuizStage
+
 from .models import GraphRun, Stage
 
 logger = logging.getLogger(__name__)
@@ -148,7 +150,8 @@ class RunEventStream:
     def terminal_event(snapshot: dict) -> RunEvent | None:
         status = snapshot["status"]
         if status == "succeeded":
-            return RunEvent("done", {"lesson_id": snapshot.get("lesson_id"), "stage": snapshot["stage"]})
+            subject = {key: snapshot[key] for key in ("lesson_id", "quiz_id") if snapshot.get(key)}
+            return RunEvent("done", {**subject, "stage": snapshot["stage"]})
         if status == "paused":
             return RunEvent("awaiting_input", {"kind": snapshot.get("awaiting")})
         if status == "failed":
@@ -165,6 +168,7 @@ class RunSnapshot:
         Stage.AWAITING_DIAGNOSTIC: "diagnostic",
         Stage.AWAITING_PREREQUISITE: "prerequisite",
         Stage.AWAITING_CHOICE: "mastery_choice",
+        QuizStage.AWAITING_CALIBRATION: "calibration",
     }
 
     def __init__(self, run_id):
@@ -175,7 +179,8 @@ class RunSnapshot:
         return {
             "status": run.status,
             "stage": run.subject.stage,
-            "lesson_id": str(run.subject_id),
+            "lesson_id": str(run.lesson_id) if run.lesson_id else None,
+            "quiz_id": str(run.quick_quiz_id) if run.quick_quiz_id else None,
             "node_status": run.node_status,
             "error": run.error,
             "awaiting": self.AWAITING.get(run.subject.stage),

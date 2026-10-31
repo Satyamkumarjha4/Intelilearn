@@ -16,13 +16,15 @@ class Cell:
     type: str
     difficulty: str
     marks: int
+    source: str = ""  # a quiz made from lessons: the key of the lesson this question is about (else empty)
 
     @property
     def question_id(self) -> str:
         return f"t{self.index + 1}"
 
     def as_dict(self) -> dict:
-        return {"index": self.index, "type": self.type, "difficulty": self.difficulty, "marks": self.marks}
+        cell = {"index": self.index, "type": self.type, "difficulty": self.difficulty, "marks": self.marks}
+        return {**cell, "source": self.source} if self.source else cell
 
 
 class LessonTestBlueprint:

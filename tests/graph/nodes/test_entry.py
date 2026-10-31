@@ -23,6 +23,8 @@ Use cases:
 - assess_from_source for a lesson that asked for sheets moves it to writing sheets, records no lesson route, and leaves
   the level and the source as for any rating
 - assess_from_source takes a follow-up's level from what it is for and records the test score as the level source
+- assess_from_source takes a quiz result's level from the quiz and how it went, with what the quiz showed as known and
+  as gaps, and records the quiz result as the level source
 - assess_from_source recovers a failed lesson to building, and refuses an entry that has no source
 - plan_prerequisites asks the model for a prerequisite list and counts the attempt
 - validate_prerequisites accepts a good list: it becomes the lesson's prerequisites, on the lesson and in the
@@ -180,8 +182,8 @@ class TestAssessFromSource:
         assert "route" not in update and update["prerequisites_to_cover"] == []
 
     def test_an_entry_with_no_source_is_refused(self, lesson_state, runtime):
-        with pytest.raises(KeyError, match="quiz_result"):
-            AssessFromSourceNode()(lesson_state | {"entry": "quiz_result"}, runtime)
+        with pytest.raises(KeyError, match="telepathy"):
+            AssessFromSourceNode()(lesson_state | {"entry": "telepathy"}, runtime)
 
     @pytest.mark.parametrize(("followup", "level"), [("foundation", "beginner"), ("advanced", "expert")])
     def test_a_followup_gets_its_level_from_what_it_is_for_and_the_test_score_as_the_source(
@@ -197,6 +199,42 @@ class TestAssessFromSource:
         assert (stored.level, stored.level_source, stored.route, stored.stage) == (
             level, "test_score", "lesson", Stage.GENERATING_LESSON,
         )  # fmt: skip
+
+
+class TestAssessFromAQuizResult:
+    CARD = {
+        "complete": True, "score": {"awarded": 3, "available": 10, "percent": 30},
+        "questions": [
+            {"id": "t1", "concept": "Loops", "marks": 2, "awarded": 2},
+            {"id": "t2", "concept": "Recursion", "marks": 2, "awarded": 0},
+            {"id": "t3", "concept": "Loops", "marks": 2, "awarded": 1},
+            {"id": "t4", "concept": "Sorting", "marks": 2, "awarded": 2},
+        ],
+        "topics_to_revisit": ["Recursion", "Loops"],
+    }  # fmt: skip
+
+    def test_the_level_is_the_quizs_moved_by_how_it_went_and_the_concepts_come_from_the_card(
+        self, lesson, lesson_state, runtime, quiz, make_attempt
+    ):
+        type(quiz).objects.filter(pk=quiz.pk).update(assessment={"level": "proficient", "level_scheme": 2})
+        attempt = make_attempt(quiz, status="graded", result=self.CARD, band="fail")
+        Lesson.objects.filter(pk=lesson.pk).update(entry="quiz_result", origin="quiz_result")
+
+        update = AssessFromSourceNode()(
+            lesson_state | {"entry": "quiz_result", "quiz_attempt_id": str(attempt.pk)}, runtime
+        )
+
+        assessment = update["assessment"]
+        assert (assessment["level"], assessment["source"]) == ("foundation", "quiz_result")  # a fail is one level down
+        assert assessment["gaps"] == ["Recursion", "Loops"] and assessment["known_concepts"] == ["Sorting"]
+        stored = Lesson.objects.get(pk=lesson.pk)
+        assert (stored.level, stored.level_source, stored.route, stored.stage) == (
+            "foundation", "quiz_result", "lesson", Stage.GENERATING_LESSON,
+        )  # fmt: skip
+
+    def test_an_attempt_that_is_gone_stops_the_lesson_with_a_reason(self, lesson, lesson_state, runtime):
+        with pytest.raises(RunFailed, match="quiz result"):
+            AssessFromSourceNode()(lesson_state | {"entry": "quiz_result", "quiz_attempt_id": "nope"}, runtime)
 
 
 class TestPlanPrerequisites:

@@ -150,7 +150,7 @@ def stage_a_graphs():
     from graph.builders import (
         DiagnoseSegment,
         FlowGraphBuilder,
-        GradeTestGraphBuilder,
+        GradeAttemptGraphBuilder,
         MasterySegment,
         RuntimeRepairGraphBuilder,
         StudyMaterialGraphBuilder,
@@ -163,6 +163,6 @@ def stage_a_graphs():
             "flow": flow,
             "study_material": StudyMaterialGraphBuilder(),
             "runtime_repair": RuntimeRepairGraphBuilder(),
-            "grade_test": GradeTestGraphBuilder(),
+            "grade_test": GradeAttemptGraphBuilder(),
         }
     )

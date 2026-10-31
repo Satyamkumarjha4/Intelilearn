@@ -18,7 +18,7 @@ from lessons.models import Stage
 
 from ..authoring import ContentWriter
 from ..context import FlowContext, NodeBudget
-from ..questions import BatchPlanner, LessonTestBlueprint, QuestionDeduper, QuestionTypes
+from ..questions import BatchPlanner, Blueprints, QuestionDeduper, QuestionTypes
 from .base import Node
 from .branches import BranchBuilder
 
@@ -47,10 +47,11 @@ class PlanBatchesNode(Node):
     stage = Stage.GENERATING_LESSON
 
     def run(self, state: dict, ctx: FlowContext) -> dict:
-        blueprint = LessonTestBlueprint.from_json(state["blueprint"])
+        blueprint = Blueprints.from_json(state["blueprint"])
         missing = blueprint.missing({int(index) for index in state.get("accepted") or {}})
         round_no = (state.get("question_round") or 0) + 1
-        batches = BatchPlanner.from_settings(state.get("settings") or {}).plan(missing, round_no)
+        planner = BatchPlanner.from_settings(state.get("settings") or {}, capped=state.get("batch_capped", True))
+        batches = planner.plan(missing, round_no)
         forget = {f"batch:{batch.id}": None for batch in batches}
         return {
             "question_round": round_no,
@@ -94,13 +95,18 @@ class QuestionRound:
     `retry`: a batch has problems and attempts left. `replan`: some cells are still unfilled and rounds are left.
     `short`: unfilled cells and no rounds left, so the test cannot be built. `complete`: every cell has a question.
     `pending`: a batch of this round has not reported yet, so there is nothing to decide.
+
+    A lesson test is a fixed blueprint and must be whole (`strict`). A quick quiz keeps what it has and warns when a few
+    cells could not be filled: a quiz of 9 questions of 10 is better than none (the old rule that an optional check
+    never fails a lesson); only a quiz with no question at all is `short`.
     """
 
     PENDING, RETRY, REPLAN, SHORT, COMPLETE = "pending", "retry", "replan", "short", "complete"
     NODE_KEY: ClassVar[str] = "test.generate"
 
-    def __init__(self, deduper: QuestionDeduper | None = None):
+    def __init__(self, deduper: QuestionDeduper | None = None, *, strict: bool = True):
         self.deduper = deduper or QuestionDeduper()
+        self.strict = strict
 
     def retry_ids(self, state: dict) -> tuple[str, ...]:
         budget = NodeBudget.of(state, self.NODE_KEY).max_attempts
@@ -122,12 +128,18 @@ class QuestionRound:
                             "reason": feedback[f"batch:{batch_id}"][0]})  # fmt: skip
             return RoundResult(self.RETRY, {"question_outcome": self.RETRY}, retry)
         accepted, warnings = self._accept(state, ctx)
-        missing = LessonTestBlueprint.from_json(state["blueprint"]).missing({int(index) for index in accepted})
+        blueprint = Blueprints.from_json(state["blueprint"])
+        missing = blueprint.missing({int(index) for index in accepted})
         update = {"accepted": accepted, "warnings": warnings}
         if not missing:
             return RoundResult(self.COMPLETE, update | {"question_outcome": self.COMPLETE})
         if plan["round"] < NodeBudget.of(state, self.NODE_KEY).max_attempts:
             return RoundResult(self.REPLAN, update | {"question_outcome": self.REPLAN})
+        if not self.strict and accepted:
+            kept = ctx.warn(
+                f"The quiz has {len(accepted)} of {len(blueprint.cells)} questions: the rest could not be written."
+            )
+            return RoundResult(self.COMPLETE, update | {"warnings": warnings + kept, "question_outcome": self.COMPLETE})
         numbers = ", ".join(str(cell.index + 1) for cell in missing)
         return RoundResult(
             self.SHORT,

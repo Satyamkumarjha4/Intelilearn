@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "accounts",
     "llm_registry",
     "lessons",
+    "quizzes",
     "onboarding",
     "marketing",
     "console",
@@ -173,6 +174,8 @@ LLM_REASONING_BUDGETS = {
 # --- Onboarding ---
 # How long a suggested-topics page, a model's topic list and a translation stay in the cache (30 days).
 ONBOARDING_SUGGESTION_TTL_S = env.int("ONBOARDING_SUGGESTION_TTL_S", default=30 * 24 * 3600)
+# How long a judged topic (numerical? programming?) is remembered, so the quiz wizard asks a model once per topic.
+TOPIC_TRAITS_TTL_S = env.int("TOPIC_TRAITS_TTL_S", default=30 * 24 * 3600)
 
 # --- Landing page ---
 # How long the hero card's list of active question ids is cached (it is also cleared when a question is saved).
@@ -224,6 +227,8 @@ REST_FRAMEWORK = {
             "TEST_ATTEMPT_THROTTLE_RATE", default="30/hour"
         ),  # starting an attempt; a retake costs calls
         "landing_demo": env("LANDING_DEMO_THROTTLE_RATE", default="60/min"),  # public, per client address
+        "quiz_create": env("QUIZ_CREATE_THROTTLE_RATE", default="30/hour"),  # a quiz or a retake costs model calls
+        "topic_traits": env("TOPIC_TRAITS_THROTTLE_RATE", default="60/min"),  # per user; may cost a cheap model call
         "topic_suggestions": env(
             "TOPIC_SUGGESTIONS_THROTTLE_RATE", default="30/min"
         ),  # per user; may cost a model call
@@ -268,6 +273,9 @@ SPECTACULAR_SETTINGS = {
         "EntryEnum": "lessons.stages.Entry",
         "FollowupLevelEnum": "lessons.stages.FollowupLevel",
         "StageEnum": "lessons.stages.Stage",
+        "QuizStageEnum": "quizzes.stages.QuizStage",
+        "QuizSourceTypeEnum": "quizzes.models.QuickQuiz.SourceType",
+        "QuizLevelModeEnum": "quizzes.serializers.LEVEL_MODES",
         "MaterialKindEnum": "lessons.stages.MaterialKind",
         "OfferedSheetEnum": "lessons.stages.OfferedSheet",
         "QuizKindEnum": "lessons.models.Quiz.Kind",

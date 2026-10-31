@@ -1,4 +1,5 @@
-"""Unit under test: the `grade_test` graph (`graph.builders.GradeTestGraphBuilder`): a submitted lesson test is graded.
+"""Unit under test: the `grade_test` graph (`graph.builders.GradeAttemptGraphBuilder`): a submitted lesson test is
+graded.
 
 Why: the nodes pass their own tests, but the wiring decides that the model is asked only when there is something to
 judge, that a grading it got wrong is asked again with the problems, and that a run which cannot grade fails with its
@@ -17,7 +18,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from support.fixtures import budget_snapshot
 from support.lesson_data import make_final_test
 
-from graph.builders import GradeTestGraphBuilder
+from graph.builders import GradeAttemptGraphBuilder
 from graph.errors import RunFailed
 from lessons.models import Lesson, Stage, TestSubmission
 
@@ -45,7 +46,7 @@ def grading(*pairs):
 
 
 def grade(submission, ctx):
-    graph = GradeTestGraphBuilder().build(InMemorySaver())
+    graph = GradeAttemptGraphBuilder().build(InMemorySaver())
     start = {"lesson_id": str(submission.lesson_id), "submission_id": str(submission.id)}
     nodes = []
     for chunk in graph.stream(start, {"configurable": {"thread_id": "t"}}, context=ctx, stream_mode="updates"):

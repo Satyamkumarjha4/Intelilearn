@@ -6,7 +6,7 @@ fixed item is held to exactly the rules of a fresh one.
 """
 
 from .context import FlowContext
-from .prompts import GenerateInteractivePrompt, WritePagePrompt, WriteQuestionsPrompt
+from .prompts import GenerateInteractivePrompt, WritePagePrompt, WriteQuestionsPrompt, WriteQuizQuestionsPrompt
 from .questions import Batch, Cell, LessonTestBlueprint, QuestionFinisher
 from .sanitizer import CodeSanitizer
 from .schemas import InteractiveComponent, PageContent, QuestionBatch, component_name
@@ -31,7 +31,8 @@ class ContentWriter:
         ids and the answer of a numerical question are set here by code, never taken from the model, and the questions
         come back even with problems: the join decides whether to try again."""
         cells = batch.cells
-        messages = WriteQuestionsPrompt().messages(data | {"batch": self.batch_json(batch)}, feedback)
+        prompt = WriteQuizQuestionsPrompt() if data.get("quiz") else WriteQuestionsPrompt()
+        messages = prompt.messages(data | {"batch": self.batch_json(batch)}, feedback)
         output = self.ctx.invoke(data, "test.generate", messages, schema=QuestionBatch).output
         written = [question.model_dump(mode="json") for question in output.questions]
         for cell, question in zip(cells, written, strict=False):

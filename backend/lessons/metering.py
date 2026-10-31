@@ -29,8 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 class MeteredAction(StrEnum):
-    """Every action that starts paid model work. The ones for features that are not built yet are named here so the
-    list is whole, but only the ones in `CompletionPoints.TABLE` are asked today."""
+    """Every action that starts paid model work, each with a completion point in `CompletionPoints.TABLE`."""
 
     LESSON_CREATE = "lesson.create"
     LESSON_CONTINUE = "lesson.continue"
@@ -79,7 +78,7 @@ class CompletionPoint:
 
 
 class CompletionPoints:
-    """The completion point of each action that is wired today."""
+    """The completion point of each action."""
 
     TABLE: ClassVar[dict[MeteredAction, CompletionPoint]] = {
         MeteredAction.LESSON_CREATE: CompletionPoint.at_stage(Stage.AWAITING_DIAGNOSTIC),
@@ -90,6 +89,9 @@ class CompletionPoints:
         MeteredAction.SHEET_GENERATE: CompletionPoint.at_run_end(),
         # the `question_bank` run ends exactly when the attempt starts (its last step moves it to in_progress)
         MeteredAction.TEST_RETAKE: CompletionPoint.at_run_end(),
+        # a quiz's run ends exactly when its attempt starts; the calibration walk pauses the run, which is no end
+        MeteredAction.QUIZ_CREATE: CompletionPoint.at_run_end(),
+        MeteredAction.QUIZ_RETAKE: CompletionPoint.at_run_end(),
     }
 
     #: a lesson found by self-rating has no quiz stage to finish at: the one `lesson.create` covers the whole lesson
@@ -101,10 +103,7 @@ class CompletionPoints:
         only the quiz stage or the whole lesson."""
         if MeteredAction(action) is MeteredAction.LESSON_CREATE and (size or {}).get("covers") == "all":
             return cls.WHOLE_LESSON
-        try:
-            return cls.TABLE[MeteredAction(action)]
-        except KeyError:
-            raise LookupError(f"{action} is not wired to a service yet") from None
+        return cls.TABLE[MeteredAction(action)]
 
 
 @dataclass(frozen=True)
@@ -371,6 +370,8 @@ class RunStarters:
         "MaterialService.request_extra": MeteredAction.SHEET_GENERATE,
         "AttemptService.start": MeteredAction.TEST_RETAKE,  # attempt 2 onward; attempt 1 is part of the lesson
         "FollowupService.create": MeteredAction.LESSON_FOLLOWUP,
+        "QuickQuizService.create": MeteredAction.QUIZ_CREATE,
+        "QuickQuizService.retake": MeteredAction.QUIZ_RETAKE,
     }
     #: asks again for the action of the run it resumes
     RESUMING: ClassVar[tuple[str, ...]] = ("LessonService.retry",)
@@ -379,4 +380,7 @@ class RunStarters:
         "AttemptService.submit": "Grading the learner's test; a lesson attempt is graded in full here, no run.",
         "AttemptService.submit_once": "The old single call: starts and submits attempt 1, which is part of the lesson.",
         "AttemptService.regrade": "Re-running a grading that failed, on the stored answers.",
+        "CalibrationService.answer": "The calibration walk resumes the run that is already paid for (quiz.create).",
+        "QuizAttemptService.submit": "Grading the learner's quiz attempt; objective attempts are graded in full here.",
+        "QuizAttemptService.regrade": "Re-running a grading that failed, on the stored answers.",
     }

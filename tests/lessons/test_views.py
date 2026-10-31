@@ -653,9 +653,22 @@ class TestRuns:
         body = signed_in_client.get(f"/api/runs/{run.id}").json()
 
         assert body == {
-            "id": str(run.id), "lesson_id": str(lesson.id), "graph": "flow", "trigger": "start",
+            "id": str(run.id), "lesson_id": str(lesson.id), "quiz_id": None, "graph": "flow", "trigger": "start",
             "status": "succeeded", "node_status": {"a": "done"}, "error": "",
         }  # fmt: skip
+
+    def test_reads_the_run_of_a_quick_quiz(self, signed_in_client, quiz):
+        run = GraphRun.objects.create(quick_quiz=quiz, graph="quick_quiz", trigger="start", status="running")
+
+        body = signed_in_client.get(f"/api/runs/{run.id}").json()
+
+        assert (body["lesson_id"], body["quiz_id"], body["graph"]) == (None, str(quiz.id), "quick_quiz")
+
+    def test_another_learners_quiz_run_is_a_404(self, signed_in_client, make_quiz, other_user):
+        quiz = make_quiz(owner=other_user, topic="T")
+        theirs = GraphRun.objects.create(quick_quiz=quiz, graph="quick_quiz", trigger="start")
+
+        assert signed_in_client.get(f"/api/runs/{theirs.id}").status_code == 404
 
     def test_another_users_run_is_a_404(self, signed_in_client, make_lesson, other_user):
         run = self.make_run(make_lesson(owner=other_user))

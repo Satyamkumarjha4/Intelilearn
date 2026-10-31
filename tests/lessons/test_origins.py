@@ -2,8 +2,8 @@
 
 Why: the origin of a lesson (made directly, or recommended by a test result) will decide what a later pricing feature
 charges and which offers are shown, so the client's word is never enough. A recommendation must point at the caller's
-own graded attempt and at a topic that attempt really told them to revisit; a follow-up or a quiz result can only come
-from the server's own features, which do not exist yet in this phase.
+own graded attempt and at a topic that attempt really told them to revisit; a quiz result must point at a graded attempt
+of a quiz about a topic that the caller owns; a follow-up can only come from the server's own feature.
 
 Use cases:
 - a direct lesson has the origin direct and no recommendation
@@ -15,7 +15,10 @@ Use cases:
 - a recommendation for an attempt that does not exist, belongs to someone else, or is not graded is refused with one
   message that does not say which, so another learner's attempts cannot be probed
 - a recommendation for a topic the attempt did not list is refused
-- a follow-up and a quiz result are refused for now, and an origin that does not exist is refused
+- a quiz result that names the caller's own graded attempt at a topic quiz is accepted, with the quiz, the attempt and
+  the topic as the quiz wrote it; one that names a missing, another learner's, ungraded or lessons-quiz attempt, or no
+  attempt, is refused with one message that does not say which
+- a follow-up is refused here, and an origin that does not exist is refused
 - a refusal is a 400 that names the field
 """
 
@@ -102,10 +105,36 @@ class TestRecommendation:
         )
 
 
+class TestQuizResult:
+    @pytest.fixture
+    def result(self, quiz, make_attempt):
+        return make_attempt(quiz, status="graded", result=CARD)
+
+    def test_the_callers_own_graded_attempt_at_a_topic_quiz_is_accepted(self, user, quiz, result):
+        verified = OriginVerifier().verify(user, "quiz_result", {"attempt_id": result.pk})
+
+        assert verified.origin == "quiz_result"
+        assert verified.recommended_from == {"quiz_id": str(quiz.pk), "attempt_id": str(result.pk), "topic": quiz.topic}
+
+    @pytest.mark.parametrize("given", [None, {}, {"attempt_id": "x"}, {"attempt_id": None}, "text", ["a"]])
+    def test_no_attempt_or_one_that_is_not_an_id_is_refused(self, user, given):
+        assert "recommended_from" in refused(user, "quiz_result", given)
+
+    def test_a_missing_someone_elses_ungraded_or_lessons_attempt_all_get_the_same_refusal(
+        self, user, other_user, make_quiz, make_attempt, result, make_lesson
+    ):
+        theirs = make_attempt(make_quiz(owner=other_user, topic="Theirs"), status="graded", result=CARD)
+        ungraded = make_attempt(make_quiz(topic="Other"), status="in_progress")
+        from_lessons = make_attempt(make_quiz(topic="Mixed", source_type="lessons"), status="graded", result=CARD)
+        wanted = refused(user, "quiz_result", {"attempt_id": str(uuid.uuid4())})
+
+        for attempt in (theirs, ungraded, from_lessons):
+            assert str(refused(user, "quiz_result", {"attempt_id": str(attempt.pk)})) == str(wanted)
+
+
 class TestOthers:
-    @pytest.mark.parametrize("origin", ["followup", "quiz_result"])
-    def test_an_origin_only_the_server_can_set_is_refused_for_now(self, user, origin):
-        assert "origin" in refused(user, origin)
+    def test_a_followup_can_only_come_from_the_servers_own_feature(self, user):
+        assert "origin" in refused(user, "followup")
 
     def test_an_origin_that_does_not_exist_is_refused(self, user):
         assert "origin" in refused(user, "friend")

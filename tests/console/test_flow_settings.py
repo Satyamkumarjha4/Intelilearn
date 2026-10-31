@@ -10,6 +10,8 @@ Use cases:
   foundations, the lowest score that can be mastery
 - a change is saved, the thresholds follow it, and one audit entry keeps the settings before and after
 - the rules are exactly the admin form's: whatever the form refuses is refused here, whatever it accepts is accepted
+- the quick quiz's settings (most lessons it can combine, tokens of summary per lesson, calibration questions) are among
+  them, with working defaults and the admin's limits
 - a field that does not exist, or a wrong type, is refused; a refused change saves nothing and logs nothing
 - lessons already started keep the settings they started with
 - none of it is open to a learner
@@ -31,7 +33,8 @@ FIELDS = {
     "mastery_requires_all_correct", "final_test_min", "final_test_max", "max_interactives_per_page",
     "alignment_min_score", "alignment_max_rounds", "render_check_max_rounds", "max_auto_runtime_repairs",
     "media_sources", "allowed_media_licenses", "band_fail_below", "band_excellent_above", "question_batch_size",
-    "batch_max_long", "batch_max_short", "retakes_per_day",
+    "batch_max_long", "batch_max_short", "retakes_per_day", "quiz_max_source_lessons", "quiz_source_token_budget",
+    "calibration_questions",
 }  # fmt: skip
 
 
@@ -168,3 +171,23 @@ def test_lessons_already_started_keep_the_settings_they_started_with(staff_clien
 def test_a_learner_can_neither_read_nor_change_the_settings(learner_client):
     assert learner_client.get(URL).status_code == 404
     assert learner_client.patch(URL, {"final_test_min": 1}, format="json").status_code == 404
+
+
+def test_the_quick_quiz_settings_have_their_defaults_and_limits(staff_client):
+    body = staff_client.get(URL).json()
+    assert (body["quiz_max_source_lessons"], body["quiz_source_token_budget"], body["calibration_questions"]) == (
+        10,
+        1500,
+        5,
+    )
+
+    for field, bad in (
+        ("quiz_max_source_lessons", 11),
+        ("quiz_source_token_budget", 100),
+        ("calibration_questions", 2),
+    ):
+        assert staff_client.patch(URL, {field: bad}, format="json").status_code == 400
+    assert (
+        staff_client.patch(URL, {"quiz_max_source_lessons": 3, "calibration_questions": 7}, format="json").status_code
+        == 200
+    )

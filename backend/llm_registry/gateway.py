@@ -65,6 +65,7 @@ class _Call:
     run_id: Any
     on_event: EventSink | None
     errors: list[str]
+    quiz_id: Any = None
 
     def emit(self, event: dict) -> None:
         if self.on_event:
@@ -101,6 +102,7 @@ class Gateway:
         tools: Sequence[Any] | None = None,
         lesson_id: Any = None,
         run_id: Any = None,
+        quiz_id: Any = None,
         on_event: EventSink | None = None,
     ) -> GatewayResult:
         node = RegistrySnapshot.from_json(snapshot).node(node_key)
@@ -109,7 +111,7 @@ class Gateway:
         adapter = self.adapters.for_mode(node.output)
         adapter.check_request(node_key, schema, tools)
 
-        call = _Call(node, adapter, schema, tools, lesson_id, run_id, on_event, errors=[])
+        call = _Call(node, adapter, schema, tools, lesson_id, run_id, on_event, errors=[], quiz_id=quiz_id)
         for index, model in enumerate(node.chain):
             if index > 0:
                 reason = REDACTOR.redact(call.errors[-1]) if call.errors else ""
@@ -125,7 +127,8 @@ class Gateway:
 
         def record(**fields):
             self.recorder.record(node_key=call.node.node_key, lesson_id=call.lesson_id, run_id=call.run_id,
-                                 model=model, fallback_index=index, rate_limit_wait_ms=waited_ms, **fields)  # fmt: skip
+                                 quiz_id=call.quiz_id, model=model, fallback_index=index,
+                                 rate_limit_wait_ms=waited_ms, **fields)  # fmt: skip
 
         try:
             chat = self.chat_factory(model, call.node.timeout_s)
@@ -149,7 +152,10 @@ class Gateway:
                 )
                 waited_ms = int((waited_s or 0) * 1000)
                 trace = self.tracing.config(
-                    node_key=call.node.node_key, model=model.label, lesson_id=call.lesson_id, run_id=call.run_id
+                    node_key=call.node.node_key,
+                    model=model.label,
+                    lesson_id=call.lesson_id or call.quiz_id,
+                    run_id=call.run_id,
                 )
                 reply = runnable.invoke(messages, config=trace) if trace else runnable.invoke(messages)
             except Exception as exc:

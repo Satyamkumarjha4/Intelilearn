@@ -7,6 +7,7 @@ graph yet (the author stage, before it lands) simply leaves its exit at END.
 
 from langgraph.graph import END, START, StateGraph
 
+from .attempt_stores import AttemptStore, LessonAttemptStore
 from .builder_base import GraphBuilder, Segment
 from .nodes.author import (
     AlignmentJudgeNode,
@@ -87,7 +88,21 @@ from .nodes.mastery import (
     PublishMasteryOptionsNode,
     ValidateStudyMaterialNode,
 )
-from .nodes.questions import GenerateQuestionsNode, PlanBatchesNode
+from .nodes.questions import GenerateQuestionsNode, PlanBatchesNode, QuestionRound
+from .nodes.quiz import (
+    AwaitCalibrationNode,
+    GeneratePoolNode,
+    LevelFromRatingNode,
+    LevelFromScoresNode,
+    LevelFromWalkNode,
+    LevelModeRouter,
+    LoadQuizNode,
+    PersistQuizAttemptNode,
+    PlanQuizNode,
+    PublishCalibrationNode,
+    ResolveSourceNode,
+    ValidatePoolNode,
+)
 from .nodes.repair import (
     AssembleRepairedNode,
     LoadRepairNode,
@@ -425,15 +440,27 @@ class RuntimeRepairGraphBuilder(GraphBuilder):
         graph.add_edge(names[-1], END)
 
 
-class GradeTestGraphBuilder(GraphBuilder):
-    """A submitted lesson test: the open-ended answers are graded by `test.grade`, the rest were marked at once.
+class GradeAttemptGraphBuilder(GraphBuilder):
+    """A submitted attempt: the open-ended answers are graded by `test.grade`, the rest were marked at once. One graph
+    for
+    a legacy lesson attempt (registered as `grade_test`) and a quick quiz's (`grade_quiz`); the `AttemptStore` it is
+    built with says where the attempt is and what follows from its score.
 
-    Input: `{"lesson_id", "submission_id"}`, in its own thread. There is no Retry: a failed run ends with its reason
-    and the learner submits again.
+    Input: `{"lesson_id", "submission_id"}` for a lesson, `{"quiz_id", "attempt_id"}` for a quiz, in its own thread.
+    There is no Retry: a failed run ends with its reason and the learner submits again.
     """
 
+    def __init__(self, store: AttemptStore | None = None):
+        self.store = store or LessonAttemptStore()
+
     def add_nodes(self, graph: StateGraph) -> None:
-        for node in (LoadSubmissionNode(), GradeOpenNode(), ValidateGradeNode(), PersistGradeNode(), FailGradeNode()):
+        for node in (
+            LoadSubmissionNode(self.store),
+            GradeOpenNode(),
+            ValidateGradeNode(),
+            PersistGradeNode(store=self.store),
+            FailGradeNode(),
+        ):
             graph.add_node(node.name, node)
 
     def add_edges(self, graph: StateGraph) -> None:
@@ -474,6 +501,68 @@ class QuestionBankGraphBuilder(GraphBuilder):
         graph.add_conditional_edges(
             "questions_join",
             BankRouter(),
+            ["generate_questions", "plan_batches", "persist_attempt", "fail_attempt"],
+        )
+        graph.add_edge("persist_attempt", END)
+
+
+class QuickQuizGraphBuilder(GraphBuilder):
+    """A quick quiz's questions (plan §9.4): the first attempt's, when the quiz is made, and every retake's.
+
+        load_quiz → resolve_source → level (a rating, the scores, the calibration walk, or already known)
+                  → plan_quiz → plan_batches → generate_questions ‖ → questions_join → persist_attempt
+
+    Input: `{"quiz_id", "attempt_id"}`. The calibration walk pauses the graph at `await_calibration`, in the quiz's own
+    thread, and the one resume carries on once the walk is over. There is no Retry: a run that cannot write the
+    questions ends with its reason, the waiting attempt is removed (`AttemptGenerationEffect`), and a quiz that was
+    still being made is failed.
+    """
+
+    def add_nodes(self, graph: StateGraph) -> None:
+        for node in (
+            LoadQuizNode(),
+            ResolveSourceNode(),
+            LevelFromRatingNode(),
+            LevelFromScoresNode(),
+            GeneratePoolNode(),
+            ValidatePoolNode(),
+            PublishCalibrationNode(),
+            AwaitCalibrationNode(),
+            LevelFromWalkNode(),
+            PlanQuizNode(),
+            PlanBatchesNode(),
+            GenerateQuestionsNode(),
+            BankJoinNode(QuestionRound(strict=False)),
+            PersistQuizAttemptNode(),
+            FailAttemptNode(),
+        ):
+            graph.add_node(node.name, node)
+
+    def add_edges(self, graph: StateGraph) -> None:
+        graph.add_edge(START, "load_quiz")
+        graph.add_edge("load_quiz", "resolve_source")
+        graph.add_conditional_edges(
+            "resolve_source",
+            LevelModeRouter(),
+            ["level_from_rating", "level_from_scores", "generate_pool", "plan_quiz"],
+        )
+        graph.add_edge("level_from_rating", "plan_quiz")
+        graph.add_edge("level_from_scores", "plan_quiz")
+        graph.add_edge("generate_pool", "validate_pool")
+        graph.add_conditional_edges(
+            "validate_pool",
+            CheckRouter("pool", ok="publish_calibration", retry="generate_pool", fail="fail_attempt"),
+            ["publish_calibration", "generate_pool", "fail_attempt"],
+        )
+        graph.add_edge("publish_calibration", "await_calibration")
+        graph.add_edge("await_calibration", "level_from_walk")
+        graph.add_edge("level_from_walk", "plan_quiz")
+        graph.add_edge("plan_quiz", "plan_batches")
+        graph.add_conditional_edges("plan_batches", BankBatchesRouter(), ["generate_questions", "persist_attempt"])
+        graph.add_edge("generate_questions", "questions_join")
+        graph.add_conditional_edges(
+            "questions_join",
+            BankRouter(QuestionRound(strict=False)),
             ["generate_questions", "plan_batches", "persist_attempt", "fail_attempt"],
         )
         graph.add_edge("persist_attempt", END)

@@ -8,6 +8,8 @@ any graph, also reports its end to the action gate (`AuthorizationSettlement`, l
 
 from typing import Protocol
 
+from quizzes.models import QuickQuizAttempt
+
 from .metering import AuthorizationSettlement
 from .models import GraphRun, TestSubmission
 
@@ -27,12 +29,27 @@ class SubmissionEffect:
 
 
 class AttemptGenerationEffect:
-    """The `question_bank` run for a retake ended without its questions (failed or stopped): the attempt that waited for
-    them goes, so the attempt number is never used up and the learner starts again with a fresh authorization (T17)."""
+    """A run that writes an attempt's questions (a lesson's retake, a quiz's first attempt or retake) ended without them
+    (failed or stopped): the attempt that waited for them goes, so the attempt number is never used up and the learner
+    starts again with a fresh authorization (T17). `attempts` is the model the attempt is a row of."""
+
+    def __init__(self, attempts=TestSubmission):
+        self.attempts = attempts
 
     def apply(self, run: GraphRun, message: str) -> None:
         attempt_id = (run.payload.get("input") or {}).get("attempt_id")
-        TestSubmission.objects.filter(pk=attempt_id, status=TestSubmission.Status.GENERATING).delete()
+        self.attempts.objects.filter(pk=attempt_id, status=self.attempts.Status.GENERATING).delete()
+
+
+class QuizAttemptEffect:
+    """The `grade_quiz` run for a quiz attempt ended without grading it: the attempt is marked failed, so it is not
+    "grading" for ever and can be graded again (the learner never answers twice)."""
+
+    def apply(self, run: GraphRun, message: str) -> None:
+        attempt_id = (run.payload.get("input") or {}).get("attempt_id")
+        QuickQuizAttempt.objects.filter(pk=attempt_id, status=QuickQuizAttempt.Status.GRADING).update(
+            status=QuickQuizAttempt.Status.FAILED, error=message
+        )
 
 
 class RunEffects:
@@ -45,6 +62,8 @@ class RunEffects:
             else {
                 GraphRun.Graph.GRADE_TEST: SubmissionEffect(),
                 GraphRun.Graph.QUESTION_BANK: AttemptGenerationEffect(),
+                GraphRun.Graph.QUICK_QUIZ: AttemptGenerationEffect(QuickQuizAttempt),
+                GraphRun.Graph.GRADE_QUIZ: QuizAttemptEffect(),
             }
         )
         self.settlement = settlement or AuthorizationSettlement()

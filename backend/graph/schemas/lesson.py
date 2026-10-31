@@ -126,6 +126,10 @@ class TestQuestion(BaseModel):
         "question's marks.",
     )
 
+    # short_answer / long_answer about code (a programming topic): the language, and optionally code to start from
+    language: str | None = Field(default=None, description='short/long answer that asks for code only: e.g. "python".')
+    starter_code: str | None = Field(default=None, description="short/long answer that asks for code only, optional.")
+
     @model_validator(mode="after")
     def _fields_for_type(self):
         if missing := QuestionTypes.get(self.type).missing_fields(self.model_dump()):

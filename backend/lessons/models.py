@@ -12,7 +12,7 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 
-from .errors import AttemptSealed
+from .gradable import GradableAttempt
 from .stages import (  # noqa: F401  (re-exported)
     Entry,
     FollowupLevel,
@@ -291,50 +291,21 @@ class Question(models.Model):
         return f"{self.type} question of {self.lesson.topic}"
 
 
-class TestSubmission(models.Model):
+class TestSubmission(GradableAttempt):
     """One attempt at the lesson's test. The model, table and URL names stay from when a lesson had a single
-    submission; in prose and in the app it is an attempt.
+    submission; in prose and in the app it is an attempt (the fields and `seal()` are `GradableAttempt`'s).
 
     A lesson can have many, numbered from 1, and at most one is open (`generating` while a retake's questions are being
-    written, then `in_progress`). `questions` is the snapshot of what was served, answer keys included, which is what
-    makes an attempt immutable and gradable whatever happens to the record later. Once the attempt leaves `in_progress`
-    its `answers` and `questions` never change: `seal()` is the only way out. `result` is the `ScoreCard`
-    (graph/grading.py): complete at once for an objective attempt, and when the `grade_test` graph has graded the
-    open-ended answers for a legacy one.
+    written, then `in_progress`). `result` is the `ScoreCard` (graph/grading.py): complete at once for an objective
+    attempt, and when the `grade_test` graph has graded the open-ended answers for a legacy one.
     """
 
     __test__ = False  # not a pytest test class, whatever its name looks like
 
-    class Status(models.TextChoices):
-        GENERATING = "generating", "Preparing questions"
-        IN_PROGRESS = "in_progress", "In progress"
-        GRADING = "grading", "Grading"  # legacy attempts with open-ended questions only
-        GRADED = "graded", "Graded"
-        FAILED = "failed", "Grading failed"
-
-    OPEN = (Status.GENERATING, Status.IN_PROGRESS)
-    SEALED = (Status.GRADING, Status.GRADED, Status.FAILED)
-
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name="submissions")
-    attempt_no = models.PositiveSmallIntegerField(default=1)  # per lesson, from 1
-    questions = models.JSONField(default=list, blank=True)  # the snapshot of the questions served in this attempt
-    answers = models.JSONField(default=dict)  # {question_id: answer}; an answered question is locked
-    result = models.JSONField(null=True, blank=True)
-    status = models.CharField(max_length=12, choices=Status.choices, default=Status.IN_PROGRESS)
-    error = models.TextField(blank=True)
-    started_at = models.DateTimeField(default=timezone.now)
-    submitted_at = models.DateTimeField(null=True, blank=True)  # none while the attempt is open
-    graded_at = models.DateTimeField(null=True, blank=True)
-    awarded = models.PositiveSmallIntegerField(null=True, blank=True)  # filled when graded, so trends are cheap
-    available = models.PositiveSmallIntegerField(null=True, blank=True)
-    band = models.CharField(max_length=10, blank=True)  # fail, normal or excellent, once graded
-    duration_s = models.PositiveIntegerField(null=True, blank=True)  # server-measured, started_at to submitted_at
     followup = models.JSONField(null=True, blank=True)  # the offer decided with the band (none until phase 9.4)
-    all_blank = models.BooleanField(default=False, help_text="Every answer was blank. Stored, scores 0, no offer.")
 
-    class Meta:
-        ordering = ["-attempt_no"]
+    class Meta(GradableAttempt.Meta):
         constraints = [
             models.UniqueConstraint(fields=["lesson", "attempt_no"], name="unique_attempt_no_per_lesson"),
             models.UniqueConstraint(
@@ -347,56 +318,35 @@ class TestSubmission(models.Model):
     def __str__(self):
         return f"Attempt {self.attempt_no} of {self.lesson.topic} ({self.get_status_display()})"
 
-    @property
-    def is_open(self) -> bool:
-        return self.status in self.OPEN
-
-    def seal(
-        self, *, answers: dict, status: str, result: dict, band: str, followup: dict | None, all_blank: bool, now
-    ) -> None:
-        """Close an attempt that is in progress: its answers are final, and so is what they scored (or, for a legacy
-        attempt with open-ended answers, the part of it that could be marked at once). The only way out of
-        `in_progress`; the conditional update makes a second call, or a call on a closed attempt, do nothing."""
-        score = result["score"]
-        sealed = TestSubmission.objects.filter(pk=self.pk, status=self.Status.IN_PROGRESS).update(
-            answers=answers,
-            status=status,
-            result=result,
-            awarded=score["awarded"] if status == self.Status.GRADED else None,
-            available=score["available"] if status == self.Status.GRADED else None,
-            band=band,
-            followup=followup,
-            all_blank=all_blank,
-            submitted_at=now,
-            graded_at=now if status == self.Status.GRADED else None,
-            duration_s=max(0, int((now - self.started_at).total_seconds())),
-        )
-        if not sealed:
-            raise AttemptSealed()
-        self.refresh_from_db()
+    def seal(self, *, followup: dict | None, **fields) -> None:
+        super().seal(followup=followup, **fields)
 
 
 class GraphRunQuerySet(models.QuerySet):
     """The ways to find runs without naming the column of the thing they belong to (`GraphRun.SUBJECT_FIELDS`)."""
 
     def for_subject(self, subject: RunSubject) -> "GraphRunQuerySet":
+        label = getattr(getattr(subject, "_meta", None), "label_lower", None)
         try:
-            field = GraphRun.SUBJECT_FIELDS[type(subject)]
+            field = GraphRun.SUBJECT_FIELDS[label]
         except KeyError:
             raise TypeError(f"{type(subject).__name__} cannot have runs") from None
         return self.filter(**{field: subject})
 
     def for_subject_id(self, subject_id) -> "GraphRunQuerySet":
-        """For a subject that may not be a row yet, or that the caller only has the id of."""
-        return self.filter(lesson_id=subject_id)
+        """For a subject that may not be a row yet, or that the caller only has the id of (a lesson's or a quiz's)."""
+        return self.filter(models.Q(lesson_id=subject_id) | models.Q(quick_quiz_id=subject_id))
 
     def owned_by(self, user) -> "GraphRunQuerySet":
-        """The runs of this learner's own lessons. The API always starts from here, as it does for lessons."""
-        return self.filter(lesson__owner=user)
+        """The runs of this learner's own lessons and quizzes. The API always starts from here, as it does for"
+        " lessons."""
+        return self.filter(models.Q(lesson__owner=user) | models.Q(quick_quiz__owner=user))
 
     def with_subject(self, *, owner: bool = False) -> "GraphRunQuerySet":
         """Fetch each run's subject in the same query (and its owner, for a list that names the learner)."""
-        return self.select_related("lesson__owner" if owner else "lesson")
+        if owner:
+            return self.select_related("lesson__owner", "quick_quiz__owner")
+        return self.select_related("lesson", "quick_quiz")
 
 
 class GraphRun(models.Model):
@@ -408,6 +358,8 @@ class GraphRun(models.Model):
         RUNTIME_REPAIR = "runtime_repair", "Runtime repair"
         GRADE_TEST = "grade_test", "Test grading"
         QUESTION_BANK = "question_bank", "New test questions"
+        QUICK_QUIZ = "quick_quiz", "Quick quiz"
+        GRADE_QUIZ = "grade_quiz", "Quiz grading"
 
     class Trigger(models.TextChoices):
         START = "start", "Start"
@@ -419,6 +371,7 @@ class GraphRun(models.Model):
         GRADE = "grade", "Test submitted"
         EXTRA_MATERIAL = "extra_material", "Extra sheet"
         RETAKE = "retake", "Test retake"
+        RESUME_CALIBRATION = "resume_calibration", "Calibration answered"
 
     class Status(models.TextChoices):
         QUEUED = "queued", "Queued"
@@ -431,7 +384,11 @@ class GraphRun(models.Model):
     TERMINAL = {Status.PAUSED, Status.SUCCEEDED, Status.FAILED, Status.CANCELLED}
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)  # SSE channel run:{id}:events
-    lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name="runs")
+    # A run belongs to exactly one of these: a lesson, or a quick quiz (the database checks it).
+    lesson = models.ForeignKey(Lesson, null=True, blank=True, on_delete=models.CASCADE, related_name="runs")
+    quick_quiz = models.ForeignKey(
+        "quizzes.QuickQuiz", null=True, blank=True, on_delete=models.CASCADE, related_name="runs"
+    )
     graph = models.CharField(max_length=20, choices=Graph.choices, default=Graph.FLOW)
     trigger = models.CharField(max_length=30, choices=Trigger.choices)
     payload = models.JSONField(default=dict, blank=True)  # e.g. the resume value or the requested sheet kind
@@ -447,11 +404,18 @@ class GraphRun(models.Model):
 
     objects = GraphRunQuerySet.as_manager()
 
-    #: the kinds of subject a run can belong to → the column that holds it (a quick quiz joins in phase 9.6)
-    SUBJECT_FIELDS = {Lesson: "lesson"}
+    #: the kinds of subject a run can belong to (by model label) → the column that holds it
+    SUBJECT_FIELDS = {"lessons.lesson": "lesson", "quizzes.quickquiz": "quick_quiz"}
 
     class Meta:
         ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(lesson__isnull=False, quick_quiz__isnull=True)
+                | models.Q(lesson__isnull=True, quick_quiz__isnull=False),
+                name="a_run_belongs_to_one_subject",
+            )
+        ]
 
     def __str__(self):
         return f"{self.get_graph_display()} · {self.get_trigger_display()} · {self.status}"
@@ -459,12 +423,17 @@ class GraphRun(models.Model):
     @property
     def subject(self) -> RunSubject:
         """What the run belongs to. Read this, not `lesson`, outside the code that creates runs."""
-        return self.lesson
+        return self.lesson if self.lesson_id else self.quick_quiz
 
     @property
     def subject_id(self):
         """Its id, without fetching it."""
-        return self.lesson_id
+        return self.lesson_id or self.quick_quiz_id
+
+    @property
+    def subject_key(self) -> str:
+        """The key of the subject in a graph's input and state."""
+        return "quiz_id" if self.quick_quiz_id else "lesson_id"
 
     def fresh_subject(self) -> RunSubject:
         """The subject as the database has it now, because the graph moves its stage in another process."""
@@ -522,6 +491,18 @@ class FlowSettings(models.Model):
     retakes_per_day = models.PositiveSmallIntegerField(
         default=3, validators=[MinValueValidator(1), MaxValueValidator(50)], help_text="Per lesson, in 24 hours."
     )
+    quiz_max_source_lessons = models.PositiveSmallIntegerField(
+        default=10, validators=[MinValueValidator(1), MaxValueValidator(10)],
+        help_text="The most lessons one quick quiz can combine.",
+    )  # fmt: skip
+    quiz_source_token_budget = models.PositiveSmallIntegerField(
+        default=1500, validators=[MinValueValidator(200), MaxValueValidator(6000)],
+        help_text="Tokens of concept summary per lesson a quiz is made from (estimated as characters divided by four).",
+    )  # fmt: skip
+    calibration_questions = models.PositiveSmallIntegerField(
+        default=5, validators=[MinValueValidator(3), MaxValueValidator(7)],
+        help_text="Questions in the calibration quiz (the spec's length is 5).",
+    )  # fmt: skip
     alignment_min_score = models.PositiveSmallIntegerField(
         default=3, validators=[MinValueValidator(1), MaxValueValidator(5)], help_text="Out of 5, for every score."
     )

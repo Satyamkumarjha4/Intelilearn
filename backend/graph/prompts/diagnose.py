@@ -14,13 +14,29 @@ BAND_MEANINGS = {
 
 
 class DiagnosticPrompt(Prompt):
+    """Subject may say `include_prerequisites: False` (the calibration quiz uses the diagnostic's questions as its pool
+    and
+    has no prerequisite half)."""
+
     def system(self, subject: dict) -> str:
         settings = subject["settings"]
         per_band = settings.get("diagnostic_questions_per_band", 2)
         prereqs = settings.get("prerequisite_question_count", 5)
         bands = "\n".join(f'- "{band}": {BAND_MEANINGS[band]}' for band in BANDS)
-        return f"""You are an expert assessment designer. You write a short diagnostic quiz that reveals what a \
-learner already knows about a topic, plus a prerequisite quiz.
+        with_prerequisites = subject.get("include_prerequisites", True)
+        opening = "a short diagnostic quiz that reveals what a learner already knows about a topic" + (
+            ", plus a prerequisite quiz." if with_prerequisites else "."
+        )
+        closing = (
+            f"""PREREQUISITE QUIZ: the {prereqs} most important concepts a learner must know BEFORE this topic (not
+            parts of \
+the topic itself), each with "why_needed", and exactly one "basic" question per prerequisite whose \
+"prerequisite" field equals that prerequisite's name exactly. Ids: diagnostic "q1".., prerequisite "p1".."""
+            if with_prerequisites
+            else 'There is no prerequisite quiz this time: return empty lists for "prerequisites" and '
+            '"prerequisite_questions". Ids: "q1"..'
+        )
+        return f"""You are an expert assessment designer. You write {opening}
 
 DIAGNOSTIC QUIZ: exactly {per_band * len(BANDS)} multiple-choice questions, exactly {per_band} per band, \
 easiest band first:
@@ -38,9 +54,7 @@ Never use "all of the above", "none of the above" or "both A and B".
 - The learner will also see an "I don't know" option; don't add it yourself.
 - Use Markdown for code (`inline`) and LaTeX between $…$ for maths.
 
-PREREQUISITE QUIZ: the {prereqs} most important concepts a learner must know BEFORE this topic (not parts of \
-the topic itself), each with "why_needed", and exactly one "basic" question per prerequisite whose \
-"prerequisite" field equals that prerequisite's name exactly. Ids: diagnostic "q1".., prerequisite "p1"..
+{closing}
 
 {self.language_rule(subject.get("profile"))}"""
 

@@ -6,7 +6,10 @@ step at the wrong time, a retry that skips the rules the learner's own Retry but
 lesson half-stopped would each waste the one chance to see what went wrong.
 
 Use cases:
-- the list shows each run with its lesson, learner, state, duration, calls and cost; the newest first, in pages
+- the list shows each run with its lesson (or quiz), learner, state, duration, calls and cost; the newest first, in
+  pages
+- a quick quiz's run is listed the same way, with the quiz's topic, the learner and the quiz's stage, found by a search
+  of the quiz's topic or its owner; its detail has its timeline, with the quiz's own steps in the quiz phase
 - the list filters by status (one or several), by graph, and by a search of the topic, learner name or email
 - an unknown status or graph is a 400; a run that has not started has no duration, a running one has its age so far
 - the list runs the same number of queries for three runs and for thirty
@@ -15,7 +18,8 @@ Use cases:
 - a step is `ran`, `retried` (the graph ran it again), `failed` (failed or degraded) or `waiting` (it is where a paused
   run waits for the learner, so it has no duration); a step still running has its time so far
 - a run from before timings were kept still lists its steps, without times
-- steps are grouped into the phases of the lesson (diagnose, author, build, post, other) by the code module of the node
+- steps are grouped into the phases of the lesson (diagnose, author, build, post, quiz, other) by the code module of the
+  node
 - Retry is the learner's retry: a failed lesson gets a new run, as staff; other lessons, other graphs and busy lessons
   are 409s; Cancel stops an active run and fails the lesson so it can be retried, once
 - both write an audit entry; neither is open to a learner
@@ -73,6 +77,7 @@ def test_a_row_of_the_list_describes_the_run_its_lesson_and_what_it_cost(staff_c
     assert row == {
         "id": str(finished_run.id),
         "lesson_id": str(lesson.id),
+        "quiz_id": None,
         "topic": "Binary search",
         "learner_name": "Ada Lovelace",
         "graph": "flow",
@@ -355,11 +360,71 @@ def test_steps_that_never_started_come_after_the_ones_that_did(make_run):
         ("load_context", "diagnose"), ("generate_diagnostic", "diagnose"), ("assess_learner", "diagnose"),
         ("generate_study_material", "diagnose"), ("plan_lesson", "author"), ("compile_page", "build"),
         ("render_check", "build"), ("repair_runtime", "post"), ("grade_open", "post"), ("mark_failed", "other"),
+        ("resolve_source", "quiz"), ("generate_pool", "quiz"), ("level_from_walk", "quiz"), ("persist_attempt", "quiz"),
         ("a_node_that_does_not_exist", "other"),
     ],
 )  # fmt: skip
 def test_a_step_belongs_to_the_phase_of_the_module_that_defines_it(node, phase):
     assert NodePhases().of(node) == phase
+
+
+# --- a quick quiz's runs ------------------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def quiz_run(quiz):
+    run = GraphRun.objects.create(
+        quick_quiz=quiz, graph=GraphRun.Graph.QUICK_QUIZ, trigger=GraphRun.Trigger.START, status="paused",
+        started_at=START, node_status={"load_quiz": "done", "generate_pool": "done", "await_calibration": "running"},
+        node_timings={"load_quiz": timing(0, 1), "generate_pool": timing(1, 5), "await_calibration": timing(5)},
+    )  # fmt: skip
+    GraphRun.objects.filter(pk=run.pk).update(created_at=START - timedelta(seconds=5))
+    return run
+
+
+def test_a_quiz_run_is_listed_with_the_quizs_topic_the_learner_and_the_quizs_stage(staff_client, quiz_run, quiz):
+    [row] = staff_client.get("/api/console/runs").json()["results"]
+
+    assert (row["lesson_id"], row["quiz_id"]) == (None, str(quiz.id))
+    assert (row["topic"], row["learner_name"], row["graph"], row["stage"]) == (
+        "Binary search", "Ada Lovelace", "quick_quiz", "ready",
+    )  # fmt: skip
+
+
+@pytest.mark.parametrize("search", ["binary", "Ada", "ada@example"])
+def test_a_quiz_run_is_found_by_the_quizs_topic_or_its_owner(staff_client, quiz_run, search):
+    found = staff_client.get("/api/console/runs", {"q": search}).json()["results"]
+
+    assert [r["id"] for r in found] == [str(quiz_run.id)]
+
+
+def test_the_runs_can_be_filtered_by_the_quizs_graphs(staff_client, quiz_run, make_run):
+    make_run()
+
+    only = staff_client.get("/api/console/runs", {"graph": "quick_quiz,grade_quiz"}).json()["results"]
+
+    assert [r["id"] for r in only] == [str(quiz_run.id)]
+
+
+def test_the_detail_of_a_quiz_run_has_its_timeline_in_the_quiz_phase(staff_client, quiz_run):
+    body = staff_client.get(f"/api/console/runs/{quiz_run.id}").json()
+
+    assert [(s["node"], s["phase"], s["state"]) for s in body["timeline"]] == [
+        ("load_quiz", "quiz", "ran"), ("generate_pool", "quiz", "ran"), ("await_calibration", "quiz", "waiting"),
+    ]  # fmt: skip
+    assert body["can_retry"] is False and body["can_cancel"] is False
+
+
+def test_a_quiz_run_cannot_be_retried_by_staff(staff_client, quiz_run):
+    assert staff_client.post(f"/api/console/runs/{quiz_run.id}/retry").status_code == 409
+
+
+def test_a_quizs_calls_are_in_the_runs_cost(staff_client, quiz_run, make_call, quiz):
+    make_call(run_id=quiz_run.id, quiz_id=quiz.id, cost="0.020000", ago=timedelta(minutes=5))
+
+    [row] = staff_client.get("/api/console/runs").json()["results"]
+
+    assert (row["calls"], row["cost"]) == (1, "0.020000")
 
 
 # --- retry and cancel ---------------------------------------------------------------------------------------------

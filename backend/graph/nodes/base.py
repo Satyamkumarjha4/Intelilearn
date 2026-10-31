@@ -36,7 +36,7 @@ class Node(ABC):
 
     def __call__(self, state: dict, runtime) -> Any:
         ctx: FlowContext = runtime.context
-        if stage := self.stage_of(state):
+        if (stage := self.stage_of(state)) and state.get("lesson_id"):  # a quick quiz's run has no lesson to move
             Lesson.objects.filter(pk=state["lesson_id"], stage=Stage.FAILED).update(stage=stage, error="")
         ctx.events({"type": "node", "node": self.name, "status": "running"})
         try:

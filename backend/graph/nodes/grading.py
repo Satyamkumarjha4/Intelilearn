@@ -1,14 +1,13 @@
-"""The `grade_test` graph: the open-ended answers of a submitted legacy attempt, graded by a model.
+"""The grading graph: the open-ended answers of a submitted attempt, graded by a model. It marks a legacy lesson attempt
+(`grade_test`) and a quick quiz's (`grade_quiz`) alike, through an `AttemptStore`.
 
 load_submission → (nothing open to grade → persist_grade) | grade_open (test.grade) → validate_grade → persist_grade.
 Questions with one right answer and blank answers are marked in code (`ScoreCard`), so the model sees only answers
-that deserve a judgement. There is no Retry: a run that cannot grade ends with its reason, the submission is marked
+that deserve a judgement. There is no Retry: a run that cannot grade ends with its reason, the attempt is marked
 failed, and the learner submits again.
 """
 
-from lessons.models import Lesson, TestSubmission
-from lessons.outcome import AttemptOutcome
-
+from ..attempt_stores import AttemptStore, LessonAttemptStore
 from ..context import FlowContext
 from ..errors import RunFailed
 from ..grading import AnswerGrader, ScoreCard
@@ -22,18 +21,20 @@ from .routers import Router
 class LoadSubmissionNode(Node):
     name = "load_submission"
 
+    def __init__(self, store: AttemptStore | None = None):
+        self.store = store or LessonAttemptStore()
+
     def run(self, state: dict, ctx: FlowContext) -> dict:
-        lesson = Lesson.objects.select_related("owner__profile").get(pk=state["lesson_id"])
-        submission = TestSubmission.objects.get(pk=state["submission_id"], lesson=lesson)
-        profile = lesson.owner.profile
+        attempt = self.store.load(state)
         return {
-            "topic": lesson.topic,
-            "profile": {"preferred_language": profile.preferred_language},
-            "snapshot": lesson.config_snapshot,
-            "settings": lesson.settings_snapshot,
-            "final_test": {"questions": submission.questions},  # what this attempt was served, not the lesson's test
-            "test_answers": submission.answers,
-            "grading_items": ScoreCard().open_items(submission.questions, submission.answers),
+            "topic": attempt.topic,
+            "profile": attempt.profile,
+            "snapshot": attempt.snapshot,
+            "settings": attempt.settings,
+            "final_test": {"questions": attempt.questions},  # what this attempt was served, not the lesson's test
+            "test_answers": attempt.answers,
+            "grading_items": ScoreCard().open_items(attempt.questions, attempt.answers),
+            **attempt.state,
         }
 
 
@@ -76,8 +77,8 @@ class ValidateGradeNode(ValidateNode):
 
 
 class PersistGradeNode(Node):
-    """The finished `ScoreCard` goes onto the attempt, with its band and the offer that follows (`AttemptOutcome`, the
-    rule a lesson attempt meets at submit)."""
+    """The finished `ScoreCard` goes onto the attempt, with its band and, for a lesson attempt, the offer that follows
+    (the store decides: `AttemptOutcome` is the rule a lesson attempt meets at submit)."""
 
     name = "persist_grade"
 
@@ -85,17 +86,17 @@ class PersistGradeNode(Node):
         self,
         cards: ScoreCard | None = None,
         grader: AnswerGrader | None = None,
-        outcome: AttemptOutcome | None = None,
+        store: AttemptStore | None = None,
     ):
         self.cards = cards or ScoreCard()
         self.grader = grader or AnswerGrader()
-        self.outcome = outcome or AttemptOutcome()
+        self.store = store or LessonAttemptStore()
 
     def run(self, state: dict, ctx: FlowContext) -> dict:
         questions, answers = state["final_test"]["questions"], state["test_answers"]
         graded = {g["question_id"]: g for g in (state.get("grade_report") or {}).get("grades", [])}
         card = self.cards.build(questions, answers, self.grader.grade_all(questions, answers), graded)
-        self.outcome.graded(TestSubmission.objects.select_related("lesson").get(pk=state["submission_id"]), card)
+        self.store.save(state, card)
         return {}
 
 

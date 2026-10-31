@@ -9,7 +9,7 @@ double-charge, charge for nothing, or break lesson creation. The default gate mu
 Use cases:
 - the seven action keys are the ones in the plan, and each is a string
 - a completion point is reached at its stage or when the run ended, never earlier; a run-end point only at the end
-- every action wired today has a completion point; one that is not wired yet says so
+- every action has a completion point; a quiz and a quiz retake are complete when the run that writes its questions ends
 - a lesson created by self-rating covers the whole lesson, so it completes when the lesson is ready, where a quick check
   completes when the quiz is served
 - an authorization round-trips through the run payload and keeps what it was asked with
@@ -48,6 +48,8 @@ from lessons.metering import (
 )
 from lessons.models import GraphRun
 from lessons.stages import Stage
+from quizzes import attempts as quiz_attempts
+from quizzes import services as quiz_services
 
 pytestmark = pytest.mark.django_db
 
@@ -105,6 +107,8 @@ class TestCompletionPoint:
             (LESSON_CONTINUE, CompletionPoint.at_stage(Stage.READY)),
             (SHEET_GENERATE, CompletionPoint.at_run_end()),
             (MeteredAction.TEST_RETAKE, CompletionPoint.at_run_end()),  # the retake run ends as the attempt starts
+            (MeteredAction.QUIZ_CREATE, CompletionPoint.at_run_end()),  # a quiz run ends as its attempt starts (a
+            (MeteredAction.QUIZ_RETAKE, CompletionPoint.at_run_end()),  # calibration walk pauses it, which is no end)
         ],
     )
     def test_every_action_wired_today_has_a_completion_point(self, action, point):
@@ -122,9 +126,13 @@ class TestCompletionPoint:
         assert CompletionPoints.of(LESSON_CONTINUE, {"covers": "all"}) == CompletionPoint.at_stage(Stage.READY)
         assert CompletionPoints.of(SHEET_GENERATE, {"covers": "all"}) == CompletionPoint.at_run_end()
 
-    def test_an_action_that_is_not_wired_yet_says_so(self):
-        with pytest.raises(LookupError, match="quiz.create"):
-            CompletionPoints.of(MeteredAction.QUIZ_CREATE)
+    def test_no_metered_action_is_without_a_completion_point(self):
+        for action in MeteredAction:
+            assert CompletionPoints.of(action) is not None
+
+    def test_a_calibration_pause_is_not_the_end_of_a_quiz_run(self):
+        assert not CompletionPoints.of(MeteredAction.QUIZ_CREATE).reached("awaiting_calibration", ended=False)
+        assert CompletionPoints.of(MeteredAction.QUIZ_CREATE).reached("ready", ended=True)
 
 
 class TestAuthorization:
@@ -343,7 +351,10 @@ class TestSettleOpen:
 
 
 class TestEveryRunStarterIsClassified:
-    SERVICES = (pathlib.Path(services.__file__), pathlib.Path(attempts.__file__), pathlib.Path(followups.__file__))
+    SERVICES = (
+        pathlib.Path(services.__file__), pathlib.Path(attempts.__file__), pathlib.Path(followups.__file__),
+        pathlib.Path(quiz_services.__file__), pathlib.Path(quiz_attempts.__file__),
+    )  # fmt: skip
 
     def run_starters(self) -> set[str]:
         """`Class.method` for every method in the services that hands a run to the dispatcher."""

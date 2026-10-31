@@ -8,7 +8,11 @@ junction nodes (`entry_router`, `level_gate`, `intent_router`) only carry a deci
 class, so it is table-tested without a graph.
 """
 
-from lessons.models import Intent, Stage
+from django.core.exceptions import ValidationError
+
+from lessons.models import Entry, Intent, Stage
+from quizzes.models import QuickQuizAttempt
+from quizzes.results import QuizResultFacts
 
 from ..assessment import AssessmentRequest, AssessmentSources
 from ..context import FlowContext
@@ -97,6 +101,8 @@ class AssessFromSourceNode(Node):
         request = AssessmentRequest(
             self_rating_halves=state.get("self_rating_halves"), followup_level=state.get("followup_level") or None
         )
+        if state["entry"] == Entry.QUIZ_RESULT:
+            request = self.quiz_result(state)
         assessment = source.assess(request)
         level = LevelScheme.level_of(assessment)
         sheets = state.get("intent") == Intent.SHEETS
@@ -113,6 +119,17 @@ class AssessFromSourceNode(Node):
         return {
             "assessment": assessment, **route, "prerequisites_to_cover": [], "level_source": source.level_source,
         }  # fmt: skip
+
+    @staticmethod
+    def quiz_result(state: dict) -> AssessmentRequest:
+        """What the quiz showed, read from the attempt the lesson grew out of."""
+        try:
+            attempt = QuickQuizAttempt.objects.select_related("quiz").get(pk=state.get("quiz_attempt_id"))
+        except (QuickQuizAttempt.DoesNotExist, ValueError, ValidationError):
+            raise RunFailed(
+                "The quiz result this lesson was made from is gone, so its level cannot be found."
+            ) from None
+        return QuizResultFacts.of(attempt).request()
 
 
 class PlanPrerequisitesNode(LLMNode):

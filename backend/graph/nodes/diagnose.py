@@ -6,7 +6,7 @@ grade_diagnostic → (prerequisite: publish → await → grade) → assess_lear
 
 from typing import Any
 
-from lessons.models import Intent, Lesson, Quiz, QuizAttempt, Stage
+from lessons.models import Entry, Intent, Lesson, Quiz, QuizAttempt, Stage
 from llm_registry.gateway import AllModelsFailed
 
 from ..assessment import AssessmentRequest, AssessmentSource, AssessmentSources
@@ -39,6 +39,9 @@ class LoadContextNode(Node):
             "intent": lesson.intent,
             "self_rating_halves": lesson.self_rating_halves,
             "followup_level": lesson.followup_level,
+            "quiz_attempt_id": (lesson.recommended_from or {}).get("attempt_id")
+            if lesson.entry == Entry.QUIZ_RESULT
+            else None,
         }
 
 
