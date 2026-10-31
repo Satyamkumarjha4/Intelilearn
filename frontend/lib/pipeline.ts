@@ -14,6 +14,9 @@ type StepDef = {
   progress?: { node: string; text: (count: number) => string };
   /** For a step several branches of one node make: it is done once `node` has finished `count` times. */
   doneAfter?: { node: string; count: number };
+  /** For a step whose branches are joined by a node: it is done once that node has started (the number of branches
+   *  does not matter, and it is not known to the page). */
+  doneOnceStarted?: string;
 };
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
@@ -147,15 +150,16 @@ const STEPS: Record<string, StepDef> = {
     doneWhen: "persist_study_material",
     registry: [],
   },
-  // The cheat sheet and the revision sheet written together (the choice after a perfect quick check) have their own steps.
+  // Sheets written together (the choice after a perfect quick check, a lesson that asked for sheets, more sheets for a
+  // lesson that is ready) have their own steps, for one sheet or two.
   sheets_write: {
-    doing: "Writing your two study sheets",
-    done: "Wrote your two study sheets",
+    doing: "Writing your study sheets",
+    done: "Wrote your study sheets",
     nodes: ["plan_sheets", "generate_sheet"],
     doneWhen: "",
-    doneAfter: { node: "generate_sheet", count: 2 },
+    doneOnceStarted: "sheets_join",
     registry: ["study."],
-    progress: { node: "generate_sheet", text: (n) => `${Math.min(n, 2)} of 2 sheets written` },
+    progress: { node: "generate_sheet", text: (n) => `${plural(n, "sheet", "sheets")} written` },
   },
   sheets_save: {
     doing: "Checking and putting them together",
@@ -177,24 +181,29 @@ const ORDER_BY_STAGE: Partial<Record<Stage, string[]>> = {
   failed: ["resume"],
   preparing_diagnostic: ["quiz_context", "quiz_write", "quiz_check", "quiz_publish"],
   generating_material: ["sheet_write", "sheet_check", "sheet_save"],
-  ready: ["sheet_write", "sheet_check", "sheet_save"], // the only run a ready lesson shows is another study sheet
+  ready: SHEET_PAIR_STEPS, // the only run a ready lesson shows is more study sheets
   generating_lesson: ["quiz", "assess", "plan", "write", "media", "check", "build", "sandbox"],
 };
 
-/** How a lesson's steps differ by how its level was found: a quick check (the default), or the learner's own rating. */
-export type PipelinePath = { rated: boolean; beginner: boolean };
+/**
+ * How a lesson's steps differ by how its level was found (a quick check, the default, or the learner's own rating) and
+ * by what it was asked for (`sheets`: study sheets only, so it has no pages to plan and no prerequisites to choose).
+ */
+export type PipelinePath = { rated: boolean; beginner: boolean; sheets?: boolean };
 
 export class PipelinePaths {
   static readonly QUICK_CHECK: PipelinePath = { rated: false, beginner: false };
 
   /** From the lesson: a rating and, for the stars of a Beginner, the step that chooses their prerequisites. */
-  static of(lesson: Pick<LessonDetail, "entry" | "self_rating">): PipelinePath {
+  static of(lesson: Pick<LessonDetail, "entry" | "self_rating" | "intent">): PipelinePath {
     const rated = lesson.entry === "self_rating";
-    return { rated, beginner: rated && StarScale.levelOf(StarScale.halvesOf(lesson.self_rating)) === "beginner" };
+    const sheets = lesson.intent === "sheets";
+    return { rated, beginner: !sheets && rated && StarScale.levelOf(StarScale.halvesOf(lesson.self_rating)) === "beginner", sheets };
   }
 
   /** The steps of a stage on this path. A lesson with no quick check has none to prepare or to have finished before. */
   static order(stage: Stage, path: PipelinePath): string[] {
+    if (path.sheets && stage === "generating_material") return [path.rated ? "rated_start" : "assess", ...SHEET_PAIR_STEPS];
     if (path.rated && stage === "preparing_diagnostic") return ["rated_start"];
     if (path.rated && stage === "generating_lesson") {
       return ["rated_start", ...(path.beginner ? ["prerequisites"] : []), "plan", "write", "media", "check", "build", "sandbox"];
@@ -269,7 +278,8 @@ export class PipelineModel {
   }
 
   private configure(stage: Stage): void {
-    this.keys = this.pair && STEPS_OF_SHEETS.has(stage) ? SHEET_PAIR_STEPS : PipelinePaths.order(stage, this.path);
+    const group = this.pair && STEPS_OF_SHEETS.has(stage) && !this.path.sheets;
+    this.keys = group ? SHEET_PAIR_STEPS : PipelinePaths.order(stage, this.path);
     this.assumedDone = new Set(PipelinePaths.doneBefore(stage, this.path));
   }
 
@@ -362,6 +372,7 @@ export class PipelineModel {
     if (this.assumedDone.has(key)) return "done";
     if (def.nodes.some((node) => ["running", "retrying"].includes(this.nodeStatus.get(node) ?? ""))) return "running";
     if (def.doneAfter && (this.doneCount.get(def.doneAfter.node) ?? 0) >= def.doneAfter.count) return "done";
+    if (def.doneOnceStarted && this.nodeStatus.has(def.doneOnceStarted)) return "done";
     if (this.nodeStatus.get(def.doneWhen) === "done") return "done";
     return def.nodes.some((node) => this.nodeStatus.get(node) === "done") ? "running" : "pending";
   }

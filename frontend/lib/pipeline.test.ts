@@ -18,9 +18,13 @@
  * - a lesson the learner rated themselves into has no quick check to prepare: its first step is setting the starting
  *   point, nothing is assumed done before it, and only a Beginner, who was not tested, has a step that chooses what to
  *   learn first; the path is read from the lesson (the entry, and the stars as the API sends them)
- * - the two sheets written together after a perfect quick check have their own steps (writing both, then checking and
- *   putting them together): the model switches to them on the first event only that path has, counts the sheets
- *   written, and a snapshot from a client that connected late does the same; a single sheet keeps its three steps
+ * - sheets written together (the choice after a perfect quick check, a lesson that asked for sheets, another sheet or
+ *   two on a ready lesson) have their own steps (writing, then checking and putting them together): the model switches
+ *   to them on the first event only that path has, counts the sheets written, finishes writing when the join starts
+ *   (whatever the number of sheets), and a snapshot from a client that connected late does the same; a single sheet of
+ *   the older kind keeps its three steps
+ * - a lesson that asked for sheets starts with finding the level (the quiz's assessment, or the rating's starting
+ *   point) and then has the sheets' steps; it never has the lesson's steps, prerequisites included
  * - the headline is the step being worked on
  * - the time a step took is measured from when the client saw it start to when it finished, and keeps counting while
  *   it runs; a step first seen finished started when the one before it ended; steps restored from a snapshot have no time
@@ -58,7 +62,7 @@ describe("steps", () => {
     expect(labels(new PipelineModel("generating_material"))).toEqual([
       "Writing your study sheet", "Checking it", "Putting it together",
     ]);
-    expect(labels(new PipelineModel("ready"))).toEqual(labels(new PipelineModel("generating_material")));
+    expect(labels(new PipelineModel("ready"))).toEqual(["Writing your study sheets", "Checking and putting them together"]);
     expect(labels(new PipelineModel("generating_lesson"))).toEqual([
       "Prepared your quiz",
       "Working out your starting point",
@@ -405,19 +409,21 @@ describe("a lesson with no quick check", () => {
 
 describe("the path of a lesson", () => {
   test.each([
-    [{ entry: "diagnostic", self_rating: null }, { rated: false, beginner: false }],
-    [{ entry: "self_rating", self_rating: 0.5 }, { rated: true, beginner: true }],
-    [{ entry: "self_rating", self_rating: 1.5 }, { rated: true, beginner: true }],
-    [{ entry: "self_rating", self_rating: 2 }, { rated: true, beginner: false }],
-    [{ entry: "self_rating", self_rating: 5 }, { rated: true, beginner: false }],
-    [{ entry: "self_rating", self_rating: null }, { rated: true, beginner: false }],
+    [{ entry: "diagnostic", self_rating: null, intent: "lesson" }, { rated: false, beginner: false, sheets: false }],
+    [{ entry: "self_rating", self_rating: 0.5, intent: "lesson" }, { rated: true, beginner: true, sheets: false }],
+    [{ entry: "self_rating", self_rating: 1.5, intent: "lesson" }, { rated: true, beginner: true, sheets: false }],
+    [{ entry: "self_rating", self_rating: 2, intent: "lesson" }, { rated: true, beginner: false, sheets: false }],
+    [{ entry: "self_rating", self_rating: 5, intent: "lesson" }, { rated: true, beginner: false, sheets: false }],
+    [{ entry: "self_rating", self_rating: null, intent: "lesson" }, { rated: true, beginner: false, sheets: false }],
+    [{ entry: "diagnostic", self_rating: null, intent: "sheets" }, { rated: false, beginner: false, sheets: true }],
+    [{ entry: "self_rating", self_rating: 0.5, intent: "sheets" }, { rated: true, beginner: false, sheets: true }], // nothing to prepare for
   ] as const)("%j", (lesson, path) => {
     expect(PipelinePaths.of(lesson)).toEqual(path);
   });
 });
 
-describe("the two study sheets", () => {
-  test("a single sheet keeps its three steps until an event shows it is the pair", () => {
+describe("study sheets written together", () => {
+  test("a single sheet of the older kind keeps its three steps until an event shows it is the group", () => {
     const model = new PipelineModel("generating_material");
 
     expect(labels(model)).toEqual(["Writing your study sheet", "Checking it", "Putting it together"]);
@@ -425,26 +431,26 @@ describe("the two study sheets", () => {
     expect(labels(model)).toHaveLength(3);
   });
 
-  test("the first event only the pair has switches to the pair's steps", () => {
+  test("the first event only the group has switches to the group's steps", () => {
     const model = new PipelineModel("generating_material");
 
     model.apply(node("plan_sheets", "running"));
 
-    expect(labels(model)).toEqual(["Writing your two study sheets", "Checking and putting them together"]);
-    expect(model.headline).toBe("Writing your two study sheets");
+    expect(labels(model)).toEqual(["Writing your study sheets", "Checking and putting them together"]);
+    expect(model.headline).toBe("Writing your study sheets");
   });
 
-  test("the sheets are counted, and writing is done when both are written", () => {
+  test("the sheets are counted, and writing is done when the join starts, whatever the number", () => {
     const model = new PipelineModel("generating_material");
     model.apply(node("plan_sheets", "running"));
     model.apply(node("plan_sheets", "done"));
     model.apply(node("generate_sheet", "running"));
     model.apply(node("generate_sheet", "done"));
 
-    expect(model.steps[0]).toMatchObject({ status: "running", detail: "1 of 2 sheets written" });
+    expect(model.steps[0]).toMatchObject({ status: "running", detail: "1 sheet written" });
 
     model.apply(node("generate_sheet", "done"));
-    expect(model.steps.map((s) => s.status)).toEqual(["done", "pending"]);
+    expect(model.steps[0]).toMatchObject({ status: "running", detail: "2 sheets written" });
 
     model.apply(node("sheets_join", "running"));
     expect(model.steps.map((s) => s.status)).toEqual(["done", "running"]);
@@ -453,16 +459,28 @@ describe("the two study sheets", () => {
     expect(model.percent).toBe(100);
   });
 
+  test("one sheet alone finishes writing when the join starts", () => {
+    const model = new PipelineModel("ready");
+    for (const name of ["load_context", "plan_sheets", "generate_sheet"]) {
+      model.apply(node(name, "running"));
+      model.apply(node(name, "done"));
+    }
+    model.apply(node("sheets_join", "running"));
+
+    expect(model.steps.map((s) => s.status)).toEqual(["done", "running"]);
+  });
+
   test("a sheet written again shows writing as running while it is", () => {
     const model = new PipelineModel("generating_material");
     for (const status of ["running", "done"] as const) model.apply(node("generate_sheet", status));
     model.apply(node("generate_sheet", "done"));
+    model.apply(node("sheets_join", "running"));
     model.apply(node("generate_sheet", "running"));
 
     expect(model.steps[0].status).toBe("running");
   });
 
-  test("a snapshot from a client that connected late shows the pair too", () => {
+  test("a snapshot from a client that connected late shows the group too", () => {
     const model = new PipelineModel("generating_material");
 
     model.apply({
@@ -473,7 +491,7 @@ describe("the two study sheets", () => {
       },
     });
 
-    expect(labels(model)).toEqual(["Writing your two study sheets", "Checking and putting them together"]);
+    expect(labels(model)).toEqual(["Writing your study sheets", "Checking and putting them together"]);
     expect(model.steps[0].status).toBe("running");
   });
 
@@ -483,5 +501,45 @@ describe("the two study sheets", () => {
     model.apply(node("generate_sheet", "running"));
 
     expect(labels(model)[0]).toBe("Prepared your quiz");
+  });
+});
+
+describe("a lesson that asked for sheets", () => {
+  const quickCheck = { rated: false, beginner: false, sheets: true };
+  const rated = { rated: true, beginner: false, sheets: true };
+
+  test("the quiz is prepared as for any lesson", () => {
+    expect(labels(new PipelineModel("preparing_diagnostic", Date.now, "", quickCheck))).toEqual(
+      labels(new PipelineModel("preparing_diagnostic")),
+    );
+  });
+
+  test("after the quiz it works out the starting point, then writes the sheets", () => {
+    expect(labels(new PipelineModel("generating_material", Date.now, "", quickCheck))).toEqual([
+      "Working out your starting point", "Writing your study sheets", "Checking and putting them together",
+    ]);
+  });
+
+  test("a rated one sets the starting point from the rating, then writes the sheets", () => {
+    expect(labels(new PipelineModel("preparing_diagnostic", Date.now, "", rated))).toEqual(["Setting your starting point"]);
+    expect(labels(new PipelineModel("generating_material", Date.now, "", rated))).toEqual([
+      "Setting your starting point", "Writing your study sheets", "Checking and putting them together",
+    ]);
+  });
+
+  test("seeing the sheets' nodes does not drop the starting point from the steps", () => {
+    const model = new PipelineModel("generating_material", Date.now, "", quickCheck);
+    model.apply(node("assess_learner", "done"));
+
+    model.apply(node("plan_sheets", "running"));
+
+    expect(model.steps.map((s) => [s.key, s.status])).toEqual([["assess", "done"], ["sheets_write", "running"], ["sheets_save", "pending"]]);
+  });
+
+  test("it never has the steps of a lesson, whatever stage it reports", () => {
+    for (const stage of ["generating_material", "ready"] as const) {
+      const all = labels(new PipelineModel(stage, Date.now, "", rated)).join("|");
+      expect(all).not.toMatch(/Planning the lesson|Writing pages|Choosing what to learn first/);
+    }
   });
 });

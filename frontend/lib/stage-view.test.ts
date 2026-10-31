@@ -8,9 +8,10 @@
  * - each waiting stage shows its quiz or the choice screen
  * - working stages show progress
  * - a failed lesson shows the error, except while a retry is running
- * - a ready lesson shows the study sheets for mastery and the lesson otherwise
+ * - a ready lesson shows the study sheets when it is only sheets (asked for, or chosen after a perfect check) and the
+ *   lesson otherwise
  * - a run still active when the lesson is waiting for a quiz does not hide the quiz
- * - the next-step sentence follows the route
+ * - the next-step sentence follows the route, and says the sheets are being written for a lesson that asked for them
  * - band scores come back easiest first whatever order the API's JSON had, and bands that were not asked are left out
  */
 import { describe, expect, test } from "bun:test";
@@ -21,6 +22,7 @@ import type { LessonDetail } from "./types";
 const lesson = (stage: LessonDetail["stage"], extra: Partial<LessonDetail> = {}) => ({
   stage,
   route: "" as LessonDetail["route"],
+  sheets_only: false,
   active_run_id: null,
   ...extra,
 });
@@ -42,8 +44,9 @@ describe("StageView.of", () => {
     expect(StageView.of(lesson("failed", { active_run_id: "r1" }))).toBe("progress");
   });
 
-  test("a ready lesson shows study sheets for mastery and the lesson otherwise", () => {
-    expect(StageView.of(lesson("ready", { route: "mastery" }))).toBe("material");
+  test("a ready lesson shows study sheets when it is only sheets and the lesson otherwise", () => {
+    expect(StageView.of(lesson("ready", { route: "mastery", sheets_only: true }))).toBe("material");
+    expect(StageView.of(lesson("ready", { route: "", sheets_only: true }))).toBe("material");
     expect(StageView.of(lesson("ready", { route: "lesson" }))).toBe("lesson");
     expect(StageView.of(lesson("ready", { route: "prerequisite" }))).toBe("lesson");
   });
@@ -66,6 +69,11 @@ describe("StageView.nextStep", () => {
     expect(StageView.nextStep("lesson", "intermediate")).toBe("Building your lesson at intermediate level.");
     expect(StageView.nextStep("lesson")).toBe("Building your lesson.");
     expect(StageView.nextStep(undefined)).toBe("");
+  });
+
+  test("a lesson that asked for sheets says its sheets are being written, whatever the score", () => {
+    expect(StageView.nextStep(undefined, "foundation", true)).toBe("Writing your study sheets.");
+    expect(StageView.nextStep("mastery", "", true)).toBe("Writing your study sheets.");
   });
 });
 

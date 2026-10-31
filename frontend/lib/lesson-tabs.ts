@@ -1,9 +1,9 @@
 import type { LessonDetail } from "@/lib/types";
 
-export type TabId = "lesson" | "test" | "answers";
+export type TabId = "lesson" | "test" | "sheets" | "answers";
 export type TabTone = "marigold" | "success" | "destructive";
 export type LessonTab = { id: TabId; label: string; badge?: { text: string; tone: TabTone } };
-export type TabsInput = Pick<LessonDetail, "stage" | "route" | "test_status" | "latest_score" | "attempts_count" | "entry">;
+export type TabsInput = Pick<LessonDetail, "stage" | "sheets_only" | "test_status" | "latest_score" | "attempts_count" | "entry">;
 
 /** The tabs of a ready lesson, and which one an address (`?tab=`) selects. */
 export class LessonTabs {
@@ -11,8 +11,9 @@ export class LessonTabs {
     if (lesson.stage !== "ready") return [];
     // A learner who rated themselves took no quick check, so there are no answers to look back at.
     const answers: LessonTab[] = lesson.entry === "self_rating" ? [] : [{ id: "answers", label: "Quick check answers" }];
-    if (lesson.route === "mastery") return [{ id: "lesson", label: "Study sheets" }, ...answers];
-    return [{ id: "lesson", label: "Lesson" }, { id: "test", label: "Test", badge: LessonTabs.testBadge(lesson) }, ...answers];
+    const sheets: LessonTab = { id: "sheets", label: "Study sheets" };
+    if (lesson.sheets_only) return [sheets, ...answers];
+    return [{ id: "lesson", label: "Lesson" }, { id: "test", label: "Test", badge: LessonTabs.testBadge(lesson) }, sheets, ...answers];
   }
 
   /** The tab the address asks for if the lesson has it, else the first one (null when there are no tabs). */

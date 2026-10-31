@@ -10,6 +10,10 @@
  * - rating yourself needs a pick as well: none, or a value off the scale, cannot start; the rating does not matter to a
  *   quick check
  * - there are two ways to say where you are, each with a label and a line, and each its own intro, steps and button words
+ * - a learner can ask for a lesson or for study sheets only; for sheets they pick a cheat sheet, a revision sheet or
+ *   both (both is picked at first), which turns into the list the server takes; both ways to find the level still work,
+ *   and each pair has its own intro, steps and button words
+ * - the request carries the sheets only when sheets were asked for, together with a rating if there is one
  * - the request carries the trimmed topic, and the stars (not the halves) only for a rating
  * - the counter reads "n / 200" and is capped at the limit
  * - clicking an example fills the topic, replacing what was there
@@ -73,6 +77,56 @@ describe("the two ways in", () => {
   });
 });
 
+describe("lesson or study sheets", () => {
+  test("two things to ask for, each with a label and a line", () => {
+    expect(NewLesson.INTENTS.map((i) => [i.id, i.label])).toEqual([["lesson", "A lesson"], ["sheets", "Study sheets"]]);
+    expect(NewLesson.INTENTS.every((i) => i.hint.trim().length > 0)).toBe(true);
+  });
+
+  test("three sheet picks, both first; each turns into the list the server takes, cheat sheet before revision sheet", () => {
+    expect(NewLesson.SHEET_CHOICES.map((c) => c.id)).toEqual(["both", "cheat_sheet", "revision_sheet"]);
+    expect(NewLesson.SHEET_CHOICES.every((c) => c.label.trim() && c.hint.trim())).toBe(true);
+    expect(NewLesson.sheetsOf("both")).toEqual(["cheat_sheet", "revision_sheet"]);
+    expect(NewLesson.sheetsOf("cheat_sheet")).toEqual(["cheat_sheet"]);
+    expect(NewLesson.sheetsOf("revision_sheet")).toEqual(["revision_sheet"]);
+  });
+
+  test("a quick check and a rating both start sheets under the same rules as a lesson", () => {
+    expect(NewLesson.canStart("Binary search", false, "diagnostic", null)).toBe(true);
+    expect(NewLesson.canStart("Binary search", false, "self_rating", null)).toBe(false);
+    expect(NewLesson.canStart("Binary search", false, "self_rating", 4)).toBe(true);
+  });
+
+  test("the request names the sheets only for sheets, with the rating when there is one", () => {
+    expect(NewLesson.request("Binary search", "", "diagnostic", null, "lesson", "both").options).toEqual({});
+    expect(NewLesson.request("Binary search", "", "diagnostic", null, "sheets", "both").options).toEqual({
+      sheets: ["cheat_sheet", "revision_sheet"],
+    });
+    expect(NewLesson.request("Binary search", "", "self_rating", 7, "sheets", "revision_sheet").options).toEqual({
+      selfRating: 3.5, sheets: ["revision_sheet"],
+    });
+  });
+
+  test("each pair has its own intro, steps and button", () => {
+    expect(NewLesson.intro("diagnostic", "sheets")).toContain("study sheets");
+    expect(NewLesson.intro("diagnostic", "sheets")).toContain("quick check");
+    expect(NewLesson.intro("self_rating", "sheets")).toContain("no quiz first");
+    expect(NewLesson.steps("diagnostic", "sheets")).toEqual(["Quick check", "Your starting point", "Your sheets"]);
+    expect(NewLesson.steps("self_rating", "sheets")).toEqual(["Your rating", "Your sheets"]);
+    expect(NewLesson.buttonLabel("diagnostic", false, "sheets", "both")).toBe("Start my quick check");
+    expect(NewLesson.buttonLabel("self_rating", false, "sheets", "both")).toBe("Make my two sheets");
+    expect(NewLesson.buttonLabel("self_rating", false, "sheets", "cheat_sheet")).toBe("Make my cheat sheet");
+    expect(NewLesson.buttonLabel("self_rating", false, "sheets", "revision_sheet")).toBe("Make my revision sheet");
+    expect(NewLesson.buttonLabel("self_rating", true, "sheets", "both")).toBe("Starting…");
+  });
+
+  test("a lesson keeps its old words whatever sheet was last picked", () => {
+    expect(NewLesson.intro("diagnostic", "lesson")).toBe(NewLesson.intro("diagnostic"));
+    expect(NewLesson.steps("self_rating", "lesson")).toEqual(["Your rating", "Your lesson"]);
+    expect(NewLesson.buttonLabel("self_rating", false, "lesson", "cheat_sheet")).toBe("Start my lesson");
+  });
+});
+
 test("the counter reads n / 200 and stops at the limit", () => {
   expect(NewLesson.counter("abc")).toBe("3 / 200");
   expect(NewLesson.counter("x".repeat(250))).toBe("200 / 200");
@@ -108,6 +162,10 @@ describe("error messages", () => {
 
   test("a refused action says its own words", () => {
     expect(message(403, "out_of_credits", "You have used all your lessons for today.")).toBe("You have used all your lessons for today.");
+  });
+
+  test("sheets the API did not take say to pick them", () => {
+    expect(message(400, "invalid", "x", { sheets: ["Pick a cheat sheet, a revision sheet, or both."] })).toContain("Pick a");
   });
 
   test("a rating the API did not take says to pick the stars", () => {

@@ -56,7 +56,8 @@ export function useLesson(id: string) {
   const route = lesson?.route ?? "";
   const rated = lesson?.entry === "self_rating";
   const beginner = lesson ? PipelinePaths.of(lesson).beginner : false;
-  const path = useMemo(() => ({ rated, beginner }), [rated, beginner]);
+  const sheets = lesson?.intent === "sheets";
+  const path = useMemo(() => ({ rated, beginner, sheets }), [rated, beginner, sheets]);
   useEffect(() => {
     if (!runId || !stage) return;
     const model = new PipelineModel(stage, Date.now, route, path);

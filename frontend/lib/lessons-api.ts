@@ -13,6 +13,8 @@ import type {
   LessonVersion,
   MasteryPick,
   MaterialKind,
+  MaterialSummary,
+  OfferedSheet,
   Page,
   PracticeGrade,
   QuizForLearner,
@@ -29,6 +31,8 @@ import type {
 export type CreateOptions = {
   /** Stars, 0.5 to 5. Present means "rate yourself": there is no quick check. */
   selfRating?: number;
+  /** Present means study sheets only (no pages, no test): one or both of the two that can be asked for. */
+  sheets?: OfferedSheet[];
   recommendedFrom?: { attemptId: string; topic: string };
 };
 
@@ -56,6 +60,7 @@ export class LessonsApi {
   create(topic: string, userContext: string, options: CreateOptions = {}): Promise<{ lesson_id: string; run_id: string }> {
     const body: Record<string, unknown> = { topic, user_context: userContext };
     if (options.selfRating !== undefined) Object.assign(body, { entry: "self_rating", self_rating: options.selfRating });
+    if (options.sheets) Object.assign(body, { intent: "sheets", sheets: options.sheets });
     if (options.recommendedFrom) {
       Object.assign(body, {
         origin: "recommendation",
@@ -105,8 +110,14 @@ export class LessonsApi {
     return this.client.request(`/lessons/${id}/choice`, { method: "POST", body });
   }
 
-  requestMaterial(id: string, kind: MaterialKind): Promise<{ run_id: string }> {
-    return this.client.request(`/lessons/${id}/materials`, { method: "POST", body: { kind } });
+  /** More sheets for a ready lesson: one kind, or both at once. `409 already_exists` carries the `kinds` that exist. */
+  requestMaterial(id: string, kinds: OfferedSheet[]): Promise<{ run_id: string }> {
+    return this.client.request(`/lessons/${id}/materials`, { method: "POST", body: kinds.length === 1 ? { kind: kinds[0] } : { kinds } });
+  }
+
+  /** The sheets a lesson has, oldest first, without their content. */
+  materials(id: string): Promise<MaterialSummary[]> {
+    return this.client.request(`/lessons/${id}/materials`);
   }
 
   material<T>(id: string, kind: MaterialKind, reveal: string[] = []): Promise<StudyMaterial<T>> {

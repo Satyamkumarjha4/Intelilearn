@@ -4,7 +4,7 @@ import { BAND_LABELS, StageView } from "@/lib/stage-view";
 import type { QuizResultSummary } from "@/lib/types";
 
 /** The score right after a quiz, by band, and what happens next. */
-export function QuizResultCard({ result, level }: { result: QuizResultSummary; level?: string }) {
+export function QuizResultCard({ result, level, sheets = false }: { result: QuizResultSummary; level?: string; sheets?: boolean }) {
   const bands = StageView.bandsOf(result);
   return (
     <Card>
@@ -15,7 +15,7 @@ export function QuizResultCard({ result, level }: { result: QuizResultSummary; l
           </h2>
         </CardTitle>
         <CardDescription>
-          {StageView.nextStep(result.route, level)}
+          {StageView.nextStep(result.route, level, sheets)}
           {result.dont_know > 0 && ` You said “I don't know” ${result.dont_know} time${result.dont_know === 1 ? "" : "s"}, which is exactly what helps.`}
         </CardDescription>
       </CardHeader>

@@ -12,10 +12,11 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError } from "@/lib/api";
+import { ActionRefusedMessage } from "@/lib/action-refused";
 import { lessonsApi } from "@/lib/lessons-api";
 import type { PipelineModel } from "@/lib/pipeline";
-import { SheetCatalog, SheetTabs } from "@/lib/study-sheets";
-import type { CheatSheet, LessonDetail, MaterialKind, PracticeSheet, RevisionSheet, Solution, StudyMaterial } from "@/lib/types";
+import { SheetCatalog, SheetRequests, SheetTabs } from "@/lib/study-sheets";
+import type { CheatSheet, LessonDetail, MaterialKind, OfferedSheet, PracticeSheet, RevisionSheet, Solution, StudyMaterial } from "@/lib/types";
 
 type Props = {
   lesson: LessonDetail;
@@ -27,24 +28,26 @@ type Sheet = CheatSheet | RevisionSheet | PracticeSheet;
 type Loaded = Partial<Record<MaterialKind, StudyMaterial<Sheet>>>;
 
 /**
- * The Study sheets tab of a mastery lesson: a row of tabs (a chunky one per sheet, a dashed "+ Add" one for each sheet
- * still missing), the PDF, and the open sheet. Asking for a sheet turns its tab into the building screen, inline, and
- * the sheet opens when it lands. Fixed templates, no generated code. A sheet stays mounted once opened, so a practice
+ * The Study sheets tab of any ready lesson: a row of tabs (a chunky one per sheet, a dashed "+ Add" one for each sheet
+ * still missing, and one for both when it has neither), the PDF, and the open sheet. Asking for sheets turns their tabs
+ * into the building screen, inline, and the first one opens when it lands. A sheet that already exists (the server says
+ * so with a 409) is simply opened. Fixed templates, no generated code. A sheet stays mounted once opened, so a practice
  * sheet keeps its answers while the learner looks at another.
  */
 export function StudyMaterialView({ lesson, pipeline, onRequested }: Props) {
   const have = lesson.materials;
   const writing = lesson.active_run_id !== null;
-  // The page is told only that a run is active, not which sheet it writes, so the one asked for is remembered here.
-  const [requested, setRequested] = useState<MaterialKind | null>(null);
+  // The page is told only that a run is active, not which sheets it writes, so the ones asked for are remembered here.
+  const [requested, setRequested] = useState<MaterialKind[]>([]);
   const [wanted, setWanted] = useState<MaterialKind | null>(null);
   const [starting, setStarting] = useState(false);
   const [loaded, setLoaded] = useState<Loaded>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [solutions, setSolutions] = useState<Record<string, Solution>>({});
 
-  const pending = writing && requested && !have.includes(requested) ? requested : null;
-  const failed = !writing && requested && !have.includes(requested) ? requested : null;
+  const unfinished = requested.filter((kind) => !have.includes(kind));
+  const pending = writing ? unfinished : [];
+  const failed = !writing && unfinished.length > 0 ? unfinished : null;
   const tabs = SheetTabs.of(have, pending);
   const open = SheetTabs.pick(tabs, wanted);
   const openTab = tabs.find((tab) => tab.kind === open);
@@ -65,15 +68,22 @@ export function StudyMaterialView({ lesson, pipeline, onRequested }: Props) {
     };
   }, [lesson.id, open, openTab?.state, loaded]);
 
-  const request = async (kind: MaterialKind) => {
+  const request = async (kinds: OfferedSheet[]) => {
     setStarting(true);
     try {
-      await lessonsApi.requestMaterial(lesson.id, kind);
+      await lessonsApi.requestMaterial(lesson.id, kinds);
       await onRequested();
-      setRequested(kind);
-      setWanted(kind);
+      setRequested(kinds);
+      setWanted(kinds[0]);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Could not start that sheet.");
+      const existing = SheetRequests.existing(err);
+      if (existing.length > 0) {
+        // It was made already (another tab, or a moment ago): open it rather than make it again.
+        await onRequested();
+        setWanted(existing[0]);
+      } else {
+        toast.error(ActionRefusedMessage.of(err) ?? (err instanceof ApiError ? err.message : "Could not start that sheet."));
+      }
     } finally {
       setStarting(false);
     }
@@ -102,6 +112,7 @@ export function StudyMaterialView({ lesson, pipeline, onRequested }: Props) {
         selected={open}
         locked={writing || starting}
         canExport={Boolean(open && loaded[open])}
+        canAskForBoth={SheetRequests.canAskForBoth(have)}
         onSelect={setWanted}
         onAdd={request}
         onPdf={pdf}
@@ -110,16 +121,24 @@ export function StudyMaterialView({ lesson, pipeline, onRequested }: Props) {
       {failed && (
         <Alert variant="destructive">
           <AlertDescription className="flex flex-wrap items-center gap-3">
-            We couldn&apos;t write your {SheetCatalog.noun(failed)} this time.
-            <Button size="sm" variant="outline" disabled={starting} onClick={() => request(failed)}>
+            We couldn&apos;t write your {failed.map((kind) => SheetCatalog.noun(kind)).join(" and your ")} this time.
+            <Button size="sm" variant="outline" disabled={starting} onClick={() => request(failed.filter((kind): kind is OfferedSheet => kind !== "practice_sheet"))}>
               Try again
             </Button>
           </AlertDescription>
         </Alert>
       )}
 
-      {writing && !pending && <PipelineProgress pipeline={pipeline} title="Writing another study sheet" />}
-      {pending && open === pending && <PipelineProgress pipeline={pipeline} title={`Writing your ${SheetCatalog.noun(pending)}`} />}
+      {writing && pending.length === 0 && <PipelineProgress pipeline={pipeline} title="Writing more study sheets" />}
+      {pending.length > 0 && (!open || pending.includes(open)) && (
+        <PipelineProgress pipeline={pipeline} title={`Writing your ${pending.map((kind) => SheetCatalog.noun(kind)).join(" and your ")}`} />
+      )}
+
+      {!open && !writing && !failed && (
+        <Alert>
+          <AlertDescription>No study sheets yet. Pick one above and we&apos;ll write it from this lesson.</AlertDescription>
+        </Alert>
+      )}
 
       {loadError && openTab?.state === "ready" && !loaded[open!] && (
         <Alert variant="destructive">

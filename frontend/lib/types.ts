@@ -60,6 +60,8 @@ export type Stage =
   | "failed";
 
 export type Route = "prerequisite" | "lesson" | "mastery";
+/** What a learner asks for: a lesson (pages and a test) or study sheets only. */
+export type Intent = "lesson" | "sheets";
 /** How the learner's starting point was found: a quick check, or their own rating. */
 export type Entry = "diagnostic" | "self_rating" | "followup";
 /** What kind of follow-up a lesson is (or an offer makes): the basics again, or the next step. */
@@ -86,6 +88,10 @@ export type LessonSummary = {
   level: string;
   /** How the learner's level was found. */
   entry: Entry;
+  /** What was asked for: a lesson, or study sheets only. */
+  intent: Intent;
+  /** Study sheets and nothing else: no pages and no test. It asked for sheets, or chose them after a perfect check. */
+  sheets_only: boolean;
   /** What kind of follow-up this lesson is; empty for a lesson that is not one. */
   followup_level: FollowupLevel | "";
   created_at: string;
@@ -101,7 +107,7 @@ export type LessonSummary = {
   attempts_count: number;
   /** An attempt is being prepared or taken. */
   has_open_attempt: boolean;
-  /** How many study sheets a mastery lesson has. */
+  /** How many study sheets the lesson has. */
   material_count: number;
 };
 
@@ -128,7 +134,8 @@ export type LessonDetail = LessonSummary & {
   followup_of: (LessonLink & { level: FollowupLevel }) | null;
   /** The follow-up lessons made from this one; null for a level not made yet. */
   followups: Record<FollowupLevel, LessonLink | null>;
-  intent: "lesson" | "sheets";
+  /** For a lesson that asked for sheets: which ones. Empty for any other lesson. */
+  sheets_asked: MaterialKind[];
   origin: Origin;
   level_source: LevelSource;
   /** Stars, 0.5 to 5; null unless the lesson was started by a self-rating. */
@@ -194,6 +201,8 @@ export type RunEvent =
 // --- Study sheets (docs/architecture/lesson-graph.md, docs/reference/api.md) ---
 
 export type MaterialKind = "cheat_sheet" | "revision_sheet" | "practice_sheet";
+/** The sheets a learner can ask for. A practice sheet that exists can still be opened, but no new one is offered. */
+export type OfferedSheet = "cheat_sheet" | "revision_sheet";
 
 export type CheatItem = {
   label: string;
@@ -253,6 +262,8 @@ export type Solution = {
   reference_solution?: string;
 };
 
+/** A sheet a lesson has, without its content (`GET /lessons/{id}/materials`). */
+export type MaterialSummary = { kind: MaterialKind; created_at: string };
 export type StudyMaterial<T> = { kind: MaterialKind; content: T; solutions: Record<string, Solution> };
 
 export type PracticeGrade = {

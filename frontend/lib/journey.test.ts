@@ -10,6 +10,9 @@
  *   current step, and a failure before the level exists is on Your level
  * - the lesson route is Diagnose, Your level, Learn, Test, Revisit; the mastery route is Diagnose, Mastered,
  *   Pick a sheet, Study; a lesson whose route is not known yet shows the lesson route
+ * - a lesson that asked for sheets has its own short journey (Diagnose or Rate yourself, Your level, Study): the first
+ *   step is the quiz or, for a rating, already done; Your level is current until the assessment exists; Study is current
+ *   while the sheets are written and once they are ready; a failure stays on the step it happened on
  * - while the quizzes are prepared or answered, Diagnose is the current step
  * - while the lesson is built, Diagnose is done, Your level is done once the assessment exists (else current), and
  *   Learn is current
@@ -20,7 +23,8 @@
  * - a failed lesson keeps the step it failed on as current with the failed flag: Diagnose before the quiz was
  *   answered, Your level after, Learn once the assessment exists, Study on the mastery route
  * - a failed lesson that is being retried is not shown as failed
- * - the tag next to the title is the level once known (assessment first), else the route, else nothing
+ * - the tag next to the title is the level once known (assessment first), else the route (or "Study sheets" for a lesson
+ *   that asked for them), else nothing
  */
 import { describe, expect, test } from "bun:test";
 
@@ -30,6 +34,7 @@ const lesson = (over: Partial<JourneyInput> = {}): JourneyInput => ({
   stage: "preparing_diagnostic",
   route: "",
   entry: "diagnostic",
+  intent: "lesson",
   assessment: null,
   results: { diagnostic: null, prerequisite: null },
   test_status: "not_started",
@@ -130,6 +135,52 @@ describe("Journey.of", () => {
     ]);
   });
 
+  describe("a lesson that asked for sheets", () => {
+    const sheets = (over: Partial<JourneyInput> = {}) => lesson({ intent: "sheets", ...over });
+    const answeredQuiz = { diagnostic: answered, prerequisite: null };
+
+    test("names Diagnose, Your level and Study; a rating says Rate yourself instead of Diagnose", () => {
+      expect(Journey.of(sheets()).map((s) => s.label)).toEqual(["Diagnose", "Your level", "Study"]);
+      expect(Journey.of(sheets({ entry: "self_rating" })).map((s) => s.label)).toEqual(["Rate yourself", "Your level", "Study"]);
+    });
+
+    test.each(["preparing_diagnostic", "awaiting_diagnostic"] as const)("while %s, Diagnose is current", (stage) => {
+      expect(states(sheets({ stage }))).toEqual(["Diagnose:now", "Your level:todo", "Study:todo"]);
+    });
+
+    test("once the quiz is answered, Your level is current until the assessment exists, then Study", () => {
+      expect(states(sheets({ stage: "generating_material", results: answeredQuiz }))).toEqual(["Diagnose:done", "Your level:now", "Study:todo"]);
+      expect(states(sheets({ stage: "generating_material", results: answeredQuiz, assessment }))).toEqual(["Diagnose:done", "Your level:done", "Study:now"]);
+    });
+
+    test("a rated one has its rating done from the start", () => {
+      expect(states(sheets({ entry: "self_rating", stage: "preparing_diagnostic" }))).toEqual(["Rate yourself:done", "Your level:now", "Study:todo"]);
+      expect(states(sheets({ entry: "self_rating", stage: "generating_material", assessment }))).toEqual(["Rate yourself:done", "Your level:done", "Study:now"]);
+    });
+
+    test("a ready one is on Study, whatever the test says (it has none)", () => {
+      expect(states(sheets({ stage: "ready", assessment, results: answeredQuiz }))).toEqual(["Diagnose:done", "Your level:done", "Study:now"]);
+      expect(states(sheets({ stage: "ready", test_status: "graded" }))).toEqual(["Diagnose:done", "Your level:done", "Study:now"]);
+    });
+
+    test.each([
+      ["before the quiz was answered", {}, "Diagnose"],
+      ["after the quiz, before the assessment", { results: answeredQuiz }, "Your level"],
+      ["once the assessment exists", { assessment, results: answeredQuiz }, "Study"],
+    ] as const)("one that failed %s fails there", (_, over, label) => {
+      const steps = Journey.of(sheets({ stage: "failed", ...over }));
+
+      expect(steps.filter((s) => s.failed).map((s) => s.label)).toEqual([label]);
+      expect(steps.find((s) => s.state === "now")?.label).toBe(label);
+    });
+
+    test("a rated one that failed before its level exists fails on Your level, never on the rating", () => {
+      const steps = Journey.of(sheets({ entry: "self_rating", stage: "failed" }));
+
+      expect(steps.filter((s) => s.failed).map((s) => s.label)).toEqual(["Your level"]);
+    });
+  });
+
   test("the mastery route waits on Pick a sheet, then Study is current", () => {
     const base = { route: "mastery" as const, results: { diagnostic: answered, prerequisite: null } };
 
@@ -178,6 +229,8 @@ describe("Journey.tag", () => {
     [{ route: "mastery", level: "", assessment: null }, "Mastery"],
     [{ route: "prerequisite", level: "", assessment: null }, "Basics first"],
     [{ route: "", level: "", assessment: null }, null],
+    [{ route: "", level: "", assessment: null, intent: "sheets" }, "Study sheets"],
+    [{ route: "", level: "expert", assessment: null, intent: "sheets" }, "Expert level"],
     [{ route: "lesson", level: "advanced", assessment: null }, "Advanced level"],
     [{ route: "lesson", level: "advanced", assessment: assessment }, "Beginner level"],
     [{ route: "lesson", level: "", assessment: { ...assessment, level: "INTERMEDIATE" } }, "Intermediate level"],

@@ -4,19 +4,22 @@ import { ArrowRightIcon, ChevronDownIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { ChoiceCards } from "@/components/lessons/choice-cards";
 import { StarRating } from "@/components/lessons/star-rating";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { lessonsApi } from "@/lib/lessons-api";
-import { NewLesson } from "@/lib/new-lesson";
-import type { Entry } from "@/lib/types";
+import { NewLesson, type SheetPick } from "@/lib/new-lesson";
+import type { Entry, Intent } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export default function NewLessonPage() {
   const router = useRouter();
   const [topic, setTopic] = useState("");
   const [context, setContext] = useState("");
+  const [intent, setIntent] = useState<Intent>("lesson");
+  const [sheets, setSheets] = useState<SheetPick>("both");
   const [entry, setEntry] = useState<Entry>("diagnostic");
   const [rating, setRating] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -28,7 +31,7 @@ export default function NewLessonPage() {
     setBusy(true);
     setError(null);
     try {
-      const request = NewLesson.request(topic, context, entry, rating);
+      const request = NewLesson.request(topic, context, entry, rating, intent, sheets);
       const { lesson_id } = await lessonsApi.create(request.topic, request.context, request.options);
       router.push(`/lessons/${lesson_id}`);
     } catch (err) {
@@ -41,7 +44,7 @@ export default function NewLessonPage() {
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center gap-6 px-4 py-10 text-center">
       <div className="flex flex-col gap-2">
         <h1 className="font-heading text-3xl font-semibold tracking-tight sm:text-4xl">What do you want to learn?</h1>
-        <p className="text-muted-foreground">{NewLesson.intro(entry)}</p>
+        <p className="text-muted-foreground">{NewLesson.intro(entry, intent)}</p>
       </div>
 
       <form onSubmit={submit} className="flex w-full flex-col gap-5 text-left" noValidate>
@@ -88,35 +91,17 @@ export default function NewLessonPage() {
           </ul>
         </div>
 
-        <fieldset className="flex flex-col gap-3" disabled={busy}>
-          <legend className="mb-1 text-sm font-extrabold text-muted-foreground">How should we find your level?</legend>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {NewLesson.ENTRIES.map((choice) => {
-              const selected = entry === choice.id;
-              return (
-                <label
-                  key={choice.id}
-                  className={cn(
-                    "flex cursor-pointer flex-col gap-1 rounded-2xl border-2 bg-card px-4 py-3 motion-safe:transition-[box-shadow,background-color,border-color] has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50 has-[:disabled]:cursor-default",
-                    selected ? "border-primary bg-primary-soft shadow-[0_4px_0_var(--primary-deep)]" : "border-border shadow-[0_4px_0_var(--border)] hover:bg-muted",
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="entry"
-                    value={choice.id}
-                    checked={selected}
-                    onChange={() => setEntry(choice.id)}
-                    className="sr-only"
-                  />
-                  <span className="font-heading text-lg font-semibold">{choice.label}</span>
-                  <span className="text-sm text-muted-foreground">{choice.hint}</span>
-                </label>
-              );
-            })}
-          </div>
+        <ChoiceCards name="intent" legend="What would you like?" choices={NewLesson.INTENTS} value={intent} onChange={setIntent} disabled={busy}>
+          {intent === "sheets" && (
+            <div className="mt-1">
+              <ChoiceCards name="sheets" legend="Which sheets?" choices={NewLesson.SHEET_CHOICES} value={sheets} onChange={setSheets} disabled={busy} columns={3} />
+            </div>
+          )}
+        </ChoiceCards>
+
+        <ChoiceCards name="entry" legend="How should we find your level?" choices={NewLesson.ENTRIES} value={entry} onChange={setEntry} disabled={busy}>
           {entry === "self_rating" && <StarRating value={rating} onChange={setRating} disabled={busy} />}
-        </fieldset>
+        </ChoiceCards>
 
         <details className="group rounded-2xl border-[1.5px] border-border bg-card">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-2xl px-4 py-3 text-sm font-extrabold outline-none focus-visible:ring-3 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
@@ -139,7 +124,7 @@ export default function NewLessonPage() {
         </details>
 
         <ol aria-label="What happens next" className="flex items-center justify-center gap-2 text-sm">
-          {NewLesson.steps(entry).map((step, index, steps) => (
+          {NewLesson.steps(entry, intent).map((step, index, steps) => (
             <li key={step} className="flex items-center gap-2">
               <span className={cn("flex items-center gap-1.5 rounded-full px-3 py-1 font-extrabold", index === 0 ? "bg-primary-soft text-primary-text" : "bg-muted text-muted-foreground")}>
                 <span className="font-mono text-xs">{index + 1}</span>
@@ -152,7 +137,7 @@ export default function NewLessonPage() {
         </ol>
 
         <Button type="submit" size="lg" disabled={!NewLesson.canStart(topic, busy, entry, rating)} className="h-12 self-center px-8 text-base">
-          {NewLesson.buttonLabel(entry, busy)}
+          {NewLesson.buttonLabel(entry, busy, intent, sheets)}
         </Button>
       </form>
     </main>

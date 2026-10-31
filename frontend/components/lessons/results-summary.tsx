@@ -13,7 +13,7 @@ export function ResultsSummary({ lesson, skip }: { lesson: LessonDetail; skip?: 
         if (!result || kind === skip) return null;
         return (
           <section key={kind} className="flex flex-col gap-3" aria-label={QuizNames.resultLabel(kind)}>
-            <QuizResultCard result={result} level={lesson.level} />
+            <QuizResultCard result={result} level={lesson.level} sheets={lesson.intent === "sheets"} />
             <QuizReview lessonId={lesson.id} kind={kind} />
           </section>
         );

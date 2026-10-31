@@ -1,4 +1,5 @@
-import type { MaterialKind, QuizResultSummary } from "@/lib/types";
+import { ApiError } from "@/lib/api";
+import type { MaterialKind, OfferedSheet, QuizResultSummary } from "@/lib/types";
 
 export type SheetInfo = {
   kind: MaterialKind;
@@ -64,22 +65,59 @@ export class SheetCatalog {
 export type SheetTabState = "ready" | "building" | "missing";
 export type SheetTab = { kind: MaterialKind; title: string; state: SheetTabState };
 
-/** The row of tabs above a mastery lesson's sheets. */
+/** What can be asked for now: the two sheets of the spec. A practice sheet that exists is still opened and shown. */
+const OFFERED: readonly OfferedSheet[] = ["cheat_sheet", "revision_sheet"];
+
+/** The row of tabs above a lesson's sheets. */
 export class SheetTabs {
   /**
-   * The sheets the lesson has, then the ones it lacks. The API lists `have` alphabetically, so the order here comes
-   * from the catalogue. `building` is the sheet being written right now, if the page knows which.
+   * The sheets the lesson has, then the ones it lacks and can be asked for. The API lists `have` in its own order, so
+   * the order here comes from the catalogue. `building` is the sheets being written right now, if the page knows which.
    */
-  static of(have: MaterialKind[], building: MaterialKind | null): SheetTab[] {
-    const state = (kind: MaterialKind): SheetTabState => (have.includes(kind) ? "ready" : kind === building ? "building" : "missing");
+  static of(have: MaterialKind[], building: MaterialKind[]): SheetTab[] {
+    const state = (kind: MaterialKind): SheetTabState => (have.includes(kind) ? "ready" : building.includes(kind) ? "building" : "missing");
     const tabs = SHEETS.map(({ kind, title }) => ({ kind, title, state: state(kind) }));
-    return [...tabs.filter((tab) => tab.state === "ready"), ...tabs.filter((tab) => tab.state !== "ready")];
+    const shown = tabs.filter((tab) => tab.state !== "missing" || (OFFERED as readonly MaterialKind[]).includes(tab.kind));
+    return [...shown.filter((tab) => tab.state === "ready"), ...shown.filter((tab) => tab.state !== "ready")];
   }
 
   /** The tab to show open: the one asked for if it exists or is being written, else the first sheet there is. */
   static pick(tabs: SheetTab[], wanted: MaterialKind | null): MaterialKind | null {
     const open = tabs.find((tab) => tab.kind === wanted && tab.state !== "missing");
     return open?.kind ?? tabs.find((tab) => tab.state === "ready")?.kind ?? null;
+  }
+}
+
+/** Asking for sheets from a lesson: which can still be asked for, and what a refusal because they exist says. */
+export class SheetRequests {
+  /** The sheets the lesson lacks that can be asked for, in the order they are written. */
+  static missing(have: MaterialKind[]): OfferedSheet[] {
+    return OFFERED.filter((kind) => !have.includes(kind));
+  }
+
+  /** Both together are for a lesson that has neither (a request that names one that exists is refused). */
+  static canAskForBoth(have: MaterialKind[]): boolean {
+    return SheetRequests.missing(have).length === OFFERED.length;
+  }
+
+  static one(kind: OfferedSheet): OfferedSheet[] {
+    return [kind];
+  }
+
+  static pair(): OfferedSheet[] {
+    return [...OFFERED];
+  }
+
+  static bothLabel(): string {
+    return "Add both sheets";
+  }
+
+  /** The sheets an `already_exists` answer says are there; none for any other error. */
+  static existing(error: unknown): MaterialKind[] {
+    if (!(error instanceof ApiError) || error.code !== "already_exists") return [];
+    const kinds = error.extra.kinds;
+    if (!Array.isArray(kinds)) return [];
+    return SHEETS.map((sheet) => sheet.kind).filter((kind) => kinds.includes(kind));
   }
 }
 

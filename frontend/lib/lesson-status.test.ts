@@ -9,13 +9,16 @@
  * - every stage has a pill written as what is going on or what to do, with a tone, a spinner while it is being worked
  *   on, and a link text
  * - a ready lesson says whether its test is waiting, being prepared, in progress, being marked, done (with the best
- *   percent) or could not be marked, and a ready mastery lesson counts its sheets
+ *   percent) or could not be marked; a ready lesson that is only sheets counts its sheets, in the words of a perfect
+ *   quick check when that is how it came about and of a request when the learner asked for them
  * - a ready lesson says "Ready" until all three of its pages have been read here, then "Take the test"; once the test is
  *   marked it says "Test done · best 77%", whatever was read; a retake in progress keeps the best score in view
- * - the kind line is "Lesson · <level>", "Study sheets · Mastered" or "Quick check" before the route is known, and a lesson
- *   made from a test result says which follow-up it is
- * - a lesson with no quick check (a rating, or a follow-up) is never described as preparing one
- * - a lesson needs the learner when it waits for an answer, or is a ready lesson whose test is not taken
+ * - the kind line is "Lesson · <level>", "Study sheets" (asked for) or "Study sheets · Mastered" (chosen after a perfect
+ *   check), or "Quick check" before the route is known, and a lesson made from a test result says which follow-up it is
+ * - a lesson with no quick check (a rating, or a follow-up) is never described as preparing one, and one that asked for
+ *   sheets is getting its sheets started
+ * - a lesson needs the learner when it waits for an answer, or is a ready lesson with a test that is not taken; a lesson
+ *   that is only sheets never has a test to take
  * - the filter chips map to stages (several at once), and All to none
  * - times read as just now, minutes, hours, yesterday, days, then a date
  * - the lesson to continue is the most recently updated one that needs the learner, and none if there is none
@@ -26,7 +29,7 @@ import { LessonStatus, LESSON_FILTERS } from "./lesson-status";
 import type { LessonSummary } from "./types";
 
 const lesson = (over: Partial<LessonSummary> = {}): LessonSummary => ({
-  id: "1", topic: "T", stage: "ready", route: "lesson", title: "", level: "beginner", entry: "diagnostic", followup_level: "", created_at: "2026-10-20T10:00:00Z",
+  id: "1", topic: "T", stage: "ready", route: "lesson", title: "", level: "beginner", entry: "diagnostic", intent: "lesson", sheets_only: false, followup_level: "", created_at: "2026-10-20T10:00:00Z",
   updated_at: "2026-10-20T10:00:00Z", test_status: "not_started", test_score: null, latest_score: null, best_score: null,
   attempts_count: 0, has_open_attempt: false, material_count: 0, ...over,
 });
@@ -37,6 +40,13 @@ describe("a lesson with no quick check", () => {
       label: "Getting your lesson started", tone: "primary", spinner: true, action: "Watch",
     });
     expect(LessonStatus.of(lesson({ stage: "preparing_diagnostic", entry: "diagnostic" })).label).toBe("Preparing your quick check");
+  });
+
+  test("a rated lesson that asked for sheets is getting its sheets started", () => {
+    const rated = lesson({ stage: "preparing_diagnostic", entry: "self_rating", intent: "sheets", sheets_only: true });
+
+    expect(LessonStatus.of(rated)).toEqual({ label: "Getting your sheets started", tone: "primary", spinner: true, action: "Watch" });
+    expect(LessonStatus.of({ ...rated, entry: "diagnostic" }).label).toBe("Preparing your quick check");
   });
 
   test("a follow-up says which kind it is on its kind line, and a plain lesson does not", () => {
@@ -52,7 +62,7 @@ describe("pill", () => {
     ["awaiting_diagnostic", "Your quick check is waiting", "marigold", false, "Start"],
     ["awaiting_prerequisite", "A few basics are waiting", "marigold", false, "Start"],
     ["awaiting_choice", "You aced the check · pick a sheet", "insight", false, "Pick a sheet"],
-    ["generating_material", "Writing your study sheet", "primary", true, "Watch"],
+    ["generating_material", "Writing your study sheets", "primary", true, "Watch"],
     ["generating_lesson", "Building your lesson", "primary", true, "Watch"],
     ["failed", "Couldn't finish building", "destructive", false, "Try again"],
   ] as const)("%s", (stage, label, tone, spinner, action) => {
@@ -99,13 +109,24 @@ describe("pill", () => {
 
   test("reading pages changes nothing for a lesson that is not a ready lesson with a test", () => {
     expect(LessonStatus.of(lesson({ stage: "generating_lesson" }), 3).label).toBe("Building your lesson");
-    expect(LessonStatus.of(lesson({ route: "mastery", material_count: 1 }), 3).label).toBe("You aced the check · 1 sheet");
+    expect(LessonStatus.of(lesson({ route: "mastery", sheets_only: true, material_count: 1 }), 3).label).toBe("You aced the check · 1 sheet");
   });
 
-  test("a ready mastery lesson counts its sheets", () => {
-    expect(LessonStatus.of(lesson({ route: "mastery", material_count: 2 }))).toEqual({ label: "You aced the check · 2 sheets", tone: "insight", spinner: false, action: "Open" });
-    expect(LessonStatus.of(lesson({ route: "mastery", material_count: 1 })).label).toBe("You aced the check · 1 sheet");
-    expect(LessonStatus.of(lesson({ route: "mastery", material_count: 0 })).label).toBe("You aced the check");
+  test("a ready lesson from a perfect check counts its sheets", () => {
+    const mastery = { route: "mastery", sheets_only: true } as const;
+
+    expect(LessonStatus.of(lesson({ ...mastery, material_count: 2 }))).toEqual({ label: "You aced the check · 2 sheets", tone: "insight", spinner: false, action: "Open" });
+    expect(LessonStatus.of(lesson({ ...mastery, material_count: 1 })).label).toBe("You aced the check · 1 sheet");
+    expect(LessonStatus.of(lesson({ ...mastery, material_count: 0 })).label).toBe("You aced the check");
+  });
+
+  test("a ready lesson that asked for sheets counts them, with a test nowhere in sight", () => {
+    const asked = { route: "", intent: "sheets", sheets_only: true } as const;
+
+    expect(LessonStatus.of(lesson({ ...asked, material_count: 2 }))).toEqual({ label: "2 sheets ready", tone: "success", spinner: false, action: "Open" });
+    expect(LessonStatus.of(lesson({ ...asked, material_count: 1 })).label).toBe("1 sheet ready");
+    expect(LessonStatus.of(lesson({ ...asked, material_count: 0 })).label).toBe("Ready");
+    expect(LessonStatus.of(lesson({ ...asked, material_count: 2 }), 3).label).toBe("2 sheets ready");
   });
 
   test("no word of the pill is technical", () => {
@@ -119,7 +140,9 @@ describe("kind line", () => {
   test.each([
     [{ route: "lesson", level: "beginner" }, "Lesson · Beginner"],
     [{ route: "prerequisite", level: "" }, "Lesson"],
-    [{ route: "mastery", level: "advanced" }, "Study sheets · Mastered"],
+    [{ route: "mastery", level: "advanced", sheets_only: true }, "Study sheets · Mastered"],
+    [{ route: "", level: "foundation", intent: "sheets", sheets_only: true }, "Study sheets"],
+    [{ route: "", level: "", intent: "sheets", sheets_only: true }, "Study sheets"],
     [{ route: "", level: "" }, "Quick check"],
   ] as const)("%j is %s", (over, line) => {
     expect(LessonStatus.kind(lesson(over))).toBe(line);
@@ -136,7 +159,8 @@ describe("needs the learner", () => {
     [{ stage: "ready", test_status: "grading" }, false],
     [{ stage: "ready", test_status: "in_progress" }, true],
     [{ stage: "ready", test_status: "generating" }, false],
-    [{ stage: "ready", route: "mastery" }, false],
+    [{ stage: "ready", route: "mastery", sheets_only: true }, false],
+    [{ stage: "ready", route: "", intent: "sheets", sheets_only: true }, false],
     [{ stage: "generating_lesson" }, false],
     [{ stage: "failed" }, false],
   ] as const)("%j is %s", (over, needs) => {

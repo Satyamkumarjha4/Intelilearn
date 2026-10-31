@@ -24,7 +24,9 @@ export class LessonStatus {
     switch (lesson.stage) {
       case "preparing_diagnostic":
         // A lesson with no quick check (a rating, or a follow-up) never prepares one.
-        if (lesson.entry && lesson.entry !== "diagnostic") return pill("Getting your lesson started", "primary", "Watch", true);
+        if (lesson.entry && lesson.entry !== "diagnostic") {
+          return pill(lesson.intent === "sheets" ? "Getting your sheets started" : "Getting your lesson started", "primary", "Watch", true);
+        }
         return pill("Preparing your quick check", "primary", "Watch", true);
       case "awaiting_diagnostic":
         return pill("Your quick check is waiting", "marigold", "Start");
@@ -33,7 +35,7 @@ export class LessonStatus {
       case "awaiting_choice":
         return pill("You aced the check · pick a sheet", "insight", "Pick a sheet");
       case "generating_material":
-        return pill("Writing your study sheet", "primary", "Watch", true);
+        return pill("Writing your study sheets", "primary", "Watch", true);
       case "generating_lesson":
         return pill("Building your lesson", "primary", "Watch", true);
       case "failed":
@@ -43,8 +45,11 @@ export class LessonStatus {
     }
   }
 
-  /** "Lesson · Beginner", "Study sheets · Mastered", or "Quick check" while the route is not known yet. */
-  static kind(lesson: Pick<LessonSummary, "route" | "level"> & { followup_level?: LessonSummary["followup_level"] }): string {
+  /** "Lesson · Beginner", "Study sheets" or "Study sheets · Mastered", or "Quick check" while the route is not known yet. */
+  static kind(
+    lesson: Pick<LessonSummary, "route" | "level"> & { followup_level?: LessonSummary["followup_level"]; intent?: LessonSummary["intent"] },
+  ): string {
+    if (lesson.intent === "sheets") return "Study sheets";
     if (lesson.route === "mastery") return "Study sheets · Mastered";
     if (lesson.followup_level === "foundation") return "Foundation follow-up";
     if (lesson.followup_level === "advanced") return "Advanced follow-up";
@@ -56,7 +61,7 @@ export class LessonStatus {
   /** It waits for an answer, or it is a ready lesson whose test has not been taken. */
   static needsLearner(lesson: LessonSummary): boolean {
     if (lesson.stage.startsWith("awaiting_")) return true;
-    return lesson.stage === "ready" && lesson.route !== "mastery" && ["not_started", "in_progress"].includes(lesson.test_status);
+    return lesson.stage === "ready" && !lesson.sheets_only && ["not_started", "in_progress"].includes(lesson.test_status);
   }
 
   /** The lesson to offer first: the most recently updated one that needs the learner. */
@@ -80,9 +85,11 @@ export class LessonStatus {
   }
 
   private static ready(lesson: LessonSummary, pagesRead: number): Pill {
-    if (lesson.route === "mastery") {
+    if (lesson.sheets_only) {
       const sheets = lesson.material_count;
-      return pill(sheets ? `You aced the check · ${sheets} ${sheets === 1 ? "sheet" : "sheets"}` : "You aced the check", "insight", "Open");
+      const count = `${sheets} ${sheets === 1 ? "sheet" : "sheets"}`;
+      if (lesson.intent === "sheets") return sheets ? pill(`${count} ready`, "success", "Open") : pill("Ready", "success", "Open");
+      return pill(sheets ? `You aced the check · ${count}` : "You aced the check", "insight", "Open");
     }
     const best = LessonStatus.bestText(lesson);
     switch (lesson.test_status) {

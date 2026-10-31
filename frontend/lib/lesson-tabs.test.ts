@@ -7,9 +7,10 @@
  *
  * Use cases:
  * - a lesson that is not ready has no tabs
- * - a learner who rated themselves took no quick check, so their lesson has no Quick check answers tab, on either route
- * - a ready lesson has Lesson, Test and Quick check answers; a ready mastery lesson has Study sheets and Quick check
- *   answers
+ * - a learner who rated themselves took no quick check, so their lesson has no Quick check answers tab, whatever it is
+ * - a ready lesson has Lesson, Test, Study sheets (any ready lesson can have sheets made for it) and Quick check
+ *   answers; a lesson that is only study sheets (asked for, or chosen after a perfect check) has just Study sheets and
+ *   Quick check answers, with no lesson and no test to show
  * - before the test is taken its tab says "To do"; while its questions are being written "Getting ready…"; while it is
  *   being taken "In progress"; while grading "Grading…"; when grading failed "Needs another go at grading"; once graded
  *   "<latest score>% · attempt <n>" with the rounded percent
@@ -22,7 +23,7 @@ import { LessonTabs, type TabId, type TabsInput } from "./lesson-tabs";
 
 const lesson = (over: Partial<TabsInput> = {}): TabsInput => ({
   stage: "ready",
-  route: "lesson",
+  sheets_only: false,
   test_status: "not_started",
   latest_score: null,
   attempts_count: 0,
@@ -38,22 +39,23 @@ describe("LessonTabs.of", () => {
     },
   );
 
-  test("a ready lesson has the lesson, the test and the quick check answers", () => {
+  test("a ready lesson has the lesson, the test, the study sheets and the quick check answers", () => {
     expect(LessonTabs.of(lesson()).map((t) => [t.id, t.label])).toEqual([
       ["lesson", "Lesson"],
       ["test", "Test"],
+      ["sheets", "Study sheets"],
       ["answers", "Quick check answers"],
     ]);
   });
 
   test("a self-rated lesson has no quick check answers", () => {
-    expect(LessonTabs.of(lesson({ entry: "self_rating" })).map((t) => t.id)).toEqual(["lesson", "test"]);
-    expect(LessonTabs.of(lesson({ entry: "self_rating", route: "mastery" })).map((t) => t.id)).toEqual(["lesson"]);
+    expect(LessonTabs.of(lesson({ entry: "self_rating" })).map((t) => t.id)).toEqual(["lesson", "test", "sheets"]);
+    expect(LessonTabs.of(lesson({ entry: "self_rating", sheets_only: true })).map((t) => t.id)).toEqual(["sheets"]);
   });
 
-  test("a ready mastery lesson has the study sheets and the quick check answers", () => {
-    expect(LessonTabs.of(lesson({ route: "mastery" })).map((t) => [t.id, t.label])).toEqual([
-      ["lesson", "Study sheets"],
+  test("a lesson that is only study sheets has the sheets and the quick check answers, and no lesson or test", () => {
+    expect(LessonTabs.of(lesson({ sheets_only: true })).map((t) => [t.id, t.label])).toEqual([
+      ["sheets", "Study sheets"],
       ["answers", "Quick check answers"],
     ]);
   });
@@ -78,6 +80,10 @@ describe("LessonTabs.of", () => {
     expect(tabs.find((t) => t.id === "test")?.badge).toEqual({ text: "Attempt 2", tone: "success" });
   });
 
+  test("a lesson that is only sheets has no test badge to show", () => {
+    expect(LessonTabs.of(lesson({ sheets_only: true })).some((t) => t.badge)).toBe(false);
+  });
+
   test("the other tabs have no badge", () => {
     expect(LessonTabs.of(lesson()).filter((t) => t.badge).map((t) => t.id)).toEqual(["test"]);
   });
@@ -89,6 +95,7 @@ describe("LessonTabs.pick", () => {
   test.each<[string | null, TabId]>([
     ["test", "test"],
     ["answers", "answers"],
+    ["sheets", "sheets"],
     ["lesson", "lesson"],
     ["nope", "lesson"],
     ["", "lesson"],
@@ -98,7 +105,8 @@ describe("LessonTabs.pick", () => {
   });
 
   test("a tab the lesson does not have falls back to the first one", () => {
-    expect(LessonTabs.pick(LessonTabs.of(lesson({ route: "mastery" })), "test")).toBe("lesson");
+    expect(LessonTabs.pick(LessonTabs.of(lesson({ sheets_only: true })), "test")).toBe("sheets");
+    expect(LessonTabs.pick(LessonTabs.of(lesson({ sheets_only: true })), "lesson")).toBe("sheets"); // an old link
   });
 
   test("without tabs there is nothing to pick", () => {

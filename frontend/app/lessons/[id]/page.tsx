@@ -29,21 +29,23 @@ import { lessonsApi } from "@/lib/lessons-api";
 import { LessonTabs, type TabId } from "@/lib/lesson-tabs";
 import { PlainWarning } from "@/lib/plain-notes";
 import { StageView } from "@/lib/stage-view";
-import type { Entry, QuizKind, QuizResultSummary, Stage } from "@/lib/types";
+import type { Entry, Intent, QuizKind, QuizResultSummary, Stage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 import Loading from "./loading";
 
 const BUILDING_TITLES: Partial<Record<Stage, string>> = {
   preparing_diagnostic: "Getting your quick check ready",
-  generating_material: "Building your study sheet",
+  generating_material: "Writing your study sheets",
   generating_lesson: "Building your lesson",
 };
 
 /** The small line above the heading: the basics check has its own words while it is being prepared, and a lesson
  *  with no quick check is not getting one ready. */
-function buildingTitle(stage: Stage, route: string, entry: Entry): string {
-  if (stage === "preparing_diagnostic" && entry === "self_rating") return "Getting your lesson started";
+function buildingTitle(stage: Stage, route: string, entry: Entry, intent: Intent): string {
+  if (stage === "preparing_diagnostic" && entry === "self_rating") {
+    return intent === "sheets" ? "Getting your sheets started" : "Getting your lesson started";
+  }
   if (stage === "preparing_diagnostic" && route === "prerequisite") return "Preparing your basics check";
   return BUILDING_TITLES[stage] ?? "Working on your lesson";
 }
@@ -134,12 +136,8 @@ function Workspace({ id }: { id: string }) {
   };
 
   const panels: Record<TabId, React.ReactNode> = {
-    lesson:
-      lesson.route === "mastery" ? (
-        <StudyMaterialView lesson={lesson} pipeline={pipeline} onRequested={refresh} />
-      ) : (
-        <LessonViewer lessonId={lesson.id} testStatus={lesson.test_status} onGoToTest={() => selectTab("test")} />
-      ),
+    lesson: <LessonViewer lessonId={lesson.id} testStatus={lesson.test_status} onGoToTest={() => selectTab("test")} />,
+    sheets: <StudyMaterialView lesson={lesson} pipeline={pipeline} onRequested={refresh} />,
     test: <TestTabPanel lessonId={lesson.id} lessonTitle={lesson.title || lesson.topic} onChanged={() => void refresh()} onOpenLesson={() => selectTab("lesson")} />,
     answers: lesson.results.diagnostic || lesson.results.prerequisite ? (
       <QuickCheckAnswers lesson={lesson} />
@@ -181,7 +179,7 @@ function Workspace({ id }: { id: string }) {
               <PipelineProgress
                 className="min-[900px]:sticky min-[900px]:top-[calc(1rem+env(safe-area-inset-top))]"
                 pipeline={pipeline}
-                title={buildingTitle(lesson.stage, lesson.route, lesson.entry)}
+                title={buildingTitle(lesson.stage, lesson.route, lesson.entry, lesson.intent)}
                 onCancel={lesson.active_run_id ? stop : undefined}
               />
               {lesson.assessment && <StartingPointCard assessment={lesson.assessment} result={lesson.results.diagnostic} review={review} rating={lesson.self_rating} />}

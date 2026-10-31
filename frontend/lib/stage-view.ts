@@ -26,7 +26,7 @@ export class StageView {
    * A lesson with an active run is always on the progress screen: right after Retry the stage is still `failed`
    * until the first node runs, and showing the error again would invite a second click.
    */
-  static of(lesson: Pick<LessonDetail, "stage" | "route" | "active_run_id">): ScreenKind {
+  static of(lesson: Pick<LessonDetail, "stage" | "sheets_only" | "active_run_id">): ScreenKind {
     const waiting = lesson.stage.startsWith("awaiting_");
     if (lesson.active_run_id && !waiting) return "progress";
     switch (lesson.stage) {
@@ -39,14 +39,15 @@ export class StageView {
       case "failed":
         return "failed";
       case "ready":
-        return lesson.route === "mastery" ? "material" : "lesson";
+        return lesson.sheets_only ? "material" : "lesson";
       default:
         return "progress";
     }
   }
 
   /** What happens next, in words, for the card shown right after a diagnostic is scored. */
-  static nextStep(route: Route | undefined, level = ""): string {
+  static nextStep(route: Route | undefined, level = "", sheets = false): string {
+    if (sheets) return "Writing your study sheets.";
     switch (route) {
       case "prerequisite":
         return "We'll check a few basics first.";
