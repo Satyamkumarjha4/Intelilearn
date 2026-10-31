@@ -25,17 +25,9 @@ from ..validators import Validator
 class Node(ABC):
     name: ClassVar[str]
     #: The stage the lesson is in while this node works. A node that runs while the lesson is `failed` means a
-    #: retry resumed here, so the lesson goes back to this stage without the node having to know about retries. A node
-    #: of the building stages that runs while the lesson still reads as one of the waiting stages means the same: a Stop
-    #: lands just after the learner answered, Retry puts the lesson back to the stage the Stop found it in, and the
-    #: thread (which went on to grade the answer, or to rate a lesson with no quiz) is already past it.
+    #: retry resumed here, so the lesson goes back to this stage without the node having to know about retries. (Retry
+    #: restores the stage it was stopped in only for a run nobody started: see `StopPoint`.)
     stage: ClassVar[Stage | None] = None
-    #: the stages a lesson is in while it is being built, and the ones before them that a Retry can wrongly put it
-    #: back in
-    BUILDING: ClassVar[frozenset[Stage]] = frozenset({Stage.GENERATING_LESSON, Stage.GENERATING_MATERIAL})
-    WAITING: ClassVar[frozenset[Stage]] = frozenset(
-        {Stage.PREPARING_DIAGNOSTIC, Stage.AWAITING_DIAGNOSTIC, Stage.AWAITING_PREREQUISITE, Stage.AWAITING_CHOICE}
-    )
 
     def stage_of(self, state: dict) -> Stage | None:
         """The stage this run of the node works in. Most nodes always have the same one; a node shared by lessons and
@@ -46,8 +38,6 @@ class Node(ABC):
         ctx: FlowContext = runtime.context
         if stage := self.stage_of(state):
             Lesson.objects.filter(pk=state["lesson_id"], stage=Stage.FAILED).update(stage=stage, error="")
-            if stage in self.BUILDING:
-                Lesson.objects.filter(pk=state["lesson_id"], stage__in=self.WAITING).update(stage=stage)
         ctx.events({"type": "node", "node": self.name, "status": "running"})
         try:
             return self.run(state, ctx)

@@ -57,6 +57,7 @@ from .models import (
 )
 from .origins import OriginVerifier
 from .sheet_requests import SheetGroundingHint, SheetRequest
+from .stop_point import StopPoint
 from .subjects import RunSubject
 
 
@@ -79,43 +80,6 @@ class RunDispatcher:
             run.subject.fail(str(exc.detail))
             self.effects.on_stopped(run, str(exc.detail))
             raise
-
-
-class StopPoint:
-    """Where a stopped flow run left the lesson, so Retry can carry on from there.
-
-    Stop marks the lesson failed: once a quiz is answered there is nothing the learner can do from `awaiting_*`, so the
-    stopped lesson shows the Retry card. The run remembers the stage the lesson was in, and the answer it was about to
-    hand the graph, and Retry puts both back.
-    """
-
-    KEY = "stopped_in"
-    #: the resume trigger → the kind of pause its answer is for (an answer must never reach a different question)
-    ANSWERS = {
-        GraphRun.Trigger.RESUME_DIAGNOSTIC: "diagnostic",
-        GraphRun.Trigger.RESUME_PREREQUISITE: "prerequisite",
-        GraphRun.Trigger.RESUME_CHOICE: "mastery_choice",
-    }
-
-    def remember(self, run: GraphRun) -> None:
-        """Call before the lesson is failed: the stage is read from the database, where the graph moves it."""
-        if run.graph != GraphRun.Graph.FLOW:
-            return
-        stage = run.fresh_subject().stage
-        if stage in (Stage.READY, Stage.FAILED):
-            return
-        run.payload = {**run.payload, self.KEY: stage}
-        GraphRun.objects.filter(pk=run.pk).update(payload=run.payload)
-
-    def of(self, subject: RunSubject) -> tuple[Stage | None, dict]:
-        """The stage to go back to and the payload for the retry run. Nothing, unless the last flow run was stopped."""
-        last = GraphRun.objects.for_subject(subject).filter(graph=GraphRun.Graph.FLOW).order_by("-created_at").first()
-        if last is None or last.status != GraphRun.Status.CANCELLED or self.KEY not in last.payload:
-            return None, {}
-        payload = {}
-        if "resume" in last.payload and last.trigger in self.ANSWERS:
-            payload = {"resume": last.payload["resume"], "resume_for": self.ANSWERS[last.trigger]}
-        return Stage(last.payload[self.KEY]), payload
 
 
 def has_active_run(subject: RunSubject) -> bool:

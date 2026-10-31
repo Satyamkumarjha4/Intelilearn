@@ -23,6 +23,7 @@ from .checkpoints import CheckpointerFactory
 from .effects import RunEffects
 from .events import EventPublisher, RedisEventPublisher, RunEvent, RunEventTranslator
 from .models import GraphRun
+from .stop_point import StopPoint
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +163,7 @@ class FlowRunner:
             self._fail(run, self.failures.of(exc))
             return
         if self.recorder.is_cancelled(run):
-            self._stopped(run)
+            self._stopped(run, interrupt)
             return
         subject = run.fresh_subject()
         if interrupt is None:
@@ -176,7 +177,10 @@ class FlowRunner:
             self.effects.on_finished(run)
             self._publish(run, RunEvent("awaiting_input", {k: v for k, v in interrupt.items() if k != "message"}))
 
-    def _stopped(self, run: GraphRun) -> None:
+    def _stopped(self, run: GraphRun, interrupt: dict | None = None) -> None:
+        """The Stop is noticed. Only now is the thread's position known (the click found it mid-step), so Retry is told:
+        at a question, or moving on."""
+        StopPoint().settle(run, (interrupt or {}).get("kind"))
         self.effects.on_stopped(run, "Cancelled before it finished.")
         self._publish(run, RunEvent("cancelled", {}))
 
@@ -195,7 +199,7 @@ class FlowRunner:
                         self.recorder.record(run, event)
                         self._publish(run, event)
                     if self.recorder.is_cancelled(run):
-                        return None
+                        break
             interrupts = graph.get_state(config).interrupts
             return dict(interrupts[0].value) if interrupts else None
 

@@ -62,6 +62,7 @@ from lessons.events import RunEvent
 from lessons.models import GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt, Stage, StudyMaterial, TestSubmission
 from lessons.runner import FailureMessage, FlowRunner, GraphRunRecorder, RunLock
 from lessons.services import LessonService
+from lessons.stop_point import StopPoint
 from llm_registry.gateway import AllModelsFailed, NodeDisabled
 
 # LangGraph runs a node on a worker thread, which has its own database connection: it only sees committed rows.
@@ -379,9 +380,10 @@ class TestRetryAfterAStop:
         retry.refresh_from_db()
         stored = Lesson.objects.get(pk=prepared.pk)
         assert retry.status == GraphRun.Status.SUCCEEDED
-        assert publisher.of("done")[-1] == {"lesson_id": str(prepared.id), "stage": "generating_lesson"}
-        assert (stored.stage, stored.route, stored.error) == (Stage.GENERATING_LESSON, "lesson", "")
-        assert stored.assessment["start_point"] == "Halving"
+        assert publisher.of("done")[-1]["lesson_id"] == str(prepared.id)
+        # This test's graph stops after the assessment, so no node follows to move the lesson on from `failed` (in the
+        # whole graph the next stage's first node does: tests/graph/test_retry_stage.py).
+        assert stored.route == "lesson" and stored.assessment["start_point"] == "Halving"
         assert len(gateway.called("learner.assess")) == 1
 
     def test_a_resume_run_stopped_before_the_worker_took_it_is_retried_with_the_answer_already_given(
@@ -417,6 +419,7 @@ class TestRetryAfterAStop:
         GraphRun.objects.filter(pk=resume.pk).update(status=GraphRun.Status.RUNNING)
         service.cancel(GraphRun.objects.select_related("lesson").get(pk=resume.pk))
         assert Lesson.objects.get(pk=prepared.pk).stage == Stage.FAILED
+        StopPoint().settle(resume, "prerequisite")  # what the worker does when it notices the Stop at the pause
 
         retry = service.retry(Lesson.objects.get(pk=prepared.pk))
         make_runner().execute(retry.id)
@@ -427,6 +430,21 @@ class TestRetryAfterAStop:
         stored = Lesson.objects.get(pk=prepared.pk)
         assert (stored.stage, stored.error) == (Stage.AWAITING_PREREQUISITE, "")
         assert QuizAttempt.objects.filter(quiz__lesson=prepared).count() == 1  # the diagnostic answer was not replayed
+
+    def test_the_worker_that_notices_a_stop_mid_step_records_that_the_thread_is_moving(
+        self, service, make_runner, prepared, gateway, valid_bundle
+    ):
+        gateway.script("diagnostic.generate", valid_bundle)
+        make_runner().execute(new_run(prepared).id)
+        answered = attempt(prepared, "diagnostic", right=5)
+        resume = new_run(prepared, GraphRun.Trigger.RESUME_DIAGNOSTIC, {"resume": str(answered.id)})
+        self.stop_in(service, resume, gateway, "learner.assess", ASSESSMENT)
+
+        make_runner().execute(resume.id)
+
+        resume.refresh_from_db()
+        assert resume.status == GraphRun.Status.CANCELLED
+        assert resume.payload["stopped_in"] == "" and resume.payload["resume"] == str(answered.id)
 
     def test_an_error_after_the_stop_does_not_replace_the_cancelled_message(
         self, service, make_runner, prepared, gateway, publisher

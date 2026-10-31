@@ -13,9 +13,11 @@ Use cases:
   asks nothing
 - a self-rated lesson that is stopped and retried carries on from where it stopped
 - retrying a failed lesson queues a retry run; any other stage, or a run in progress, is refused
-- stopping a run remembers the stage the lesson was in; Retry puts it back there and hands the retry run the answer the
-  stopped run was about to give (for that kind of question only); a lesson that failed by itself, or whose stopped run
-  was not the flow's, is retried as before
+- stopping a run the worker never started remembers the stage the lesson waits in, and Retry puts it back there; a
+  run the worker had started remembers no stage (the thread moves on while the Stop is being noticed, so the stage read
+  at the click can already be one it has left), and the lesson stays failed until the node that runs moves it; either
+  way Retry hands the retry run the answer the stopped run was about to give (for that kind of question only); a lesson
+  that failed by itself, or whose stopped run was not the flow's, is retried as before
 - deleting a lesson cancels its active runs and removes it with everything attached, including its checkpoints and
   model calls (erased first, so a failed erasure leaves the lesson there to be deleted again)
 - an unreachable queue fails the run and the lesson, so Retry works once it is back
@@ -56,6 +58,7 @@ Use cases:
 """
 
 import pytest
+from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 from support.gates import CountingGate, RefusingGate
 from support.lesson_data import make_final_test
@@ -100,6 +103,7 @@ from lessons.services import (
     QuizService,
     RunDispatcher,
 )
+from lessons.stop_point import StopPoint
 
 pytestmark = pytest.mark.django_db
 
@@ -210,7 +214,7 @@ class TestCreateSelfRated:
         service = LessonService(queue=queue, events=Silent())
         lesson, run = self.create(user, queue)
         Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.GENERATING_LESSON)
-        GraphRun.objects.filter(pk=run.pk).update(status=GraphRun.Status.RUNNING)
+        GraphRun.objects.filter(pk=run.pk).update(status=GraphRun.Status.RUNNING, started_at=timezone.now())
 
         service.cancel(GraphRun.objects.get(pk=run.pk))
         lesson.refresh_from_db()
@@ -219,7 +223,7 @@ class TestCreateSelfRated:
         retry = service.retry(lesson)
         lesson.refresh_from_db()
 
-        assert (retry.trigger, lesson.stage) == (GraphRun.Trigger.RETRY, Stage.GENERATING_LESSON)
+        assert (retry.trigger, lesson.stage) == (GraphRun.Trigger.RETRY, Stage.FAILED)  # its node moves it on
 
 
 class TestCreateSheets:
@@ -350,6 +354,42 @@ class TestCreateOrigin:
         assert not Lesson.objects.filter(topic="Binary search").exists()
 
 
+class TestStopPointSettle:
+    """The worker noticed the Stop and knows where the thread is."""
+
+    @pytest.fixture
+    def stopped(self, make_lesson):
+        lesson = make_lesson(stage=Stage.AWAITING_DIAGNOSTIC)
+        run = GraphRun.objects.create(
+            lesson=lesson, trigger=GraphRun.Trigger.RESUME_DIAGNOSTIC, status=GraphRun.Status.CANCELLED,
+            started_at=timezone.now(), payload={"resume": "a", "stopped_in": ""},
+        )  # fmt: skip
+        return lesson, run
+
+    @pytest.mark.parametrize(("kind", "stage"), [
+        ("diagnostic", "awaiting_diagnostic"), ("prerequisite", "awaiting_prerequisite"),
+        ("mastery_choice", "awaiting_choice"), ("retry", ""), (None, ""),
+    ])  # fmt: skip
+    def test_a_thread_at_a_question_is_in_that_questions_stage_and_a_moving_one_in_none(self, stopped, kind, stage):
+        _, run = stopped
+
+        StopPoint().settle(run, kind)
+
+        run.refresh_from_db()
+        assert run.payload["stopped_in"] == stage and run.payload["resume"] == "a"
+
+    def test_a_stop_of_something_other_than_the_flow_is_left_alone(self, make_lesson):
+        run = GraphRun.objects.create(
+            lesson=make_lesson(), graph=GraphRun.Graph.GRADE_TEST, trigger=GraphRun.Trigger.GRADE,
+            status=GraphRun.Status.CANCELLED,
+        )  # fmt: skip
+
+        StopPoint().settle(run, "diagnostic")
+
+        run.refresh_from_db()
+        assert "stopped_in" not in run.payload
+
+
 class TestRetry:
     def test_a_failed_lesson_gets_a_retry_run(self, make_lesson, queue):
         lesson = make_lesson(stage=Stage.FAILED, error="boom")
@@ -377,13 +417,13 @@ class TestRetry:
             (GraphRun.Trigger.RESUME_CHOICE, Stage.AWAITING_CHOICE, "mastery_choice"),
         ],
     )
-    def test_a_stopped_lesson_goes_back_to_its_stage_and_the_retry_carries_the_answer(
+    def test_a_run_nobody_started_goes_back_to_the_stage_it_waited_in_and_the_retry_carries_the_answer(
         self, service, make_lesson, queue, trigger, stage, kind
     ):
         lesson = make_lesson(stage=stage)
         run = GraphRun.objects.create(
-            lesson=lesson, trigger=trigger, status=GraphRun.Status.RUNNING, payload={"resume": "the-answer"}
-        )
+            lesson=lesson, trigger=trigger, status=GraphRun.Status.QUEUED, payload={"resume": "the-answer"}
+        )  # the thread still waits at the question, so the stage is still true
 
         service.cancel(run)
         lesson.refresh_from_db()
@@ -396,15 +436,49 @@ class TestRetry:
         assert retry.payload == {"resume": "the-answer", "resume_for": kind}
         assert queue.runs == [retry]
 
-    def test_a_stopped_build_goes_back_to_building_with_nothing_to_carry(self, service, make_lesson):
-        lesson = make_lesson(stage=Stage.GENERATING_LESSON)
-        run = GraphRun.objects.create(lesson=lesson, trigger=GraphRun.Trigger.START, status=GraphRun.Status.RUNNING)
+    @pytest.mark.parametrize(
+        ("trigger", "stage", "kind"),
+        [
+            (GraphRun.Trigger.RESUME_DIAGNOSTIC, Stage.AWAITING_DIAGNOSTIC, "diagnostic"),
+            (GraphRun.Trigger.RESUME_PREREQUISITE, Stage.AWAITING_PREREQUISITE, "prerequisite"),
+            (GraphRun.Trigger.RESUME_CHOICE, Stage.AWAITING_CHOICE, "mastery_choice"),
+        ],
+    )
+    def test_a_run_the_worker_had_started_remembers_no_stage_but_still_carries_the_answer(
+        self, service, make_lesson, queue, trigger, stage, kind
+    ):
+        lesson = make_lesson(stage=stage)  # the stage at the click: the thread is already grading the answer
+        run = GraphRun.objects.create(
+            lesson=lesson, trigger=trigger, status=GraphRun.Status.RUNNING, started_at=timezone.now(),
+            payload={"resume": "the-answer"},
+        )  # fmt: skip
 
         service.cancel(run)
         retry = service.retry(Lesson.objects.get(pk=lesson.pk))
 
-        assert Lesson.objects.get(pk=lesson.pk).stage == Stage.GENERATING_LESSON
+        assert Lesson.objects.get(pk=lesson.pk).stage == Stage.FAILED  # the node that runs moves it, as for any retry
+        assert retry.payload == {"resume": "the-answer", "resume_for": kind}
+
+    def test_a_stopped_build_stays_failed_until_its_node_runs_with_nothing_to_carry(self, service, make_lesson):
+        lesson = make_lesson(stage=Stage.GENERATING_LESSON)
+        run = GraphRun.objects.create(
+            lesson=lesson, trigger=GraphRun.Trigger.START, status=GraphRun.Status.RUNNING, started_at=timezone.now()
+        )
+
+        service.cancel(run)
+        retry = service.retry(Lesson.objects.get(pk=lesson.pk))
+
+        assert Lesson.objects.get(pk=lesson.pk).stage == Stage.FAILED
         assert retry.payload == {}
+
+    def test_a_run_nobody_started_that_was_a_first_start_goes_back_to_its_first_stage(self, service, make_lesson):
+        lesson = make_lesson(stage=Stage.PREPARING_DIAGNOSTIC)
+        run = GraphRun.objects.create(lesson=lesson, trigger=GraphRun.Trigger.START, status=GraphRun.Status.QUEUED)
+
+        service.cancel(run)
+        service.retry(Lesson.objects.get(pk=lesson.pk))
+
+        assert Lesson.objects.get(pk=lesson.pk).stage == Stage.PREPARING_DIAGNOSTIC
 
     def test_a_lesson_that_failed_by_itself_stays_failed_until_its_node_runs_again(self, service, make_lesson):
         lesson = make_lesson(stage=Stage.FAILED, error="boom")
