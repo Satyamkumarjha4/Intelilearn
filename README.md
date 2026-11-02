@@ -5,7 +5,7 @@ An AI tutor that first finds out what you already know, then teaches you the res
 Ask for a topic ("binary search"). Socra gives you a 10-question diagnostic quiz across five difficulty bands. What happens next depends on how you did:
 
 - **Little or nothing correct:** a short prerequisite check, then a lesson that teaches the missing foundations first.
-- **Some correct:** a three-page lesson (Introduction · Core · Advanced, then a one-attempt final test) pitched at your level, with interactive graphs, simulations, animations, and real images or GIFs.
+- **Some correct:** a three-page lesson (Introduction · Core · Advanced, then a test you can retake with new questions) pitched at your level, with interactive graphs, simulations, animations, and real images or GIFs.
 - **Everything correct:** you already know it, so you choose a **cheat sheet**, **revision sheet**, or **practice sheet**.
 
 Every lesson is validated against your level, compiled to TypeScript, security-scanned, and test-rendered in a headless sandbox before you see it.

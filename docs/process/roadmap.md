@@ -1,6 +1,6 @@
 # Roadmap
 
-**Current goal: a complete project that runs locally.** Deployment is out of scope until that goal is met. Phases 0 to 8 are built, and phase 9 (modular lessons, specified in [to_be_developed/](../to_be_developed/modular-lessons-implementation-plan.md)) has begun. What is left is the [open work](#open-work) below and [phase 9](#phase-9-modular-lesson-parts).
+**Current goal: a complete project that runs locally.** Deployment is out of scope until that goal is met. Phases 0 to 9 are built (phase 9, the modular lesson parts, is closed: see [phase 9](#phase-9-modular-lesson-parts) and the [spec](../architecture/modular-lessons.md)). What is left is the [open work](#open-work) below.
 
 Each phase ended with something runnable and checkable. Every phase was verified on the offline fake-LLM stack (`make fake-llm`, see [local-setup.md](../getting-started/local-setup.md#6-walk-through-the-app-without-api-keys)), driving the real frontend in a headless browser where it applied. Real models (Gemini and Groq) have been tried end to end only a few times, so lesson quality and the tuning of the registry for real models are still open.
 
@@ -20,18 +20,18 @@ Items carried over from the phases below, plus gaps found since. Nothing here bl
 
 **Product rules**
 
-- [ ] Server-side enforcement of the one-question-at-a-time rule for the final test (today the lock is in the browser, and the API accepts a partial or empty set of answers, which uses up the single attempt).
+- [x] Server-side enforcement of the one-question-at-a-time rule for the test: done in phase 9.2 (an answer is saved and locked on the server as the card is left, an attempt that is over cannot change, and a test can be retaken).
 
 **Quality of generated lessons**
 
-- [ ] Run the golden-topic live suite (`pytest -m live`, written but never run) and tune the registry for real models.
+- [x] Run the live suite (`pytest -m live`) and record what it finds: done in phase 9.8, see [the results](#phase-98-live-suite-results). Tuning the registry for real models is still open, and the changes the run suggests are listed there for a decision.
 
 **Features and cleanups**
 
 - [ ] Remove the iframe `test_submit` path (nothing sends it any more).
 - [ ] Frontend: read `title_en` and `source` of the topic suggestions where they are useful; bind the `onboarding.suggest_topics` node in an existing registry (admin, or `seed_registry --force` on an untuned one).
 - [ ] Console: apply a profile in one request (today a screen previews it and saves each changed step with `PUT /console/nodes/{key}`), and a pause or an alert on the monthly budget.
-- [ ] Tighten `FlowSettings.clean()` further: unknown media sources and licences are still accepted by the admin and so by the console. (Since phase 9.2 it refuses a Fail line at or above the Excellent line and a batch size outside 5 to 10; the final-test size it used to leave unchecked is retired.)
+- [ ] Tighten `FlowSettings.clean()` further: unknown media sources and licences are still accepted by the admin and so by the console. (Since phase 9.2 it refuses a Fail line at or above the Excellent line and a batch size outside 5 to 10; the test-size settings it used to leave unchecked were dropped in phase 9.8.)
 - [ ] Run `make e2e` in CI (needs a browser in the workflow).
 
 ## Phases
@@ -126,9 +126,9 @@ The final screen-by-screen review is kept in [../archive/ui-audit-2026-10-25.md]
 - [x] Refresh on the last onboarding step, `?next=` kept through sign-in and onboarding, no 401s on public pages, status pill from the pages read, loading and error states, print-safe landing page
 - [x] Browser tests in `e2e/` (`make e2e`) on a throwaway fake-LLM stack
 
-### Phase 9: Modular lesson parts
+### Phase 9: Modular lesson parts ✅
 
-Specified in [modular-lessons.md](../to_be_developed/modular-lessons.md) and planned in [modular-lessons-implementation-plan.md](../to_be_developed/modular-lessons-implementation-plan.md) (phase details in its §14). Tick items off as they land.
+Specified in [modular-lessons.md](../architecture/modular-lessons.md) and planned in [modular-lessons-implementation-plan.md](../archive/modular-lessons-implementation-plan.md) (phase details in its §14). Tick items off as they land.
 
 - [x] 9.0 Prepare, with no visible change:
   - [x] Pure `Level`, `StarRating`, `RaterCategory`, `Difficulty`, `BandDifficulty`, `ScoreBand` and `Thresholds` classes (not wired in yet)
@@ -141,7 +141,7 @@ Specified in [modular-lessons.md](../to_be_developed/modular-lessons.md) and pla
 - [x] 9.2 Question record, fixed 10-question objective test, attempts graded at submit, retakes (always generate, `test.retake`), trend, forward-only on the server
 - [x] 9.3 Self-rating entry, `AssessmentSources`, lesson shapes, verified `origin`, the two-option mastery choice (Expert lesson or two sheets):
   - [x] `AssessmentSources` (`DiagnosticSource`, `SelfRatingSource`), `LessonShape` for the four levels, `EntrySegment` (entry router, `assess_from_source`, level gate, `prerequisites.plan`, intent router), `ChoiceRouter` and the two-sheet `SheetsSegment`
-  - [x] `Lesson` columns `intent`, `origin`, `recommended_from`, `entry`, `level_source`, `self_rating_halves` (1 to 10 check), and `mastery_options` (so a lesson waiting at the old choice keeps its cards)
+  - [x] `Lesson` columns `intent`, `origin`, `recommended_from`, `entry`, `level_source`, `self_rating_halves` (1 to 10 check), and `mastery_options` (so a lesson waiting at the old choice keeps its cards; dropped again in phase 9.8)
   - [x] `POST /lessons` takes `entry`, `self_rating`, `intent` and a server-verified `origin`; `POST /lessons/{id}/choice` takes `{choice}`
   - [x] `manage.py stranded_threads` lists (and with `--mark-failed` ends) lessons stuck at a node a release removed; Cancel on the "getting your questions ready" state
   - [x] New-lesson toggle and `StarRating`, journey and starting-point variants, `MasteryChoice` with two options, "Basics first", one handler for a refused action
@@ -169,7 +169,46 @@ Specified in [modular-lessons.md](../to_be_developed/modular-lessons.md) and pla
   - [x] Quiz summaries read the index (the plan for a lesson without one); every lesson-sourced question set (test, retake, quiz from lessons) is concept-bounded (`QuestionConcepts`, prompt lists, validator)
   - [x] Deterministic recommendations with a page link per weak concept (`ConceptLinks`), for quiz results and, in the same change, for a lesson test's topics to revisit (`revisit_links`); a deleted lesson says so
   - [x] `?tab=lesson&page=<key>` opens the book at that page; "Study this" links; e2e journey
-- [ ] 9.8 Drop the combined test call and `Lesson.final_test`; live and e2e suites; docs and spec moved out of `to_be_developed/`
+- [x] 9.8 Retire and harden:
+  - [x] Live suite: pure quality checks (`QuestionChecks`, `ConceptChecks`, `PoolChecks`, `TraitChecks`, `PlanChecks`, `DedupeChecks`, `SheetChecks`) with offline tests, `test_golden_questions.py`, run against the real models ([results](#phase-98-live-suite-results)); it found a crash in the review fix step (a test question the test does not have), fixed with a test
+  - [x] `Lesson.final_test` replaced by the lesson's first set on the record (`Question.first_set_position`, migrations 0018 to 0020): every lesson keeps its test, tested on old-shape rows; `final_test_min`/`final_test_max` dropped
+  - [x] The combined `POST /lessons/{id}/test/submissions` call, `submit_once`, `AlreadySubmitted` and the `test_submit` throttle removed
+  - [x] The old three-sheet choice retired (nobody waiting at it: migration 0021 drops `mastery_options`, refusing to run if anyone does); the single-sheet nodes, the old cards and the frontend's single-sheet steps removed; `stranded_threads` finds nothing
+  - [x] An old lesson's free-text test concepts are linked to the nearest plan concept (`ConceptIndex.nearest`, no model call)
+  - [x] `backfill_concept_index` documented as a post-migrate deploy step; migrations read and write the database they run on
+  - [x] e2e covers every journey of plan §15.4 (the retest's "getting your questions ready" wait is now asserted); the copy audit found no retired phrase; [pending-screens.md](../design/pending-screens.md) lists the screens for a design session
+  - [x] Docs: spec and plan moved out of `to_be_developed/` (`architecture/modular-lessons.md`, `archive/modular-lessons-implementation-plan.md`), every doc of plan §17 updated, the copy rule in `CLAUDE.md` names "Quick quiz"
+
+Phase 9 is closed. What it leaves open is in the [open work](#open-work) above and in the [live suite results](#phase-98-live-suite-results) below.
+
+### Phase 9.8 live suite results
+
+Run by hand on 2 November 2026 with `GEMINI_API_KEY` and `GROQ_API_KEY` set (the default registry: Gemini first, Groq as the fallback): five runs, two of them the whole suite, the others one file or one test after a fix to the suite's own code; nothing was skipped. The first run found the Gemini free tier's limit of about 20 requests a day for a model already used up, which made later calls fail with `429`; the later runs had quota back but met rate limits on both providers. A paid key removes that noise. **No product threshold was changed.**
+
+| Check | Result |
+|---|---|
+| `topic.traits` judges quadratic equations and kinematics as calculation, Python list comprehensions as programming, the French Revolution as neither | **Pass** (3 of 3 runs that reached it) |
+| `lesson.plan` sets `quantitative` for solving quadratic equations and not for the French Revolution | **Pass** (3 of 3) |
+| The calibration pool has two valid multiple-choice questions in each of the five bands | **Pass** (3 of 3) |
+| A 10-question quiz of every kind the topic offers: every kind is there; multiple-select questions have two or more right options; numerical expressions evaluate to their stored answer; short and long criteria add up to their marks (first try and retake) | **Pass** (2 of 2 runs that reached it; the first run's test was a harness slip, fixed) |
+| A retake does not repeat the first try, even in other words | **Fail** (2 of 2): 1 to 2 questions a time share 64% to 71% of their words with an earlier one, generic stems such as "What is the degree of a quadratic equation?" and "Find the larger solution to the quadratic equation $x^2 - 7x + 10 = 0$." The product's own check drops a question at 80%, so these stay |
+| On a real lesson (a self-rating of Binary search): its test and a quiz made from it name only the lesson's own concepts, the concept index places every concept on a page, the quiz is well formed, the revision sheet covers the concepts by the product's rule | **Pass**, twice: 10 of 10 concepts placed, the sheet mentioned 10 of 10 (a third attempt, in the whole-suite run, hit the crash below) |
+| The golden topics (Binary search, Asexual reproduction, Photosynthesis) from a quick check to a ready lesson and a graded test | **Fail** (0 of 3 in both whole-suite runs) |
+
+Why the golden topics failed, from the logs:
+
+- **The quick check did not pass its own validator in 5 of 6 tries.** `diagnostic.generate` is allowed two attempts and the model repeated the same mistake: "options must all be different" for one to three questions (4 times), and "question q4 reveals the answer to q2" (once). Groq's `gpt-oss-120b` also answered with invalid JSON once, and was rate limited the rest of the time, so the fallback did not help.
+- **One lesson did get built** (Asexual reproduction, in the first run, before the quick check failed on retry). It failed two checks: the test had two kinds of question (the harness wanted three; a non-quantitative lesson test is multiple choice and multiple select only, D15, so the harness was wrong and is fixed), and it had no real picture (the media search found none).
+- **A real crash.** In the second whole-suite run the review judge flagged a test question that the test does not have, and the fix step looked it up with `next(...)` and failed the whole build with `RuntimeError: generator raised StopIteration`. Fixed in this phase (`AlignmentPolicy.fixable` now drops issues for questions that do not exist), with a test that fails without the fix.
+
+Changes the run suggests, for you to decide (none is made):
+
+1. **`diagnostic.generate`: allow three attempts, or say it in the prompt.** Raise `max_attempts` from 2 to 3 for that step in the registry, and add one sentence to the prompt: "the four options must all be different, and no question may name the answer to another". It is the step most likely to stop a learner before they have a lesson.
+2. **Retake dedupe: lower `QuestionDeduper.NEAR` from 0.8 to about 0.65**, or also compare the options. At 0.65 the repeats above are caught; the risk is rejecting genuinely different questions that share a template, which the extra round of batches would write again (a cost, not a failure).
+3. **Rate limits on the fallback.** Both providers throttled during a lesson build. A paid Gemini key, or a third model in the chain, would stop the quick check failing for lack of an answer.
+4. **Media for biology topics.** "Asexual reproduction" found no picture. If a picture is wanted, the media agent's query or its sources need a look; the golden topic keeps `wants_picture` so the next run says.
+
+To repeat the run: set `GEMINI_API_KEY` (and `GROQ_API_KEY` for the fallback) in `.env`, then `docker compose run --rm backend pytest -c pyproject.toml --rootdir=. /tests/live -m live -rA -s`. It costs a few dollars on a paid key and about 15 minutes.
 
 ## Across phases
 

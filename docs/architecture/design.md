@@ -41,6 +41,7 @@ Legend for status columns: ✅ in code · ◐ partly (functions still to wrap in
   - [4.22 `graph` and `lessons`: modular sheets (Phase 9.5)](#422-graph-and-lessons-modular-sheets-phase-95)
   - [4.23 `quizzes`, `graph` and `lessons`: quick quizzes (Phase 9.6)](#423-quizzes-graph-and-lessons-quick-quizzes-phase-96)
   - [4.24 `graph`, `lessons` and `quizzes`: concept tags and page links (Phase 9.7)](#424-graph-lessons-and-quizzes-concept-tags-and-page-links-phase-97)
+  - [4.25 `lessons` and `graph`: retiring the legacy test, choice and call (Phase 9.8)](#425-lessons-and-graph-retiring-the-legacy-test-choice-and-call-phase-98)
 - [5. How to extend](#5-how-to-extend)
 - [Refactor backlog](#refactor-backlog)
 
@@ -1820,7 +1821,7 @@ classDiagram
 ### 4.17 `graph`: levels, difficulties and score bands (Phase 9, modular lessons)
 
 Pure value classes in `graph/levels.py` and `graph/scoring.py`: no ORM, no I/O, no settings lookups. They are the
-vocabulary of the modular-lesson plan ([plan §6.1](../to_be_developed/modular-lessons-implementation-plan.md#61-value-objects-pure-in-graph)).
+vocabulary of the modular-lesson plan ([plan §6.1](../archive/modular-lessons-implementation-plan.md#61-value-objects-pure-in-graph)).
 Phase 9.0 added them. Phase 9.1 wired `Level`, `LevelScheme` and `Difficulty` into the flow (the schemas, prompts, nodes and a data migration); `ScoreBand` and `Thresholds` are wired in 9.2.
 
 ```mermaid
@@ -1912,7 +1913,7 @@ classDiagram
 ### 4.18 `lessons`: the action gate (Phase 9, metering seam)
 
 A port that lets a later pricing feature say yes or no to work that costs model calls, and be told how it ended. Nothing
-here prices anything and nothing is metered by default ([plan §5.5](../to_be_developed/modular-lessons-implementation-plan.md#55-extension-seam-for-metering)
+here prices anything and nothing is metered by default ([plan §5.5](../archive/modular-lessons-implementation-plan.md#55-extension-seam-for-metering)
 and §6.7). Code: `lessons/metering.py` and `lessons/idempotency.py`.
 
 ```mermaid
@@ -2088,12 +2089,14 @@ classDiagram
         +retire(lesson_id, question_id)
         +exclusions(lesson) list
         +leftovers(lesson) list
+        +set_first_set(lesson_id, stored)
+        +replace_in_first_set(lesson_id, old_id, stored)
+        +first_set(lesson) list
     }
     class AttemptService {
         +start(lesson, key) Started
         +save_answer(lesson, attempt_id, qid, value)
         +submit(lesson, attempt_id, answers) Submitted
-        +submit_once(lesson, answers) Submitted
         +regrade(lesson, attempt_id) GraphRun
         +for_learner(lesson) dict
         +history(lesson) dict
@@ -2526,6 +2529,47 @@ classDiagram
 - **Recommendations stay deterministic.** `QuizRecommendations` takes each lesson's share of the card through `ScoreCard.topics_to_revisit` (now public: the same ordering as the card's own), totals the marks lost per concept, and asks `ConceptLinks` for the page of each. `ConceptLinks.index_of` is the lazy fallback: a lesson with no stored index has one worked out from its plan and pages in memory (a read never writes); a deleted lesson (`QuickQuizSource.lesson_ref` kept the id) is named and marked deleted. A lesson test's result gets the same links through `TestSubmissionSerializer.revisit_links`.
 - **`ConceptIndexBackfill`** fills only empty indexes, writes only that column (not `updated_at`), and reports lessons indexed and skipped and concepts placed and not placed. `manage.py backfill_concept_index [--dry-run]`.
 - **Frontend** (`frontend/lib/`): `PageLinks` (the three page keys, the address of a page, the words of the link and button, the link for a topic of a lesson's own result) and `QuizResults` (one `StudyLink` per weak concept). The lesson page reads `page=` from the address and gives it to `LessonViewer`, which starts the book there; a new `page=` remounts it.
+
+### 4.25 `lessons` and `graph`: retiring the legacy test, choice and call (Phase 9.8)
+
+Phase 9 was built additively; this is the contract step that removes what the new parts replaced. No behaviour is added.
+
+```mermaid
+classDiagram
+    direction LR
+    class QuestionBank {
+        +set_first_set(lesson_id, stored)
+        +replace_in_first_set(lesson_id, old_id, stored)
+        +first_set(lesson) list
+    }
+    class FirstSetBackfill {
+        +forward(apps, using)
+        +backward(apps, using)
+    }
+    class AttemptService {
+        +start(lesson, key) Started
+        +submit(lesson, attempt_id, answers) Submitted
+    }
+    AttemptService o-- QuestionBank
+    class AuthoredJoinNode
+    class FixItemNode
+    AuthoredJoinNode ..> QuestionBank
+    FixItemNode ..> QuestionBank
+    class ConceptIndex {
+        +nearest(concept) ConceptEntry
+    }
+    class ConceptLinks {
+        +of(lesson, concepts)$
+    }
+    ConceptLinks ..> ConceptIndex
+```
+
+- **The lesson's test lives on the record.** `Lesson.final_test` is gone. The questions a lesson was built with are its *first set*: `Question.first_set_position` says where each stands, `QuestionBank` is still the only writer, and `AttemptService.start` reads `first_set` for attempt 1. `AuthoredJoinNode` writes the set and `FixItemNode` replaces one place in it (the old row is retired), so the record and the test can never differ. The graph's state still carries a `final_test` key while a lesson is being authored (the alignment judge reads it); only the column went.
+- **The data step is a class, not a function in a migration** (`lessons/first_sets.py`, as `StoredRenames` is), so it is tested with old-shape rows through the migration's own `apps`, is idempotent, and undoes itself (`backward` rebuilds `final_test` from the set). Migration 0019 runs it, 0020 drops the column and the retired `final_test_min`/`final_test_max`, and 0021 drops `mastery_options` after refusing to run while any lesson waits at the old three-sheet choice.
+- **Migrations use the database they run on.** Migrations 0006 and 0008 (and the new ones) read and write through `schema_editor.connection.alias`. They used the default database, which worked until the test suite migrated its second database while the first was already at the latest schema.
+- **One mastery choice.** `MasterySegment` is `publish_mastery_options → await_choice → (assess | sheets)`; `ChoiceRouter` has two exits; the three single-sheet nodes are gone and the sheets are written only by `SheetsSegment`. `PipelineModel` (frontend) shows the sheets' steps for every writing stage.
+- **The combined call is gone.** `POST /lessons/{id}/test/submissions`, `AttemptService.submit_once`, `AlreadySubmitted`, `TestSubmitSerializer` and the `test_submit` throttle were removed; the attempts endpoints do everything it did.
+- **Free-text concepts of old tests reach a page.** `ConceptIndex.nearest` maps a concept written in the model's own words to the plan's nearest concept (the same name, else the most words in common), and `ConceptLinks` uses it, so a legacy lesson's "Study this" links work without a model call.
 
 ## 5. How to extend
 

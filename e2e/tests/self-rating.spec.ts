@@ -7,7 +7,6 @@
  * - a self-rated build that is stopped is picked up by Retry
  * - a perfect quick check shows exactly two options, and each reaches a ready lesson: the Expert lesson (with a test, its
  *   level set to Expert) or two sheets (no test)
- * - a lesson that was waiting at the old three-sheet choice still shows those cards and still resumes
  * - the API refuses an origin only the server may set, and a recommendation that is not the learner's own
  *
  * Why: the unit tests cover each piece; the seams (the star rating's keyboard, a lesson that starts with no quiz and
@@ -137,7 +136,8 @@ test("a perfect quick check offers the Expert lesson or two sheets, and the less
   await expect(page.getByText("Cheat sheet + revision sheet only")).toBeVisible();
   await expect(page.getByRole("radio", { name: /Continue with an Expert lesson/ })).toBeChecked(); // the lesson is the default
   const detail = (await api.call("GET", `/lessons/${lessonId}`)).body;
-  expect(detail).toMatchObject({ route: "mastery", mastery_options: "lesson_or_sheets" });
+  expect(detail).toMatchObject({ route: "mastery" });
+  expect(detail).not.toHaveProperty("mastery_options"); // there is one version of the choice
 
   await page.getByRole("button", { name: "Start my Expert lesson" }).click();
   const lesson = await api.until(lessonId, (l) => l.stage === "ready" && !l.active_run_id, 180_000);
@@ -167,27 +167,4 @@ test("a perfect quick check can take just the two sheets, which have no test", a
   await expect(page.getByRole("tab", { name: "Test" })).toHaveCount(0); // sheets only, no test
   const test_ = await api.call("GET", `/lessons/${lessonId}/test`);
   expect(test_.status).toBe(409); // a mastery lesson has no test
-});
-
-test("a lesson waiting at the old three-sheet choice still shows those cards and still resumes", async ({ page }) => {
-  const api = new Api(page);
-  await api.signUp(E2E.email("old-choice"), E2E.PASSWORD);
-  const lessonId = await perfectLesson(page, api, "Photosynthesis");
-
-  // A lesson that reached the choice before the Expert lesson was offered is stored with the old options; show this one
-  // as such, the way the API would have, and let the real server take the old body.
-  await page.route(`**/api/lessons/${lessonId}`, async (route) => {
-    const response = await route.fetch();
-    const body = await response.json();
-    await route.fulfill({ response, json: { ...body, mastery_options: "three_sheets" } });
-  });
-  await page.goto(`/lessons/${lessonId}`);
-  await expect(page.getByRole("radio")).toHaveCount(3);
-  await expect(page.getByText("Continue with an Expert lesson")).toHaveCount(0);
-
-  await page.getByText("Revision sheet", { exact: true }).click();
-  await page.getByRole("button", { name: "Make my revision sheet" }).click();
-
-  const lesson = await api.until(lessonId, (l) => l.stage === "ready" && !l.active_run_id, 120_000);
-  expect(lesson).toMatchObject({ route: "mastery", materials: ["revision_sheet"] });
 });

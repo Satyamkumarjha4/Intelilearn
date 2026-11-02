@@ -2,7 +2,7 @@
 
 **Product:** Socra
 **Status:** Finalized design, ready for implementation
-**Last updated:** 2026-10-30 (amended: see the changelog in [modular-lessons-implementation-plan.md](modular-lessons-implementation-plan.md#spec-amendments))
+**Last updated:** 2026-10-30 (amended: see the changelog in [modular-lessons-implementation-plan.md](../archive/modular-lessons-implementation-plan.md#spec-amendments))
 
 ---
 

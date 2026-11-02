@@ -83,7 +83,6 @@ A lesson is a learner's request to learn one topic, from the diagnostic quiz thr
 | created_from_lesson | FK to Lesson (self), null, `SET_NULL`, related name `followups` | The lesson a follow-up was made from. Metadata only: a follow-up is a lesson of its own. Deleting the parent clears the link; the follow-up stays |
 | followup_level | enum `foundation` \| `advanced`, blank | What kind of follow-up this is. Kept when the parent is deleted. Constraints: a lesson with a parent has a level (`a_followup_has_a_level`; the reverse is not required, because deleting a parent clears the link and not the level), no lesson is its own parent, and **one follow-up of each level for a parent** (`one_followup_per_level`, a partial unique on `(created_from_lesson, followup_level)` where the level is set). The foreign key's own index serves the "does one exist" lookup |
 | self_rating_halves | smallint, null | The learner's stars times two (1 to 10; a check constraint refuses others). The API shows stars (`self_rating`, 0.5 to 5) |
-| mastery_options | enum `three_sheets` \| `lesson_or_sheets`, default `three_sheets` | Which choice a learner who aced the quick check was shown. The default is what a lesson already waiting at the choice had (migration 0013), so it keeps its three cards; `publish_mastery_options` records `lesson_or_sheets` from now on |
 | assessment | JSON, null | `LearnerAssessment`, stamped `level_scheme: 2`: which level names the document uses (see below) |
 | prerequisites_to_cover | JSON list | |
 | title / level | char | From the plan. `level` is beginner, foundation, proficient or expert (migration 0006 renamed novice … advanced) |
@@ -91,7 +90,7 @@ A lesson is a learner's request to learn one topic, from the diagnostic quiz thr
 | test_blueprint | JSON, null | The fixed `LessonTestBlueprint` of the lesson's test: `{quantitative, total_marks, cells: [{index, type, difficulty, marks}]}` (ten cells, 20 or 18 marks). Written when the plan is saved; null for a lesson made before it, until its first retake |
 | pages | JSON, null | `{introduction, core, advanced}` → `PageContent`. Each section has `concepts`: the outline concepts of its page that it teaches (empty on a lesson made before the tags) |
 | concept_index | JSON list | `[{concept, page, heading, summary}]`: for each concept of the plan's outline, the page that teaches it, the heading of the section, and the outline's notes. Written by `persist_lesson` from the plan and the final pages (`ConceptIndex`): a section tagged with the concept, else the section with the outline's heading, else the section that talks about it; `page` and `heading` are empty when none could be found. Feeds the summaries of quizzes from lessons and the "Study this" links. Empty for a lesson made before it until `manage.py backfill_concept_index` runs (idempotent, `--dry-run`); a read of an empty one works the index out from the plan and pages in memory |
-| final_test | JSON, null | `FinalTest`: **the questions of attempt 1**, each with the `question_id` of its row in `Question` (answers kept server-side, see below). Each question has `marks` from `MarksPolicy`, a `difficulty` of easy, basic, standard, difficult or expert, and the fields of its type; a numerical question also has the computed `answer`. Lessons from before the modular parts may hold `medium`/`hard` (migration 0006 renamed them), `code` questions, and `key_points`/`rubric` |
+| *(the lesson's test)* | | **Not a column.** The questions a lesson was built with, which attempt 1 serves, are its **first set** on the record of questions: `Question.first_set_position` (below). `Lesson.final_test` held them as JSON until migrations 0019 and 0020 (phase 9.8) moved them and dropped the column |
 | interactive_plan | JSON, null | |
 | code | text, blank | Assembled TSX document |
 | code_parts | JSON | The pages' and interactives' TSX the document was assembled from, for targeted runtime repairs |
@@ -181,7 +180,8 @@ The record of every question a lesson has asked. It feeds the exclusion list of 
 | payload | JSON | The full question **with** its answer key; never sent to a client as it is |
 | stem_hash | char(64) | Hash of the normalised question text (`graph.questions.StemHash`). `UniqueConstraint(lesson, stem_hash)`: one row per stem |
 | batch | UUID, null | The run that wrote it; none for a question of an old test |
-| retired | bool | Withdrawn. **Every question of a lesson's old test is backfilled as retired** (migration 0008), so a retake never repeats an old stem |
+| retired | bool | Withdrawn. **Every question of a lesson's old test is backfilled as retired** (migration 0008), so a retake never repeats an old stem. Migration 0019 made the questions of a lesson nobody has attempted un-retired, because they are the test it will serve |
+| first_set_position | smallint, null | Where the question stands in the set the lesson was built with (attempt 1), from 0; empty for any other question. `UniqueConstraint(lesson, first_set_position)` where it is set. `authored_join` writes it (`QuestionBank.set_first_set`); a review fix gives a replacement question the old one's place (`replace_in_first_set`) and retires the old row. `QuestionBank.first_set(lesson)` reads the set back in order, as the questions attempt 1 serves |
 | created_at | datetime | |
 
 Indexes on `(lesson, type, difficulty)` and `(lesson, concept)`.
@@ -211,7 +211,7 @@ The model, table and URL names stay from when a lesson had one submission; in pr
 
 **Immutability.** `TestSubmission.seal()` is the only way out of `in_progress`; it stores the answers, the result and everything that follows from them in one conditional update, and a second call changes nothing. The answer endpoint is the only other writer of `answers`, and the retake graph the only writer of `questions` (once, while the attempt is `generating`). A test scans the code for any other update of those two fields.
 
-**Attempt 1** is part of the lesson: it starts at once, with a copy of `Lesson.final_test` as its snapshot. **Attempt 2 and later** always generate a fresh set (the `question_bank` graph). A lesson made before the fixed test can retake too: its attempt 1 keeps its old questions and total, and the trend compares percents.
+**Attempt 1** is part of the lesson: it starts at once, with a copy of the lesson's first set (`QuestionBank.first_set`) as its snapshot. **Attempt 2 and later** always generate a fresh set (the `question_bank` graph). A lesson made before the fixed test can retake too: its attempt 1 keeps its old questions and total, and the trend compares percents.
 
 Migrations: `0007` adds the table and columns and the constraints below; `0008` makes every existing submission attempt 1 (questions copied from the lesson's old test, `started_at` = `submitted_at`, marks and band from its card when graded) and writes every question of every old test as a retired `Question`; `0009` adds the `question_bank` graph and the `retake` trigger to `GraphRun`. The one-submission constraint `UniqueConstraint(lesson)` was **dropped last** (`0010`), in the release that ships the retest screens; undoing it keeps the first attempt of each lesson.
 
@@ -247,7 +247,6 @@ There is one row per Celery execution segment of any graph, for example start, e
 | prerequisite_question_count | 5 |
 | prereq_trigger_max_correct | 2 |
 | mastery_requires_all_correct | true |
-| final_test_min / final_test_max | 10 / 15 (retired: the test is fixed at ten questions in code; the columns stay for old snapshots and are not read, edited or shown) |
 | max_interactives_per_page | 3 |
 | alignment_min_score | 3 (out of 5) |
 | alignment_max_rounds | 2 |

@@ -8,7 +8,7 @@ A learner signs in and asks to learn a topic. Socra first **diagnoses** what the
 - **Knows some** (3–9 correct): a lesson pitched at their level.
 - **Knows it all** (10/10): offers a cheat sheet, revision sheet, or practice sheet instead.
 
-A **lesson** has three pages: Introduction (with prerequisites if needed), Core concepts and Advanced concepts. The **final test** (10–15 questions of mixed types) is a separate screen of the app, not a page of the lesson, and can be submitted once. The pages include interactive graphs, simulations, animations, and real images or GIFs. The content is validated against the learner's level, compiled into a TypeScript document, security-scanned, test-rendered in a headless sandbox, and only then shown.
+A **lesson** has three pages: Introduction (with prerequisites if needed), Core concepts and Advanced concepts. The **test** (ten questions, marked as soon as it is handed in) is a separate screen of the app, not a page of the lesson, and can be taken again as often as the learner likes, with new questions each time. The pages include interactive graphs, simulations, animations, and real images or GIFs. The content is validated against the learner's level, compiled into a TypeScript document, security-scanned, test-rendered in a headless sandbox, and only then shown.
 
 The complete flow is in [lesson-graph.md](lesson-graph.md). The classes, layers and design patterns are in [design.md](design.md), and the test-driven workflow in [testing.md](../process/testing.md).
 
@@ -64,7 +64,7 @@ The flow pauses for the learner at up to two `interrupt()` points, and a learner
 4. **Route.** The graph resumes from the checkpoint and takes one of three branches: mastery (another pause, for the sheet choice), prerequisite quiz (another pause), or directly to assessment.
 5. **Author, build, and verify** (lesson path). Plan, write pages and test in parallel, plan interactives, run the media agent and widget code in parallel, alignment judge, compile pages in parallel, static and security checks, assemble, headless render check, targeted repairs, persist.
 6. **Show.** On `done`, the UI loads `/api/lessons/{id}/document` and renders it in the sandboxed iframe.
-7. **After.** The learner can take the final test, once (graded by the `grade_test` graph), request more study sheets, or trigger an automatic runtime repair if the browser hits an error.
+7. **After.** The learner can take the test (attempt 1 is the set the lesson was built with; every try after it gets new questions from the `question_bank` graph), take a quick quiz on the lesson, request more study sheets, or trigger an automatic runtime repair if the browser hits an error.
 
 ## Resilience layers
 
@@ -84,7 +84,7 @@ The flow pauses for the learner at up to two `interrupt()` points, and a learner
   3. an iframe with `sandbox="allow-scripts"` (opaque origin, no cookies);
   4. a strict CSP inside the iframe.
 - **Media** is downloaded, sniffed, and size-checked, then served from our own server through signed URLs. Generated code cannot reference external URLs.
-- **Answers** to quizzes and tests never reach the browser before the learner submits, and the final test can be submitted once (a unique constraint; a second go is `409`).
+- **Answers** to quizzes and tests never reach the browser before the learner submits, and an attempt that is over cannot change (`attempt_sealed`).
 - **The console** answers `404` to anyone who is not staff, signed in or not, as if it did not exist, and every change made there leaves an audit entry. Provider keys are never serialised.
 - **Cookies:** the session and the markers the route guard reads are httpOnly; the one cookie the page sets itself (`lc_setting_up`) is a hint with no authority.
 - **Supabase:** Django owns the tables. Row-level security with no policies (so the public Data API exposes nothing) is the intended lock-down, but the script for it was skipped while the app runs on the local Postgres, so it is **not in place**. Enable it, including on the checkpoint tables, before pointing a Supabase project at this app.

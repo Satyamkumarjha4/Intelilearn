@@ -35,7 +35,7 @@ The root `.env` is the **single source of configuration**. Django reads it, `doc
 | Console (staff API) | `CONSOLE_MONTHLY_BUDGET_USD`, `CONSOLE_THROTTLE_RATE` | 25, 120/min |
 | Landing page | `LANDING_DEMO_THROTTLE_RATE`, `LANDING_DEMO_IDS_TTL_S` | 60/min, 600 (10 min) |
 | Onboarding | `TOPIC_SUGGESTIONS_THROTTLE_RATE`, `ONBOARDING_SUGGESTION_TTL_S` | 30/min, 30 days |
-| Lesson flow | `FLOW_RUN_LOCK_TTL_S`, `LESSON_CREATE_THROTTLE_RATE`, `TEST_SUBMIT_THROTTLE_RATE`, `SSE_HEARTBEAT_S`, `SANDBOX_DIR`, `NODE_BINARY`, `SANDBOX_CHECK_TIMEOUT_S`, `SANDBOX_RENDER_TIMEOUT_S`, `SANDBOX_PAGE_TIMEOUT_MS`, `GIPHY_API_KEY`, `MEDIA_URL_TTL_S` | 600, 30/hour, 30/hour, 15, `<repo>/sandbox`, node, 30, 180, 8000, empty, 21600 (6 h) |
+| Lesson flow | `FLOW_RUN_LOCK_TTL_S`, `LESSON_CREATE_THROTTLE_RATE`, `SSE_HEARTBEAT_S`, `SANDBOX_DIR`, `NODE_BINARY`, `SANDBOX_CHECK_TIMEOUT_S`, `SANDBOX_RENDER_TIMEOUT_S`, `SANDBOX_PAGE_TIMEOUT_MS`, `GIPHY_API_KEY`, `MEDIA_URL_TTL_S` | 600, 30/hour, 30/hour, 15, `<repo>/sandbox`, node, 30, 180, 8000, empty, 21600 (6 h) |
 | Offline walk-through | `FAKE_LLM_API_KEY` | empty (any value; not a secret) |
 
 - The `POSTGRES_HOST`, `POSTGRES_PORT`, `REDIS_HOST`, and `REDIS_PORT` values in `.env` describe how the **host** reaches the services. Inside docker, compose overrides them with the service names and internal ports (`db:5432`, `redis:6379`).
@@ -163,6 +163,25 @@ docker compose exec backend python manage.py stranded_threads --mark-failed   # 
 Please delete it and start a new lesson." Lessons that are ready are never touched. Adding a node never strands a
 thread, so only releases that remove or rename one need this (9.2 removed `write_test`, so a deploy that crosses it needs this;
 9.3 only adds nodes). The release notes of such a release say so.
+
+### After migrating a release
+
+Run these in order after `migrate` on every install that has lessons (they are safe to run again):
+
+```bash
+docker compose exec backend python manage.py migrate
+docker compose exec backend python manage.py stranded_threads                 # list lessons stuck at a removed node
+docker compose exec backend python manage.py backfill_concept_index --dry-run # what would be indexed
+docker compose exec backend python manage.py backfill_concept_index           # write the concept index of older lessons
+```
+
+- `backfill_concept_index` (phase 9.7) places each concept of a lesson made before the index on the page that teaches it,
+  from the stored plan and pages, so a quiz result can link to the right page. It fills only empty indexes, writes only
+  that column and prints how many lessons and concepts it placed or could not place. A lesson it cannot place still
+  works: its links open the lesson without a page. It is **not** run at start-up.
+- Migration `0021` (phase 9.8) refuses to run while any lesson still waits at the old three-sheet choice. If it stops,
+  let those learners choose with the previous release, then migrate again. Migration `0019` moved every lesson's test
+  onto the record of questions; it can be undone, and it does not touch attempts.
 
 ## Tests
 

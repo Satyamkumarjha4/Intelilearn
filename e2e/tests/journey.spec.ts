@@ -69,6 +69,7 @@ test("a learner signs up, learns, takes the test, tries again with new questions
   const started = page.waitForResponse((r) => r.url().endsWith(`/test/attempts`) && r.request().method() === "POST");
   await page.getByRole("button", { name: /try again/i }).click();
   expect((await started).status()).toBe(202); // a retake always generates
+  await expect(page.getByText(/getting your questions ready/i).first()).toBeVisible({ timeout: 15_000 }); // the wait is shown
   expect(await attempt.answerAll("right")).toBe(10);
   await expect(page.getByText("Your tries")).toBeVisible({ timeout: 30_000 });
   await attempt.dismissOffer(); // and an excellent one offers an Advanced lesson
@@ -90,13 +91,13 @@ test("a learner signs up, learns, takes the test, tries again with new questions
   await page.goto("/lessons");
   await expect(page.getByText(/Test done · best 100%/).first()).toBeVisible();
 
-  // An attempt that is over cannot change, the old single call is refused, and no answer key is ever sent.
+  // An attempt that is over cannot change, the old single call is gone, and no answer key is ever sent.
   const sealed = await api.call("PUT", `/lessons/${lessonId}/test/attempts/${two.body.id}/answers/t1`, { answer: 0 });
   expect([sealed.status, sealed.body.code]).toEqual([409, "attempt_sealed"]);
   const again = await api.call("POST", `/lessons/${lessonId}/test/attempts/${two.body.id}/submit`, {});
   expect([again.status, again.body.code]).toEqual([409, "attempt_sealed"]);
   const old = await api.call("POST", `/lessons/${lessonId}/test/submissions`, { answers: {} });
-  expect([old.status, old.body.code]).toEqual([409, "already_submitted"]);
+  expect(old.status).toBe(404); // the combined call was removed in phase 9.8
   const open = await api.call("GET", `/lessons/${lessonId}/test`);
   expect(open.body.questions).toEqual([]); // nothing is open, so nothing is served
   expect(JSON.stringify(open.body)).not.toMatch(/correct_index|correct_indices|answer_expr|tolerance|model_answer/);

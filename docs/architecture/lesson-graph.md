@@ -1,6 +1,6 @@
 # Lesson flow graph (LangGraph)
 
-The whole experience, from "I want to learn binary search" to a rendered three-page lesson (with its final test as a separate screen) or a study sheet, is **one LangGraph `StateGraph` per lesson**. It is not a chain. The graph:
+The whole experience, from "I want to learn binary search" to a rendered three-page lesson (with its test as a separate screen) or a study sheet, is **one LangGraph `StateGraph` per lesson**. It is not a chain. The graph:
 
 - **pauses for the learner** with `interrupt()` while they take a quiz or choose a sheet, and resumes when they answer;
 - **branches** on how the learner got in (a quick check or their own rating) and on how they did (prerequisite path, full lesson, or mastery, where they choose an Expert lesson or two sheets);
@@ -207,11 +207,10 @@ A guard ensures `prerequisites_to_cover` equals the deterministic result. The LL
 
 ### Mastery path
 
-A perfect score (or one wrong non-hard answer, if the setting allows) pauses at `await_choice`, which takes `{choice: "lesson" | "sheets"}` (a bare string, or one of the three sheet kinds a lesson already waiting may send, is accepted too). `publish_mastery_options` records which options were shown (`Lesson.mastery_options`), so a lesson that was waiting at the old three-sheet choice keeps its cards. A `ChoiceRouter` follows it:
+A perfect score (or one wrong non-hard answer, if the setting allows) pauses at `await_choice`, which takes `{choice: "lesson" | "sheets"}` (a bare string is accepted too; anything else, the old sheet kinds included, is refused). A `ChoiceRouter` follows it:
 
 - **`lesson`**: on to `assess_learner` with the level set to Expert. Before the call, the lesson moves from the choice to building and its route becomes `lesson`, so it has a test like any other; after it, the flow goes through the level gate (a quick check, so no prerequisites are planned) to `plan_lesson`.
 - **`sheets`**: the `SheetsSegment` (below) writes the **cheat sheet and the revision sheet in parallel**, grounded in the diagnostic's concepts, and the lesson ends `ready` (route `mastery`, no test).
-- **a sheet kind**: the original single-sheet path, below, unchanged.
 
 ### The one sheets writer
 
@@ -227,13 +226,13 @@ A perfect score (or one wrong non-hard answer, if the setting allows) pauses at 
 
 `StudyMaterialPrompt` says who the sheet is for: **only a learner who aced the quick check** is told they already know the topic (the mastery wording); the others are told the lesson they studied, or the level, and are not talked down to or up to.
 
-The older single-sheet path (kept for lessons that were waiting at the three-sheet choice, and for a run queued before the change):
+**What a sheet is.** `generate_sheet` (`study.generate`) writes one of two schemas:
 
-- `generate_study_material` (`study.generate`) produces one of three schemas:
-  - **Cheat sheet**: short notes. For quantitative topics, it gives formulas with variable definitions and when to use each. For theoretical topics, it gives key terms, facts, and one-line rules. It fits on one or two screens.
-  - **Revision sheet**: longer notes covering *every* subtopic, with key points, worked examples, and common mistakes.
-  - **Practice sheet**: 15–25 questions across the `FinalTest` question types (below), graded easy to hard, with solutions hidden until attempted.
-- `validate_study_material` checks coverage of the diagnostic concepts, lengths, LaTeX that parses, and the question schema.
+- **Cheat sheet**: short notes. For quantitative topics, it gives formulas with variable definitions and when to use each. For theoretical topics, it gives key terms, facts, and one-line rules. It fits on one or two screens.
+- **Revision sheet**: longer notes covering *every* subtopic, with key points, worked examples, and common mistakes.
+- A **practice sheet** (15–25 questions, solutions hidden until attempted) cannot be asked for any more; the ones that exist still open and can be checked.
+
+`sheets_join` checks each sheet (coverage of the concepts, lengths, LaTeX that parses) before it saves. The single-sheet nodes the mastery path used to have (`generate_study_material`, `validate_study_material`, `persist_study_material`) were removed in phase 9.8, together with the old three-sheet choice: no lesson was waiting at it, and `manage.py stranded_threads` found no thread at any removed node.
 - The sheets are **rendered by fixed frontend templates from structured JSON**, not by generated code. They need no creative layout, and the templates give instant, reliable rendering. The learner can request another sheet type later, which runs a small separate `study_material` graph.
 
 ## Stage B: Author the lesson
@@ -310,13 +309,13 @@ The test is **fixed in code** (`graph/questions/blueprint.py`, `LessonTestBluepr
 - **Concept-bounded questions (phase 9.7).** Every question written for a lesson must name one of that lesson's concepts, so a weak concept can be looked up in the lesson's concept index and linked to its page. `QuestionConcepts.allowed(data, cells)` gives each cell's list: the plan's whole outline for a lesson's test and its retakes, the concepts kept in the summary of the cell's own lesson for a quiz from lessons, nothing for a topic quiz. The prompt lists them (`Allowed concepts (copy one exactly into "concept"): [...]`, once for a test, under each lesson for a quiz), `ContentWriter.questions` writes a near-miss in case or spacing with the lesson's spelling, and `QuestionBatchValidator` reports any other name so the batch is written again.
 - The join (`QuestionRound`, called by `authored_join` and by the retake graph's `questions_join`) **retries only the batches with problems** (up to `test.generate.max_attempts`), then accepts the questions that fit their cell, are usable (a numerical question has its answer…) and are new (`QuestionDeduper`: the same text after normalising, or almost the same words, as anything already asked or already in the set). Cells still empty are **planned again** as a new round, and when the rounds are used up **a lesson test fails the run** (`failed_node: plan_batches`, so Retry starts the test again) rather than keep a test that is not the blueprint. Problems that do not stop a question being used are shown as a warning, as before.
 - A review fix (`fix_item`, target `final_test`) writes **one question again** as a batch of one cell, with the other questions of the test given as ones not to repeat; the old question is retired on the record, the new one added.
-- Every accepted question goes on the record (`Question`, written only by `QuestionBank`), and `Lesson.final_test` keeps the ten questions of attempt 1, each with its `question_id`.
+- Every accepted question goes on the record (`Question`, written only by `QuestionBank`), and the ten questions of attempt 1 become the lesson's **first set** on the record (`QuestionBank.set_first_set`: each row gets its `first_set_position`; a review fix gives its replacement the old question's place). There is no `Lesson.final_test` column any more.
 
 ### `compile_page` (`page.compile`)
 
 - Writes the TSX for one page, as `function Page_core() { ... }`, laying out that page's content and placing its interactive components and `<Figure asset="...">` at their anchor sections.
 - **Content is injected as data, not retyped.** The validated `PageContent` is available in scope as `LESSON.pages.core`, so the compiler writes code that *renders* the text. This stops the compile step from changing, cutting, or hallucinating content that already passed the alignment judge. It also saves a large number of output tokens.
-- **The test is not a page.** Its questions are written by the batched pipeline above and stored as `Lesson.final_test`, but `assemble_document` does not put it in the document: it is served by `GET /lessons/{id}/test` and taken on its own screen, as many times as the learner likes. (Lessons made before this change still declare a `test` page in their code; `GET /document` flags them with `has_embedded_test`, and a repair rebuilds the document from the three content pages, which drops it.)
+- **The test is not a page.** Its questions are written by the batched pipeline above and kept as the lesson's first set on the record, but `assemble_document` does not put it in the document: it is served by `GET /lessons/{id}/test` and taken on its own screen, as many times as the learner likes. (Lessons made before this change still declare a `test` page in their code; `GET /document` flags them with `has_embedded_test`, and a repair rebuilds the document from the three content pages, which drops it.)
 
 ### `assemble_document` (deterministic)
 
@@ -485,7 +484,7 @@ class FlowState(TypedDict, total=False):
     # Stage B (parallel writers → reducers required)
     plan: LessonPlan
     pages: Annotated[dict[str, PageContent], merge_dicts]            # intro / core / advanced
-    final_test: FinalTest  # the ten questions of attempt 1
+    final_test: FinalTest  # the ten questions of attempt 1 (graph state only; the lesson keeps them as its first set)
     interactive_plan: InteractivePlan
     media: Annotated[dict[str, MediaRef], merge_dicts]               # spec_id → asset
     interactives: Annotated[dict[str, InteractiveComponent], merge_dicts]
