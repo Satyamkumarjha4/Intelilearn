@@ -40,6 +40,7 @@ Legend for status columns: ✅ in code · ◐ partly (functions still to wrap in
   - [4.21 `graph` and `lessons`: follow-up lessons (Phase 9.4)](#421-graph-and-lessons-follow-up-lessons-phase-94)
   - [4.22 `graph` and `lessons`: modular sheets (Phase 9.5)](#422-graph-and-lessons-modular-sheets-phase-95)
   - [4.23 `quizzes`, `graph` and `lessons`: quick quizzes (Phase 9.6)](#423-quizzes-graph-and-lessons-quick-quizzes-phase-96)
+  - [4.24 `graph`, `lessons` and `quizzes`: concept tags and page links (Phase 9.7)](#424-graph-lessons-and-quizzes-concept-tags-and-page-links-phase-97)
 - [5. How to extend](#5-how-to-extend)
 - [Refactor backlog](#refactor-backlog)
 
@@ -2459,6 +2460,72 @@ classDiagram
 - **`topic.traits`** (`quizzes/traits.py`) follows the onboarding suggester: optional, one attempt, a short timeout, cached per topic (`TraitsCache`), never an error (`TraitsAnswer` falls back to `TopicTraits.everything()`). A quiz from lessons derives its traits from the plan and pages with no model (`TopicTraits.of_lessons`).
 - **Deleting a quiz** is `QuizErasure`: checkpoints, `ModelCall` rows by quiz id, the calibration column, and any open authorization settled cancelled, in one place, like a lesson's.
 - **Frontend** (`frontend/lib/`): `QuizzesApi`, `QuizConfigForm`, `QuestionTypeCatalog`, `LevelChoice`, `QuizStageView`, `CalibrationWalk`, `QuizResults`, `QuizProgress`, `QuizMessages`, `QuizList`, `TestGuard` ("Finish your test first"), `CodeLanguages`, `AttemptWords`. `AttemptRunner` is reused through an `AttemptApi<A>` port and a `kind` prop; the code editor is CodeMirror 6 behind `next/dynamic`, with a language pack loaded on demand.
+
+### 4.24 `graph`, `lessons` and `quizzes`: concept tags and page links (Phase 9.7)
+
+A weak concept in a result becomes a link to the page of the lesson that teaches it. Everything that makes that work is deterministic code; the model's only part is to tag its sections and to name a lesson's own concepts on its questions.
+
+```mermaid
+classDiagram
+    direction LR
+    class ConceptIndex {
+        <<frozen>>
+        +build(plan, pages)$
+        +from_json(stored)$
+        +find(concept) ConceptEntry
+        +names() list
+        +placed / unplaced
+    }
+    class ConceptEntry {
+        <<frozen>>
+        +concept / page / heading / summary
+    }
+    ConceptIndex o-- ConceptEntry
+    class Normal {
+        +text(value)$
+    }
+    ConceptIndex ..> Normal
+    class QuestionConcepts {
+        +allowed(data, cells)$
+        +outline(plan)$
+        +canonicalise(questions, allowed)$
+        +problems(questions, allowed)$
+    }
+    QuestionConcepts ..> Normal
+    class PageValidator
+    class QuestionBatchValidator
+    class ContentWriter
+    PageValidator ..> Normal
+    QuestionBatchValidator ..> QuestionConcepts
+    ContentWriter ..> QuestionConcepts
+    class PersistLessonNode
+    PersistLessonNode ..> ConceptIndex
+    class ConceptSummaries {
+        +of(plan, budget, index)
+    }
+    ConceptSummaries ..> ConceptIndex
+    class ConceptLinks {
+        +index_of(lesson)$
+        +of(lesson, concepts)$
+    }
+    ConceptLinks ..> ConceptIndex
+    class QuizRecommendations
+    class TestSubmissionSerializer
+    QuizRecommendations ..> ConceptLinks
+    TestSubmissionSerializer ..> ConceptLinks
+    QuizRecommendations ..> ScoreCard : topics_to_revisit
+    class ConceptIndexBackfill {
+        +run(dry_run) BackfillReport
+    }
+    ConceptIndexBackfill ..> ConceptIndex
+```
+
+- **One class places a concept (`ConceptIndex`, pure, `graph/concept_index.py`).** The plan says which page a concept belongs to (each outline concept is on exactly one page); the pages say where on it. `build` places a concept by a section tagged with it, else the section with the outline's heading, else the section that talks about it most; a concept nothing places is listed without a page. New lessons and old ones go through the same rules, so the backfill is the same code as the live path.
+- **`persist_lesson` writes the index** from the final pages (after any review fix), so the stored index never describes a page that was replaced.
+- **Concept-bounded questions.** `QuestionConcepts` answers "which concepts may this cell's question name?" for a lesson test, a retake and a quiz from lessons. It lives in `graph/questions/` and shares `Normal` (a one-method class in `graph/normal.py`, free of other imports) with the validators, which breaks the import cycle between the schemas, the validators and the question code.
+- **Recommendations stay deterministic.** `QuizRecommendations` takes each lesson's share of the card through `ScoreCard.topics_to_revisit` (now public: the same ordering as the card's own), totals the marks lost per concept, and asks `ConceptLinks` for the page of each. `ConceptLinks.index_of` is the lazy fallback: a lesson with no stored index has one worked out from its plan and pages in memory (a read never writes); a deleted lesson (`QuickQuizSource.lesson_ref` kept the id) is named and marked deleted. A lesson test's result gets the same links through `TestSubmissionSerializer.revisit_links`.
+- **`ConceptIndexBackfill`** fills only empty indexes, writes only that column (not `updated_at`), and reports lessons indexed and skipped and concepts placed and not placed. `manage.py backfill_concept_index [--dry-run]`.
+- **Frontend** (`frontend/lib/`): `PageLinks` (the three page keys, the address of a page, the words of the link and button, the link for a topic of a lesson's own result) and `QuizResults` (one `StudyLink` per weak concept). The lesson page reads `page=` from the address and gives it to `LessonViewer`, which starts the book there; a new `page=` remounts it.
 
 ## 5. How to extend
 

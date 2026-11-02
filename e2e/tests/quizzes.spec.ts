@@ -7,6 +7,9 @@
  * - a five-question quiz cannot ask for short or written answers (the choice is not there, and the server refuses it when
  *   asked by hand), and ten questions can
  * - a quiz on a topic can become a lesson, whose level comes from the result
+ * - a quiz from a lesson, answered wrong: each weak concept's "Study this" link opens the page of the lesson that teaches
+ *   it (the Introduction for one concept, the Core page for another), because the questions named the lesson's own
+ *   concepts and the lesson's index knows which page each is on
  *
  * Why: the services, graph and API are unit-tested; the seams only the stack shows are the wizard's rules (what it hides),
  * the warm-up one question at a time, the quiz page following the run, the shared question deck serving a quiz, a retake
@@ -176,4 +179,40 @@ test("a quiz on a topic becomes a lesson whose level comes from the result", asy
   const lesson = await api.until(lessonId, READY, 180_000);
   expect(lesson).toMatchObject({ topic: "Photosynthesis", entry: "quiz_result", origin: "quiz_result", level_source: "quiz_result", route: "lesson" });
   expect(lesson.level).toBe("foundation"); // proficient, moved one down by a failed quiz
+});
+
+test("a quiz from a lesson sends each weak concept to the page that teaches it", async ({ page }) => {
+  const api = new Api(page);
+  await api.signUp(E2E.email("quiz-study"), E2E.PASSWORD);
+  const lessonId = (await api.call("POST", "/lessons", { topic: "Fractions", entry: "self_rating", self_rating: 4 })).body.lesson_id as string;
+  await api.until(lessonId, READY, 180_000);
+  const made = await api.call("POST", "/quick-quizzes", {
+    source: { type: "lessons", lesson_ids: [lessonId] }, num_questions: 5, types: ["mcq"], level: { mode: "self_rating", rating: 4 },
+  });
+  expect(made.status).toBe(202);
+  const quizId = made.body.quiz_id as string;
+  const quiz = await untilQuiz(api, page, quizId, (q) => q.stage === "ready" && q.open_attempt?.status === "in_progress");
+
+  await page.goto(`/quizzes/${quizId}`);
+  expect(await new AttemptPage(page).answerAll("wrong")).toBe(5);
+  await expect(page.getByRole("heading", { name: "Worth another look" })).toBeVisible({ timeout: 60_000 });
+
+  // The server's advice has a page for each concept, from the lesson's own index: the questions named the lesson's own
+  // concepts (the fake model copies them from the prompt, as the real one is told to), so every one is found.
+  const attempt = (await api.call("GET", `/quick-quizzes/${quizId}/attempts/${quiz.open_attempt.id}`)).body;
+  const links = attempt.recommendations.lessons[0].links;
+  expect(links.map((l: any) => [l.concept, l.page]).sort()).toEqual([
+    ["A worked example of Fractions", "core"], ["The main idea of Fractions", "core"], ["The vocabulary of Fractions", "introduction"],
+    ["What Fractions is", "introduction"], ["Why Fractions matters", "introduction"],
+  ]);
+
+  // Study this opens that page of the lesson, not just the lesson.
+  await page.getByRole("link", { name: /Study this.*The main idea of Fractions/ }).click();
+  await page.waitForURL(new RegExp(`/lessons/${lessonId}\\?tab=lesson&page=core`));
+  await expect(page.getByText("Page 2 of 3 · Core")).toBeVisible({ timeout: 60_000 });
+
+  await page.goBack();
+  await page.getByRole("link", { name: /Study this.*What Fractions is/ }).click();
+  await page.waitForURL(new RegExp(`/lessons/${lessonId}\\?tab=lesson&page=introduction`));
+  await expect(page.getByText("Page 1 of 3 · Introduction")).toBeVisible({ timeout: 60_000 });
 });

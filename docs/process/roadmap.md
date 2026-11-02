@@ -163,7 +163,12 @@ Specified in [modular-lessons.md](../to_be_developed/modular-lessons.md) and pla
   - [x] `topic.traits`, `quick_quiz` graph with calibration, `GradeAttemptGraphBuilder` as `grade_test` and `grade_quiz` over `AttemptStore`, retakes with an exclusion list
   - [x] Endpoints, leak tests, `quiz.create` and `quiz.retake` through the gate, create-a-lesson-from-a-result, console runs and usage by quiz
   - [x] `/quizzes`, `/quizzes/new`, `/quizzes/[id]`, calibration runner, results with recommendations, CodeMirror editor, header link
-- [ ] 9.7 Concept tags, recommendations, deep links
+- [x] 9.7 Concept tags, recommendations, deep links:
+  - [x] Decisions from the 9.6 report: page links replace the lesson-level ones; old lessons are backfilled once (`backfill_concept_index`, idempotent, `--dry-run`) with a lazy fallback for what it cannot place; the revision-sheet coverage rule is unchanged
+  - [x] `Section.concepts` filled by `page.generate` and checked by `PageValidator`; `Lesson.concept_index` (migration 0017) written by `persist_lesson` through `ConceptIndex`
+  - [x] Quiz summaries read the index (the plan for a lesson without one); every lesson-sourced question set (test, retake, quiz from lessons) is concept-bounded (`QuestionConcepts`, prompt lists, validator)
+  - [x] Deterministic recommendations with a page link per weak concept (`ConceptLinks`), for quiz results and, in the same change, for a lesson test's topics to revisit (`revisit_links`); a deleted lesson says so
+  - [x] `?tab=lesson&page=<key>` opens the book at that page; "Study this" links; e2e journey
 - [ ] 9.8 Drop the combined test call and `Lesson.final_test`; live and e2e suites; docs and spec moved out of `to_be_developed/`
 
 ## Across phases
