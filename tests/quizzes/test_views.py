@@ -16,6 +16,8 @@ Use cases:
   answer is a 409
 - attempts: a retake is a 202 with a run id (a repeat is the same attempt), the answers lock their questions, submit
   grades an objective attempt in the same request and queues grading for written answers, and a sealed attempt is a 409
+- the result of a quiz from lessons carries, for each weak concept, the page of the lesson that teaches it, and marks a
+  deleted lesson
 - the result carries the score card and the advice; no response carries an answer key, whatever the kind of question
 - another learner's quiz and attempt are a 404, and a signed-out request is a 401
 - delete removes the quiz and its data
@@ -430,6 +432,38 @@ class TestAttempts:
         assert body["status"] == "graded" and body["result"]["score"]["available"] == 5
         assert len(body["questions"]) == 3 and body["recommendations"]["kind"] == "topic"
         assert all(row["solution"] for row in body["result"]["questions"])  # the solutions are shown once it is over
+
+    def test_a_quiz_from_lessons_links_each_weak_concept_to_a_page(
+        self, signed_in_client, make_quiz, make_attempt, make_ready_lesson
+    ):
+        from quizzes.models import QuickQuizSource
+
+        quiz = make_quiz(source_type="lessons", topic="Mixed")
+        lesson = make_ready_lesson("Binary search")
+        QuickQuizSource.objects.create(
+            quiz=quiz, lesson=lesson, lesson_ref=lesson.pk, title="Binary search", level="foundation", share=2
+        )
+        row = {
+            "id": "t1", "type": "mcq", "concept": "The loop invariant", "marks": 2, "awarded": 0, "correct": False,
+            "graded_by": "auto", "feedback": "", "solution": {"correct_index": 1},
+        }  # fmt: skip
+        attempt = make_attempt(
+            quiz, status="graded",
+            questions=[make_question("mcq", 1, "easy", concept="The loop invariant") | {"source": str(lesson.pk)}],
+            result={"complete": True, "score": {"awarded": 0, "available": 2, "percent": 0}, "questions": [row],
+                    "topics_to_revisit": ["The loop invariant"]},
+        )  # fmt: skip
+
+        body = signed_in_client.get(attempt_url(quiz, attempt)).json()
+
+        (advice,) = body["recommendations"]["lessons"]
+        assert advice["lesson_id"] == str(lesson.pk) and advice["deleted"] is False
+        assert advice["links"] == [
+            {"concept": "The loop invariant", "page": "core", "heading": "The loop invariant", "marks_lost": 2}
+        ]
+        lesson.delete()
+        (gone,) = signed_in_client.get(attempt_url(quiz, attempt)).json()["recommendations"]["lessons"]
+        assert gone["lesson_id"] is None and gone["deleted"] is True and gone["links"][0]["page"] == ""
 
     def test_the_history_lists_attempts_and_a_trend_of_this_quiz_only(self, signed_in_client, make_quiz, make_attempt):
         quiz, other = make_quiz(), make_quiz(topic="Other")

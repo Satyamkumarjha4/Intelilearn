@@ -20,6 +20,9 @@ Use cases:
 - a crashed interactive is answered with a replacement that passes the real sandbox check
 - a text prompt the fake does not know is refused
 - a schema the fake does not know is refused, and the gateway reports every model failed
+- a page's sections are tagged with the outline concepts they teach, and a lesson's test and a quiz from lessons name
+  concepts from the lists in their prompts (a topic quiz, which lists none, names a made-up one), all passing the real
+  validators with those lists
 - the quick quiz's steps are served: the topic judge (calculation and programming words), the calibration pool (a bundle
   with no prerequisite half that passes the pool rules), and a quiz's batch of questions for its cells, which pass the
   real batch validator
@@ -52,7 +55,14 @@ from graph.prompts import (
     WriteQuestionsPrompt,
     WriteQuizQuestionsPrompt,
 )
-from graph.questions import LessonTestBlueprint, MarksPolicy, QuestionFinisher, QuizBlueprint
+from graph.questions import (
+    LessonTestBlueprint,
+    MarksPolicy,
+    QuestionConcepts,
+    QuestionFinisher,
+    QuizBlueprint,
+    SourcePart,
+)
 from graph.sandbox import SandboxRunner
 from graph.schemas import (
     MATERIAL_SCHEMAS,
@@ -215,6 +225,7 @@ def test_the_plan_the_page_and_the_test_pass_the_real_validators(server, monkeyp
     page_plan = plan["pages"][1]
     page = call(snapshot, "page.generate", PageContent, WritePagePrompt().messages(state | {"page_plan": page_plan}))
     assert PageValidator().validate(page, plan_page=page_plan) == [] and page["key"] == "core"
+    assert [s["concepts"] for s in page["sections"]] == [[item["concept"]] for item in page_plan["outline"]]
 
     cells = LessonTestBlueprint.for_topic(plan["quantitative"]).cells
     batch = {"id": "b1-1", "cells": [c.as_dict() for c in cells]}
@@ -230,7 +241,9 @@ def test_the_plan_the_page_and_the_test_pass_the_real_validators(server, monkeyp
     assert {q["type"] for q in questions} >= {"msq", "numerical"}  # the canned lesson has the new kinds
     assert all(q["marks"] == MarksPolicy.marks(q["type"], q["difficulty"]) for q in questions)
     assert sum(q["marks"] for q in questions) == 20
-    assert QuestionBatchValidator().validate(questions, cells=cells) == []
+    allowed = QuestionConcepts.allowed(state, cells)
+    assert QuestionBatchValidator().validate(questions, cells=cells, concepts=allowed) == []
+    assert {q["concept"] for q in questions} <= set(QuestionConcepts.outline(plan))
 
     # the same cells asked again after ten questions were asked give other questions
     again = call(
@@ -411,3 +424,26 @@ def test_a_quizs_questions_come_back_one_for_each_cell_and_pass_the_real_batch_v
         question["id"] = cell.question_id
     finished, finishing = QuestionFinisher().finish(written)
     assert finishing == [] and QuestionBatchValidator().validate(finished, cells=blueprint.cells) == []
+
+
+def test_a_quiz_from_lessons_names_the_concepts_listed_under_each_lesson(server, monkeypatch):
+    snapshot = bind_fake(server, "json_schema", monkeypatch)
+    parts = [SourcePart("a", Level.FOUNDATION, 3), SourcePart("b", Level.EXPERT, 2)]
+    blueprint = QuizBlueprint.for_lessons(parts, ("mcq",))
+    batch = {"id": "b1-1", "cells": [cell.as_dict() for cell in blueprint.cells]}
+    sources = {
+        "a": {"title": "Fractions", "level": "foundation", "summary": "S-A", "concepts": ["Numerators", "Ratios"]},
+        "b": {"title": "Decimals", "level": "expert", "summary": "S-B", "concepts": ["Place value"]},
+    }
+    quiz = {"level": "foundation", "code_format": False, "sources": sources}
+    messages = WriteQuizQuestionsPrompt().messages(STATE | {"batch": batch, "quiz": quiz, "exclusions": []})
+
+    result = Gateway().invoke("test.generate", messages, snapshot=snapshot, schema=QuestionBatch)
+
+    written = [q.model_dump(mode="json") for q in result.output.questions]
+    for cell, question in zip(blueprint.cells, written, strict=True):
+        question["id"] = cell.question_id
+    finished, _ = QuestionFinisher().finish(written)
+    allowed = QuestionConcepts.allowed({"quiz": quiz}, blueprint.cells)
+    assert QuestionBatchValidator().validate(finished, cells=blueprint.cells, concepts=allowed) == []
+    assert [q["concept"] for q in finished] == ["Numerators", "Ratios", "Numerators", "Place value", "Place value"]

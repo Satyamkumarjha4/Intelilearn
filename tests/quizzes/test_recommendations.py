@@ -9,7 +9,12 @@ Use cases:
 - a topic quiz gets the concepts that lost marks, biggest loss first, and no lessons
 - a quiz from lessons gets the lessons that lost marks, the most first, each with its concepts biggest loss first
 - a lesson that lost nothing is not mentioned; a perfect attempt has no advice
-- a lesson that was deleted since is still named but has no id to open
+- a lesson that was deleted since is still named but has no id to open, and is marked deleted
+- each lesson's weak concepts come with a link: the page of the lesson that teaches the concept and the heading of its
+  section, with the marks lost on it, the biggest loss first (the same order as the topics to revisit)
+- a concept that is not in the lesson's index, or could not be placed, links to the lesson with no page
+- a lesson made before the concept index still links to pages, worked out from its plan and pages
+- a concept asked about twice adds its losses up
 - ties are broken by the title, so the order is the same every time
 """
 
@@ -93,6 +98,59 @@ class TestForAQuizFromLessons:
         by_title = {x["title"]: x for x in QuizRecommendations().of(quiz, attempt)["lessons"]}
 
         assert by_title["First"]["lesson_id"] is None and by_title["Second"]["lesson_id"] == b
+        assert by_title["First"]["deleted"] is True and by_title["Second"]["deleted"] is False
+        assert by_title["First"]["links"] == [{"concept": "Loops", "page": "", "heading": "", "marks_lost": 2}]
+
+    def test_each_weak_concept_links_to_the_page_that_teaches_it_biggest_loss_first(self, mixed, make_attempt):
+        quiz, a, _ = mixed
+        attempt = graded(
+            quiz, make_attempt, [a, a, a],
+            ("Time complexity", 2, 1), ("The loop invariant", 3, 0), ("Sorted data", 1, 1),
+        )  # fmt: skip
+
+        (advice,) = QuizRecommendations().of(quiz, attempt)["lessons"]
+
+        assert advice["topics"] == ["The loop invariant", "Time complexity"]
+        assert advice["links"] == [
+            {"concept": "The loop invariant", "page": "core", "heading": "The loop invariant", "marks_lost": 3},
+            {"concept": "Time complexity", "page": "advanced", "heading": "Time complexity", "marks_lost": 1},
+        ]  # fmt: skip
+
+    def test_a_concept_the_index_does_not_know_links_to_the_lesson_without_a_page(self, mixed, make_attempt):
+        quiz, a, _ = mixed
+        attempt = graded(quiz, make_attempt, [a, a], ("Photosynthesis", 2, 0), ("Sorted data", 2, 1))
+        Lesson.objects.filter(pk=a).update(
+            concept_index=[{"concept": "Sorted data", "page": "", "heading": "", "summary": ""}]
+        )
+
+        (advice,) = QuizRecommendations().of(quiz, attempt)["lessons"]
+
+        assert [(x["concept"], x["page"]) for x in advice["links"]] == [("Photosynthesis", ""), ("Sorted data", "")]
+
+    def test_the_stored_index_is_used_when_the_lesson_has_one(self, mixed, make_attempt):
+        quiz, a, _ = mixed
+        attempt = graded(quiz, make_attempt, [a], ("Time complexity", 2, 0))
+        Lesson.objects.filter(pk=a).update(
+            concept_index=[{"concept": "Time complexity", "page": "core", "heading": "Cost", "summary": ""}]
+        )
+
+        (advice,) = QuizRecommendations().of(quiz, attempt)["lessons"]
+
+        assert advice["links"] == [{"concept": "Time complexity", "page": "core", "heading": "Cost", "marks_lost": 2}]
+
+    def test_a_concept_asked_about_twice_adds_its_losses_up(self, mixed, make_attempt):
+        quiz, a, _ = mixed
+        attempt = graded(
+            quiz, make_attempt, [a, a, a], ("Sorted data", 2, 1), ("Time complexity", 3, 0), ("Sorted data", 2, 0)
+        )
+
+        (advice,) = QuizRecommendations().of(quiz, attempt)["lessons"]
+
+        assert [(x["concept"], x["marks_lost"]) for x in advice["links"]] == [
+            ("Time complexity", 3),
+            ("Sorted data", 3),
+        ]
+        assert advice["marks_lost"] == 6
 
     def test_equal_losses_are_ordered_by_title(self, mixed, make_attempt):
         quiz, a, b = mixed

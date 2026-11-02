@@ -3,6 +3,7 @@
 from .base import QuestionType, Score
 from .blueprint import Cell, LessonTestBlueprint
 from .blueprints import Blueprints
+from .concepts import QuestionConcepts
 from .criteria import CriteriaRebalancer
 from .dedupe import DedupeResult, QuestionDeduper, StemHash
 from .expressions import ExpressionError, ExpressionEvaluator
@@ -21,6 +22,6 @@ __all__ = [
     "Batch", "BatchPlanner", "BlueprintSampler", "Blueprints", "Cell", "CodeType", "CriteriaRebalancer", "DedupeResult",
     "Draw", "ExpressionError", "ExpressionEvaluator", "LegacyQuestionAdapter", "LessonTestBlueprint", "LongAnswerType",
     "MarksPolicy", "McqType", "MsqType", "NumericalType", "OpenEndedType", "QuestionDeduper", "QuestionFinisher",
-    "QuestionType", "QuestionTypes", "QuizBlueprint", "QuizPresets", "Score", "ShortAnswerType", "SourcePart",
-    "StemHash", "TopicTraits", "UnknownQuestionType",
+    "QuestionConcepts", "QuestionType", "QuestionTypes", "QuizBlueprint", "QuizPresets", "Score", "ShortAnswerType",
+    "SourcePart", "StemHash", "TopicTraits", "UnknownQuestionType",
 ]  # fmt: skip

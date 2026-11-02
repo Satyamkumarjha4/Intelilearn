@@ -1,6 +1,7 @@
 """Builders for stored test questions, made the way the graph makes them: a schema-valid `TestQuestion` (what a model
 writes), then `QuestionFinisher` (marks from the table, the numerical answer computed)."""
 
+import json
 import re
 
 from graph.questions import MarksPolicy, QuestionFinisher
@@ -50,6 +51,7 @@ class ScriptedQuestions:
     `applies(cells)` (a list of (type, difficulty)) the answer is changed by `change(questions, questions_so_far)`."""
 
     LINE = re.compile(r"^\d+\. (\w+), (\w+), worth", re.M)
+    ALLOWED = re.compile(r'^Allowed concepts \(copy one exactly into "concept"\): (\[.*\])$', re.M)
 
     def __init__(self):
         self.written = 0
@@ -58,10 +60,13 @@ class ScriptedQuestions:
 
     def __call__(self, messages):
         cells = self.LINE.findall(messages[0].content)
+        allowed = [json.loads(found) for found in self.ALLOWED.findall(messages[0].content + messages[1].content)]
         questions = []
         for kind, difficulty in cells:
             self.written += 1
-            questions.append(written(kind, self.written, difficulty))
+            # A question about a lesson names one of the lesson's concepts, as the prompt asks; else a made-up one.
+            concept = {"concept": allowed[0][self.written % len(allowed[0])]} if allowed else {}
+            questions.append(written(kind, self.written, difficulty, **concept))
         spoiler = next((s for s in self.spoilers if s[0](cells)), None)
         if spoiler and "REJECTED" not in messages[1].content:
             self.spoilers.remove(spoiler)

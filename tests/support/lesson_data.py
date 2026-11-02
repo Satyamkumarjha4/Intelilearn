@@ -79,6 +79,7 @@ def make_page(key: str, plan: dict | None = None) -> dict:
                 f"{item['concept']} is the idea this section teaches. " * 6
                 + "Work through it step by step with a small example and then try a second one yourself."
             ),
+            "concepts": [item["concept"]],
             "key_points": [f"Remember {item['concept']}."],
             "formulas": [{"latex": "\\log_2 n", "explanation": "Steps needed for n items."}] if index == 1 else [],
         }

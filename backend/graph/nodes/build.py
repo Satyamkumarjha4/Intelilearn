@@ -14,6 +14,7 @@ from lessons.models import Lesson, MediaAsset, Stage
 
 from ..builder_base import GraphBuilder
 from ..codegen import DocumentAssembler
+from ..concept_index import ConceptIndex
 from ..context import FlowContext, NodeBudget
 from ..prompts import CompilePagePrompt, RepairCodePrompt
 from ..rendering import PageParts, RenderPolicy
@@ -302,6 +303,7 @@ class PersistLessonNode(Node):
         lesson.advance_to(
             Stage.READY,
             pages=state["pages"],
+            concept_index=ConceptIndex.build(state.get("plan"), state["pages"]).to_json(),
             final_test=state["final_test"],
             code=state["document_code"],
             code_parts=parts,

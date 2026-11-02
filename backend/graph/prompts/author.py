@@ -1,6 +1,8 @@
 """Stage B prompts: the plan, pages, test, interactives and the alignment judge."""
 
-from ..questions import QuestionTypes
+import json
+
+from ..questions import QuestionConcepts, QuestionTypes
 from ..shapes import LessonShapes
 from .base import Prompt
 from .scope import SCOPE_REFERENCE
@@ -64,6 +66,8 @@ class WritePagePrompt(Prompt):
 ids "s1", "s2"…
 - Each section: a clear, well-structured Markdown body (at least two paragraphs), key points, and worked examples, \
 formulas (LaTeX without $ in "formula.latex"; inline maths in Markdown as $…$) or code snippets where they help.
+- Each section's "concepts" lists the outline concepts of this page that it teaches, copied exactly from the outline \
+(normally just the one the section is for). Use no other names.
 - Pitch it at the learner's level and follow the author notes. Use concrete examples and analogies that fit \
 their field and goal.
 - Don't teach concepts that belong to other pages (see the full plan); you may refer to them briefly.
@@ -105,12 +109,19 @@ never by you, but short and long answers need criteria that add up to it.
 
 - How to write each type:
 {QuestionTypes.guidance(kinds)}
-- Test the concepts taught across the three pages (see the plan); every question names its concept, taken from the \
-plan's outline.
+- Test the concepts taught across the three pages (see the plan). Every question names its concept in "concept", \
+copied exactly from this list, because the app uses it to point a learner to the page that teaches it:
+{self.concepts_line(subject)}
 - A question must stand on its own and have one clear right answer (or set of right answers).
 - Never repeat a question that was already asked, or ask it again in other words.
 - Ids "t1", "t2"… in order.
 {self.language_rule(subject.get("profile"))}"""
+
+    ALLOWED = 'Allowed concepts (copy one exactly into "concept")'
+
+    @classmethod
+    def concepts_line(cls, subject: dict) -> str:
+        return f"{cls.ALLOWED}: {json.dumps(QuestionConcepts.outline(subject['plan']), ensure_ascii=False)}"
 
     def user(self, subject: dict) -> str:
         return f"""Topic: "{subject["topic"]}"

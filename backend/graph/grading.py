@@ -226,7 +226,7 @@ class ScoreCard:
                 "percent": round(100 * awarded / available) if available else 0,
             },  # fmt: skip
             "questions": rows,
-            "topics_to_revisit": self._topics(rows),
+            "topics_to_revisit": self.topics_to_revisit(rows),
         }
 
     def open_items(self, questions: list[dict], answers: dict) -> list[dict]:
@@ -266,7 +266,9 @@ class ScoreCard:
         return answer is None or (isinstance(answer, str) and not answer.strip()) or answer == []
 
     @staticmethod
-    def _topics(rows: list[dict]) -> list[str]:
+    def topics_to_revisit(rows: list[dict]) -> list[str]:
+        """The concepts of the rows that lost marks, the biggest single loss first, each once. Quizzes use it for a
+        lesson's share of a card, so a lesson's advice is in the same order as the card's."""
         lost = [
             (row["marks"] - row["awarded"], n, row["concept"])
             for n, row in enumerate(rows)

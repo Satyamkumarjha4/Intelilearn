@@ -79,6 +79,9 @@ class Lesson(models.Model):
     # The fixed LessonTestBlueprint (cells and total marks), written when the plan is saved. Null for a lesson made
     # before it, until its first retake.
     test_blueprint = models.JSONField(null=True, blank=True)
+    # [{concept, page, heading, summary}]: which page and section teaches each concept of the plan, written when the
+    # lesson is persisted (`ConceptIndex`). Empty for a lesson made before it, until `ConceptIndexBackfill` runs.
+    concept_index = models.JSONField(default=list, blank=True)
     interactive_plan = models.JSONField(null=True, blank=True)
     # Stage C
     code = models.TextField(blank=True)  # the assembled TSX document

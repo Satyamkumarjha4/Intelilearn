@@ -13,6 +13,8 @@ Use cases:
 - a topic quiz is told the topic and the learner's level
 - a quiz from lessons names the lesson each cell is about, gives the summary and level of the lessons of this batch
   only, and tells the model to ask about nothing else
+- a quiz from lessons lists, under each lesson of the batch, the concepts a question about it may name, to be copied
+  exactly; a lesson with no concepts in its summary, and a topic quiz, list none and are not asked for any
 - the questions already asked are given as ones not to repeat, shortened and capped
 - a programming topic asked for short or long answers is told that the answer may be code, with the language to name
 - the rejected-attempt feedback and the language rule are there, as in every prompt
@@ -31,8 +33,13 @@ QUIZ = {
     "level": "foundation",
     "code_format": False,
     "sources": {
-        "a": {"title": "Binary search", "level": "beginner", "summary": "SUMMARY-A: halving the range."},
-        "b": {"title": "Sorting", "level": "expert", "summary": "SUMMARY-B: merge sort."},
+        "a": {
+            "title": "Binary search",
+            "level": "beginner",
+            "summary": "SUMMARY-A: halving the range.",
+            "concepts": ["Halving the range", "Time complexity"],
+        },
+        "b": {"title": "Sorting", "level": "expert", "summary": "SUMMARY-B: merge sort.", "concepts": ["Merge sort"]},
         "c": {"title": "Graphs", "level": "proficient", "summary": "SUMMARY-C: BFS and DFS."},
     },
 }
@@ -93,6 +100,20 @@ class TestTheQuizPrompt:
         system, _ = texts()
 
         assert "only" in system and "lesson" in system
+
+    def test_the_concepts_a_question_may_name_are_listed_under_each_lesson_of_the_batch(self):
+        _, user = texts()
+
+        assert 'Allowed concepts (copy one exactly into "concept"): ["Halving the range", "Time complexity"]' in user
+        assert 'Allowed concepts (copy one exactly into "concept"): ["Merge sort"]' in user
+        assert user.index("SUMMARY-A") < user.index("Halving the range") < user.index("SUMMARY-B")
+        assert "Merge sort" not in texts(batch={"id": "b", "cells": CELLS[:2]})[1]
+
+    def test_a_lesson_without_concepts_and_a_topic_quiz_list_none(self):
+        sources = {"a": {**QUIZ["sources"]["a"], "concepts": []}}
+
+        assert "Allowed concepts" not in texts(quiz=QUIZ | {"sources": sources})[1]
+        assert "Allowed concepts" not in texts(quiz=QUIZ | {"sources": {}})[1]
 
     def test_questions_already_asked_are_given_shortened_and_capped(self):
         asked = [f"Question number {n} " + "x" * 400 for n in range(100)]

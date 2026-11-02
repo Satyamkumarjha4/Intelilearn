@@ -10,6 +10,8 @@ from collections import Counter
 from collections.abc import Iterable
 from typing import Any, Protocol
 
+from ..normal import Normal
+
 
 class LatexChecker(Protocol):
     def latex(self, expressions: list[str]) -> list[str]:
@@ -29,7 +31,7 @@ class TextRules:
 
     @staticmethod
     def norm(text: str) -> str:
-        return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", text.lower())).strip()
+        return Normal.text(text)
 
     @staticmethod
     def duplicates(values: Iterable[str]) -> list[str]:

@@ -11,6 +11,8 @@ Use cases:
   has new batch ids and forgets what was known about the batches it plans
 - generate_questions: asks test.generate for the batch's cells, gives each question its cell's id, sets the marks and
   the numerical answer in code, and keeps the questions even when they have problems, with the problems as feedback
+- generate_questions is told the concepts of the lesson's plan and holds each question to them: a near-miss in case or
+  spacing is written with the plan's spelling, and any other concept is a problem that goes back as feedback
 - the sends carry the batch and the feedback it earned; a subset can be sent again
 - the join decides nothing while a batch has not reported (pending)
 - the join retries a batch that has problems and attempts left, naming the reason
@@ -110,7 +112,11 @@ class TestGenerateQuestions:
         return make_state() | base | extra
 
     def model_output(self, cells):
-        return QuestionBatch(questions=[written(c["type"], 90 + n, c["difficulty"]) for n, c in enumerate(cells)])
+        return QuestionBatch(
+            questions=[
+                written(c["type"], 90 + n, c["difficulty"], concept="Halving the range") for n, c in enumerate(cells)
+            ]
+        )
 
     def test_it_asks_for_the_cells_of_the_batch_and_gives_each_question_its_cells_id(self, gateway, runtime):
         branch = self.branch()
@@ -155,6 +161,38 @@ class TestGenerateQuestions:
         GenerateQuestionsNode()(branch, runtime)
 
         assert "Question t1 must be easy; it is expert." in gateway.called("test.generate")[0].messages[1].content
+
+    def test_the_concepts_of_the_plan_are_in_the_prompt(self, gateway, runtime):
+        branch = self.branch()
+        gateway.script("test.generate", self.model_output(branch["item"]["cells"]))
+
+        GenerateQuestionsNode()(branch, runtime)
+
+        system = gateway.called("test.generate")[0].messages[0].content
+        assert 'Allowed concepts (copy one exactly into "concept"): ["Searching a list"' in system
+
+    def test_a_concept_in_other_case_is_written_the_way_the_plan_spells_it(self, gateway, runtime):
+        branch = self.branch()
+        output = self.model_output(branch["item"]["cells"])
+        output.questions[0].concept = "  HALVING the   range"
+        gateway.script("test.generate", output)
+
+        update = GenerateQuestionsNode()(branch, runtime)
+
+        assert update["question_batches"]["b1-1"]["questions"][0]["concept"] == "Halving the range"
+        assert update["feedback"] == {"batch:b1-1": []}
+
+    def test_a_concept_that_is_not_in_the_plan_is_a_problem_to_write_again(self, gateway, runtime):
+        branch = self.branch()
+        output = self.model_output(branch["item"]["cells"])
+        output.questions[2].concept = "Photosynthesis"
+        gateway.script("test.generate", output)
+
+        update = GenerateQuestionsNode()(branch, runtime)
+
+        problems = update["feedback"]["batch:b1-1"]
+        assert len(problems) == 1 and 'Question t3: the concept "Photosynthesis" must be one of: ' in problems[0]
+        assert len(update["question_batches"]["b1-1"]["questions"]) == 5  # kept, the join decides
 
     def test_the_questions_already_asked_are_in_the_prompt(self, gateway, runtime):
         branch = self.branch(exclusions=["What is a stale question?"])

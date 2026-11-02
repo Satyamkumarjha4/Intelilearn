@@ -1,5 +1,7 @@
 """The prompt of a quick quiz's question writer: the same task as a lesson test's, without a lesson plan to lean on."""
 
+import json
+
 from ..questions import QuestionTypes
 from .author import WriteQuestionsPrompt
 
@@ -29,7 +31,9 @@ you, but short and long answers need criteria that add up to it.
 - How to write each type:
 {QuestionTypes.guidance(kinds)}
 - {scope}
-- Every question names its concept in "concept": a short phrase for what it tests.
+- Every question names its concept in "concept". For a lesson, copy it exactly from that lesson's allowed concepts, \
+because the app uses it to point the learner to the page that teaches it; for a topic, a short phrase for what it \
+tests.
 - A question must stand on its own and have one clear right answer (or set of right answers).
 - Never repeat a question that was already asked, or ask it again in other words.
 - Ids "t1", "t2"… in order (the system renames them).
@@ -40,7 +44,8 @@ you, but short and long answers need criteria that add up to it.
         about = (
             "The lessons these questions are about:\n"
             + "\n\n".join(
-                f"### {s['title']} (write its questions at {s['level']} level)\n{s['summary']}" for s in sources
+                f"### {s['title']} (write its questions at {s['level']} level)\n{s['summary']}{self._concepts(s)}"
+                for s in sources
             )
             if sources
             else f"The learner's level: {subject['quiz']['level']}"
@@ -50,6 +55,12 @@ you, but short and long answers need criteria that add up to it.
 {about}
 
 Questions already asked (do not repeat them): {self.to_json(self.asked(subject.get("exclusions")))}"""
+
+    @classmethod
+    def _concepts(cls, source: dict) -> str:
+        """The names a question about this lesson may use as its concept, so it can be linked to the lesson's page."""
+        names = source.get("concepts") or []
+        return f"\n{cls.ALLOWED}: {json.dumps(names, ensure_ascii=False)}" if names else ""
 
     @staticmethod
     def _line(number: int, cell: dict, quiz: dict) -> str:

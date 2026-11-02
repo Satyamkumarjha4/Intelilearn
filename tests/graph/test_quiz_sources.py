@@ -17,13 +17,17 @@ Use cases:
   introduction's before the core's), and what is left stays in teaching order
 - lesson text (the pages) never enters a summary
 - a plan with nothing in it still gives a summary
+- a lesson that has a concept index is summarised from it (its concepts, headings and summaries, in its order); one
+  without an index, or with an empty one, from the plan's outline
+- the index follows the same budget and priority rules, and a concept with no page is the first to go
 """
 
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from support.lesson_data import make_page, make_plan
+from support.lesson_data import make_page, make_pages, make_plan
 
+from graph.concept_index import ConceptIndex
 from graph.quiz_sources import ConceptSummaries, ConceptSummary, SourceSplit, SourceSplitError, TokenEstimate
 
 START = datetime(2026, 1, 1, tzinfo=UTC)
@@ -186,3 +190,66 @@ class TestTokenEstimate:
     @pytest.mark.parametrize(("text", "tokens"), [("", 0), ("a", 1), ("abcd", 1), ("abcde", 2), ("x" * 4000, 1000)])
     def test_characters_divided_by_four_rounded_up(self, text, tokens):
         assert TokenEstimate.of(text) == tokens
+
+
+class TestFromTheConceptIndex:
+    def index(self, plan=None):
+        plan = plan or make_plan()
+        return ConceptIndex.build(plan, make_pages(plan))
+
+    def test_the_concepts_come_from_the_index_in_its_order_with_its_headings_and_summaries(self):
+        plan = make_plan()
+        index = self.index(plan)
+
+        summary = ConceptSummaries().of(plan, budget=1500, index=index)
+
+        assert [c["concept"] for c in summary.concepts] == index.names()
+        first = summary.concepts[0]
+        assert first == {
+            "concept": "Searching a list", "heading": "Searching a list", "notes": "Explain Searching a list.",
+            "page": "introduction",
+        }  # fmt: skip
+
+    def test_the_index_wins_over_the_plan(self):
+        plan = make_plan()
+        index = ConceptIndex.from_json(
+            [{"concept": "Only in the index", "page": "core", "heading": "H", "summary": "What it covers."}]
+        )
+
+        summary = ConceptSummaries().of(plan, budget=1500, index=index)
+
+        assert [c["concept"] for c in summary.concepts] == ["Only in the index"]
+
+    @pytest.mark.parametrize("index", [None, ConceptIndex()])
+    def test_without_an_index_the_plan_is_used(self, index):
+        plan = make_plan()
+
+        summary = ConceptSummaries().of(plan, budget=1500, index=index)
+
+        assert [c["concept"] for c in summary.concepts] == self.index(plan).names()
+
+    def test_the_budget_and_the_priority_rules_hold_for_an_index_too(self):
+        plan = make_plan()
+        for page in plan["pages"]:
+            page["outline"] = [{"concept": f"{page['key']} {n}", "heading": "h", "notes": "x" * 200} for n in range(3)]
+        index = self.index(plan)
+        full = ConceptSummaries().of(plan, budget=5000, index=index)
+
+        trimmed = ConceptSummaries().of(plan, budget=TokenEstimate.of(full.text()) - 60, index=index)
+
+        assert all(name.startswith("advanced") for name in trimmed.dropped[:2])
+        assert TokenEstimate.of(trimmed.text()) <= TokenEstimate.of(full.text()) - 60
+
+    def test_a_concept_with_no_page_is_the_first_to_go(self):
+        plan = make_plan()
+        for page in plan["pages"]:
+            page["outline"] = [{"concept": f"{page['key']} {n}", "heading": "h", "notes": "x" * 200} for n in range(3)]
+        rows = [
+            {**row, "page": "" if row["concept"] == "core 0" else row["page"]} for row in self.index(plan).to_json()
+        ]
+        index = ConceptIndex.from_json(rows)
+        full = ConceptSummaries().of(plan, budget=5000, index=index)
+
+        trimmed = ConceptSummaries().of(plan, budget=TokenEstimate.of(full.text()) - 20, index=index)
+
+        assert trimmed.dropped[0] == "core 0"

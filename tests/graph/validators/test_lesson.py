@@ -14,10 +14,13 @@ Use cases:
 - plan: the introduction lists every prerequisite to cover (names compared ignoring case and punctuation)
 - plan: carries only the quantitative flag; the test is the fixed blueprint, so there is no test spec to check
 - page: the key matches the plan, 2 to 8 sections, unique ids and headings, a real body, every outline concept taught
+- page: every concept a section is tagged with is a concept of this page's outline (names compared ignoring case); a
+  section with no tags is fine, because lessons from before the tags have none
 - page: a Python snippet must parse, and LaTeX the checker cannot parse is reported
 - question batch: one question for each cell, in order, of the cell's type and difficulty; questions are unique and mcq
   and msq options sane; short and long criteria add up to the marks; a numerical expression computes and its answer was
   stored; LaTeX is checked
+- question batch: when the cells belong to a lesson, each question must name one of the concepts allowed for its cell
 - interactive plan: unique valid ids, anchors that exist, a media_query for images and GIFs, a purpose that names the
   concept, at least one per page and no more than the maximum
 """
@@ -141,6 +144,24 @@ class TestPage:
 
         assert any('Section "Halving the range" is too thin' in p for p in self.problems(page))
 
+    def test_a_section_may_be_tagged_with_the_concepts_it_teaches(self):
+        page = mutated(make_page("core"), lambda p: p["sections"][0].update(concepts=["halving the RANGE"]))
+
+        assert self.problems(page) == []
+
+    def test_a_section_with_no_tags_is_fine(self):
+        page = mutated(make_page("core"), lambda p: [s.pop("concepts", None) for s in p["sections"]])
+
+        assert self.problems(page) == []
+
+    def test_a_tag_that_is_not_in_the_outline_is_reported(self):
+        page = mutated(make_page("core"), lambda p: p["sections"][1].update(concepts=["Made up", "Sorted data"]))
+
+        found = self.problems(page)
+
+        assert any('"The loop invariant"' in p and "Made up" in p and "Sorted data" in p for p in found)
+        assert any("one of the plan's concepts for this page" in p for p in found)
+
     def test_every_outline_concept_must_be_taught(self):
         def change(page):
             page["sections"][2].update(heading="Something else", body="Unrelated words about gardens. " * 10)
@@ -190,6 +211,19 @@ class TestQuestionBatch:
 
     def test_a_well_formed_batch_has_no_problems(self):
         assert self.problems(make_blueprint_test()["questions"]) == []
+
+    def test_each_question_must_name_a_concept_allowed_for_its_cell(self):
+        questions = make_blueprint_test()["questions"][:3]  # t1..t3 are about "Concept 1".."Concept 3"
+        allowed = [["Concept 1"], None, ["Something else"]]
+
+        found = QuestionBatchValidator().validate(questions, cells=self.CELLS[:3], concepts=allowed)
+
+        assert found == ['Question t3: the concept "Concept 3" must be one of: Something else.']
+
+    def test_without_a_list_any_concept_is_fine(self):
+        questions = make_blueprint_test()["questions"][:3]
+
+        assert QuestionBatchValidator().validate(questions, cells=self.CELLS[:3], concepts=None) == []
 
     def test_one_question_is_needed_for_each_cell(self):
         questions = make_blueprint_test()["questions"][:9]

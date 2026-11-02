@@ -715,7 +715,13 @@ class TestFixItem:
         stored = QuestionBank().add(lesson.id, None, make_blueprint_test()["questions"])
         state = authored(lesson_state, final_test={"title": "T", "questions": stored})
         Lesson.objects.filter(pk=lesson.pk).update(final_test=state["final_test"])
-        replacement = written(cells[2].type, 77, cells[2].difficulty, question="A completely new question about steps?")
+        replacement = written(
+            cells[2].type,
+            77,
+            cells[2].difficulty,
+            question="A completely new question about steps?",
+            concept="Halving the range",
+        )
         gateway.script("test.generate", QuestionBatch(questions=[replacement]))
 
         update = FixItemNode()(state | {"key": "k", "item": issue("final_test", "t3"), "feedback": []}, runtime)

@@ -158,12 +158,27 @@ class CalibrationAnswerSerializer(serializers.Serializer):
     answer = serializers.JSONField(allow_null=True, help_text="The option picked (0 to 3); null: I don't know.")
 
 
+class RecommendationLinkSerializer(serializers.Serializer):
+    concept = serializers.CharField()
+    page = serializers.CharField(
+        allow_blank=True,
+        help_text="introduction, core or advanced: the page of the lesson that teaches the concept. Empty when it "
+        "could not be placed: open the lesson as a whole.",
+    )
+    heading = serializers.CharField(allow_blank=True, help_text="The section on that page; empty with the page.")
+    marks_lost = serializers.IntegerField()
+
+
 class RecommendationLessonSerializer(serializers.Serializer):
-    lesson_id = serializers.UUIDField(allow_null=True)
+    lesson_id = serializers.UUIDField(allow_null=True, help_text="null when the lesson was deleted.")
     title = serializers.CharField()
     level = serializers.CharField()
     marks_lost = serializers.IntegerField()
     topics = serializers.ListField(child=serializers.CharField())
+    links = RecommendationLinkSerializer(
+        many=True, help_text="`topics` again, each with the page that teaches it and the marks lost on it."
+    )
+    deleted = serializers.BooleanField(help_text="The lesson was deleted since the quiz was made.")
 
 
 class RecommendationsSerializer(serializers.Serializer):

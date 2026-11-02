@@ -16,6 +16,8 @@ Use cases:
 - submit: a lesson attempt is graded in the same request (200, score, band, offer, the card), a sealed one is a 409
   `attempt_sealed`, the answers sent with it fill only unlocked questions
 - the attempt can be read afterwards with its answers and card; the history lists the attempts and the trend
+- a graded attempt links each topic to revisit to the page of this lesson that teaches it (none for a topic the lesson
+  does not know, and none while the attempt is open)
 - GET test never starts anything and shows the open attempt only
 - another user's lesson and attempt are a 404, and no response carries an answer key
 - the lesson summary says how many attempts, the best and latest score, and whether one is open
@@ -30,7 +32,7 @@ import json
 import pytest
 from rest_framework.throttling import SimpleRateThrottle
 from support.gates import RefusingGate, SharedCountingGate
-from support.lesson_data import make_blueprint_test, make_plan
+from support.lesson_data import make_blueprint_test, make_pages, make_plan
 
 from lessons.models import GraphRun, Lesson, Stage, TestSubmission
 
@@ -341,6 +343,27 @@ class TestRead:
         assert body["result"]["questions"][0]["solution"] == {"correct_index": QUESTIONS[0]["correct_index"]}
         assert [q["id"] for q in body["questions"]] == [q["id"] for q in QUESTIONS]  # for the read-only result
         assert not [word for word in LEAKS if word in json.dumps(body["questions"])]
+
+    def test_each_topic_to_revisit_links_to_the_page_of_this_lesson_that_teaches_it(self, signed_in_client, ready):
+        Lesson.objects.filter(pk=ready.pk).update(pages=make_pages(make_plan()))
+        attempt = graded(ready, 1, 10)
+        attempt.result["topics_to_revisit"] = ["Time complexity", "The loop invariant", "Photosynthesis"]
+        attempt.save()
+
+        body = signed_in_client.get(attempts_url(ready, f"/{attempt.id}")).json()
+
+        assert body["revisit_links"] == [
+            {"concept": "Time complexity", "page": "advanced", "heading": "Time complexity"},
+            {"concept": "The loop invariant", "page": "core", "heading": "The loop invariant"},
+            {"concept": "Photosynthesis", "page": "", "heading": ""},
+        ]
+
+    def test_an_attempt_with_nothing_to_revisit_has_no_links(self, signed_in_client, ready, queue):
+        graded_attempt = graded(ready, 1, 10)
+        open_attempt = first_attempt(signed_in_client, ready)["attempt_id"]
+
+        assert signed_in_client.get(attempts_url(ready, f"/{graded_attempt.id}")).json()["revisit_links"] == []
+        assert signed_in_client.get(attempts_url(ready, f"/{open_attempt}")).json()["revisit_links"] == []
 
     def test_an_attempt_that_is_still_open_does_not_serve_its_questions_here(self, signed_in_client, ready, queue):
         attempt = first_attempt(signed_in_client, ready)["attempt_id"]

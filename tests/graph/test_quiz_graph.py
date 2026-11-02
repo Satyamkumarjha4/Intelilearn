@@ -11,6 +11,9 @@ Use cases:
   attempt with the questions in order and makes the quiz ready
 - a quiz from two lessons using their scores writes each lesson's questions from that lesson's summary only, at that
   lesson's level, and tags each question with its lesson
+- a quiz from lessons writes each question about one of its own lesson's concepts, listed in the prompt under that
+  lesson, so a weak concept can be linked to the lesson's page; a lesson with a concept index is summarised from the
+  index, one without from its plan
 - the calibration walk writes a pool with no prerequisite half, keeps it on the quiz, pauses the graph for the learner;
   after the walk the level comes from the ladder and the quiz is built, with the stage going calibration → preparing
   → ready
@@ -33,6 +36,7 @@ from graph.builders import QuickQuizGraphBuilder
 from graph.difficulty_mix import DifficultyMix
 from graph.errors import RunFailed
 from graph.levels import Level
+from graph.questions import QuestionConcepts
 from graph.quiz_config import QuizConfig
 from graph.schemas import DiagnosticBundle, QuestionBatch
 from quizzes.models import QuickQuiz, QuickQuizAttempt, QuickQuizSource
@@ -171,6 +175,17 @@ class TestAQuizFromTwoLessons:
         assert "SUMMARY-0" in a and "SUMMARY-1" not in a
         assert "SUMMARY-1" in b and "SUMMARY-0" not in b
 
+    def test_each_question_names_a_concept_of_its_own_lesson(self, run, gateway):
+        attempt = QuickQuizAttempt.objects.get(pk=run.attempt.pk)
+
+        plan_concepts = set(QuestionConcepts.outline(make_plan()))
+        assert {q["concept"] for q in attempt.questions} <= plan_concepts
+
+    def test_the_prompt_lists_the_concepts_under_the_lesson(self, run, gateway):
+        users = [c.messages[1].content for c in gateway.called("test.generate")]
+
+        assert all('Allowed concepts (copy one exactly into "concept"): ["Searching a list"' in u for u in users)
+
     def test_each_lessons_questions_are_at_that_lessons_level(self, run):
         attempt = QuickQuizAttempt.objects.get(pk=run.attempt.pk)
 
@@ -180,6 +195,29 @@ class TestAQuizFromTwoLessons:
 
     def test_the_quiz_shows_the_middle_level(self, run):
         assert QuickQuiz.objects.get(pk=run.quiz.pk).level == "proficient"  # between beginner and expert, rounded up
+
+
+class TestALessonWithAConceptIndex:
+    def test_the_summary_comes_from_the_index_and_the_questions_name_its_concepts(self, build, questions, gateway):
+        run = build(mode="existing_score", levels=("proficient",), count=5)
+        lesson = run.quiz.sources.get().lesson
+        type(lesson).objects.filter(pk=lesson.pk).update(
+            concept_index=[
+                {
+                    "concept": "Only in the index",
+                    "page": "core",
+                    "heading": "A heading",
+                    "summary": "Told by the index.",
+                }
+            ]
+        )
+
+        run.start()
+
+        user = gateway.called("test.generate")[0].messages[1].content
+        assert "Told by the index." in user and "Searching a list" not in user
+        attempt = QuickQuizAttempt.objects.get(pk=run.attempt.pk)
+        assert {q["concept"] for q in attempt.questions} == {"Only in the index"}
 
 
 class TestTheCalibrationWalk:

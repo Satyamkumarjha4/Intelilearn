@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import ClassVar
 
+from .concept_index import ConceptIndex
 from .levels import Level
 
 
@@ -87,13 +88,15 @@ class ConceptSummaries:
     PRIORITY: ClassVar[dict[str, int]] = {"core": 0, "introduction": 1, "advanced": 2}
     SUMMARY_CHARS = 400
 
-    def of(self, plan: dict, budget: int) -> ConceptSummary:
+    def of(self, plan: dict, budget: int, index: ConceptIndex | None = None) -> ConceptSummary:
         """The summary within `budget` tokens. The header (title, level, what the lesson covers) is always there; the
-        concepts are added in order of priority while they fit, and the rest are listed as dropped."""
+        concepts are added in order of priority while they fit, and the rest are listed as dropped. A lesson's concept
+        index, when it has one, is the source of the concepts (a concept that could not be placed on a page has the
+        lowest priority); else the plan's outline."""
         header = ConceptSummary(
             plan.get("title", ""), str(plan.get("level", "")), str(plan.get("summary", ""))[: self.SUMMARY_CHARS]
         )
-        concepts = self._concepts(plan)
+        concepts = self._from_index(index) if index and index.entries else self._concepts(plan)
         ranked = sorted(range(len(concepts)), key=lambda n: (self.PRIORITY.get(concepts[n]["page"], 3), n))
         kept: list[int] = []
         for number in ranked:
@@ -108,6 +111,10 @@ class ConceptSummaries:
     @staticmethod
     def _with(header: ConceptSummary, concepts: list[dict]) -> ConceptSummary:
         return ConceptSummary(header.title, header.level, header.summary, concepts)
+
+    @staticmethod
+    def _from_index(index: ConceptIndex) -> list[dict]:
+        return [{"concept": e.concept, "heading": e.heading, "notes": e.summary, "page": e.page} for e in index.entries]
 
     @staticmethod
     def _concepts(plan: dict) -> list[dict]:

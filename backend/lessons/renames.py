@@ -100,6 +100,7 @@ class StoredRenames:
         ("Lesson", "test_blueprint"), ("Question", "payload"), ("TestSubmission", "questions"),
         ("TestSubmission", "followup"),
         ("Lesson", "recommended_from"),  # added by migration 0011: an attempt id and a topic
+        ("Lesson", "concept_index"),  # added by migration 0017: concepts, pages and headings
     )  # fmt: skip
 
     def __init__(self, levels: LevelRename | None = None, difficulties: DifficultyRename | None = None):

@@ -27,6 +27,9 @@ Use cases:
 - the prerequisites prompt asks for 3 to 6 prerequisites that come before the topic, and describes the lesson ahead
 - the question prompt lists one line for each cell in order with its type, difficulty and marks, gives the instructions
   for those types only, and the newest questions already asked (shortened, and no more than a fixed number)
+- the question prompt of a lesson lists the concepts of its plan, once each, for the model to copy exactly into
+  "concept"
+- the page prompt asks each section to be tagged with the outline concepts it teaches
 - the media verification prompt is a single multimodal message with the image
 - the code prompts carry the sandbox scope contract
 - the grading prompt carries each open-ended question with its reference and the learner's answer, tells the model to
@@ -193,6 +196,11 @@ class TestLessonShapeInThePrompts:
 
         assert f'the "introduction" page is "{intro}"' in system
 
+    def test_the_page_prompt_asks_for_each_section_to_be_tagged_with_its_outline_concepts(self, level, intro):
+        system = WritePagePrompt().messages(self.state(level) | {"page_plan": subject()["plan"]["pages"][0]})[0].content
+
+        assert '"concepts"' in system and "copied exactly" in system and "outline" in system
+
     def test_the_prerequisites_prompt_describes_the_lesson_ahead(self, level, intro):
         user = PlanPrerequisitesPrompt().messages(self.state(level))[1].content
 
@@ -232,6 +240,14 @@ class TestWriteQuestionsPrompt:
 
         assert "multiple select" in system.lower() or "correct_indices" in system
         assert "answer_expr" not in system and "criteria" not in system.split("How to write each type:")[1]
+
+    def test_the_concepts_of_the_plan_are_listed_to_be_copied_exactly(self):
+        system = self.system()
+
+        assert 'Allowed concepts (copy one exactly into "concept"): [' in system
+        line = next(line for line in system.splitlines() if line.startswith("Allowed concepts"))
+        assert '"Halving the range"' in line and '"Time complexity"' in line
+        assert line.count('"Halving the range"') == 1
 
     def test_the_questions_already_asked_are_given_to_avoid(self):
         user = WriteQuestionsPrompt().messages(subject())[1].content

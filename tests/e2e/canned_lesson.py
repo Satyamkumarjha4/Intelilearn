@@ -159,6 +159,7 @@ class LessonCanned:
                 {
                     "id": f"s{number}",
                     "heading": item["heading"],
+                    "concepts": [concept],
                     "body": body,
                     "key_points": [f"{concept}: know what it is.", f"{concept}: know when to use it."],
                     "worked_examples": [
@@ -177,6 +178,20 @@ class LessonCanned:
         }  # fmt: skip
 
     LINE = re.compile(r"^\d+\. (\w+), (\w+), worth", re.M)
+    #: a cell's line, with the lesson of a quiz question after it ("— about "Binary search"")
+    CELL = re.compile(r'^\d+\. (\w+), (\w+), worth [^\n]*?(?: — about "([^"\n]+)")?$', re.M)
+    ALLOWED = re.compile(r'^Allowed concepts \(copy one exactly into "concept"\): (\[.*\])$', re.M)
+
+    def _allowed_concepts(self, lesson: str | None) -> list[str]:
+        """The concepts a question may name, as the prompt lists them: a quiz lists them under each lesson, a lesson's
+        test once for the whole test. A topic quiz lists none."""
+        text = self.text
+        if lesson:
+            start = text.find(f"### {lesson} (write its")
+            end = text.find("###", start + 1)
+            text = text[start : end if end > 0 else len(text)] if start >= 0 else ""
+        found = self.ALLOWED.search(text)
+        return json.loads(found.group(1)) if found else []
 
     def build_QuestionBatch(self) -> dict:
         """One question for each line of the prompt. The wording depends on how many questions the lesson has asked
@@ -186,7 +201,9 @@ class LessonCanned:
         asked = len(self._json_after("Questions already asked (do not repeat them):"))
         batch = hashlib.md5(self.text.encode()).hexdigest()[:8]
         questions = []
-        for number, (kind, difficulty) in enumerate(self.LINE.findall(self.text), start=1):
+        for number, (kind, difficulty, lesson) in enumerate(self.CELL.findall(self.text), start=1):
+            allowed = self._allowed_concepts(lesson)
+            concept = allowed[(number - 1) % len(allowed)] if allowed else f"{self.topic}: part {number}"
             digest = hashlib.md5(f"{batch}-{asked}-{number}-{kind}-{difficulty}".encode()).hexdigest()
             # words, not just a code: the duplicate check compares the words two questions share
             code = " ".join(f"w{digest[i : i + 3]}" for i in range(0, 12, 3))
@@ -195,7 +212,7 @@ class LessonCanned:
                     kind,
                     number,
                     difficulty,
-                    f"{self.topic}: part {number}",
+                    concept,
                     f"Case {code}: a {difficulty} {kind} question number {number} in set {asked} about {self.topic}?",
                 )
             )

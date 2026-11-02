@@ -2,6 +2,7 @@
 
 import re
 
+from ..questions.concepts import QuestionConcepts
 from ..schemas.lesson import PAGE_KEYS
 from ..shapes import LessonShape
 from .base import LatexChecker, LatexRules, TextRules
@@ -61,6 +62,7 @@ class PageValidator:
         missing = [item["concept"] for item in plan_page["outline"] if not TextRules.mentions(text, item["concept"])]
         if missing:
             problems.append("Teach every concept in the plan's outline; missing: " + "; ".join(missing))
+        problems += self._tag_problems(sections, plan_page)
 
         expressions = []
         for section in sections:
@@ -73,6 +75,23 @@ class PageValidator:
                     problems += QuestionRules.python_problems(f'The code in "{section["heading"]}"', snippet["code"])
         return problems + self.latex.problems(expressions)
 
+    @staticmethod
+    def _tag_problems(sections: list[dict], plan_page: dict) -> list[str]:
+        """A section's `concepts` must be concepts of this page's outline: the tags are how a weak concept finds its
+        page, so a made-up one, or one that belongs to another page, would send the learner to the wrong place. A
+        section with no tags is fine (a lesson from before the tags has none)."""
+        known = {norm(item["concept"]) for item in plan_page["outline"]}
+        problems = []
+        for section in sections:
+            unknown = [tag for tag in section.get("concepts") or [] if norm(tag) not in known]
+            if unknown:
+                problems.append(
+                    f'Section "{section["heading"]}" is tagged with {", ".join(f"{t!r}" for t in unknown)}, which is '
+                    "not one of the plan's concepts for this page; tag it only with outline concepts of this page, "
+                    "copied exactly."
+                )
+        return problems
+
 
 class QuestionBatchValidator:
     """The questions a model wrote for a list of cells: one for each cell, in order, of that cell's type and
@@ -82,7 +101,8 @@ class QuestionBatchValidator:
     def __init__(self, latex: LatexChecker | None = None):
         self.latex = LatexRules(latex)
 
-    def validate(self, questions: list[dict], *, cells) -> list[str]:
+    def validate(self, questions: list[dict], *, cells, concepts=None) -> list[str]:
+        """`concepts`: for each cell the concepts its question may name (None: any), for questions about a lesson."""
         problems = []
         if len(questions) != len(cells):
             problems.append(
@@ -95,6 +115,7 @@ class QuestionBatchValidator:
                 )
             if question["difficulty"] != cell.difficulty:
                 problems.append(f"Question {question['id']} must be {cell.difficulty}; it is {question['difficulty']}.")
+        problems += QuestionConcepts.problems(questions, concepts or [])
         problems += QuestionRules.problems(questions)
         return problems + self.latex.problems([m for q in questions for m in TextRules.math_in(q["question"])])
 

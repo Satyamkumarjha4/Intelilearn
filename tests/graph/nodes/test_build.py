@@ -16,7 +16,8 @@ Use cases:
   state changes and a warning; a failure sets the error
 - repair_page: the model is told what happened in the browser; a repair that fails falls back to the template
 - repair_component: a repaired component replaces the old; one that fails is dropped with a warning
-- persist_lesson: the lesson becomes ready with its code and parts, code_version goes up, warnings are de-duplicated and
+- persist_lesson: the lesson gets its concept index, from the plan and the pages as they are at the end (after any
+  review fix), and becomes ready with its code and parts, code_version goes up, warnings are de-duplicated and
   only the media the document uses is kept
 - the routers fan out the three compiles, send only broken pages and interactives to repair, and go on, fall back
   or fail
@@ -273,6 +274,23 @@ class TestPersist:
         assert set(stored.code_parts["pages"]) == {"introduction", "core", "advanced"}
         assert stored.code_parts["interactives"] == {"Interactive_widget_core": WIDGET["tsx"]}
         assert stored.warnings == ["a", "b"] and len(stored.pages) == 3 and len(stored.final_test["questions"]) == 10
+
+    def test_the_concept_index_is_written_from_the_plan_and_the_final_pages(self, lesson, runtime, lesson_state):
+        Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.GENERATING_LESSON)
+        state = self.state(lesson_state)
+        state["pages"]["core"]["sections"][0]["heading"] = "Halving, as the fix wrote it"
+        state["pages"]["core"]["sections"][0]["concepts"] = ["Halving the range"]
+
+        PersistLessonNode()(state, runtime)
+
+        index = Lesson.objects.get(pk=lesson.pk).concept_index
+        assert [row["concept"] for row in index][:4] == [
+            "Searching a list", "Sorted data", "Why halving helps", "Halving the range",
+        ]  # fmt: skip
+        assert next(row for row in index if row["concept"] == "Halving the range") == {
+            "concept": "Halving the range", "page": "core", "heading": "Halving, as the fix wrote it",
+            "summary": "Explain Halving the range.",
+        }  # fmt: skip
 
     def test_only_the_media_the_document_uses_is_kept(self, lesson, runtime, lesson_state, settings, tmp_path):
         settings.MEDIA_ROOT = tmp_path

@@ -73,6 +73,11 @@ class Section(BaseModel):
     id: str = Field(description='Stable id such as "s1"; unique within the page.')
     heading: str
     body: str = Field(description="The main explanation, in Markdown. LaTeX between $…$ or $$…$$.")
+    concepts: list[str] = Field(
+        default_factory=list,
+        description="The outline concepts of this page that the section teaches, copied exactly from the plan. "
+        "Normally one. It lets the app send a learner who is weak on a concept to this section.",
+    )
     key_points: list[str] = Field(default_factory=list)
     worked_examples: list[WorkedExample] = Field(default_factory=list)
     formulas: list[Formula] = Field(default_factory=list)

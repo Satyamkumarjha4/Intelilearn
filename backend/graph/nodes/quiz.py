@@ -16,6 +16,7 @@ from quizzes.models import QuickQuiz, QuickQuizAttempt
 from quizzes.stages import QuizStage
 
 from ..assessment import AssessmentRequest, AssessmentSources
+from ..concept_index import ConceptIndex
 from ..context import FlowContext
 from ..errors import RunFailed
 from ..levels import Level, LevelScheme
@@ -89,7 +90,9 @@ class ResolveSourceNode(QuizNode):
         for row in self.quiz(state).sources.select_related("lesson"):
             if row.lesson is None:
                 raise RunFailed("A lesson this quiz was made from has been deleted, so the quiz cannot be taken again.")
-            summary = ConceptSummaries().of(row.lesson.plan or {}, budget)
+            summary = ConceptSummaries().of(
+                row.lesson.plan or {}, budget, ConceptIndex.from_json(row.lesson.concept_index)
+            )
             sources.append({
                 "key": str(row.lesson_ref), "title": row.title, "level": row.level, "share": row.share,
                 "summary": summary.as_dict(),
@@ -228,6 +231,7 @@ class PlanQuizNode(QuizNode):
                 "title": source["title"],
                 "level": part.level.value,
                 "summary": ConceptSummary.from_dict(source["summary"]).text(),
+                "concepts": [c["concept"] for c in source["summary"]["concepts"]],
             }  # fmt: skip
             for part, source in zip(parts, sources, strict=True)
         }

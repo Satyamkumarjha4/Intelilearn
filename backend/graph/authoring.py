@@ -7,7 +7,7 @@ fixed item is held to exactly the rules of a fresh one.
 
 from .context import FlowContext
 from .prompts import GenerateInteractivePrompt, WritePagePrompt, WriteQuestionsPrompt, WriteQuizQuestionsPrompt
-from .questions import Batch, Cell, LessonTestBlueprint, QuestionFinisher
+from .questions import Batch, Cell, LessonTestBlueprint, QuestionConcepts, QuestionFinisher
 from .sanitizer import CodeSanitizer
 from .schemas import InteractiveComponent, PageContent, QuestionBatch, component_name
 from .validators import PageValidator, QuestionBatchValidator
@@ -38,7 +38,9 @@ class ContentWriter:
         for cell, question in zip(cells, written, strict=False):
             question["id"] = cell.question_id
         finished, finishing = QuestionFinisher().finish(written)
-        problems = QuestionBatchValidator(self.ctx.sandbox).validate(finished, cells=cells)
+        allowed = QuestionConcepts.allowed(data, cells)
+        QuestionConcepts.canonicalise(finished, allowed)
+        problems = QuestionBatchValidator(self.ctx.sandbox).validate(finished, cells=cells, concepts=allowed)
         return finished, list(dict.fromkeys(finishing + problems))
 
     def question(self, data: dict, question_id: str, feedback: list[str] | None) -> tuple[dict, list[str]]:

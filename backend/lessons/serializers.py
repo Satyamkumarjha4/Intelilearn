@@ -10,6 +10,7 @@ from graph.levels import LevelScheme, StarRating
 from graph.scoring import AttemptTrend
 
 from .attempts import AttemptQuestions
+from .concept_links import ConceptLinks
 from .models import GraphRun, Lesson, LessonVersion, Quiz, QuizAttempt, TestSubmission
 from .sheet_requests import SheetRequest
 from .stages import (
@@ -660,10 +661,23 @@ class TestSubmissionCreatedSerializer(serializers.Serializer):
     result = ScoreCardSerializer(allow_null=True, required=False)
 
 
+class ConceptLinkSerializer(serializers.Serializer):
+    concept = serializers.CharField()
+    page = serializers.CharField(
+        allow_blank=True,
+        help_text="introduction, core or advanced: the page of the lesson that teaches the concept. Empty when it "
+        "could not be placed: open the lesson as a whole.",
+    )
+    heading = serializers.CharField(allow_blank=True, help_text="The section on that page; empty with the page.")
+
+
 class TestSubmissionSerializer(serializers.ModelSerializer):
     __test__ = False
 
     result = ScoreCardSerializer(allow_null=True, read_only=True)
+    revisit_links = serializers.SerializerMethodField(
+        help_text="Each of the result's topics to revisit with the page of this lesson that teaches it."
+    )
     answers = serializers.DictField(read_only=True, help_text="The learner's own answers, {question_id: answer}.")
     questions = serializers.SerializerMethodField(
         help_text="What the attempt asked, without answer keys, for the read-only result. Empty while it is open: "
@@ -673,14 +687,19 @@ class TestSubmissionSerializer(serializers.ModelSerializer):
     class Meta:
         model = TestSubmission
         fields = [
-            "id", "attempt_no", "status", "error", "questions", "answers", "result", "awarded", "available", "band",
-            "duration_s", "followup", "started_at", "submitted_at", "graded_at",
+            "id", "attempt_no", "status", "error", "questions", "answers", "result", "revisit_links", "awarded",
+            "available", "band", "duration_s", "followup", "started_at", "submitted_at", "graded_at",
         ]  # fmt: skip
         read_only_fields = fields
 
     @extend_schema_field(TestQuestionSerializer(many=True))
     def get_questions(self, attempt: TestSubmission) -> list[dict]:
         return AttemptQuestions.of_sealed(attempt)
+
+    @extend_schema_field(ConceptLinkSerializer(many=True))
+    def get_revisit_links(self, attempt: TestSubmission) -> list[dict]:
+        topics = (attempt.result or {}).get("topics_to_revisit") or [] if attempt.status == "graded" else []
+        return ConceptLinks.of(attempt.lesson, topics) if topics else []
 
 
 class AttemptSummarySerializer(serializers.Serializer):
