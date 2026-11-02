@@ -197,7 +197,7 @@ def test_show_prints_the_report_and_json_prints_the_stored_fields(inline, valid_
 
 def test_retry_resumes_a_failed_lesson_from_its_checkpoint(inline, valid_bundle, user):
     bad = {**valid_bundle, "diagnostic": valid_bundle["diagnostic"][:9]}
-    inline.script("diagnostic.generate", bad, bad, valid_bundle)
+    inline.script("diagnostic.generate", bad, bad, bad, valid_bundle)  # three attempts fail, the retry's first works
     flow("start", "Binary search", "--inline")
     lesson = Lesson.objects.get()
     assert lesson.stage == Stage.FAILED
@@ -205,7 +205,7 @@ def test_retry_resumes_a_failed_lesson_from_its_checkpoint(inline, valid_bundle,
     output = flow("retry", str(lesson.id), "--inline")
 
     assert "stage: awaiting_diagnostic" in output
-    assert len(inline.called("diagnostic.generate")) == 3
+    assert len(inline.called("diagnostic.generate")) == 4
 
 
 def test_retry_refuses_a_lesson_that_did_not_fail(inline, user, make_lesson):

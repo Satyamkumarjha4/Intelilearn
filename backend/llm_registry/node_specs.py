@@ -59,7 +59,7 @@ _S = Capability.STRUCTURED_OUTPUT
 _SPECS = [
     NodeSpec("diagnostic.generate", Stage.DIAGNOSE, OutputMode.STRUCTURED,
              "10-question diagnostic across five difficulty bands plus a 5-question prerequisite quiz.",
-             "DiagnosticBundle", frozenset({_S}), min_output_tokens=8192),
+             "DiagnosticBundle", frozenset({_S}), min_output_tokens=8192, default_max_attempts=3),
     NodeSpec("diagnostic.review", Stage.DIAGNOSE, OutputMode.STRUCTURED,
              "Judge: are diagnostic questions independent and correctly banded?",
              "QuizReview", frozenset({_S}), min_output_tokens=2048, default_reasoning=Effort.LOW, optional=True),

@@ -10,6 +10,9 @@ Use cases:
 - learner-facing prompts state the learner's preferred language (English by default)
 - the topic and what the learner said about it reach the model
 - the diagnostic prompt states the counts from the settings and the band meanings
+- the diagnostic prompt says, for the quiz and for the prerequisite questions alike, that the four options of a question
+  must all differ in meaning, and that no question may name the answer to another (the two mistakes a real model kept
+  making, which the validator rejects), and a pool without a prerequisite half is not told about prerequisite options
 - the review prompt includes the answers (it must judge them); the assessment prompt shows only right/wrong
 - the assessment prompt asks the model to copy the deterministic prerequisites, and includes the prerequisite quiz
   only when there was one
@@ -292,6 +295,21 @@ def test_diagnostic_prompt_states_the_counts_from_the_settings():
     assert "the 3 most important concepts" in system
     for band in ("basic", "easy_moderate", "moderate", "moderate_hard", "hard"):
         assert f'"{band}"' in system
+
+
+def test_diagnostic_prompt_asks_for_four_different_options_in_every_question_and_no_revealed_answers():
+    system = DiagnosticPrompt().messages(subject())[0].content
+
+    assert "four options of every question" in system and "differ in meaning" in system
+    assert "prerequisite question" in system.split("four options of every question")[1].split("\n")[0]
+    assert "no question's wording or options may give away the correct answer to another question" in system
+
+
+def test_diagnostic_prompt_for_a_pool_does_not_mention_prerequisite_options():
+    system = DiagnosticPrompt().messages(subject() | {"include_prerequisites": False})[0].content
+
+    assert "four options of every question" in system
+    assert "prerequisite question" not in system.split("four options of every question")[1].split("\n")[0]
 
 
 def test_review_prompt_includes_the_correct_answers_so_it_can_judge_them():

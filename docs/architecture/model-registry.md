@@ -121,7 +121,7 @@ class NodeSpec:
 
 | Node key | Stage | Output → schema | Requires | Min output | Default reasoning | Optional |
 |---|---|---|---|---|---|---|
-| `diagnostic.generate` | diagnose | structured → `DiagnosticBundle` | structured_output | 8k | medium | |
+| `diagnostic.generate` | diagnose | structured → `DiagnosticBundle` | structured_output | 8k | medium | **3 attempts** (the default is 2): a real model repeated one mistake in its second attempt in 5 of 6 live tries |
 | `diagnostic.review` | diagnose | structured → `QuizReview` | structured_output | 2k | low | ✓ |
 | `learner.assess` | diagnose | structured → `LearnerAssessment` | structured_output | 2k | medium | |
 | `prerequisites.plan` | diagnose | structured → `PrerequisiteList` | structured_output | 2k | low | |

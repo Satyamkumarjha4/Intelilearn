@@ -14,6 +14,7 @@ Use cases:
 - whatever the profile, the onboarding suggester and the quiz's topic judge keep their quick settings: 4 seconds a call,
   one attempt, no retry on a model, so a learner waits for the catalogue (or the full list of question types) after
   seconds, not minutes
+- the diagnostic writer has three attempts in every profile
 - the heavy steps never lead with a Groq model in the new profiles, and the picture check only uses vision models
 """
 
@@ -89,6 +90,13 @@ def test_the_quick_steps_keep_their_four_second_timeout_in_every_profile(name, k
 
     assert (config.max_attempts, config.timeout_s) == (1, 4)
     assert bindings.exists() and set(bindings.values_list("max_retries", flat=True)) == {0}
+
+
+@pytest.mark.parametrize("name", list(SEED_PROFILES))
+def test_the_diagnostic_writer_is_seeded_with_three_attempts_in_every_profile(name):
+    RegistrySerializer().load(SEED_PROFILES[name]().build())
+
+    assert NodeConfig.objects.get(node_key="diagnostic.generate").max_attempts == 3
 
 
 @pytest.mark.parametrize("name", ["balanced", "quality"])

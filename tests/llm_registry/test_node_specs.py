@@ -9,6 +9,8 @@ Use cases:
 - the prerequisite planner is a required, light, structured node that runs with the diagnose steps
 - only the quiz reviewer, the vision check and the onboarding topic suggester are optional; every other node is required
 - the onboarding suggester is a fast, light structured node: low reasoning effort, a single attempt, a small output
+- the diagnostic writer gets three attempts, not two: a real model repeated one mistake in its second attempt in 5 of 6
+  live tries, and the step that stops a learner before they have a lesson should not give up so early
 - tool calling, vision, text output and the alignment judge's context are declared
 - every structured node requires structured output
 - an unknown node key is a clear error that says how to add one
@@ -54,6 +56,10 @@ def test_the_prerequisite_planner_is_a_required_light_structured_node_in_the_dia
     assert spec.output == OutputMode.STRUCTURED and spec.schema_name == "PrerequisiteList"
     assert Capability.STRUCTURED_OUTPUT in spec.requires
     assert (spec.default_reasoning, spec.min_output_tokens) == (Effort.LOW, 2048)
+
+
+def test_the_diagnostic_writer_gets_three_attempts():
+    assert NODE_SPECS["diagnostic.generate"].default_max_attempts == 3
 
 
 def test_the_topic_suggester_is_a_fast_light_structured_node():

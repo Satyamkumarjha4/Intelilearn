@@ -36,6 +36,7 @@ the topic itself), each with "why_needed", and exactly one "basic" question per 
             else 'There is no prerequisite quiz this time: return empty lists for "prerequisites" and '
             '"prerequisite_questions". Ids: "q1"..'
         )
+        prerequisite_options = " and of every prerequisite question" if with_prerequisites else ""
         return f"""You are an expert assessment designer. You write {opening}
 
 DIAGNOSTIC QUIZ: exactly {per_band * len(BANDS)} multiple-choice questions, exactly {per_band} per band, \
@@ -46,6 +47,9 @@ Rules:
 - Every question probes a DIFFERENT concept of the topic (set "concept"; no two alike). Together they sample the \
 whole topic.
 - Questions are independent: none depends on, or reveals, the answer of another.
+- Before you answer, check your own work: the four options of every question{prerequisite_options} must differ in \
+meaning, not just in wording, and no question's wording or options may give away the correct answer to another \
+question (for example a question that names a term another question asks for).
 - Exactly 4 options, exactly one correct. Options are plausible, similar in length and style, and all different. \
 Never use "all of the above", "none of the above" or "both A and B".
 - The correct option's position varies across questions.
