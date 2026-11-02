@@ -19,8 +19,8 @@ from live.golden import GOLDEN_TOPICS, LessonChecks
 
 from graph.grading import QuizGrader
 from lessons.attempts import AttemptService
-from lessons.models import GraphRun, Lesson, MediaAsset, Quiz, QuizAttempt, Stage
-from lessons.services import LessonService, QuizService
+from lessons.bank import QuestionBank
+from lessons.models import GraphRun, Lesson, MediaAsset, QuizAttempt, Stage
 from lessons.tasks import InlineTaskQueue
 from llm_registry.models import ModelCall
 
@@ -29,34 +29,15 @@ pytestmark = [pytest.mark.live, pytest.mark.django_db(transaction=True)]
 MAX_CALLS = 250
 
 
-def answer_diagnostic(lesson: Lesson, right: int = 5) -> None:
-    """Get the first `right` questions right so the learner is routed to a lesson, not a study sheet."""
-    quiz = Quiz.objects.get(lesson=lesson, kind="diagnostic")
-    answers = {
-        q["id"]: q["correct_index"] if n < right else (q["correct_index"] + 1) % len(q["options"])
-        for n, q in enumerate(quiz.questions)
-    }
-    QuizService(queue=InlineTaskQueue()).submit(lesson, "diagnostic", answers)
-
-
 def lesson_data(lesson: Lesson) -> dict:
     return {
-        "pages": lesson.pages, "final_test": lesson.final_test, "code": lesson.code, "code_parts": lesson.code_parts,
-        "warnings": lesson.warnings, "media": MediaAsset.objects.filter(lesson=lesson).count(),
-    }  # fmt: skip
-
-
-@pytest.fixture
-def built_lesson(real_registry, learner):
-    def build(topic: str) -> Lesson:
-        lesson, _ = LessonService(queue=InlineTaskQueue()).create(learner, topic)
-        lesson.refresh_from_db()
-        assert lesson.stage == Stage.AWAITING_DIAGNOSTIC, lesson.error
-        answer_diagnostic(lesson)
-        lesson.refresh_from_db()
-        return lesson
-
-    return build
+        "pages": lesson.pages,
+        "final_test": {"questions": QuestionBank().first_set(lesson)},
+        "code": lesson.code,
+        "code_parts": lesson.code_parts,
+        "warnings": lesson.warnings,
+        "media": MediaAsset.objects.filter(lesson=lesson).count(),
+    }
 
 
 @pytest.mark.parametrize("golden", GOLDEN_TOPICS, ids=lambda g: g.topic)
@@ -73,7 +54,7 @@ def test_a_golden_topic_becomes_a_good_ready_lesson_within_budget(built_lesson, 
 
 def test_a_submitted_attempt_is_graded_at_once_with_feedback_for_every_question(built_lesson):
     lesson = built_lesson(GOLDEN_TOPICS[0].topic)
-    questions = lesson.final_test["questions"]
+    questions = QuestionBank().first_set(lesson)
     answers = {}
     for q in questions:
         if q["type"] == "mcq":
