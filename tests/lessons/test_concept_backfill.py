@@ -120,8 +120,8 @@ class TestRun:
 
         after = Lesson.objects.get(pk=old_lesson.pk)
         assert after.updated_at == before.updated_at
-        assert (after.pages, after.plan, after.stage, after.final_test) == (
-            before.pages, before.plan, before.stage, before.final_test,
+        assert (after.pages, after.plan, after.stage) == (
+            before.pages, before.plan, before.stage,
         )  # fmt: skip
 
 

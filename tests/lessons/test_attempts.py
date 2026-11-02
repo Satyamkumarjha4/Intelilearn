@@ -6,8 +6,8 @@ the open attempt instead of drawing a second set, and leave no row behind when i
 never change. A lesson attempt is objective, so submitting must grade it completely in the same request.
 
 Use cases:
-- the first attempt starts at once from the questions the lesson was built with (an old lesson snapshots its old test),
-  is never metered, and is returned again by a repeated start
+- the first attempt starts at once from the questions the lesson was built with (its first set on the record; a
+  legacy lesson's test was moved there by migration 0019), is never metered, and is returned again by a repeated start
 - a retake is created `generating`, asks the gate for test.retake once with its size, queues the question_bank run with
   the authorization on it, and is returned again by a repeated start without asking again
 - a refused retake creates no attempt and queues nothing; a retake past the daily limit is refused with 429's error
@@ -35,7 +35,6 @@ from support.question_data import make_question
 import lessons
 from lessons.attempts import AttemptService
 from lessons.errors import (
-    AlreadySubmitted,
     AttemptSealed,
     InvalidAnswers,
     QuestionLocked,
@@ -77,6 +76,11 @@ def graded_attempt(lesson, number=1, awarded=14, available=20, **fields):
     )  # fmt: skip
 
 
+def without_row(question: dict) -> dict:
+    """The question as it was written: the first set carries the id of its row, the test it came from did not."""
+    return {k: v for k, v in question.items() if k != "question_id"}
+
+
 class TestStartTheFirstAttempt:
     def test_it_starts_at_once_from_the_questions_the_lesson_was_built_with(self, make_lesson, queue):
         lesson = ready(make_lesson)
@@ -85,7 +89,10 @@ class TestStartTheFirstAttempt:
 
         assert started.created is True and started.run is None and queue.runs == []
         attempt = started.attempt
-        assert (attempt.attempt_no, attempt.status) == (1, "in_progress") and attempt.questions == QUESTIONS
+        assert (attempt.attempt_no, attempt.status) == (1, "in_progress")
+        assert [without_row(q) for q in attempt.questions] == QUESTIONS and all(
+            q["question_id"] for q in attempt.questions
+        )
         assert attempt.answers == {} and attempt.submitted_at is None
 
     def test_it_is_never_metered(self, make_lesson, queue):
@@ -111,7 +118,7 @@ class TestStartTheFirstAttempt:
 
         attempt = AttemptService(queue=queue).start(lesson).attempt
 
-        assert attempt.questions == old["questions"] and len(old["questions"]) == 10
+        assert [without_row(q) for q in attempt.questions] == old["questions"] and len(old["questions"]) == 10
 
     @pytest.mark.parametrize(
         "fields",
@@ -495,24 +502,6 @@ class TestHistory:
     def test_a_lesson_with_no_attempt_has_no_latest(self, make_lesson):
         with pytest.raises(SubmissionNotFound):
             AttemptService().current(ready(make_lesson))
-
-
-class TestTheOldSingleCall:
-    def test_it_starts_and_submits_the_first_attempt_in_one_call(self, make_lesson, queue):
-        lesson = ready(make_lesson)
-
-        attempt, run = AttemptService(queue=queue).submit_once(lesson, all_right())
-
-        assert run is None and (attempt.attempt_no, attempt.status, attempt.awarded) == (1, "graded", 20)
-
-    def test_once_there_is_any_attempt_it_is_refused_with_that_attempts_id(self, make_lesson, queue):
-        lesson = ready(make_lesson)
-        first = graded_attempt(lesson)
-
-        with pytest.raises(AlreadySubmitted) as refused:
-            AttemptService(queue=queue).submit_once(lesson, {})
-
-        assert refused.value.extra == {"submission_id": str(first.id)}
 
 
 def test_an_attempt_of_another_lesson_is_not_found_when_answering_through_this_one(make_lesson, queue):

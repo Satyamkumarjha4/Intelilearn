@@ -2,7 +2,6 @@
 
     await_choice → (choice_router)  lesson → assess_learner (as an Expert)
                                     sheets → plan_sheets → Send ×(cheat sheet ‖ revision sheet) → sheets_join → ready
-                                    a sheet kind from before the two-way choice → generate_study_material (unchanged)
 
 `plan_sheets … sheets_join` is the one writer of sheets. The mastery choice reaches it, so does a lesson asked for as
 sheets only (`intent=sheets`), and so does an extra sheet on a lesson that is already ready (the small graph, with
@@ -28,17 +27,13 @@ LESSON, SHEETS = "lesson", "sheets"
 
 
 class ChoiceRouter(Router):
-    """After await_choice: the Expert lesson, the two sheets, or the one sheet a lesson waiting before the two-way
-    choice asked for."""
+    """After await_choice: the Expert lesson, or the two sheets."""
 
-    def __init__(self, *, lesson: str, sheets: str, legacy: str):
-        self.lesson, self.sheets, self.legacy = lesson, sheets, legacy
+    def __init__(self, *, lesson: str, sheets: str):
+        self.lesson, self.sheets = lesson, sheets
 
     def __call__(self, state: dict) -> str:
-        choice = state["mastery_choice"]
-        if choice == LESSON:
-            return self.lesson
-        return self.sheets if choice == SHEETS else self.legacy
+        return self.lesson if state["mastery_choice"] == LESSON else self.sheets
 
 
 class PlanSheetsNode(Node):

@@ -19,7 +19,6 @@ from .stages import (  # noqa: F401  (re-exported)
     IllegalTransition,
     Intent,
     LevelSource,
-    MasteryOptions,
     MaterialKind,
     Origin,
     Route,
@@ -61,11 +60,6 @@ class Lesson(models.Model):
         "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="followups"
     )
     followup_level = models.CharField(max_length=10, choices=FollowupLevel.choices, blank=True)
-    # What the mastery choice offered, set when it is published; the old three-sheet choice is what a row from before
-    # the Expert lesson has, so the page shows those learners the cards they were waiting at.
-    mastery_options = models.CharField(
-        max_length=20, choices=MasteryOptions.choices, default=MasteryOptions.THREE_SHEETS
-    )
 
     # Stage A
     assessment = models.JSONField(null=True, blank=True)  # LearnerAssessment
@@ -75,7 +69,7 @@ class Lesson(models.Model):
     level = models.CharField(max_length=20, blank=True)
     plan = models.JSONField(null=True, blank=True)  # LessonPlan
     pages = models.JSONField(null=True, blank=True)  # {introduction, core, advanced} → PageContent
-    final_test = models.JSONField(null=True, blank=True)  # FinalTest, answers included: never sent as-is
+    # The questions the lesson was built with are on the record (`Question.first_set_position`), not here.
     # The fixed LessonTestBlueprint (cells and total marks), written when the plan is saved. Null for a lesson made
     # before it, until its first retake.
     test_blueprint = models.JSONField(null=True, blank=True)
@@ -280,11 +274,24 @@ class Question(models.Model):
     stem_hash = models.CharField(max_length=64)  # of the normalised question text (graph.questions.StemHash)
     batch = models.UUIDField(null=True, blank=True)  # the generation that made it; none for a legacy question
     retired = models.BooleanField(default=False, help_text="Withdrawn without deleting, so past attempts stay valid.")
+    first_set_position = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="Where the question stands in the set the lesson was built with (attempt 1), from 0; empty for a "
+        "question that is not in it.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["created_at"]
-        constraints = [models.UniqueConstraint(fields=["lesson", "stem_hash"], name="unique_question_stem_per_lesson")]
+        constraints = [
+            models.UniqueConstraint(fields=["lesson", "stem_hash"], name="unique_question_stem_per_lesson"),
+            models.UniqueConstraint(
+                fields=["lesson", "first_set_position"],
+                condition=models.Q(first_set_position__isnull=False),
+                name="unique_first_set_position",
+            ),
+        ]
         indexes = [
             models.Index(fields=["lesson", "type", "difficulty"], name="question_lesson_cell"),
             models.Index(fields=["lesson", "concept"], name="question_lesson_concept"),
@@ -471,8 +478,6 @@ class FlowSettings(models.Model):
     mastery_requires_all_correct = models.BooleanField(
         default=True, help_text="Off: mastery also when only one non-hard answer is wrong."
     )
-    final_test_min = models.PositiveSmallIntegerField(default=10)
-    final_test_max = models.PositiveSmallIntegerField(default=15)
     max_interactives_per_page = models.PositiveSmallIntegerField(default=3)
     band_fail_below = models.PositiveSmallIntegerField(
         default=30, validators=[MaxValueValidator(100)], help_text="Percent under which an attempt is a Fail."
@@ -528,8 +533,7 @@ class FlowSettings(models.Model):
         super().save(*args, **kwargs)
 
     def clean(self):
-        """Checked by the admin and by the console, which both build a model form. The test's size is fixed in code
-        now, so `final_test_min` and `final_test_max` are no longer asked about."""
+        """Checked by the admin and by the console, which both build a model form."""
         errors = {}
         if self.band_fail_below is not None and self.band_excellent_above is not None:
             if self.band_fail_below >= self.band_excellent_above:

@@ -145,19 +145,20 @@ def bound_registry(db):
 
 @pytest.fixture
 def stage_a_graphs():
-    """A graph registry whose lesson flow stops after the assessment (and the mastery path), so runner and command
-    tests don't have to script the whole of Stage B."""
+    """A graph registry whose lesson flow stops after the assessment (and the mastery path, with the sheets it can
+    choose), so runner and command tests don't have to script the whole of Stage B."""
     from graph.builders import (
         DiagnoseSegment,
         FlowGraphBuilder,
         GradeAttemptGraphBuilder,
         MasterySegment,
         RuntimeRepairGraphBuilder,
+        SheetsSegment,
         StudyMaterialGraphBuilder,
     )
     from graph.registry import GraphRegistry
 
-    flow = FlowGraphBuilder(segments=[DiagnoseSegment(), MasterySegment()])
+    flow = FlowGraphBuilder(segments=[DiagnoseSegment(), MasterySegment(), SheetsSegment()])
     return GraphRegistry(
         {
             "flow": flow,

@@ -39,10 +39,9 @@ Use cases:
 - the document says whether an old lesson still has its test inside the code
 - the standalone test is served without answers, with its total marks and the one submission once made, and is a 409
   for a lesson that is not ready or is a mastery lesson
-- the lesson test can be submitted once: a submission is marked at once and queued for grading, bad answers are a 400,
-  a lesson that is not ready is a 409, a second go is a 409 `already_submitted` naming the first submission, the
-  submission can be read with its score card (by id, or as the lesson's one submission), submissions are rate limited,
-  and another user's lesson or submission is a 404
+- the first attempt, started and handed in: it is marked at once and queued for grading when a legacy question needs a
+  judge, bad answers are a 400 that leaves the attempt open, a lesson that is not ready is a 409, the attempt can be
+  read with its score card (by id, or as the lesson's latest), and another user's lesson or attempt is a 404
 - a failed grading is re-run on the same answers (202), and only a failed one
 - the OpenAPI schema documents these endpoints
 """
@@ -81,7 +80,6 @@ PATHS = [
     ("get", "/api/lessons/{lesson}/document"),
     ("post", "/api/lessons/{lesson}/repair"),
     ("get", "/api/lessons/{lesson}/test"),
-    ("post", "/api/lessons/{lesson}/test/submissions"),
     ("get", "/api/lessons/{lesson}/test/submissions/{run}"),
     ("get", "/api/lessons/{lesson}/test/attempts"),
     ("post", "/api/lessons/{lesson}/test/attempts"),
@@ -718,10 +716,7 @@ class TestMaterials:
     def mastery(self, make_lesson, stage=Stage.READY, **extra):
         return make_lesson(stage=stage, route="mastery", **extra)
 
-    @pytest.mark.parametrize(("body", "resume"), [
-        ({"choice": "lesson"}, "lesson"), ({"choice": "sheets"}, "sheets"),
-        ({"kind": "cheat_sheet"}, "cheat_sheet"),  # a lesson already waiting at the old three-sheet choice
-    ])  # fmt: skip
+    @pytest.mark.parametrize(("body", "resume"), [({"choice": "lesson"}, "lesson"), ({"choice": "sheets"}, "sheets")])
     def test_choosing_resumes_the_flow(self, signed_in_client, make_lesson, queue, body, resume):
         lesson = self.mastery(make_lesson, Stage.AWAITING_CHOICE)
 
@@ -732,7 +727,7 @@ class TestMaterials:
 
     @pytest.mark.parametrize("body", [
         {}, {"kind": "poster"}, {"kind": ""}, {"choice": "poster"}, {"choice": "cheat_sheet"},
-        {"choice": "lesson", "kind": "cheat_sheet"},
+        {"kind": "cheat_sheet"},  # the old three-sheet choice: no lesson waits at it any more
     ])  # fmt: skip
     def test_choosing_needs_exactly_one_known_choice(self, signed_in_client, make_lesson, queue, body):
         lesson = self.mastery(make_lesson, Stage.AWAITING_CHOICE)
@@ -744,7 +739,7 @@ class TestMaterials:
     def test_choosing_outside_the_choice_is_a_conflict(self, signed_in_client, make_lesson, queue):
         lesson = self.mastery(make_lesson, Stage.GENERATING_MATERIAL)
 
-        response = signed_in_client.post(f"/api/lessons/{lesson.id}/choice", {"kind": "cheat_sheet"}, format="json")
+        response = signed_in_client.post(f"/api/lessons/{lesson.id}/choice", {"choice": "sheets"}, format="json")
 
         assert response.status_code == 409 and response.json()["code"] == "wrong_stage"
 
@@ -879,7 +874,7 @@ class TestMaterials:
             ("get", "/materials/practice_sheet", None),
             ("post", "/materials/practice_sheet/grade", {"answers": {}}),
             ("post", "/materials", {"kind": "cheat_sheet"}),
-            ("post", "/choice", {"kind": "cheat_sheet"}),
+            ("post", "/choice", {"choice": "sheets"}),
         ]:
             response = getattr(signed_in_client, method)(
                 f"/api/lessons/{theirs.id}{path}", *([body] if body else []), format="json"
@@ -926,7 +921,7 @@ class TestLessonCode:
         body = signed_in_client.get(f"/api/lessons/{ready.id}/document").json()
 
         assert (body["code"], body["code_version"]) == ("CODE v2", 2)
-        assert body["data"]["final_test"]["questions"][0]["id"] == "t1"
+        assert body["data"]["final_test"]["questions"] == []  # the test is its own screen
         assert "correct_index" not in json.dumps(body) and "because" not in json.dumps(body)
 
     def test_a_new_lesson_has_no_test_inside_its_code(self, signed_in_client, ready):
@@ -1022,6 +1017,17 @@ class TestLessonTest:
     def url(self, lesson, suffix=""):
         return f"/api/lessons/{lesson.id}/test/submissions{suffix}"
 
+    @staticmethod
+    def go(client, lesson, answers):
+        """Attempt 1 started and handed in with `answers` → the reply to the hand-in (or to the start if refused)."""
+        started = client.post(f"/api/lessons/{lesson.id}/test/attempts")
+        if started.status_code not in (200, 201):
+            return started
+        attempt = started.json()["attempt_id"]
+        return client.post(
+            f"/api/lessons/{lesson.id}/test/attempts/{attempt}/submit", {"answers": answers}, format="json"
+        )
+
     def regrade(self, lesson, attempt):
         return f"/api/lessons/{lesson.id}/test/attempts/{attempt.id}/regrade"
 
@@ -1046,7 +1052,7 @@ class TestLessonTest:
         assert {"id", "type", "question", "marks"} <= set(body["questions"][0])
 
     def test_the_test_names_the_one_submission_once_made(self, signed_in_client, ready, queue):
-        made = signed_in_client.post(self.url(ready), {"answers": {self.IDS["short_answer"]: "x"}}, format="json")
+        made = self.go(signed_in_client, ready, {self.IDS["short_answer"]: "x"})
 
         shown = signed_in_client.get(f"/api/lessons/{ready.id}/test").json()["submission"]
 
@@ -1065,7 +1071,7 @@ class TestLessonTest:
     def test_a_submission_is_marked_at_once_and_queued_for_grading(self, signed_in_client, ready, queue):
         answers = {self.IDS["mcq"]: 1, self.IDS["short_answer"]: "Halve it."}
 
-        response = signed_in_client.post(self.url(ready), {"answers": answers}, format="json")
+        response = self.go(signed_in_client, ready, answers)
 
         assert response.status_code == 202
         body = response.json()
@@ -1076,58 +1082,25 @@ class TestLessonTest:
         assert submission["result"]["score"]["awarded"] == self.mcq_marks and submission["graded_at"] is None
 
     def test_a_test_with_nothing_to_grade_is_final_and_has_no_run(self, signed_in_client, ready, queue):
-        response = signed_in_client.post(self.url(ready), {"answers": {self.IDS["mcq"]: 1}}, format="json")
+        response = self.go(signed_in_client, ready, {self.IDS["mcq"]: 1})
 
         body = response.json()
-        assert response.status_code == 202 and body["run_id"] is None and body["status"] == "graded"
+        assert response.status_code == 200 and body["run_id"] is None and body["status"] == "graded"
         assert queue.runs == []
         result = signed_in_client.get(self.url(ready, f"/{body['submission_id']}")).json()["result"]
         assert result["complete"] is True and result["questions"][0]["solution"] == {"correct_index": 1}
 
-    @pytest.mark.parametrize("body", [{}, {"answers": []}, {"answers": {"nope": 1}}, {"answers": {"t1": True}}])
-    def test_bad_answers_are_a_400(self, signed_in_client, ready, queue, body):
-        response = signed_in_client.post(self.url(ready), body, format="json")
+    @pytest.mark.parametrize("answers", [[], {"nope": 1}, {"t1": True}])
+    def test_bad_answers_are_a_400(self, signed_in_client, ready, queue, answers):
+        response = self.go(signed_in_client, ready, answers)
 
-        assert response.status_code == 400 and queue.runs == [] and not TestSubmission.objects.exists()
+        assert response.status_code == 400 and queue.runs == []
+        assert TestSubmission.objects.get().status == "in_progress"  # the attempt is open and unchanged
 
     def test_a_lesson_that_is_not_ready_is_a_conflict(self, signed_in_client, lesson, queue):
-        early = signed_in_client.post(self.url(lesson), {"answers": {}}, format="json")
+        early = self.go(signed_in_client, lesson, {})
 
         assert (early.status_code, early.json()["code"]) == (409, "wrong_stage")
-
-    def test_a_second_submission_is_a_conflict_that_names_the_first_and_stores_nothing(
-        self, signed_in_client, ready, queue
-    ):
-        first = signed_in_client.post(self.url(ready), {"answers": {self.IDS["mcq"]: 1}}, format="json")
-        queued = len(queue.runs)
-
-        second = signed_in_client.post(self.url(ready), {"answers": {self.IDS["mcq"]: 2}}, format="json")
-
-        assert first.status_code == 202
-        assert second.status_code == 409
-        assert second.json() == {
-            "detail": "The test has already been submitted. Its answers and score cannot be changed.",
-            "code": "already_submitted",
-            "submission_id": first.json()["submission_id"],
-        }
-        assert TestSubmission.objects.filter(lesson=ready).count() == 1 and len(queue.runs) == queued
-
-    def test_the_first_submission_is_untouched_by_a_second_try(self, signed_in_client, ready, queue):
-        first = signed_in_client.post(self.url(ready), {"answers": {self.IDS["mcq"]: 1}}, format="json").json()
-        signed_in_client.post(self.url(ready), {"answers": {self.IDS["mcq"]: 0}}, format="json")
-
-        stored = signed_in_client.get(self.url(ready, f"/{first['submission_id']}")).json()
-
-        assert stored["result"]["score"]["awarded"] == self.mcq_marks
-
-    def test_submissions_are_rate_limited(self, signed_in_client, make_lesson, queue, monkeypatch):
-        monkeypatch.setitem(SimpleRateThrottle.THROTTLE_RATES, "test_submit", "2/hour")
-        lessons = [make_lesson(stage=Stage.READY, code="x", final_test=self.FINAL) for _ in range(3)]
-        body = {"answers": {self.IDS["mcq"]: 1}}
-
-        codes = [signed_in_client.post(self.url(one), body, format="json").status_code for one in lessons]
-
-        assert codes == [202, 202, 429]
 
     def test_an_unknown_submission_is_a_404(self, signed_in_client, ready):
         for wrong in ("not-a-uuid", "00000000-0000-0000-0000-000000000000"):
@@ -1135,7 +1108,7 @@ class TestLessonTest:
 
     def test_the_lessons_one_submission_can_be_read_without_its_id(self, signed_in_client, ready, queue):
         assert signed_in_client.get(f"/api/lessons/{ready.id}/test/submission").status_code == 404
-        made = signed_in_client.post(self.url(ready), {"answers": {self.IDS["mcq"]: 1}}, format="json").json()
+        made = self.go(signed_in_client, ready, {self.IDS["mcq"]: 1}).json()
 
         response = signed_in_client.get(f"/api/lessons/{ready.id}/test/submission")
 
@@ -1169,7 +1142,7 @@ class TestLessonTest:
 
         statuses = [
             signed_in_client.get(f"/api/lessons/{theirs.id}/test").status_code,
-            signed_in_client.post(self.url(theirs), {"answers": {}}, format="json").status_code,
+            self.go(signed_in_client, theirs, {}).status_code,
             signed_in_client.get(self.url(theirs, f"/{submission.id}")).status_code,
             signed_in_client.get(f"/api/lessons/{theirs.id}/test/submission").status_code,
             signed_in_client.post(self.regrade(theirs, submission)).status_code,

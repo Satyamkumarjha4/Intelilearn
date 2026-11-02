@@ -273,7 +273,7 @@ class TestPersist:
         assert (stored.stage, stored.code, stored.code_version) == (Stage.READY, "THE DOCUMENT", 3)
         assert set(stored.code_parts["pages"]) == {"introduction", "core", "advanced"}
         assert stored.code_parts["interactives"] == {"Interactive_widget_core": WIDGET["tsx"]}
-        assert stored.warnings == ["a", "b"] and len(stored.pages) == 3 and len(stored.final_test["questions"]) == 10
+        assert stored.warnings == ["a", "b"] and len(stored.pages) == 3
 
     def test_the_concept_index_is_written_from_the_plan_and_the_final_pages(self, lesson, runtime, lesson_state):
         Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.GENERATING_LESSON)

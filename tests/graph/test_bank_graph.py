@@ -20,6 +20,7 @@ Use cases:
 
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
+from support.first_sets import seed_first_set
 from support.fixtures import budget_snapshot
 from support.lesson_data import make_assessment, make_blueprint_test, make_final_test, make_plan
 from support.question_data import ScriptedQuestions, written
@@ -39,8 +40,9 @@ def retake(lesson, lesson_state):
     """A ready lesson with its test on the record, a graded first attempt, and attempt 2 waiting for its questions."""
     test = make_blueprint_test()
     stored = {"title": test["title"], "questions": QuestionBank().add(lesson.id, None, test["questions"])}
+    QuestionBank().set_first_set(lesson.id, stored["questions"])
     Lesson.objects.filter(pk=lesson.pk).update(
-        stage=Stage.READY, assessment=make_assessment(), plan=make_plan(), final_test=stored,
+        stage=Stage.READY, assessment=make_assessment(), plan=make_plan(),
         test_blueprint=LessonTestBlueprint.for_topic(True).to_json(), config_snapshot=budget_snapshot(),
         settings_snapshot=lesson_state["settings"],
     )  # fmt: skip
@@ -97,8 +99,9 @@ def test_every_question_the_lesson_has_asked_is_given_to_the_model_to_avoid(reta
 def test_a_lesson_made_before_the_blueprint_gets_the_one_its_old_test_implies_and_keeps_it(
     lesson, lesson_state, ctx, gateway, questions
 ):
+    seed_first_set(lesson, make_final_test()["questions"])
     Lesson.objects.filter(pk=lesson.pk).update(
-        stage=Stage.READY, assessment=make_assessment(), plan=make_plan(), final_test=make_final_test(),
+        stage=Stage.READY, assessment=make_assessment(), plan=make_plan(),
         config_snapshot=budget_snapshot(), settings_snapshot=lesson_state["settings"], test_blueprint=None,
     )  # fmt: skip
     TestSubmission.objects.create(

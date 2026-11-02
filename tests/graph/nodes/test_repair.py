@@ -55,11 +55,11 @@ def ready(lesson, lesson_state):
     full = make_state()
     Lesson.objects.filter(pk=lesson.pk).update(
         stage=Stage.READY, code="OLD DOCUMENT", code_parts=OLD_PARTS, code_version=3,
-        plan=full["plan"], pages=full["pages"], final_test=full["final_test"],
+        plan=full["plan"], pages=full["pages"],
         config_snapshot=budget_snapshot(), settings_snapshot=lesson_state["settings"],
     )  # fmt: skip
     return lesson_state | {
-        "plan": full["plan"], "pages": full["pages"], "final_test": full["final_test"], "media": {},
+        "plan": full["plan"], "pages": full["pages"], "media": {},
         "code_parts": OLD_PARTS, "repair_error": ERROR, "expected_code_version": 3,
         "repair_target": {"kind": "component", "key": "Interactive_widget_core"},
     }  # fmt: skip

@@ -8,8 +8,7 @@ did not pick; a join that saved one sheet and failed on the other would leave a 
 promised.
 
 Use cases:
-- the choice router sends the Expert lesson to the assessment, the sheets to the planner, and a sheet kind from before
-  the two-way choice to the single-sheet writer
+- the choice router sends the Expert lesson to the assessment and the sheets to the planner
 - plan_sheets moves the lesson to writing, reads the quiz's concepts (each once), and clears the sheets, problems and
   attempts so a Retry starts both sheets again; the plan router then sends one branch for each sheet, with the concepts
 - generate_sheet writes one sheet of its kind, keeps it (with its problems) and counts the attempt for that sheet only
@@ -63,12 +62,9 @@ def branch(state, kind, feedback=()):
 
 
 class TestChoiceRouter:
-    router = ChoiceRouter(lesson="assess_learner", sheets="plan_sheets", legacy="generate_study_material")
+    router = ChoiceRouter(lesson="assess_learner", sheets="plan_sheets")
 
-    @pytest.mark.parametrize(("choice", "destination"), [
-        ("lesson", "assess_learner"), ("sheets", "plan_sheets"), ("cheat_sheet", "generate_study_material"),
-        ("revision_sheet", "generate_study_material"), ("practice_sheet", "generate_study_material"),
-    ])  # fmt: skip
+    @pytest.mark.parametrize(("choice", "destination"), [("lesson", "assess_learner"), ("sheets", "plan_sheets")])
     def test_each_choice_goes_where_it_belongs(self, choice, destination):
         assert self.router({"mastery_choice": choice}) == destination
 

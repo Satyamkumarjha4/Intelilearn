@@ -103,11 +103,11 @@ def test_study_sheets_are_listed_with_their_size(lesson):
 
 
 def test_the_plan_the_pages_and_the_test_are_summarised(lesson):
+    from support.first_sets import seed_first_set
     from support.lesson_data import make_blueprint_test, make_pages, make_plan
 
-    Lesson.objects.filter(pk=lesson.pk).update(
-        plan=make_plan(prerequisites=["Arrays"]), pages=make_pages(), final_test=make_blueprint_test()
-    )
+    Lesson.objects.filter(pk=lesson.pk).update(plan=make_plan(prerequisites=["Arrays"]), pages=make_pages())
+    seed_first_set(lesson, make_blueprint_test()["questions"])
 
     report = text(lesson)
 
@@ -119,14 +119,14 @@ def test_the_plan_the_pages_and_the_test_are_summarised(lesson):
 
 
 def test_the_test_line_of_another_kind_of_topic_and_of_a_plan_from_before_the_blueprint(lesson):
+    from support.first_sets import seed_first_set
     from support.lesson_data import LEGACY_TEST_SPEC, make_final_test, make_plan
 
     Lesson.objects.filter(pk=lesson.pk).update(plan=make_plan(quantitative=False))
     assert "test: fixed blueprint, 10 questions, 18 marks (other topic)" in text(lesson)
 
-    Lesson.objects.filter(pk=lesson.pk).update(
-        plan={**make_plan(), "final_test": LEGACY_TEST_SPEC}, final_test=make_final_test()
-    )
+    Lesson.objects.filter(pk=lesson.pk).update(plan={**make_plan(), "final_test": LEGACY_TEST_SPEC})
+    seed_first_set(lesson, make_final_test()["questions"])
     report = text(lesson)
 
     assert "test: 10 questions (3 mcq, 2 msq, 2 numerical, 2 short_answer, 1 long_answer)" in report

@@ -1,31 +1,25 @@
-"""The mastery path: the learner aced the diagnostic, so offer a study sheet instead of a lesson.
+"""The mastery path: the learner aced the diagnostic, so offer the Expert lesson or two study sheets.
 
-    publish_mastery_options → await_choice → generate_study_material → validate_study_material → persist_study_material
+    publish_mastery_options → await_choice → (the Expert lesson's assessment | the sheets segment)
 
-The same generate, validate and persist nodes also form the small `study_material` graph, which writes another sheet
-type later (`state["extra_material"]` is then true and the lesson stays `ready`).
+The sheets themselves are written by the sheets segment (`graph/nodes/sheets.py`). This module keeps the choice, the
+concepts a sheet rests on, and the failure node of the small `study_material` graph that adds sheets to a ready lesson.
 """
 
 from typing import Any
 
-from pydantic import BaseModel
-
-from lessons.models import MasteryOptions, MaterialKind, Quiz, Stage, StudyMaterial
+from lessons.models import Quiz, Stage
 
 from ..context import FlowContext
 from ..errors import RunFailed
-from ..prompts import StudyMaterialPrompt
-from ..questions import QuestionFinisher
-from ..schemas import MATERIAL_SCHEMAS
-from ..validators import StudyMaterialValidator, Validator
-from .base import AwaitNode, LLMNode, Node, PublishNode, ValidateNode
+from .base import AwaitNode, Node, PublishNode
 
 
 class PublishMasteryOptionsNode(PublishNode):
     name = "publish_mastery_options"
 
     def publish(self, state: dict, ctx: FlowContext) -> dict:
-        self.lesson(state).advance_to(Stage.AWAITING_CHOICE, mastery_options=MasteryOptions.LESSON_OR_SHEETS)
+        self.lesson(state).advance_to(Stage.AWAITING_CHOICE)
         return {}
 
 
@@ -34,15 +28,13 @@ class AwaitChoiceNode(AwaitNode):
     kind = "mastery_choice"
     result_key = "mastery_choice"
 
-    #: what a learner who aced the quiz can choose; the three sheet kinds are accepted for a lesson that was already
-    #: waiting at the choice before it had two options
+    #: what a learner who aced the quiz can choose
     CHOICES = ("lesson", "sheets")
 
     def accept(self, value: Any) -> str:
-        """`{"choice": "lesson" | "sheets"}`, or one of the three sheet kinds from before the two-way choice (a bare
-        `"lesson"` or `"sheets"` is taken too). → the choice as a string."""
+        """`{"choice": "lesson" | "sheets"}` (a bare `"lesson"` or `"sheets"` is taken too) → the choice."""
         choice = value.get("choice") if isinstance(value, dict) else value
-        if choice not in self.CHOICES and choice not in MaterialKind.values:
+        if choice not in self.CHOICES:
             raise ValueError(f"Unknown choice {choice!r}")
         return choice
 
@@ -57,62 +49,6 @@ class DiagnosticConcepts:
             return [q["concept"] for q in bundle["diagnostic"]]
         quiz = Quiz.objects.filter(lesson_id=state["lesson_id"], kind=Quiz.Kind.DIAGNOSTIC).first()
         return [q["concept"] for q in quiz.questions] if quiz else []
-
-
-class GenerateStudyMaterialNode(LLMNode):
-    name = "generate_study_material"
-    stage = Stage.GENERATING_MATERIAL
-    node_key = "study.generate"
-    prompt = StudyMaterialPrompt()
-    feedback_key = "material"
-
-    def schema_of(self, state: dict) -> type[BaseModel]:
-        return MATERIAL_SCHEMAS[state["mastery_choice"]]
-
-    def before(self, state: dict) -> None:
-        if not state.get("extra_material"):
-            self.lesson(state).advance_to(Stage.GENERATING_MATERIAL)
-
-    def subject(self, state: dict) -> dict:
-        return state | {"kind": state["mastery_choice"], "concepts": DiagnosticConcepts.of(state)}
-
-    def to_state(self, output: BaseModel, state: dict, ctx: FlowContext) -> dict:
-        material = output.model_dump(mode="json")
-        if state["mastery_choice"] == "practice_sheet":
-            material["questions"], _ = QuestionFinisher().finish(material["questions"])  # marks and answers, by code
-        return {"study_material": material, "attempts": {"material": 1}}
-
-
-class ValidateStudyMaterialNode(ValidateNode):
-    name = "validate_study_material"
-    stage = Stage.GENERATING_MATERIAL
-    node_key = "study.generate"
-    feedback_key = "material"
-    retry_node = "generate_study_material"
-    label = "The study sheet"
-
-    def validator(self, state: dict, ctx: FlowContext) -> Validator:
-        return StudyMaterialValidator(ctx.sandbox)
-
-    def subject(self, state: dict) -> dict:
-        return state["study_material"]
-
-    def context(self, state: dict) -> dict:
-        return {"kind": state["mastery_choice"], "concepts": DiagnosticConcepts.of(state)}
-
-    def label_of(self, state: dict) -> str:
-        return f"The {MaterialKind(state['mastery_choice']).label.lower()}"
-
-
-class PersistStudyMaterialNode(Node):
-    name = "persist_study_material"
-
-    def run(self, state: dict, ctx: FlowContext) -> dict:
-        StudyMaterial.objects.update_or_create(
-            lesson_id=state["lesson_id"], kind=state["mastery_choice"], defaults={"content": state["study_material"]}
-        )
-        self.lesson(state).advance_to(Stage.READY)
-        return {}
 
 
 class FailStudyMaterialNode(Node):

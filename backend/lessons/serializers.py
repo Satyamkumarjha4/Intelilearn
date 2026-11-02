@@ -18,7 +18,6 @@ from .stages import (
     FollowupLevel,
     Intent,
     LevelSource,
-    MasteryOptions,
     MaterialKind,
     OfferedSheet,
     Origin,
@@ -274,12 +273,6 @@ class LessonDetailSerializer(LessonSummarySerializer):
     materials = serializers.SerializerMethodField()
     origin = serializers.ChoiceField(choices=Origin.choices, read_only=True)
     level_source = serializers.ChoiceField(choices=LevelSource.choices, read_only=True)
-    mastery_options = serializers.ChoiceField(
-        choices=MasteryOptions.choices,
-        read_only=True,
-        help_text="What the choice after a perfect quick check offers: the Expert lesson or two sheets, or (a lesson "
-        "that was already waiting) the three sheets.",
-    )
     self_rating = serializers.SerializerMethodField()
     sheets_asked = serializers.SerializerMethodField()
     followup_of = serializers.SerializerMethodField()
@@ -292,7 +285,6 @@ class LessonDetailSerializer(LessonSummarySerializer):
             "followups",
             "origin",
             "level_source",
-            "mastery_options",
             "self_rating",
             "sheets_asked",
             "user_context",
@@ -444,16 +436,9 @@ class FollowupRequestSerializer(serializers.Serializer):
 
 
 class MasteryChoiceSerializer(serializers.Serializer):
-    """The pick after a perfect quick check: `choice`, or (for a lesson already waiting at the old three-sheet choice)
-    one sheet `kind`."""
+    """The pick after a perfect quick check: the Expert lesson, or the cheat sheet and the revision sheet."""
 
-    choice = serializers.ChoiceField(choices=["lesson", "sheets"], required=False)
-    kind = serializers.ChoiceField(choices=MaterialKind.choices, required=False)
-
-    def validate(self, attrs: dict) -> dict:
-        if ("choice" in attrs) == ("kind" in attrs):
-            raise serializers.ValidationError({"choice": ["Send `choice`: lesson or sheets."]})
-        return {"choice": attrs.get("choice") or attrs["kind"]}
+    choice = serializers.ChoiceField(choices=["lesson", "sheets"])
 
 
 class StudyMaterialSerializer(serializers.Serializer):
@@ -522,16 +507,6 @@ class LessonVersionSerializer(serializers.ModelSerializer):
 
 class RestoredSerializer(serializers.Serializer):
     code_version = serializers.IntegerField(help_text="The new current version.")
-
-
-class TestSubmitSerializer(serializers.Serializer):
-    __test__ = False
-
-    answers = serializers.DictField(
-        child=serializers.JSONField(allow_null=True),
-        help_text="{question_id: option index | list of option indices | number | text}. Unanswered questions may be "
-        "left out.",
-    )
 
 
 class AttemptSubmitSerializer(serializers.Serializer):

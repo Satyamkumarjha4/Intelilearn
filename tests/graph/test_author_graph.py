@@ -34,6 +34,7 @@ from support.media import make_library, result
 from support.question_data import ScriptedQuestions
 
 from graph.builders import AuthorSegment, DiagnoseSegment
+from lessons.bank import QuestionBank
 from lessons.models import Lesson, MediaAsset, Question, Stage
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -109,9 +110,9 @@ def test_the_whole_of_stage_b_runs_and_saves_what_it_wrote(flow, lesson, gateway
     assert flow.nodes.count("find_media") == 1 and flow.nodes.count("build_interactive") == 2
     stored = Lesson.objects.get(pk=lesson.pk)
     assert (stored.title, stored.level, stored.stage) == ("Binary search", "beginner", Stage.GENERATING_LESSON)
-    assert set(stored.pages) == {"introduction", "core", "advanced"} and len(stored.final_test["questions"]) == 10
+    assert set(stored.pages) == {"introduction", "core", "advanced"} and len(QuestionBank().first_set(lesson)) == 10
     assert stored.test_blueprint["total_marks"] == 20 and Question.objects.filter(lesson=lesson).count() == 10
-    assert sum(q["marks"] for q in stored.final_test["questions"]) == 20
+    assert sum(q["marks"] for q in QuestionBank().first_set(lesson)) == 20
     assert [s["kind"] for s in stored.interactive_plan["specs"]] == ["image", "simulation", "svg_diagram"]
     assert MediaAsset.objects.get(lesson=lesson).spec_id == "widget_introduction"
     assert flow.state()["alignment"]["decision"] == "pass"
@@ -149,7 +150,7 @@ def test_a_batch_that_fails_its_rules_is_written_again_alone_with_the_problems(f
     assert len(calls) == 3 and flow.nodes.count("generate_questions") == 3 and flow.nodes.count("write_page") == 3
     retry = next(c for c in calls if "REJECTED" in c.messages[1].content)
     assert "must be easy; it is expert" in retry.messages[1].content
-    assert len(Lesson.objects.get(pk=flow.lesson.pk).final_test["questions"]) == 10
+    assert len(QuestionBank().first_set(flow.lesson)) == 10
 
 
 def test_a_cell_that_no_batch_filled_is_planned_again_in_a_second_round_and_only_that_cell_is_written(flow, gateway):
@@ -163,7 +164,7 @@ def test_a_cell_that_no_batch_filled_is_planned_again_in_a_second_round_and_only
     third = calls[-1].messages[0].content
     assert len(calls) == 3 and "exactly 1 questions" in third and "1. numerical, standard, worth 2 marks" in third
     assert flow.nodes.count("plan_batches") == 2 and flow.nodes.count("write_page") == 3
-    stored = Lesson.objects.get(pk=flow.lesson.pk).final_test["questions"]
+    stored = QuestionBank().first_set(flow.lesson)
     assert len(stored) == 10 and len({q["question"] for q in stored}) == 10
     assert flow.state()["question_plan"]["round"] == 2
 

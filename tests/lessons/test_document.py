@@ -7,8 +7,8 @@ reading the data. It is built the same way for the render check and for the brow
 
 Use cases:
 - the data has the title, topic and level (the plan's win), the pages and the media entries keyed by asset id
-- the final test's questions are public only: no correct answers, solutions, explanations or reference code
-- a missing test or plan gives an empty test and falls back to the lesson's own title
+- the document carries no test questions (the test is its own screen), only an empty `final_test` that lessons from
+  before that still read; a missing plan falls back to the lesson's own title
 - a media entry carries the URL it is given, alt text (falling back to the title), caption, attribution and licence
 - a source built from a stored lesson has its media as refs keyed by spec id
 - the document builder returns the code, its version and the data, with media as signed URLs
@@ -25,17 +25,6 @@ from lessons.media_urls import MediaUrlSigner
 from lessons.models import Lesson, MediaAsset
 
 pytestmark = pytest.mark.django_db
-
-SOLUTION_KEYS = {
-    "correct_index",
-    "answer",
-    "tolerance",
-    "model_answer",
-    "key_points",
-    "rubric",
-    "reference_solution",
-    "test_cases",
-}
 
 
 def ref(asset_id="a-1", **extra):
@@ -65,20 +54,18 @@ def test_the_data_has_the_title_pages_and_media_keyed_by_asset_id():
     }  # fmt: skip
 
 
-def test_the_test_questions_are_public_only():
-    source = {"final_test": make_final_test()}
+def test_the_test_is_not_part_of_the_document_though_the_key_stays_for_old_lessons():
+    """The test is its own screen. A lesson from before that still declares a fourth page that reads
+    `LESSON.final_test`, so the key stays, with no questions."""
+    data = LessonData.build({"final_test": make_final_test()}, str)
 
-    data = LessonData.build(source, str)
-
-    questions = data["final_test"]["questions"]
-    assert len(questions) == 10 and all(not SOLUTION_KEYS & set(q) for q in questions)
-    assert "explanation" not in str(questions) and all("question" in q for q in questions)
+    assert data["final_test"] == {"title": "Test your understanding", "questions": []}
 
 
 def test_without_a_test_or_plan_the_data_is_empty_but_valid():
     data = LessonData.build({"title": "Fallback", "topic": "t"}, str)
 
-    assert data["title"] == "Fallback" and data["final_test"] == {"title": "Test", "questions": []}
+    assert data["title"] == "Fallback" and data["final_test"] == {"title": "Test your understanding", "questions": []}
     assert data["pages"] == {} and data["media"] == {}
 
 
@@ -96,7 +83,7 @@ def test_alt_text_wins_over_the_title_and_a_bare_ref_gets_defaults():
 def lesson_with_media(lesson, settings, tmp_path):
     settings.MEDIA_ROOT = tmp_path
     Lesson.objects.filter(pk=lesson.pk).update(
-        title="T", level="beginner", plan=make_plan(), pages=make_pages(), final_test=make_final_test(),
+        title="T", level="beginner", plan=make_plan(), pages=make_pages(),
         code="render(<X />)", code_version=3,
     )  # fmt: skip
     asset = MediaAsset(
@@ -129,7 +116,7 @@ def test_the_document_has_the_code_its_version_and_signed_media_urls(lesson_with
     assert (document["code"], document["code_version"]) == ("render(<X />)", 3)
     url = document["data"]["media"][str(asset.id)]["url"]
     assert url.startswith(f"/api/media/{asset.id}?exp=1060&sig=")
-    assert document["data"]["title"] == "Binary search" and len(document["data"]["final_test"]["questions"]) == 10
+    assert document["data"]["title"] == "Binary search" and document["data"]["final_test"]["questions"] == []
 
 
 class TestEmbeddedTest:

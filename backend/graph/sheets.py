@@ -2,8 +2,7 @@
 revision sheet, written in parallel and grounded in the diagnostic's concepts.
 
 One object asks the model for a sheet and checks it, as `ContentWriter` does for a page, so the same rules judge a
-sheet however it was asked for. The single-sheet nodes (`generate_study_material` and its neighbours) stay for the
-lessons already waiting at the old three-sheet choice and for another sheet later.
+sheet however it was asked for.
 """
 
 from .context import FlowContext

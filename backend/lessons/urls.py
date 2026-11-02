@@ -50,11 +50,6 @@ urlpatterns = [
         name="test-submission-current",
     ),
     path(
-        "lessons/<str:lesson_id>/test/submissions",
-        views.TestSubmissionsView.as_view(),
-        name="test-submissions",
-    ),
-    path(
         "lessons/<str:lesson_id>/test/submissions/<str:submission_id>",
         views.TestSubmissionView.as_view(),
         name="test-submission",

@@ -63,12 +63,11 @@ class LoadBankNode(Node):
             "question_round": 0,
         }
 
-    @staticmethod
-    def blueprint(lesson: Lesson) -> LessonTestBlueprint:
+    def blueprint(self, lesson: Lesson) -> LessonTestBlueprint:
         """The lesson's own, or (a lesson made before the blueprint) the one its old test implies, kept from now on."""
         if lesson.test_blueprint:
             return LessonTestBlueprint.from_json(lesson.test_blueprint)
-        blueprint = LessonTestBlueprint.for_old_test((lesson.final_test or {}).get("questions"))
+        blueprint = LessonTestBlueprint.for_old_test(self.bank.first_set(lesson))
         lesson.record(test_blueprint=blueprint.to_json())
         return blueprint
 

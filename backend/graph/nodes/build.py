@@ -304,7 +304,6 @@ class PersistLessonNode(Node):
             Stage.READY,
             pages=state["pages"],
             concept_index=ConceptIndex.build(state.get("plan"), state["pages"]).to_json(),
-            final_test=state["final_test"],
             code=state["document_code"],
             code_parts=parts,
             code_version=lesson.code_version + 1,

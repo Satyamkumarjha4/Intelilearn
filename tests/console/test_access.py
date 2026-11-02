@@ -67,7 +67,7 @@ def routes(registry, lesson, monkeypatch):
         ("get", "/api/console/profiles", None),
         ("post", "/api/console/profiles/cheap/preview", None),
         ("get", "/api/console/flow-settings", None),
-        ("patch", "/api/console/flow-settings", {"final_test_min": 9}),
+        ("patch", "/api/console/flow-settings", {"alignment_max_rounds": 3}),
         ("get", "/api/console/learners", None),
         ("get", "/api/console/audit", None),
     ]

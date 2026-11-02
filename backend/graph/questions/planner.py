@@ -1,4 +1,4 @@
-"""Splits the cells of a test into the batches a model writes (docs/to_be_developed/..., §6.6)."""
+"""Splits the cells of a test into the batches a model writes (the implementation plan in docs/archive/, §6.6)."""
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass

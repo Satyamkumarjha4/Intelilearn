@@ -83,10 +83,7 @@ from .nodes.grading import (
 from .nodes.mastery import (
     AwaitChoiceNode,
     FailStudyMaterialNode,
-    GenerateStudyMaterialNode,
-    PersistStudyMaterialNode,
     PublishMasteryOptionsNode,
-    ValidateStudyMaterialNode,
 )
 from .nodes.questions import GenerateQuestionsNode, PlanBatchesNode, QuestionRound
 from .nodes.quiz import (
@@ -199,36 +196,22 @@ class EntrySegment(Segment):
 
 
 class MasterySegment(Segment):
-    """The learner aced the diagnostic: offer the Expert lesson or the two sheets (or, for a lesson that was waiting
-    before that, one sheet), then follow the choice. Provides the `mastery` exit."""
+    """The learner aced the diagnostic: offer the Expert lesson or the two sheets, then follow the choice. Provides the
+    `mastery` exit."""
 
-    retry_targets = ("generate_study_material",)
     provides = {"mastery": "publish_mastery_options"}
 
     def add_nodes(self, graph: StateGraph) -> None:
-        for node in (
-            PublishMasteryOptionsNode(),
-            AwaitChoiceNode(),
-            GenerateStudyMaterialNode(),
-            ValidateStudyMaterialNode(),
-            PersistStudyMaterialNode(),
-        ):
+        for node in (PublishMasteryOptionsNode(), AwaitChoiceNode()):
             graph.add_node(node.name, node)
 
     def add_edges(self, graph: StateGraph, exits: dict[str, str]) -> None:
         graph.add_edge("publish_mastery_options", "await_choice")
         graph.add_conditional_edges(
             "await_choice",
-            ChoiceRouter(lesson=exits["assess"], sheets=exits["sheets"], legacy="generate_study_material"),
-            sorted({exits["assess"], exits["sheets"], "generate_study_material"}),
+            ChoiceRouter(lesson=exits["assess"], sheets=exits["sheets"]),
+            sorted({exits["assess"], exits["sheets"]}),
         )
-        graph.add_edge("generate_study_material", "validate_study_material")
-        graph.add_conditional_edges(
-            "validate_study_material",
-            CheckRouter("material", ok="persist_study_material", retry="generate_study_material", fail=exits["failed"]),
-            ["persist_study_material", "generate_study_material", exits["failed"]],
-        )
-        graph.add_edge("persist_study_material", END)
 
 
 class SheetsSegment(Segment):

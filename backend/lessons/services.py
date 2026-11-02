@@ -428,14 +428,14 @@ class MaterialService:
         self.dispatcher = RunDispatcher(queue, RunEffects(settlement=AuthorizationSettlement(gate)))
         self.grader = grader or AnswerGrader()
 
-    #: what a learner who aced the quiz can choose now (a sheet kind is still taken from a lesson already waiting)
+    #: what a learner who aced the quiz can choose
     CHOICES = ("lesson", "sheets")
 
     def choose(self, lesson: Lesson, choice: str) -> GraphRun:
         """The learner's pick after aceing the diagnostic: resume the paused flow with it. `lesson` continues with an
         Expert lesson that has a test; `sheets` writes the cheat sheet and the revision sheet and ends there (no test).
         `lesson.continue` is asked with what they chose."""
-        if choice not in (*self.CHOICES, *MaterialKind.values):
+        if choice not in self.CHOICES:
             raise InvalidAnswers(f"Unknown choice {choice!r}.")
         with transaction.atomic():
             lesson = Lesson.objects.select_for_update().get(pk=lesson.pk)
@@ -464,7 +464,7 @@ class MaterialService:
         """What `lesson.continue` is asked with after a perfect score: the Expert lesson, or sheets only."""
         if choice == "lesson":
             return {"choice": "lesson", "perfect": True}
-        return {"choice": "sheets_only", "perfect": True, "sheets": 2 if choice == "sheets" else 1, "grounding": "quiz"}
+        return {"choice": "sheets_only", "perfect": True, "sheets": 2, "grounding": "quiz"}
 
     def request_extra(self, lesson: Lesson, asked: str | list[str], idempotency_key: str = "") -> GraphRun:
         """More sheets for a ready lesson, whichever kind of lesson it is: one cheat sheet, one revision sheet, or both

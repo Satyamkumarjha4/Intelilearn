@@ -315,16 +315,3 @@ class TestMasteryChoice:
         assert run.interrupt is None and Lesson.objects.get(pk=lesson.pk).stage == Stage.READY
         assert run.nodes.count("plan_sheets") == 2
         assert StudyMaterial.objects.filter(lesson=lesson).count() == 2
-
-    @pytest.mark.parametrize("resume", ["cheat_sheet", {"choice": "cheat_sheet"}])
-    def test_a_lesson_already_waiting_at_the_old_choice_still_resumes_with_one_sheet(
-        self, run, gateway, valid_bundle, lesson, resume
-    ):
-        self.perfect(run, gateway, valid_bundle)
-        gateway.script("study.generate", make_cheat_sheet())
-
-        run.stream(Command(resume=resume))
-
-        assert run.nodes[-3:] == ["generate_study_material", "validate_study_material", "persist_study_material"]
-        assert StudyMaterial.objects.get(lesson=lesson).kind == "cheat_sheet"
-        assert Lesson.objects.get(pk=lesson.pk).stage == Stage.READY

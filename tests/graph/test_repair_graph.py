@@ -45,7 +45,7 @@ def ready(lesson, lesson_state):
     code = assembler.assemble(parts["interactives"], pages)
     Lesson.objects.filter(pk=lesson.pk).update(
         stage=Stage.READY, code=code, code_parts=parts, code_version=1, plan=full["plan"], pages=full["pages"],
-        final_test=full["final_test"], config_snapshot=budget_snapshot(), settings_snapshot=lesson_state["settings"],
+        config_snapshot=budget_snapshot(), settings_snapshot=lesson_state["settings"],
     )  # fmt: skip
     return lesson
 

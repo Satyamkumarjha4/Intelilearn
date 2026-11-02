@@ -4,11 +4,11 @@ from lessons.renames import StoredRenames
 
 
 def to_new_names(apps, schema_editor):
-    StoredRenames().forward(apps)
+    StoredRenames().forward(apps, schema_editor.connection.alias)
 
 
 def to_old_names(apps, schema_editor):
-    StoredRenames().backward(apps)
+    StoredRenames().backward(apps, schema_editor.connection.alias)
 
 
 class Migration(migrations.Migration):

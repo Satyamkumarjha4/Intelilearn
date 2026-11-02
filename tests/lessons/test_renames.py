@@ -134,5 +134,6 @@ class TestEveryColumnIsAccountedFor:
         known = covered | set(StoredRenames.UNTOUCHED_COLUMNS)
 
         assert self.json_columns() - known == set(), "a new JSON column: does it hold a level or a difficulty?"
-        assert known - self.json_columns() == set(), "a column that no longer exists is still listed"
+        gone = known - self.json_columns()
+        assert gone == set(StoredRenames.RETIRED_COLUMNS), "a column that no longer exists is still listed"
         assert covered.isdisjoint(StoredRenames.UNTOUCHED_COLUMNS)

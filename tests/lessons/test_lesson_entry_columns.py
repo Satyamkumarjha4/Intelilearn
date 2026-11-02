@@ -12,9 +12,8 @@ Use cases:
 - a self-rated lesson keeps its rating, entry and level source
 - a rating of 1 to 10 halves is stored and anything else is refused by the database; no rating is allowed
 - a recommended lesson keeps the attempt and topic it came from
-- a lesson remembers which mastery choice it was shown: the three sheets it was offered before the Expert lesson
-  existed (the default, so a lesson already waiting keeps its cards), or the Expert lesson or two sheets once the new
-  choice is published; migration 0013 gives every existing lesson the old one
+- the mastery choice has one version since phase 9.8: publishing it moves the stage and records nothing, and the API
+  and the model no longer carry a choice version (migration 0021 dropped it)
 - migration 0012 credits the quick check as the level source of every existing lesson that has a level, leaves a lesson
   without a level alone, and can be undone
 - migration 0011 gives every existing lesson the defaults and can be undone
@@ -84,25 +83,22 @@ class TestColumns:
 
 
 @pytest.mark.django_db
-class TestMasteryOptions:
-    def test_a_lesson_defaults_to_the_choice_it_was_offered_before_the_expert_lesson(self, lesson):
-        assert Lesson.objects.get(pk=lesson.pk).mastery_options == "three_sheets"
+class TestTheChoiceHasNoOldVersion:
+    """The three-sheet choice was retired in phase 9.8 (migration 0021): a lesson no longer says which choice it was
+    shown, because there is only one."""
 
-    def test_publishing_the_choice_records_the_new_options(self, lesson, lesson_state, runtime):
+    def test_publishing_the_choice_only_moves_the_stage(self, lesson, lesson_state, runtime):
         Lesson.objects.filter(pk=lesson.pk).update(stage=Stage.AWAITING_DIAGNOSTIC, route="mastery")
 
         PublishMasteryOptionsNode()(lesson_state, runtime)
 
-        stored = Lesson.objects.get(pk=lesson.pk)
-        assert (stored.stage, stored.mastery_options) == (Stage.AWAITING_CHOICE, "lesson_or_sheets")
+        assert Lesson.objects.get(pk=lesson.pk).stage == Stage.AWAITING_CHOICE
 
-    def test_the_api_says_which_choice_the_lesson_was_shown(self, signed_in_client, lesson):
-        before = signed_in_client.get(f"/api/lessons/{lesson.id}").json()["mastery_options"]
-        Lesson.objects.filter(pk=lesson.pk).update(mastery_options="lesson_or_sheets")
+    def test_the_api_does_not_report_a_choice_version(self, signed_in_client, lesson):
+        assert "mastery_options" not in signed_in_client.get(f"/api/lessons/{lesson.id}").json()
 
-        after = signed_in_client.get(f"/api/lessons/{lesson.id}").json()["mastery_options"]
-
-        assert (before, after) == ("three_sheets", "lesson_or_sheets")
+    def test_the_model_has_no_such_column(self):
+        assert "mastery_options" not in {field.name for field in Lesson._meta.get_fields()}
 
 
 class TestTransitions:
@@ -167,6 +163,7 @@ class TestMigrations:
         new = migrate(OPTIONS)
 
         assert new.get_model("lessons", "Lesson").objects.get(pk=pk).mastery_options == "three_sheets"
+        new.get_model("lessons", "Lesson").objects.filter(pk=pk).update(stage="ready")  # not waiting at it any more
 
     def test_the_migrations_can_be_undone_and_applied_again(self, django_user_model):
         migrate(BACKFILLED)

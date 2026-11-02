@@ -4,7 +4,7 @@ Nothing here prices anything. Every action that starts paid work is named in `Me
 `ActionGate` before it creates a row or queues a run (`ActionMetering.authorize`), the answer travels with the run, and
 `AuthorizationSettlement` tells the gate how the work ended once the action's `CompletionPoint` is reached or the run
 dies first. The default gate (`OpenGate`) allows everything and stores nothing, so the app behaves as if this did not
-exist. See docs/to_be_developed/modular-lessons-implementation-plan.md §5.5 and §6.7.
+exist. See docs/archive/modular-lessons-implementation-plan.md §5.5 and §6.7.
 """
 
 import logging
@@ -378,7 +378,6 @@ class RunStarters:
     NEVER: ClassVar[dict[str, str]] = {
         "CodeService.request_repair": "A repair of a lesson that is already paid for; capped per lesson.",
         "AttemptService.submit": "Grading the learner's test; a lesson attempt is graded in full here, no run.",
-        "AttemptService.submit_once": "The old single call: starts and submits attempt 1, which is part of the lesson.",
         "AttemptService.regrade": "Re-running a grading that failed, on the stored answers.",
         "CalibrationService.answer": "The calibration walk resumes the run that is already paid for (quiz.create).",
         "QuizAttemptService.submit": "Grading the learner's quiz attempt; objective attempts are graded in full here.",

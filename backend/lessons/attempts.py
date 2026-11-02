@@ -2,7 +2,7 @@
 follows from its score. Split out of `services.py`, where it was `SubmissionService` (the one submission).
 
 An attempt is a `TestSubmission` row. Attempt 1 is part of the lesson: it starts at once from the questions the lesson
-was built with (a lesson made before the fixed test snapshots its old test). Attempt 2 and later always generate a
+was built with, its first set on the record (`QuestionBank.first_set`). Attempt 2 and later always generate a
 fresh set (`question_bank` graph), after the action gate has been asked for `test.retake`; the row waits as
 `generating` and starts as `in_progress` when its questions are ready. At most one attempt is open at a time.
 
@@ -16,7 +16,7 @@ from datetime import timedelta
 from typing import NamedTuple
 
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError, transaction
+from django.db import transaction
 from django.utils import timezone
 
 from graph.grading import AnswerGrader, ScoreCard
@@ -24,9 +24,9 @@ from graph.questions import LessonTestBlueprint
 from graph.schemas import public_question
 from graph.scoring import AttemptTrend
 
+from .bank import QuestionBank
 from .effects import RunEffects
 from .errors import (
-    AlreadySubmitted,
     AttemptSealed,
     InvalidAnswers,
     NotFailed,
@@ -115,6 +115,7 @@ class AttemptService:
         gate: ActionGate | None = None,
         outcome: AttemptOutcome | None = None,
         cleaner: AnswerCleaner | None = None,
+        bank: QuestionBank | None = None,
     ):
         self.metering = ActionMetering(gate)
         self.dispatcher = RunDispatcher(queue, RunEffects(settlement=AuthorizationSettlement(gate)))
@@ -122,6 +123,7 @@ class AttemptService:
         self.cards = cards or ScoreCard()
         self.outcome = outcome or AttemptOutcome()
         self.cleaner = cleaner or AnswerCleaner()
+        self.bank = bank or QuestionBank()
 
     # --- reading -------------------------------------------------------------------------------------------------
 
@@ -256,33 +258,6 @@ class AttemptService:
             self.dispatcher.dispatch(run)
         return Submitted(attempt, run)
 
-    def submit_once(self, lesson: Lesson, answers) -> Submitted:
-        """Start the first attempt and submit it in one call (`POST /test/submissions`, kept for the old screen). Only
-        the first attempt: once there is any, this is refused with that attempt's id, as the one submission was."""
-        self._testable(lesson)
-        with transaction.atomic():
-            lesson = Lesson.objects.select_for_update().get(pk=lesson.pk)
-            if (existing := self._existing(lesson)) is not None:
-                raise AlreadySubmitted(existing.id)
-            clean = self.cleaner.many(self._old_test(lesson), answers)
-            try:
-                # A savepoint: the constraint's refusal must not poison the outer transaction.
-                with transaction.atomic():
-                    attempt = TestSubmission.objects.create(
-                        lesson=lesson, attempt_no=1, status=TestSubmission.Status.IN_PROGRESS,
-                        questions=self._old_test(lesson),
-                    )  # fmt: skip
-            except IntegrityError:  # the lock above makes this rare, but the constraint is the real guarantee
-                raise AlreadySubmitted(self._existing(lesson).id) from None
-            run = self._seal(lesson, attempt, clean)
-        if run:
-            self.dispatcher.dispatch(run)
-        return Submitted(attempt, run)
-
-    @staticmethod
-    def _existing(lesson: Lesson) -> TestSubmission | None:
-        return TestSubmission.objects.filter(lesson=lesson).first()
-
     def _seal(self, lesson: Lesson, attempt: TestSubmission, answers: dict) -> GraphRun | None:
         """Mark the answers and close the attempt. A lesson attempt is graded in full here; one with open-ended
         questions is marked as far as it can be and queued for `grade_test`."""
@@ -326,10 +301,9 @@ class AttemptService:
         if not self._old_test(lesson) and not TestSubmission.objects.filter(lesson=lesson).exists():
             raise WrongStage("The test can be taken once the lesson is ready.")
 
-    @staticmethod
-    def _old_test(lesson: Lesson) -> list[dict]:
+    def _old_test(self, lesson: Lesson) -> list[dict]:
         """The questions the lesson was built with: attempt 1."""
-        return (lesson.final_test or {}).get("questions") or []
+        return self.bank.first_set(lesson)
 
     @staticmethod
     def _open(lesson: Lesson) -> TestSubmission | None:

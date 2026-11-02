@@ -20,7 +20,6 @@ x-e2e-env: &e2e-env
   AUTH_THROTTLE_RATE: 10000/min
   AUTH_ACCOUNT_THROTTLE_RATE: 10000/min
   LESSON_CREATE_THROTTLE_RATE: 10000/hour
-  TEST_SUBMIT_THROTTLE_RATE: 10000/hour
 
 services:
   # Nothing but the app and its API is published: the dev stack owns the usual database and Redis ports.

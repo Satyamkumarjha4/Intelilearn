@@ -8,7 +8,6 @@ import re
 from collections.abc import Callable
 
 from graph.levels import LevelScheme
-from graph.schemas import public_question
 
 from .media_urls import MediaUrlSigner
 from .models import Lesson
@@ -25,7 +24,6 @@ class LessonSource:
             "level": lesson.level,
             "plan": lesson.plan,
             "pages": lesson.pages,
-            "final_test": lesson.final_test,
             "media": cls.media_refs(lesson),
         }
 
@@ -71,7 +69,6 @@ class LessonData:
     @classmethod
     def build(cls, source: dict, media_url: Callable[[str], str]) -> dict:
         """`source`: the graph state, or `LessonSource.of(lesson)`. `media_url`: asset id → the URL the page loads."""
-        final_test = source.get("final_test") or {"title": "Test", "questions": []}
         plan = source.get("plan") or {}
         media = source.get("media") or {}
         return {
@@ -79,10 +76,9 @@ class LessonData:
             "topic": source.get("topic") or "",
             "level": LevelScheme.level_of(plan).value if plan.get("level") else source.get("level") or "",
             "pages": source.get("pages") or {},
-            "final_test": {
-                "title": final_test.get("title") or "Test your understanding",
-                "questions": [public_question(q) for q in final_test.get("questions", [])],
-            },
+            # The test is its own screen, not part of the document. Lessons made before that still declare a fourth page
+            # that reads this, so the key stays, empty.
+            "final_test": {"title": "Test your understanding", "questions": []},
             "media": {ref["asset_id"]: cls.media_entry(ref, media_url(ref["asset_id"])) for ref in media.values()},
         }
 

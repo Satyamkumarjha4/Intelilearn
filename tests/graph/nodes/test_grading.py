@@ -18,8 +18,9 @@ Use cases:
 """
 
 import pytest
+from support.first_sets import seed_first_set
 from support.fixtures import budget_snapshot
-from support.lesson_data import make_final_test
+from support.lesson_data import make_blueprint_test, make_final_test
 
 from graph.errors import RunFailed
 from graph.nodes.grading import (
@@ -46,7 +47,7 @@ ANSWERS = {MCQ: 1, NUM: "4", SHORT: "Halve the range each time.", LONG: "   ", S
 @pytest.fixture
 def submitted(lesson, lesson_state):
     Lesson.objects.filter(pk=lesson.pk).update(
-        stage=Stage.READY, final_test=FINAL_TEST, config_snapshot=budget_snapshot(),
+        stage=Stage.READY, config_snapshot=budget_snapshot(),
         settings_snapshot=lesson_state["settings"],
     )  # fmt: skip
     submission = TestSubmission.objects.create(
@@ -181,7 +182,7 @@ class TestPersist:
         self, submitted, runtime, lesson
     ):
         state, submission = submitted
-        Lesson.objects.filter(pk=lesson.pk).update(final_test={"title": "T", "questions": []})
+        seed_first_set(lesson, make_blueprint_test()["questions"][:2])  # the lesson's own set is not what is graded
 
         update = LoadSubmissionNode()(state, runtime)
 

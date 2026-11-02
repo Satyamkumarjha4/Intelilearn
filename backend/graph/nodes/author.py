@@ -159,7 +159,8 @@ class AuthoredJoinNode(Node):
         questions = [accepted[str(cell.index)] for cell in blueprint.cells]
         stored = self.bank.add(state["lesson_id"], self.batch(ctx), questions)
         test = {"title": FinalTest(questions=[]).title, "questions": stored}
-        self.lesson(state).record(pages=state["pages"], final_test=test)
+        self.bank.set_first_set(state["lesson_id"], stored)
+        self.lesson(state).record(pages=state["pages"])
         return result.update | {"final_test": test, "warnings": warnings}
 
     @staticmethod
@@ -397,10 +398,8 @@ class FixItemNode(Node):
         old = next(q for q in test["questions"] if q["id"] == question_id)
         (stored,) = self.bank.add(state["lesson_id"], AuthoredJoinNode.batch(ctx), [question])
         if old.get("question_id") and old["question_id"] != stored["question_id"]:
-            self.bank.retire(state["lesson_id"], old["question_id"])
-        fixed = {**test, "questions": [stored if q["id"] == question_id else q for q in test["questions"]]}
-        self.lesson(state).record(final_test=fixed)
-        return fixed
+            self.bank.replace_in_first_set(state["lesson_id"], old["question_id"], stored)  # retires the old row
+        return {**test, "questions": [stored if q["id"] == question_id else q for q in test["questions"]]}
 
     @staticmethod
     def kept(ctx: FlowContext, what: str, problems: list[str]) -> dict | None:

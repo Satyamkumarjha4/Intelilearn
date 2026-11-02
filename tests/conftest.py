@@ -60,9 +60,17 @@ def make_lesson(user):
     from lessons.models import Lesson
 
     def _make(**fields):
+        """A lesson. `final_test` is not a column any more: it stands for the questions the lesson was built with, which
+        go on the record as its first set (`QuestionBank.set_first_set`)."""
+        from support.first_sets import seed_first_set
+
         fields.setdefault("owner", user)
         fields.setdefault("topic", "Binary search")
-        return Lesson.objects.create(**fields)
+        test = fields.pop("final_test", None)
+        lesson = Lesson.objects.create(**fields)
+        if test:
+            seed_first_set(lesson, test["questions"])
+        return lesson
 
     return _make
 

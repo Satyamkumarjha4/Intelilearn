@@ -6,6 +6,8 @@ and a question is withdrawn (retired), never edited or deleted, so every attempt
 
 import uuid
 
+from django.db import transaction
+
 from graph.questions import StemHash
 
 from .models import Lesson, Question, TestSubmission
@@ -32,6 +34,33 @@ class QuestionBank:
             stored.append({**question, "question_id": str(row.id)})
         return stored
 
+    def set_first_set(self, lesson_id, stored: list[dict]) -> None:
+        """The questions a lesson was built with, in order: what attempt 1 will serve. `stored` are the copies `add`
+        returned. Writing a set again replaces the old one (a build that is run again)."""
+        with transaction.atomic():
+            Question.objects.filter(lesson_id=lesson_id).update(first_set_position=None)
+            for position, question in enumerate(stored):
+                Question.objects.filter(lesson_id=lesson_id, pk=question["question_id"]).update(
+                    first_set_position=position
+                )
+
+    def replace_in_first_set(self, lesson_id, old_question_id, stored: dict) -> None:
+        """One question of the set written again (a fix after the review): the new one stands where the old one did and
+        the old row is retired."""
+        with transaction.atomic():
+            old = Question.objects.select_for_update().filter(lesson_id=lesson_id, pk=old_question_id).first()
+            if old is None or old.first_set_position is None:
+                raise LookupError(f"Question {old_question_id} is not in the lesson's first set.")
+            position = old.first_set_position
+            Question.objects.filter(pk=old.pk).update(first_set_position=None, retired=True)
+            Question.objects.filter(lesson_id=lesson_id, pk=stored["question_id"]).update(first_set_position=position)
+
+    def first_set(self, lesson: Lesson) -> list[dict]:
+        """The questions the lesson was built with, in order, as attempt 1 serves them: the whole question with its
+        answer key and the id of its row. Empty for a lesson without one."""
+        rows = Question.objects.filter(lesson=lesson, first_set_position__isnull=False).order_by("first_set_position")
+        return [{**row.payload, "question_id": str(row.id)} for row in rows]
+
     def retire(self, lesson_id, question_id) -> None:
         Question.objects.filter(lesson_id=lesson_id, pk=question_id).update(retired=True)
 
@@ -43,7 +72,7 @@ class QuestionBank:
         return list(dict.fromkeys(stems))
 
     def leftovers(self, lesson: Lesson) -> list[dict]:
-        """Written but never served: not retired, and in neither the lesson's test nor an attempt. Each is
+        """Written but never served: not retired, and in neither the lesson's first set nor an attempt. Each is
         `{id, type, difficulty, retired, question}` where `question` is the full stored question."""
         served = {q.get("question_id") for q in self._served(lesson)}
         rows = Question.objects.filter(lesson=lesson, retired=False)
@@ -55,8 +84,8 @@ class QuestionBank:
 
     @staticmethod
     def _served(lesson: Lesson) -> list[dict]:
-        """Every question the lesson's test and its attempts have shown."""
-        served = list((lesson.final_test or {}).get("questions") or [])
+        """Every question the lesson's first set and its attempts have shown."""
+        served = QuestionBank().first_set(lesson)
         for snapshot in TestSubmission.objects.filter(lesson=lesson).values_list("questions", flat=True):
             served += snapshot or []
         return served

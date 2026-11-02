@@ -294,7 +294,6 @@ class TestTheMasteryChoice:
     @pytest.mark.parametrize(("choice", "size"), [
         ("lesson", {"choice": "lesson", "perfect": True}),
         ("sheets", {"choice": "sheets_only", "perfect": True, "sheets": 2, "grounding": "quiz"}),
-        ("cheat_sheet", {"choice": "sheets_only", "perfect": True, "sheets": 1, "grounding": "quiz"}),
     ])  # fmt: skip
     def test_the_choice_asks_lesson_continue_for_a_perfect_score_with_what_was_chosen(
         self, make_lesson, queue, choice, size
@@ -311,7 +310,7 @@ class TestTheMasteryChoice:
 
     def test_a_refusal_creates_no_run(self, make_lesson, queue):
         with pytest.raises(ActionRefused):
-            MaterialService(queue=queue, gate=RefusingGate()).choose(self.mastery(make_lesson), "cheat_sheet")
+            MaterialService(queue=queue, gate=RefusingGate()).choose(self.mastery(make_lesson), "sheets")
 
         assert GraphRun.objects.count() == 0 and queue.runs == []
 
@@ -320,7 +319,7 @@ class TestTheMasteryChoice:
         gate = CountingGate()
 
         with pytest.raises(WrongStage):
-            MaterialService(queue=queue, gate=gate).choose(make_lesson(stage=stage, route="mastery"), "cheat_sheet")
+            MaterialService(queue=queue, gate=gate).choose(make_lesson(stage=stage, route="mastery"), "sheets")
 
         assert gate.authorized == []
 

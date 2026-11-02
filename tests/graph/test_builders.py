@@ -24,7 +24,7 @@ import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 from support.driver import GraphDriver
-from support.study_data import make_cheat_sheet, make_practice_sheet
+from support.study_data import make_cheat_sheet
 
 from graph.builders import DiagnoseSegment, FlowGraphBuilder, MasterySegment, StudyMaterialGraphBuilder
 from lessons.models import Lesson, Quiz, QuizAttempt, Stage, StudyMaterial
@@ -110,50 +110,6 @@ def test_a_perfect_score_is_routed_to_mastery_and_pauses_for_the_sheet_choice(ru
     assert run.interrupt == {"kind": "mastery_choice"}
     stored = Lesson.objects.get(pk=lesson.pk)
     assert (stored.route, stored.stage) == ("mastery", Stage.AWAITING_CHOICE)
-
-
-def test_the_chosen_sheet_is_written_checked_and_saved(run, gateway, valid_bundle, lesson):
-    gateway.script("diagnostic.generate", mastery_bundle(valid_bundle)).script("study.generate", make_cheat_sheet())
-    run.start().answer("diagnostic", right=10)
-
-    run.stream(Command(resume="cheat_sheet"))
-
-    assert run.nodes[-3:] == ["generate_study_material", "validate_study_material", "persist_study_material"]
-    assert run.interrupt is None
-    assert StudyMaterial.objects.get(lesson=lesson).kind == "cheat_sheet"
-    assert Lesson.objects.get(pk=lesson.pk).stage == Stage.READY
-
-
-def test_an_invalid_sheet_is_regenerated_with_the_problems_as_feedback(run, gateway, valid_bundle, lesson):
-    short = make_practice_sheet(14)
-    gateway.script("diagnostic.generate", mastery_bundle(valid_bundle)).script(
-        "study.generate", short, make_practice_sheet()
-    )
-    run.start().answer("diagnostic", right=10)
-
-    run.stream(Command(resume="practice_sheet"))
-
-    assert run.nodes.count("generate_study_material") == 2
-    assert "15-25 questions" in gateway.called("study.generate")[1].messages[1].content
-    assert Lesson.objects.get(pk=lesson.pk).stage == Stage.READY
-
-
-def test_a_sheet_that_stays_invalid_fails_the_run_and_retry_resumes_at_generation(run, gateway, valid_bundle, lesson):
-    short = make_practice_sheet(14)
-    gateway.script("diagnostic.generate", mastery_bundle(valid_bundle))
-    gateway.script("study.generate", short, short, make_practice_sheet())
-    run.start().answer("diagnostic", right=10)
-
-    run.stream(Command(resume="practice_sheet"))
-
-    assert run.interrupt["kind"] == "retry" and run.nodes[-1] == "mark_failed"
-    failed = Lesson.objects.get(pk=lesson.pk)
-    assert failed.stage == Stage.FAILED and "The practice sheet still failed" in failed.error
-
-    run.stream(Command(resume=True))
-
-    assert run.interrupt is None and Lesson.objects.get(pk=lesson.pk).stage == Stage.READY
-    assert len(gateway.called("study.generate")) == 3
 
 
 class ExtraRun:

@@ -1,4 +1,4 @@
-"""The fixed ten cells of a lesson's test (docs/to_be_developed/modular-lessons-implementation-plan.md D15).
+"""The fixed ten cells of a lesson's test (docs/archive/modular-lessons-implementation-plan.md D15).
 
 Every lesson, at every level, has the same test: ten objective questions, two for each difficulty. A cell is one
 question's type and difficulty. The marks come from the marks table, so the total is the same for every attempt of a

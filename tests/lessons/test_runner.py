@@ -547,7 +547,7 @@ def broken_ready_lesson(lesson, flow_settings):
     full = make_state()
     Lesson.objects.filter(pk=lesson.pk).update(
         stage=Stage.READY, code="OLD", code_parts=REPAIR_PARTS, code_version=1, plan=full["plan"], pages=full["pages"],
-        final_test=full["final_test"], config_snapshot=budget_snapshot(), settings_snapshot=flow_settings,
+        config_snapshot=budget_snapshot(), settings_snapshot=flow_settings,
     )  # fmt: skip
     payload = {"input": {"repair_error": {"message": "Interactive_w crashed"}, "expected_code_version": 1}}
     return new_run(lesson, GraphRun.Trigger.REPAIR, payload, graph="runtime_repair")
@@ -590,7 +590,7 @@ def test_a_repair_that_cannot_be_made_safely_fails_the_run_and_leaves_the_code_a
 def grading_run(lesson, flow_settings, answers):
     final_test = make_final_test()
     Lesson.objects.filter(pk=lesson.pk).update(
-        stage=Stage.READY, final_test=final_test, config_snapshot=budget_snapshot(), settings_snapshot=flow_settings
+        stage=Stage.READY, config_snapshot=budget_snapshot(), settings_snapshot=flow_settings
     )
     submission = TestSubmission.objects.create(
         lesson=lesson, answers=answers, questions=final_test["questions"], status=TestSubmission.Status.GRADING

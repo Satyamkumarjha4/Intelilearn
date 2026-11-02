@@ -62,15 +62,6 @@ class FollowupLevel(models.TextChoices):
     ADVANCED = "advanced", "Advanced"
 
 
-class MasteryOptions(models.TextChoices):
-    """What the learner who aced the quick check was shown. A lesson already waiting at the choice when the Expert
-    lesson was added keeps the three sheets it was offered; the choice published since offers the lesson or the two
-    sheets."""
-
-    THREE_SHEETS = "three_sheets", "Three sheets"
-    LESSON_OR_SHEETS = "lesson_or_sheets", "The Expert lesson or two sheets"
-
-
 class MaterialKind(models.TextChoices):
     CHEAT_SHEET = "cheat_sheet", "Cheat sheet"
     REVISION_SHEET = "revision_sheet", "Revision sheet"

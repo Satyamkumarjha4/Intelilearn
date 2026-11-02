@@ -21,7 +21,7 @@ Use cases:
 - GET test never starts anything and shows the open attempt only
 - another user's lesson and attempt are a 404, and no response carries an answer key
 - the lesson summary says how many attempts, the best and latest score, and whether one is open
-- the old single call keeps working for the first attempt
+- the old single call, `POST /test/submissions`, is gone; an attempt can still be read under its old name
 - a retake that is still being prepared can be stopped through the run's cancel endpoint: the waiting attempt is gone
   and its number is free again, the lesson stays ready and usable, the authorization settles cancelled once, and the
   learner can start another retake that asks the gate afresh
@@ -480,23 +480,23 @@ class TestLessonSummary:
         assert signed_in_client.get(f"/api/lessons/{ready.id}").json()["best_score"] == {"awarded": 14, "available": 20}
 
 
-class TestTheOldSingleCall:
-    def test_the_first_attempt_can_still_be_started_and_submitted_in_one_call(self, signed_in_client, ready, queue):
+class TestTheCombinedCallIsGone:
+    """`POST /lessons/{id}/test/submissions` started and submitted attempt 1 in one call, for the old test screen. The
+    attempts endpoints replaced it; the route is gone, and reading a submission by id still works."""
+
+    def test_the_route_is_not_found(self, signed_in_client, ready, queue):
         response = signed_in_client.post(
             f"/api/lessons/{ready.id}/test/submissions", {"answers": ALL_RIGHT}, format="json"
         )
 
-        body = response.json()
-        assert response.status_code == 202 and body["status"] == "graded" and body["run_id"] is None
-        assert body["awarded"] == 20 and body["attempt_no"] == 1
+        assert response.status_code == 404 and not TestSubmission.objects.filter(lesson=ready).exists()
 
-    def test_once_there_is_an_attempt_it_is_refused_naming_it(self, signed_in_client, ready, queue):
+    def test_an_attempt_is_still_read_by_its_id_under_the_old_name(self, signed_in_client, ready, queue):
         attempt = first_attempt(signed_in_client, ready)["attempt_id"]
 
-        response = signed_in_client.post(f"/api/lessons/{ready.id}/test/submissions", {"answers": {}}, format="json")
+        response = signed_in_client.get(f"/api/lessons/{ready.id}/test/submissions/{attempt}")
 
-        assert (response.status_code, response.json()["code"]) == (409, "already_submitted")
-        assert response.json()["submission_id"] == attempt
+        assert response.status_code == 200 and response.json()["id"] == attempt
 
 
 def test_the_gate_helper_is_a_counting_gate():

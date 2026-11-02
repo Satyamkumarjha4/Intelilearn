@@ -51,7 +51,6 @@ from .serializers import (
     StudyMaterialSerializer,
     TestSubmissionCreatedSerializer,
     TestSubmissionSerializer,
-    TestSubmitSerializer,
 )
 from .services import CodeService, LessonService, MaterialService, QuizService
 
@@ -655,45 +654,6 @@ class SubmittedBody:
             "followup": attempt.followup,
             "result": attempt.result,
         }
-
-
-class TestSubmissionsView(OwnedLessons, APIView):
-    __test__ = False
-
-    def get_throttles(self):
-        self.throttle_scope = "test_submit"
-        return [ScopedRateThrottle()]
-
-    @extend_schema(
-        tags=TEST_TAG,
-        summary="Start and submit the first attempt in one call",
-        description=(
-            "Kept for the old test screen; use the attempts endpoints. Multiple-choice, multiple-select and numerical "
-            "answers are marked at once and blank answers score 0; a legacy test's other answers are graded by a "
-            "model in a `grade_test` run. Only the first attempt: once the lesson has any attempt this is refused."
-        ),
-        parameters=[LESSON_ID],
-        request=TestSubmitSerializer,
-        responses={
-            202: TestSubmissionCreatedSerializer,
-            400: OpenApiResponse(description="Unknown question ids, or an answer that is not a number or text."),
-            409: OpenApiResponse(
-                description=(
-                    "The lesson is not ready (`wrong_stage`), or it already has an attempt (`already_submitted`, "
-                    "with that attempt's `submission_id`). Nothing is stored."
-                )
-            ),
-        },
-    )
-    def post(self, request, lesson_id):
-        serializer = TestSubmitSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        submitted = AttemptService().submit_once(
-            self.lesson_of(request, lesson_id), serializer.validated_data["answers"]
-        )
-        return Response(
-            TestSubmissionCreatedSerializer(SubmittedBody(submitted).data).data, status=status.HTTP_202_ACCEPTED
-        )
 
 
 class TestSubmissionView(OwnedLessons, APIView):

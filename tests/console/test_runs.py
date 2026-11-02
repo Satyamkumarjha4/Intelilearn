@@ -358,7 +358,7 @@ def test_steps_that_never_started_come_after_the_ones_that_did(make_run):
     ("node", "phase"),
     [
         ("load_context", "diagnose"), ("generate_diagnostic", "diagnose"), ("assess_learner", "diagnose"),
-        ("generate_study_material", "diagnose"), ("plan_lesson", "author"), ("compile_page", "build"),
+        ("plan_lesson", "author"), ("compile_page", "build"),
         ("render_check", "build"), ("repair_runtime", "post"), ("grade_open", "post"), ("mark_failed", "other"),
         ("resolve_source", "quiz"), ("generate_pool", "quiz"), ("level_from_walk", "quiz"), ("persist_attempt", "quiz"),
         ("a_node_that_does_not_exist", "other"),

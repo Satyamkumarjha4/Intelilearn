@@ -87,6 +87,9 @@ class StoredRenames:
         ("Lesson", "final_test"), ("Lesson", "plan"), ("StudyMaterial", "content"),
     )  # fmt: skip
     LEVEL_COLUMNS: ClassVar[tuple[tuple[str, str], ...]] = (("Lesson", "assessment"), ("Lesson", "plan"))
+    #: columns the rename rewrote that were dropped afterwards (migration 0020). The rename still reads them, through
+    #: the models of its own migration state, so the code stays; the guard test lets them be missing from the models.
+    RETIRED_COLUMNS: ClassVar[tuple[tuple[str, str], ...]] = (("Lesson", "final_test"),)
     #: JSON columns that hold neither a level nor a difficulty
     UNTOUCHED_COLUMNS: ClassVar[tuple[tuple[str, str], ...]] = (
         ("Lesson", "prerequisites_to_cover"), ("Lesson", "pages"), ("Lesson", "interactive_plan"),
@@ -107,15 +110,17 @@ class StoredRenames:
         self.levels = levels or LevelRename()
         self.difficulties = difficulties or DifficultyRename()
 
-    def forward(self, apps) -> None:
-        self._apply(apps, self.levels.forward_name, self.levels.forward_document, self.difficulties.forward)
+    def forward(self, apps, using: str = "default") -> None:
+        self._apply(apps, using, self.levels.forward_name, self.levels.forward_document, self.difficulties.forward)
 
-    def backward(self, apps) -> None:
-        self._apply(apps, self.levels.backward_name, self.levels.backward_document, self.difficulties.backward)
+    def backward(self, apps, using: str = "default") -> None:
+        self._apply(apps, using, self.levels.backward_name, self.levels.backward_document, self.difficulties.backward)
 
-    def _apply(self, apps, level_name, level_document, difficulty) -> None:
+    def _apply(self, apps, using, level_name, level_document, difficulty) -> None:
+        """`using` is the database being migrated: a migration must read and write that one, not the default (the test
+        suite migrates a second database while the first is already at the latest schema)."""
         lessons = apps.get_model("lessons", "Lesson")
-        for lesson in lessons.objects.iterator(chunk_size=200):
+        for lesson in lessons.objects.using(using).iterator(chunk_size=200):
             fields = {
                 "level": level_name(lesson.level),
                 "assessment": level_document(lesson.assessment),
@@ -126,10 +131,10 @@ class StoredRenames:
             if changed:
                 for name in changed:
                     setattr(lesson, name, fields[name])
-                lesson.save(update_fields=changed)
+                lesson.save(update_fields=changed, using=using)
         materials = apps.get_model("lessons", "StudyMaterial")
-        for material in materials.objects.iterator(chunk_size=200):
+        for material in materials.objects.using(using).iterator(chunk_size=200):
             content = difficulty(material.content)
             if content != material.content:
                 material.content = content
-                material.save(update_fields=["content"])
+                material.save(update_fields=["content"], using=using)

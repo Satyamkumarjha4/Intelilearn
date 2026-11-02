@@ -64,9 +64,7 @@ class TestRaterCategories:
         assert RaterCategories.of(oldest) is RaterCategory.LOW
 
     def test_the_expert_lesson_chosen_after_a_perfect_quick_check_is_high(self, make_lesson):
-        lesson = make_lesson(
-            route="lesson", level="expert", assessment=assessment("expert"), mastery_options="lesson_or_sheets"
-        )
+        lesson = make_lesson(route="lesson", level="expert", assessment=assessment("expert"))
 
         assert RaterCategories.of(lesson) is RaterCategory.HIGH
 

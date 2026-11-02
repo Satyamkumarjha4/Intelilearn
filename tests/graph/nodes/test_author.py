@@ -265,13 +265,14 @@ class TestAuthoredJoin:
         assert update["question_outcome"] == "complete" and update["warnings"] == []
         stored = Lesson.objects.get(pk=lesson.pk)
         assert set(stored.pages) == {"introduction", "core", "advanced"}
-        assert [q["id"] for q in stored.final_test["questions"]] == [f"t{n}" for n in range(1, 11)]
-        assert update["final_test"] == stored.final_test
+        first_set = QuestionBank().first_set(lesson)
+        assert [q["id"] for q in first_set] == [f"t{n}" for n in range(1, 11)]
+        assert update["final_test"]["questions"] == first_set  # the state and the record agree
 
     def test_the_questions_go_on_the_record_and_know_their_row(self, lesson, lesson_state, runtime):
         AuthoredJoinNode()(self.state(lesson_state), runtime)
 
-        stored = Lesson.objects.get(pk=lesson.pk).final_test["questions"]
+        stored = QuestionBank().first_set(lesson)
         rows = {str(r.id): r for r in Question.objects.filter(lesson=lesson)}
         assert len(rows) == 10 and {q["question_id"] for q in stored} == set(rows)
         assert all(
@@ -306,7 +307,7 @@ class TestAuthoredJoin:
         update = AuthoredJoinNode()(state, runtime)
 
         assert update["question_outcome"] == "replan" and "final_test" not in update and len(update["accepted"]) == 9
-        assert Lesson.objects.get(pk=lesson.pk).final_test is None
+        assert QuestionBank().first_set(lesson) == []
 
     def test_a_test_that_cannot_be_filled_fails_the_run_instead_of_keeping_a_short_test(
         self, lesson, lesson_state, runtime
@@ -319,7 +320,7 @@ class TestAuthoredJoin:
 
         assert update["question_outcome"] == "short" and "could not be filled" in update["error"]
         assert update["failed_node"] == "plan_batches" and "final_test" not in update
-        assert Lesson.objects.get(pk=lesson.pk).final_test is None
+        assert QuestionBank().first_set(lesson) == []
 
 
 class TestAuthoringRouter:
@@ -713,8 +714,8 @@ class TestFixItem:
     ):
         cells = LessonTestBlueprint.for_topic(True).cells
         stored = QuestionBank().add(lesson.id, None, make_blueprint_test()["questions"])
+        QuestionBank().set_first_set(lesson.id, stored)
         state = authored(lesson_state, final_test={"title": "T", "questions": stored})
-        Lesson.objects.filter(pk=lesson.pk).update(final_test=state["final_test"])
         replacement = written(
             cells[2].type,
             77,
@@ -734,7 +735,7 @@ class TestFixItem:
         ]
         assert Question.objects.get(pk=stored[2]["question_id"]).retired is True
         assert Question.objects.get(pk=questions[2]["question_id"]).retired is False
-        assert Lesson.objects.get(pk=lesson.pk).final_test == update["final_test"]
+        assert [q["question_id"] for q in QuestionBank().first_set(lesson)] == [q["question_id"] for q in questions]
         prompt = gateway.called("test.generate")[0].messages
         assert "(question t3)" in prompt[1].content and "exactly 1 questions" in prompt[0].content
 

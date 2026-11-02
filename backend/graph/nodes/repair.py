@@ -44,7 +44,6 @@ class LoadRepairNode(Node):
             "topic": lesson.topic,
             "plan": source["plan"],
             "pages": source["pages"],
-            "final_test": source["final_test"],
             "media": source["media"],
             "snapshot": lesson.config_snapshot,
             "settings": lesson.settings_snapshot,

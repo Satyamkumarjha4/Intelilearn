@@ -30,21 +30,22 @@ def forwards(apps, schema_editor):
     Lesson = apps.get_model("lessons", "Lesson")
     Question = apps.get_model("lessons", "Question")
     Submission = apps.get_model("lessons", "TestSubmission")
+    db = schema_editor.connection.alias  # the database being migrated, not the default
 
-    for lesson in Lesson.objects.exclude(final_test__isnull=True).iterator():
+    for lesson in Lesson.objects.using(db).exclude(final_test__isnull=True).iterator():
         seen = set()
         for old in (lesson.final_test or {}).get("questions") or []:
             stem_hash = StemHash.of(old.get("question", ""))
             if stem_hash in seen:
                 continue
             seen.add(stem_hash)
-            Question.objects.create(
+            Question.objects.using(db).create(
                 lesson=lesson, type=old.get("type", ""), difficulty=old.get("difficulty", ""),
                 concept=str(old.get("concept", ""))[:200], marks=old.get("marks") or 0, payload=old,
                 stem_hash=stem_hash, batch=None, retired=True,
             )  # fmt: skip
 
-    for submission in Submission.objects.select_related("lesson").iterator():
+    for submission in Submission.objects.using(db).select_related("lesson").iterator():
         lesson = submission.lesson
         questions = (lesson.final_test or {}).get("questions") or []
         update = {
@@ -60,7 +61,7 @@ def forwards(apps, schema_editor):
                 "available": score["available"],
                 "band": band_of(score["awarded"], score["available"], lesson.settings_snapshot or {}),
             }
-        Submission.objects.filter(pk=submission.pk).update(**update)
+        Submission.objects.using(db).filter(pk=submission.pk).update(**update)
 
 
 def backwards(apps, schema_editor):

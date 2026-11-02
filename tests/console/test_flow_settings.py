@@ -30,7 +30,7 @@ AdminForm = modelform_factory(FlowSettings, fields="__all__")  # what the Django
 
 FIELDS = {
     "diagnostic_questions_per_band", "prerequisite_question_count", "prereq_trigger_max_correct",
-    "mastery_requires_all_correct", "final_test_min", "final_test_max", "max_interactives_per_page",
+    "mastery_requires_all_correct", "max_interactives_per_page",
     "alignment_min_score", "alignment_max_rounds", "render_check_max_rounds", "max_auto_runtime_repairs",
     "media_sources", "allowed_media_licenses", "band_fail_below", "band_excellent_above", "question_batch_size",
     "batch_max_long", "batch_max_short", "retakes_per_day", "quiz_max_source_lessons", "quiz_source_token_budget",
@@ -70,7 +70,9 @@ def test_a_change_is_saved_and_the_thresholds_follow_it(staff_client, staff_user
     saved = FlowSettings.load()
     assert saved.diagnostic_questions_per_band == 3 and saved.prereq_trigger_max_correct == 4
     assert saved.mastery_requires_all_correct is False
-    assert saved.media_sources == ["wikimedia", "giphy"] and saved.final_test_max == 15  # the rest is as it was
+    assert (
+        saved.media_sources == ["wikimedia", "giphy"] and saved.max_interactives_per_page == 3
+    )  # the rest is as it was
     assert response.json()["routing_thresholds"] == {"questions_total": 15, "foundations_max": 4, "mastery_min": 14}
     assert response.json() == staff_client.get(URL).json()
     [entry] = AuditEntry.objects.all()
@@ -95,7 +97,7 @@ BAD = [
     {"prerequisite_question_count": 0},
     {"alignment_min_score": 6},
     {"alignment_min_score": 0},
-    {"final_test_min": -1},
+    {"alignment_max_rounds": -1},
     {"max_interactives_per_page": 100_000},  # beyond a small integer column
     {"prereq_trigger_max_correct": "many"},
     {"media_sources": []},  # the form wants at least one source
@@ -104,7 +106,7 @@ GOOD = [
     {"diagnostic_questions_per_band": 4},
     {"prerequisite_question_count": 10},
     {"alignment_min_score": 5},
-    {"final_test_min": 20, "final_test_max": 5},  # the admin does not compare the two, and nor do we
+    {"alignment_max_rounds": 3, "render_check_max_rounds": 1},
     {"media_sources": ["giphy"], "allowed_media_licenses": ["cc0"]},
     {"mastery_requires_all_correct": False},
 ]
@@ -144,10 +146,10 @@ def test_a_value_of_the_wrong_type_is_refused_even_where_the_form_would_let_it_t
 
 
 def test_one_bad_value_saves_none_of_the_good_ones_sent_with_it(staff_client):
-    response = staff_client.patch(URL, {"final_test_max": 20, "alignment_min_score": 9}, format="json")
+    response = staff_client.patch(URL, {"max_interactives_per_page": 5, "alignment_min_score": 9}, format="json")
 
     assert response.status_code == 400
-    assert FlowSettings.load().final_test_max == 15
+    assert FlowSettings.load().max_interactives_per_page == 3
 
 
 @pytest.mark.parametrize("field", ["id", "pk", "routing_thresholds", "nonsense"])
@@ -170,7 +172,7 @@ def test_lessons_already_started_keep_the_settings_they_started_with(staff_clien
 
 def test_a_learner_can_neither_read_nor_change_the_settings(learner_client):
     assert learner_client.get(URL).status_code == 404
-    assert learner_client.patch(URL, {"final_test_min": 1}, format="json").status_code == 404
+    assert learner_client.patch(URL, {"alignment_max_rounds": 1}, format="json").status_code == 404
 
 
 def test_the_quick_quiz_settings_have_their_defaults_and_limits(staff_client):

@@ -222,7 +222,6 @@ REST_FRAMEWORK = {
         "auth_account": env("AUTH_ACCOUNT_THROTTLE_RATE", default="10/min"),  # login attempts per email
         "auth_refresh": env("AUTH_REFRESH_THROTTLE_RATE", default="60/min"),
         "lesson_create": env("LESSON_CREATE_THROTTLE_RATE", default="30/hour"),  # each lesson costs model calls
-        "test_submit": env("TEST_SUBMIT_THROTTLE_RATE", default="30/hour"),  # open-ended answers cost model calls
         "test_attempt": env(
             "TEST_ATTEMPT_THROTTLE_RATE", default="30/hour"
         ),  # starting an attempt; a retake costs calls

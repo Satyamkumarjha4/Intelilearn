@@ -185,7 +185,7 @@ def changes(registry, make_lesson, queue, monkeypatch):
         ("console-node", "put"): ("node.update", do("put", "/api/console/nodes/lesson.plan", node_body)),
         ("console-flow-settings", "patch"): (
             "flow_settings.update",
-            do("patch", "/api/console/flow-settings", {"final_test_min": 9}),
+            do("patch", "/api/console/flow-settings", {"alignment_max_rounds": 3}),
         ),
     }
 

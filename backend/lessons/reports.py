@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from graph.levels import LevelScheme
 from graph.questions import LessonTestBlueprint
 
+from .bank import QuestionBank
 from .models import Lesson, QuizAttempt
 
 
@@ -90,13 +91,13 @@ class PagesSection(ReportSection):
             words = sum(len(s["body"].split()) for s in page["sections"])
             headings = "; ".join(s["heading"] for s in page["sections"])
             lines.append(f"  page {key}: {page['title']}: {len(page['sections'])} sections, {words} words ({headings})")
-        test = lesson.final_test
-        if test:
+        questions = QuestionBank().first_set(lesson)
+        if questions:
             kinds: dict[str, int] = {}
-            for question in test["questions"]:
+            for question in questions:
                 kinds[question["type"]] = kinds.get(question["type"], 0) + 1
             mix = ", ".join(f"{n} {kind}" for kind, n in kinds.items())
-            lines.append(f"  test: {len(test['questions'])} questions ({mix})")
+            lines.append(f"  test: {len(questions)} questions ({mix})")
         return lines
 
 

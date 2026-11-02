@@ -214,7 +214,6 @@ class TestFlowSettings:
 
         assert FlowSettings.objects.count() == 1
         assert (settings.diagnostic_questions_per_band, settings.prereq_trigger_max_correct) == (2, 2)
-        assert (settings.final_test_min, settings.final_test_max) == (10, 15)
         assert settings.media_sources == ["wikimedia", "openverse"]
 
     def test_saving_another_instance_still_leaves_a_single_row(self, db):

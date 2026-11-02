@@ -32,7 +32,7 @@ SHORT, LONG = IDS["short_answer"], IDS["long_answer"]  # 3 marks in two criteria
 @pytest.fixture
 def submission(lesson, lesson_state):
     Lesson.objects.filter(pk=lesson.pk).update(
-        stage=Stage.READY, final_test=FINAL_TEST, config_snapshot=budget_snapshot(),
+        stage=Stage.READY, config_snapshot=budget_snapshot(),
         settings_snapshot=lesson_state["settings"],
     )  # fmt: skip
     answers = {IDS["mcq"]: 0, SHORT: "Halve it.", LONG: "Keep the invariant."}
