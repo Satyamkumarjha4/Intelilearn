@@ -8,8 +8,9 @@
  * Use cases:
  * - no advice until the attempt is graded, or when the server gave none
  * - a topic quiz offers the lesson (when the quiz can make one) with the concepts that lost marks
- * - a quiz from lessons lists the lessons to study in the server's order, each with its concepts and a link to the lesson,
- *   and no link for a lesson that has been deleted
+ * - a quiz from lessons lists the lessons to study in the server's order; each weak concept has its own link to the page
+ *   that teaches it ("Study this"), or to the lesson when no page could be found ("Open the lesson"), with the marks
+ *   lost on it; a lesson that was deleted has no links and says so
  * - writes the marks, and nothing while the attempt is not marked
  * - the words of the buttons
  */
@@ -38,23 +39,50 @@ describe("the advice", () => {
     expect(QuizResults.advice({ can_create_lesson: false }, attempt({ recommendations: tips }))).toMatchObject({ canCreateLesson: false });
   });
 
-  test("a quiz from lessons lists the lessons to study, linked unless the lesson was deleted", () => {
+  test("a quiz from lessons lists the lessons to study, each weak concept linked to its page", () => {
     const tips = {
       kind: "lessons" as const,
       topics: [],
       lessons: [
-        { lesson_id: "l1", title: "Binary search", level: "foundation", marks_lost: 4, topics: ["Halving"] },
-        { lesson_id: null, title: "Sorting", level: "expert", marks_lost: 2, topics: ["Merge"] },
+        {
+          lesson_id: "l1", title: "Binary search", level: "foundation", marks_lost: 4, topics: ["Halving", "Cost"], deleted: false,
+          links: [
+            { concept: "Halving", page: "core", heading: "How halving works", marks_lost: 3 },
+            { concept: "Cost", page: "", heading: "", marks_lost: 1 },
+          ],
+        },
+        {
+          lesson_id: null, title: "Sorting", level: "expert", marks_lost: 2, topics: ["Merge"], deleted: true,
+          links: [{ concept: "Merge", page: "", heading: "", marks_lost: 2 }],
+        },
       ],
     };
 
     expect(QuizResults.advice({ can_create_lesson: false }, attempt({ recommendations: tips }))).toEqual({
       kind: "lessons",
       items: [
-        { title: "Binary search", level: "foundation", topics: ["Halving"], href: "/lessons/l1" },
-        { title: "Sorting", level: "expert", topics: ["Merge"], href: null },
+        {
+          title: "Binary search", level: "foundation", topics: ["Halving", "Cost"], deleted: false,
+          links: [
+            { concept: "Halving", href: "/lessons/l1?tab=lesson&page=core", where: "Core page · How halving works", button: "Study this", marksLost: 3 },
+            { concept: "Cost", href: "/lessons/l1?tab=lesson", where: "", button: "Open the lesson", marksLost: 1 },
+          ],
+        },
+        { title: "Sorting", level: "expert", topics: ["Merge"], deleted: true, links: [] },
       ],
     });
+  });
+
+  test("a lesson the server sent without links (an older answer) falls back to opening the lesson", () => {
+    const tips = {
+      kind: "lessons" as const,
+      topics: [],
+      lessons: [{ lesson_id: "l1", title: "Binary search", level: "", marks_lost: 1, topics: ["Halving"] }],
+    };
+
+    const advice = QuizResults.advice({ can_create_lesson: false }, attempt({ recommendations: tips as never }));
+
+    expect(advice).toMatchObject({ kind: "lessons", items: [{ deleted: false, links: [{ concept: "Halving", href: "/lessons/l1?tab=lesson", button: "Open the lesson" }] }] });
   });
 });
 

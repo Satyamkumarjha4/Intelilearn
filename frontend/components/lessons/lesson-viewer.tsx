@@ -30,6 +30,8 @@ type Props = {
   testStatus: TestStatus;
   /** Opens the Test tab (the last page of the book leads there). */
   onGoToTest: () => void;
+  /** The page to open first (0 to 2), from a "Study this" link; else the first page. */
+  initialPage?: number | null;
 };
 
 /**
@@ -38,7 +40,7 @@ type Props = {
  * A crash the runtime reports is sent to `POST /repair` once per version of the code; when that fails or the server's
  * repair limit is reached, the learner is told plainly and can reload the view or go back to an earlier version.
  */
-export function LessonViewer({ lessonId, testStatus, onGoToTest }: Props) {
+export function LessonViewer({ lessonId, testStatus, onGoToTest, initialPage = null }: Props) {
   const { resolvedTheme } = useTheme();
   const [doc, setDoc] = useState<LessonDocument | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -51,7 +53,7 @@ export function LessonViewer({ lessonId, testStatus, onGoToTest }: Props) {
   const [instance, setInstance] = useState(0);
   const [readPages] = useState(() => new ReadPages(lessonId));
   // The ticks of an earlier visit live in this browser (and only there); on the server there is no storage and none show.
-  const [book, setBook] = useState(() => new Book(0).withRead(readPages.load()));
+  const [book, setBook] = useState(() => new Book(0, [], initialPage ?? 0).withRead(readPages.load()));
   const [reloading, setReloading] = useState(false);
   const toolbar = useRef<HTMLDivElement>(null);
   const turned = useRef(false);

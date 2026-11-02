@@ -332,6 +332,8 @@ export type ScoreCard = {
   questions: QuestionResult[];
   topics_to_revisit: string[];
 };
+/** A topic to revisit and the page of the lesson that teaches it ("" page: open the lesson as a whole). */
+export type RevisitLink = { concept: string; page: string; heading: string };
 /** An attempt at the lesson's test (the model is still called `TestSubmission` on the server). */
 export type AttemptStatus = "generating" | "in_progress" | "grading" | "graded" | "failed";
 export type ScoreBand = "" | "fail" | "normal" | "excellent";
@@ -345,6 +347,8 @@ export type TestSubmission = {
   /** The learner's own answers, {question_id: answer}. */
   answers: Record<string, unknown>;
   result: ScoreCard | null;
+  /** Each of the result's topics to revisit with the page of this lesson that teaches it. */
+  revisit_links: RevisitLink[];
   awarded: number | null;
   available: number | null;
   band: ScoreBand;
@@ -490,8 +494,20 @@ export type Calibration =
 export type QuizRecommendations = {
   kind: "topic" | "lessons";
   topics: string[];
-  lessons: { lesson_id: string | null; title: string; level: string; marks_lost: number; topics: string[] }[];
+  lessons: {
+    lesson_id: string | null;
+    title: string;
+    level: string;
+    marks_lost: number;
+    topics: string[];
+    /** Each weak concept with the page of the lesson that teaches it ("" page: open the lesson as a whole). */
+    links: ConceptLink[];
+    /** The lesson was deleted since the quiz was made. */
+    deleted: boolean;
+  }[];
 };
+/** A concept and where its lesson teaches it. `page` is introduction, core or advanced, or "" when it has no page. */
+export type ConceptLink = { concept: string; page: string; heading: string; marks_lost: number };
 /** One attempt at a quiz: its questions while it is open, and its result once it is over. */
 export type QuizAttempt = {
   id: string;

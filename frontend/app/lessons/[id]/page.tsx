@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { FailedCard } from "@/components/lessons/failed-card";
 import { LessonHeader } from "@/components/lessons/lesson-header";
 import { FinishTestFirst } from "@/components/lessons/finish-test-first";
+import { PageLinks } from "@/lib/page-links";
 import { LessonTabBar } from "@/components/lessons/lesson-tab-bar";
 import { LessonViewer } from "@/components/lessons/lesson-viewer";
 import { MasteryChoice } from "@/components/lessons/mastery-choice";
@@ -117,6 +118,7 @@ function Workspace({ id }: { id: string }) {
   const tabs = LessonTabs.of(lesson);
   const activeTab = LessonTabs.pick(tabs, searchParams.get("tab"));
   const building = !ready && screen === "progress";
+  const openPage = PageLinks.fromQuery(searchParams.get("page"));
 
   const selectTab = (tab: TabId) => router.replace(`${pathname}?tab=${tab}`, { scroll: false });
   const retry = async () => {
@@ -139,7 +141,18 @@ function Workspace({ id }: { id: string }) {
 
   const closed = <FinishTestFirst onGoToTest={() => selectTab("test")} />;
   const panels: Record<TabId, React.ReactNode> = {
-    lesson: TestGuard.blocks("lesson", lesson) ? closed : <LessonViewer lessonId={lesson.id} testStatus={lesson.test_status} onGoToTest={() => selectTab("test")} />,
+    // A "Study this" link says which page to open (`?tab=lesson&page=core`); a new page= remounts the book at that page.
+    lesson: TestGuard.blocks("lesson", lesson) ? (
+      closed
+    ) : (
+      <LessonViewer
+        key={openPage ?? "first"}
+        lessonId={lesson.id}
+        testStatus={lesson.test_status}
+        onGoToTest={() => selectTab("test")}
+        initialPage={openPage}
+      />
+    ),
     sheets: TestGuard.blocks("sheets", lesson) ? closed : <StudyMaterialView lesson={lesson} pipeline={pipeline} onRequested={refresh} />,
     test: <TestTabPanel lessonId={lesson.id} lessonTitle={lesson.title || lesson.topic} onChanged={() => void refresh()} onOpenLesson={() => selectTab("lesson")} />,
     answers: lesson.results.diagnostic || lesson.results.prerequisite ? (

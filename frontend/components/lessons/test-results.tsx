@@ -17,8 +17,9 @@ import { AttemptHistoryView } from "@/lib/attempt-history";
 import { FollowupOffers } from "@/lib/followup-offer";
 import { DateText } from "@/lib/format";
 import { lessonsApi } from "@/lib/lessons-api";
+import { PageLinks } from "@/lib/page-links";
 import { TestReport } from "@/lib/test-report";
-import type { AttemptHistory as History, TestSubmission } from "@/lib/types";
+import type { AttemptHistory as History, RevisitLink, TestSubmission } from "@/lib/types";
 
 const POLL_MS = 3000;
 
@@ -127,7 +128,7 @@ export function TestResults({ lessonId, lessonTitle, attempt: shown, history, fr
         </Card>
       )}
       {card && attempt.status === "graded" && card.topics_to_revisit.length > 0 && (
-        <Revisit topics={card.topics_to_revisit} lessonTitle={lessonTitle} attemptId={attempt.id} />
+        <Revisit lessonId={lessonId} topics={card.topics_to_revisit} links={attempt.revisit_links} lessonTitle={lessonTitle} attemptId={attempt.id} />
       )}
       {history && history.attempts.length > 1 && <AttemptHistory history={history} selectedId={attempt.id} onSelect={onSelect} />}
       {card && <QuestionBreakdown rows={card.questions} questions={attempt.questions} answers={attempt.answers} />}
@@ -144,7 +145,9 @@ export function TestResults({ lessonId, lessonTitle, attempt: shown, history, fr
   );
 }
 
-function Revisit({ topics, lessonTitle, attemptId }: { topics: string[]; lessonTitle: string; attemptId: string }) {
+type RevisitProps = { lessonId: string; topics: string[]; links: RevisitLink[] | undefined; lessonTitle: string; attemptId: string };
+
+function Revisit({ lessonId, topics, links, lessonTitle, attemptId }: RevisitProps) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const start = async (topic: string) => {
@@ -159,6 +162,7 @@ function Revisit({ topics, lessonTitle, attemptId }: { topics: string[]; lessonT
       setBusy(null);
     }
   };
+  const study = (topic: string) => PageLinks.study(lessonId, links, topic);
   return (
     <section aria-labelledby="revisit-heading" className="flex flex-col gap-3">
       <h2 id="revisit-heading" className="font-heading text-xl font-semibold">Worth another look</h2>
@@ -167,10 +171,19 @@ function Revisit({ topics, lessonTitle, attemptId }: { topics: string[]; lessonT
           <li key={topic}>
             <Card size="sm" className="h-full">
               <CardContent className="flex h-full flex-col items-start justify-between gap-3">
-                <p className="font-semibold">{topic}</p>
-                <Button variant="marigold" size="sm" disabled={busy !== null} onClick={() => start(topic)}>
-                  {busy === topic ? "Starting…" : "Make a lesson on this"}
-                </Button>
+                <div className="flex flex-col gap-0.5">
+                  <p className="font-semibold">{topic}</p>
+                  {study(topic).where && <p className="text-xs text-muted-foreground">{study(topic).where}</p>}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Link href={study(topic).href} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                    {study(topic).button}
+                    <span className="sr-only"> for {topic}</span>
+                  </Link>
+                  <Button variant="marigold" size="sm" disabled={busy !== null} onClick={() => start(topic)}>
+                    {busy === topic ? "Starting…" : "Make a lesson on this"}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </li>

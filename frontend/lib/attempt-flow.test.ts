@@ -37,7 +37,7 @@ const test_ = (status: "generating" | "in_progress" | null): LearnerTest => ({
   attempt: status ? { id: "A1", attempt_no: 2, status, started_at: "2026-10-30T10:00:00Z", submitted_at: null } : null,
 });
 const attempt = (over: Partial<TestSubmission> = {}): TestSubmission => ({
-  id: "A1", attempt_no: 1, status: "graded", error: "", questions: [], answers: {}, result: null, awarded: 14, available: 20, band: "normal",
+  id: "A1", attempt_no: 1, status: "graded", error: "", questions: [], answers: {}, result: null, revisit_links: [], awarded: 14, available: 20, band: "normal",
   duration_s: 60, followup: null, started_at: "2026-10-30T10:00:00Z", submitted_at: "2026-10-30T10:01:00Z", graded_at: "2026-10-30T10:01:00Z", ...over,
 });
 

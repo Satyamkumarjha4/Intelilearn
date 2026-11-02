@@ -138,17 +138,25 @@ export function QuizResult({ quiz, attempt: shown, trying, onTryAgain, onSelect,
             {advice.items.map((item) => (
               <li key={item.title}>
                 <Card size="sm" className="h-full">
-                  <CardContent className="flex h-full flex-col items-start justify-between gap-3">
-                    <div className="flex flex-col gap-1">
-                      <p className="font-semibold">{QuizResults.lessonLine(item)}</p>
-                      <p className="text-sm text-muted-foreground">Look at: {item.topics.join(", ")}</p>
-                    </div>
-                    {item.href ? (
-                      <Link href={item.href} className={buttonVariants({ variant: "marigold", size: "sm" })}>
-                        Study this lesson
-                      </Link>
+                  <CardContent className="flex h-full flex-col items-start gap-3">
+                    <p className="font-semibold">{QuizResults.lessonLine(item)}</p>
+                    {item.deleted ? (
+                      <p className="text-sm text-muted-foreground">This lesson has been deleted, so there is nothing to open. You could make a new one from the home page.</p>
                     ) : (
-                      <p className="text-xs text-muted-foreground">This lesson has been deleted.</p>
+                      <ul className="flex w-full flex-col gap-3">
+                        {item.links.map((link) => (
+                          <li key={link.concept} className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex min-w-0 flex-col">
+                              <span className="font-medium">{link.concept}</span>
+                              {link.where && <span className="text-xs text-muted-foreground">{link.where}</span>}
+                            </div>
+                            <Link href={link.href} className={buttonVariants({ variant: "marigold", size: "sm" })}>
+                              {link.button}
+                              <span className="sr-only"> for {link.concept}</span>
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
                     )}
                   </CardContent>
                 </Card>
