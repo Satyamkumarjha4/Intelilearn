@@ -11,6 +11,9 @@ Use cases:
 - distinct questions are all kept, in order, and the input is not changed
 - a short question is not called a near repeat of a longer one that merely contains its words
 - an empty exclusion list drops nothing
+- different questions that share only the topic's words, a question frame ("What is the … of a quadratic equation?") or
+  the shape of a sum ("Solve $x^2 - 5x + 6 = 0$." and "Solve $x^2 - 7x + 10 = 0$.") are all kept. This guards any
+  change to the threshold: lowering `NEAR` to 0.60 flags four of these seven pairs, so it needs more than a number
 """
 
 import pytest
@@ -83,6 +86,23 @@ class TestDeduper:
         result = QuestionDeduper().fresh([q(1, "What is a prime number?")], [long_text])
 
         assert [k["id"] for k in result.kept] == ["t1"]
+
+    @pytest.mark.parametrize(
+        ("asked", "new"),
+        [
+            ("What is binary search?", "Why does binary search need a sorted list?"),
+            ("What does binary search do?", "How many steps does binary search take?"),
+            ("Name one use of photosynthesis.", "Where does photosynthesis happen in a plant?"),
+            ("What is a quadratic equation?", "What is the discriminant of a quadratic equation?"),
+            ("What is the degree of a quadratic equation?", "What is the discriminant of a quadratic equation?"),
+            ("Solve $x^2 - 5x + 6 = 0$.", "Solve $x^2 - 7x + 10 = 0$."),
+            ("Solve $x^2 - 5x + 6 = 0$.", "Solve $x^2 + 2x - 8 = 0$."),
+        ],
+    )
+    def test_different_questions_that_share_topic_words_a_frame_or_a_sum_shape_are_kept(self, asked, new):
+        result = QuestionDeduper().fresh([q(1, new)], [asked])
+
+        assert [k["id"] for k in result.kept] == ["t1"] and result.dropped == []
 
     def test_nothing_is_dropped_against_an_empty_list(self):
         assert QuestionDeduper().fresh([q(1, "A?")], []).dropped == []

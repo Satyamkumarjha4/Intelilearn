@@ -210,6 +210,28 @@ Changes the run suggests, for you to decide (none is made):
 
 To repeat the run: set `GEMINI_API_KEY` (and `GROQ_API_KEY` for the fallback) in `.env`, then `docker compose run --rm backend pytest -c pyproject.toml --rootdir=. /tests/live -m live -rA -s`. It costs a few dollars on a paid key and about 15 minutes.
 
+### Live suite follow-ups (branch `fix/live-suite-findings`)
+
+Decisions taken on the findings above, and what a sixth live run showed.
+
+1. **`diagnostic.generate` gets three attempts** (`NodeSpec.default_max_attempts=3`, so every seeded profile has it; tests on the spec and on all four profiles) and its prompt now says it twice: the four options of every question, the prerequisite questions too, must differ in meaning, and no question's wording or options may give away the answer to another (tests on the exact text, with and without the prerequisite half). A registry that already exists keeps the 2 it was created with until `seed_registry --force`, or the admin, changes it: no migration rewrites a value someone may have tuned.
+2. **`QuestionDeduper.NEAR` stays at 0.80: the change to 0.60 was not made, because it flags questions that are not repeats.** Measured with the product's own word overlap: 0.60 would call different questions the same in 4 of 7 pairs that a learner would call different: "What is a quadratic equation?" and "What is the discriminant of a quadratic equation?" (0.62), "What is the degree of …?" and "What is the discriminant of …?" (0.78), "Solve $x^2 - 5x + 6 = 0$." and "Solve $x^2 - 7x + 10 = 0$." (0.69) and "… $x^2 + 2x - 8 = 0$." (0.69). The pairs that share only the topic's words ("What is binary search?" and "Why does binary search need a sorted list?", 0.20) are safe at 0.60; the trouble is a shared question frame and the shape of a sum. Removing the frame words from the comparison fixes one of the four and leaves the sums at 0.69. A guard test now pins the seven pairs as "kept", so a future change to the threshold cannot flag them unnoticed. **Proposed fix, for a decision:** compare content words only (drop the frame: what, is, the, of, which, following, …), use 0.60 only when both questions have at least ten such words and keep 0.80 for shorter ones, and never call two questions near repeats when each holds a different `$…$` expression. On the pairs measured (the six reworded repeats are built to look like the live ones, since the live run only logged one side of each) this catches five of the six and keeps all seven different pairs; the sixth, "What is the degree of a quadratic equation?" against "What is the degree of the polynomial in a quadratic equation?", scores 0.75 on content words and stays under the line. It needs its own tests.
+3. **No product change beyond decision 1.** The suite's own checks are as before (the retake check still measures at 0.60 and reports; it did not fire in the last run).
+4. **Media search, cause only (no change made).** Both sources fail in the product as configured, so the media agent finds nothing and the page falls back to an SVG diagram with a warning. (a) **Wikimedia answers `403 Please respect our robot policy`** to the product's user agent, `Socra/0.1 (local educational app)` (`graph/media/library.py`): Wikimedia requires a descriptive agent with a contact (a URL or an address). The same query with an agent that has a contact returns 200 and 12 results, all under licences the product allows (CC BY, CC BY-SA, public domain). (b) **Openverse timed out** on every call from the container, at the product's 15 seconds and at 40, for an anonymous request; it is slow or blocking here, and may need registered credentials. So "no picture for Asexual reproduction" is not about the topic or the licence filter: any topic would have none. The fix would be a contact-bearing user agent (taken from the environment, as every setting is), a look at Openverse's anonymous limits, and a live check that `wants_picture` topics get one.
+
+Sixth live run (2 November 2026, same keys, after decisions 1 and 3; 24 minutes, with many `429`s that the retry and fallback absorbed):
+
+| Check | Result |
+|---|---|
+| Topic judge; calibration pool; quiz of every kind including the retake check; real lesson (concepts, index, revision sheet) | **Pass** |
+| Golden topic Binary search, from a quick check to a graded test | **Pass** (the first full pass of any golden topic) |
+| `lesson.plan` sets `quantitative` for solving quadratic equations | **Fail**: said false; it had said true in the three earlier runs, so the flag is unreliable for that topic, not wrong every time |
+| Golden topic Asexual reproduction | **Fail**: the lesson was built; only the picture is missing (cause above) |
+| Golden topic Photosynthesis | **Fail**: the lesson failed its sandbox render check after the repair rounds: `introduction: console.error: Error: <circle> attribute cx: Expected length, "NaN"`, a generated SVG with a `NaN` coordinate |
+| Graded attempt on a built lesson | **Fail**: the quick check failed its validator after three attempts (options of two questions not all different), so no lesson was built for it |
+
+For a decision: the quick check still fails now and then even with three attempts, so a check that fails the same way each time could be given the same fix as the others (a repair step that rewrites only the flagged questions rather than the whole bundle); the `NaN` SVG coordinate could be caught by the sandbox's static check before the render; the plan's `quantitative` flag could be derived from the topic judge (`topic.traits`) instead of a second opinion from the planner.
+
 ## Across phases
 
 ### The final test on its own screen, taken once ✅
