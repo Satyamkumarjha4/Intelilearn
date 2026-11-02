@@ -13,7 +13,9 @@ A concept that no section covers is still listed, without a page, so a link fall
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import ClassVar
 
+from .normal import Normal
 from .validators.base import TextRules
 
 
@@ -104,6 +106,30 @@ class ConceptIndex:
     def find(self, concept: str) -> ConceptEntry | None:
         wanted = TextRules.norm(str(concept))
         return next((e for e in self.entries if wanted and TextRules.norm(e.concept) == wanted), None)
+
+    #: words that say nothing about which concept is meant, left out when two names are compared by their words
+    FILLER: ClassVar[frozenset[str]] = frozenset({"a", "an", "the", "of", "in", "on", "to", "and", "or", "for", "with"})
+    NEAR: ClassVar[float] = 0.3  # the share of their words two names must have in common (Jaccard) to be called near
+
+    def nearest(self, concept: str) -> ConceptEntry | None:
+        """The concept of the plan a free-text concept is nearest to: the same name (case and spacing aside), else the
+        one that shares the largest part of its words, the earlier one on a tie; None when no one shares enough. This is
+        how an old lesson's test, whose questions named concepts in the model's own words, is linked to a page.
+        No model is involved."""
+        if exact := self.find(concept):
+            return exact
+        wanted = self._words(concept)
+        scored = [
+            (len(wanted & self._words(e.concept)) / len(wanted | self._words(e.concept)), e)
+            for e in self.entries
+            if wanted
+        ]
+        best = max(scored, key=lambda pair: pair[0], default=(0.0, None))
+        return best[1] if best[0] >= self.NEAR else None
+
+    @classmethod
+    def _words(cls, name: str) -> frozenset[str]:
+        return frozenset(word for word in Normal.text(str(name)).split() if len(word) > 1 and word not in cls.FILLER)
 
     @property
     def placed(self) -> int:

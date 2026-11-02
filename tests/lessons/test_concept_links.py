@@ -14,6 +14,9 @@ Use cases:
 - a concept the lesson does not know links to the lesson with no page, keeping the name as given
 - a lesson with no plan, or no pages, links every concept to the lesson with no page
 - a lesson that was deleted (no lesson at all) links every concept with no page
+- a link keeps the concept as it was asked for, whatever the index spells it as
+- an old lesson's free-text concept is linked to the page of the nearest concept of its plan, and one with nothing near
+  it to the lesson with no page
 """
 
 import pytest
@@ -78,4 +81,23 @@ class TestLinks:
         assert ConceptLinks.of(None, ["A", "B"]) == [
             {"concept": "A", "page": "", "heading": ""},
             {"concept": "B", "page": "", "heading": ""},
+        ]
+
+
+class TestAnOldLessonsFreeTextConcepts:
+    def test_a_link_keeps_the_concept_as_it_was_asked_for(self, make_ready_lesson):
+        lesson = make_ready_lesson("Binary search")
+
+        (link,) = ConceptLinks.of(lesson, ["the LOOP invariant"])
+
+        assert link == {"concept": "the LOOP invariant", "page": "core", "heading": "The loop invariant"}
+
+    def test_a_concept_in_the_models_own_words_goes_to_the_page_of_the_nearest_plan_concept(self, make_ready_lesson):
+        lesson = make_ready_lesson("Binary search")
+
+        links = ConceptLinks.of(lesson, ["Time complexity of binary search", "Photosynthesis"])
+
+        assert links == [
+            {"concept": "Time complexity of binary search", "page": "advanced", "heading": "Time complexity"},
+            {"concept": "Photosynthesis", "page": "", "heading": ""},
         ]

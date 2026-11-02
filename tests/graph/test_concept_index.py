@@ -20,6 +20,8 @@ Use cases:
 - the index is read back from JSON as it was written; stored data that is not an index is read as empty
 - a concept is found by its name whatever its case or spacing, and an unknown name is not found
 - the names, and how many concepts were placed and how many not
+- a free-text concept from an old lesson's test is mapped to the nearest concept of the plan: an exact match first (case
+  and spacing aside), then the one whose words overlap most, and none when nothing overlaps enough
 """
 
 import pytest
@@ -170,3 +172,46 @@ class TestCounting:
         index = ConceptIndex.build(plan, pages)
 
         assert (index.placed, index.unplaced) == (7, 2)
+
+
+class TestNearest:
+    """Old lessons' tests named concepts in the model's own words. They are mapped, in code, to the plan's concepts."""
+
+    def index(self):
+        plan = make_plan()
+        return ConceptIndex.build(plan, make_pages(plan))
+
+    def test_an_exact_name_is_found_first_whatever_its_case(self):
+        assert self.index().nearest("  the LOOP invariant").concept == "The loop invariant"
+
+    @pytest.mark.parametrize(
+        ("asked", "expected"),
+        [
+            ("Time complexity of binary search", "Time complexity"),
+            ("Halving", "Halving the range"),
+            ("Why halving the list helps", "Why halving helps"),
+            ("Off-by-one errors in the loop", "Off-by-one pitfalls"),
+            ("Sorted arrays", "Sorted data"),
+        ],
+    )
+    def test_the_concept_whose_words_overlap_most_is_the_nearest(self, asked, expected):
+        assert self.index().nearest(asked).concept == expected
+
+    @pytest.mark.parametrize("asked", ["Photosynthesis", "The French Revolution", "", "the of and", "x"])
+    def test_a_concept_with_nothing_in_common_has_none(self, asked):
+        assert self.index().nearest(asked) is None
+
+    def test_a_tie_goes_to_the_earlier_concept(self):
+        index = ConceptIndex.from_json(
+            [
+                {"concept": "Binary trees", "page": "core", "heading": "A", "summary": ""},
+                {"concept": "Binary heaps", "page": "core", "heading": "B", "summary": ""},
+            ]
+        )
+
+        assert index.nearest("Binary").concept == "Binary trees"
+
+    def test_a_concept_with_no_page_can_still_be_the_nearest(self):
+        index = ConceptIndex.from_json([{"concept": "Sorted data", "page": "", "heading": "", "summary": ""}])
+
+        assert index.nearest("Sorted arrays").page == ""

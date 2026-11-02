@@ -8,9 +8,11 @@ from .models import Lesson
 
 
 class ConceptLinks:
-    """A link is `{concept, page, heading}`: `page` is empty when nothing could place the concept, and the learner is
-    then sent to the lesson as a whole. A lesson made before the concept index existed has none stored, so its index is
-    worked out from its plan and pages here (in memory: reading never writes); `ConceptIndexBackfill` stores them."""
+    """A link is `{concept, page, heading}`, the concept as it was asked for: `page` is empty when nothing could place
+    it, and the learner is then sent to the lesson as a whole. A concept the index does not name (an old lesson's test
+    wrote its concepts in the model's own words) is linked to the nearest one (`ConceptIndex.nearest`). A lesson made
+    before the concept index existed has none stored, so its index is worked out from its plan and pages here (in
+    memory: reading never writes); `ConceptIndexBackfill` stores them."""
 
     @staticmethod
     def index_of(lesson: Lesson | None) -> ConceptIndex:
@@ -24,9 +26,8 @@ class ConceptLinks:
         index = cls.index_of(lesson)
         links = []
         for concept in concepts:
-            entry = index.find(concept)
+            entry = index.nearest(concept)
             links.append(
-                {"concept": entry.concept if entry else concept, "page": entry.page if entry else "",
-                 "heading": entry.heading if entry else ""}
-            )  # fmt: skip
+                {"concept": concept, "page": entry.page if entry else "", "heading": entry.heading if entry else ""}
+            )
         return links
