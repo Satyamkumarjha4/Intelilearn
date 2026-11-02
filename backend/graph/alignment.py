@@ -44,14 +44,18 @@ class AlignmentPolicy:
 
     @staticmethod
     def fixable(state: dict, issues: list[dict]) -> list[dict]:
-        """One issue per item, and only for items that exist (the judge may name a page or widget that does not)."""
+        """One issue per item, and only for items that exist (the judge may name a page, a widget or a test question
+        that does not: a real model did, and the fix step looked it up and crashed the build)."""
         specs = {s["id"] for s in (state.get("interactive_plan") or {}).get("specs", [])}
+        questions = {q["id"] for q in (state.get("final_test") or {}).get("questions", [])}
         fixable, seen = [], set()
         for issue in issues:
             target, target_id = issue["target"], issue["target_id"]
             if target == "page" and target_id not in PAGE_KEYS:
                 continue
             if target in ("interactive", "media") and target_id not in specs:
+                continue
+            if target == "final_test" and target_id not in questions:
                 continue
             slot = ("final_test", "") if target == "final_test" else (target, target_id)
             if slot not in seen:

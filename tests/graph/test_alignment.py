@@ -7,7 +7,8 @@ lesson with a cosmetic issue must not be failed for it.
 Use cases:
 - every score at or above the minimum and no major issue passes (the judge's own flag is ignored); notes become warnings
 - a failing report with rounds left and fixable issues is sent back to fix, one issue per item
-- issues naming a page, widget or media that does not exist are not fixable
+- issues naming a page, widget, media or test question that does not exist are not fixable (a real model named a test
+  question "Q11" that the test does not have, and the fix step crashed the whole build looking for it)
 - out of rounds with only minor issues the lesson is accepted with a warning
 - out of rounds with a major issue the run fails with the problems named
 - a low score with no issues at all, out of rounds, is accepted (nothing to fix and nothing major)
@@ -81,6 +82,21 @@ def test_issues_for_items_that_do_not_exist_are_not_fixable():
     verdict = decide(report(2, issues), round_number=1)
 
     assert verdict.fixable == [] and verdict.decision == "fail"
+
+
+@pytest.mark.parametrize("target_id", ["t11", "Q3", "", "question 3", "t0"])
+def test_a_test_question_the_test_does_not_have_is_not_fixable(target_id):
+    issues = [issue("final_test", target_id, "major")]
+
+    verdict = decide(report(2, issues), round_number=1)
+
+    assert verdict.fixable == [] and verdict.decision == "fail"
+
+
+def test_a_test_question_that_exists_is_fixable_by_its_id():
+    verdict = decide(report(2, [issue("final_test", "t10", "major")]), round_number=1)
+
+    assert [(i["target"], i["target_id"]) for i in verdict.fixable] == [("final_test", "t10")]
 
 
 def test_out_of_rounds_with_only_minor_issues_is_accepted_with_a_warning():
