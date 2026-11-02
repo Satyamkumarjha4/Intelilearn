@@ -5,28 +5,25 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { QuizReview } from "@/components/lessons/quiz-review";
-import { SHEET_ICONS } from "@/components/lessons/sheet-icons";
 import { Button } from "@/components/ui/button";
-import { ApiError } from "@/lib/api";
 import { lessonsApi } from "@/lib/lessons-api";
 import { MasteryOptions } from "@/lib/mastery-options";
-import { MasteryBanner, SheetCatalog } from "@/lib/study-sheets";
-import type { LessonDetail, MasteryPick, MaterialKind } from "@/lib/types";
+import { MasteryBanner } from "@/lib/study-sheets";
+import type { LessonDetail, MasteryPick } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-type Props = { lesson: Pick<LessonDetail, "id" | "mastery_options" | "results">; onChosen: () => void };
+type Props = { lesson: Pick<LessonDetail, "id" | "results">; onChosen: () => void };
 
 const PICK_ICONS: Record<MasteryPick, LucideIcon> = { lesson: GraduationCapIcon, sheets: ScrollTextIcon };
 
-/** The learner knew (nearly) everything: celebrate it, then let them choose what happens next. A lesson that was
- *  already waiting at the older choice keeps the three sheets it was offered. The button follows the card picked. */
+/** The learner knew (nearly) everything: celebrate it, then let them choose what happens next. The button follows the
+ *  card picked. */
 export function MasteryChoice({ lesson, onChosen }: Props) {
   const result = lesson.results.diagnostic;
   const banner = MasteryBanner.of(result);
-  const legacy = MasteryOptions.legacy(lesson);
 
   return (
-    <section aria-label={legacy ? "Pick a study sheet" : "What next?"} className="flex flex-col gap-6">
+    <section aria-label="What next?" className="flex flex-col gap-6">
       <div className="flex items-center gap-4 rounded-[22px] border-[1.5px] border-marigold/60 bg-marigold-soft px-5 py-4">
         <span className="grid size-14 shrink-0 place-items-center rounded-full bg-marigold text-marigold-foreground shadow-[0_3px_0_var(--marigold-deep)]">
           <TrophyIcon className="size-7" aria-hidden="true" />
@@ -37,7 +34,7 @@ export function MasteryChoice({ lesson, onChosen }: Props) {
         </div>
       </div>
 
-      {legacy ? <ThreeSheets lessonId={lesson.id} onChosen={onChosen} /> : <TwoOptions lessonId={lesson.id} onChosen={onChosen} />}
+      <TwoOptions lessonId={lesson.id} onChosen={onChosen} />
 
       {result && <QuizReview lessonId={lesson.id} kind="diagnostic" />}
     </section>
@@ -114,53 +111,6 @@ function TwoOptions({ lessonId, onChosen }: { lessonId: string; onChosen: () => 
       <Button size="lg" className="h-10 self-start px-4 text-base" onClick={choose} disabled={busy}>
         {MasteryOptions.buttonLabel(picked, busy)}
       </Button>
-    </>
-  );
-}
-
-/** The three sheets a lesson that was already waiting when the Expert lesson arrived was offered. */
-function ThreeSheets({ lessonId, onChosen }: { lessonId: string; onChosen: () => void }) {
-  const [picked, setPicked] = useState<MaterialKind>("revision_sheet");
-  const [busy, setBusy] = useState(false);
-
-  const choose = async () => {
-    setBusy(true);
-    try {
-      await lessonsApi.choose(lessonId, { kind: picked });
-      onChosen();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? MasteryOptions.errorMessage(err) : "Could not start that sheet.");
-      setBusy(false);
-    }
-  };
-
-  return (
-    <>
-      <fieldset className="flex flex-col gap-3" disabled={busy}>
-        <legend className="mb-3 font-heading text-xl font-semibold">What would help you most?</legend>
-        <div className="grid gap-4 md:grid-cols-3">
-          {SheetCatalog.all().map((sheet) => (
-            <ChoiceCard
-              key={sheet.kind}
-              name="sheet"
-              value={sheet.kind}
-              selected={picked === sheet.kind}
-              onSelect={() => setPicked(sheet.kind)}
-              icon={SHEET_ICONS[sheet.kind]}
-              title={sheet.title}
-              text={sheet.text}
-              bullets={sheet.bullets}
-              time={sheet.time}
-            />
-          ))}
-        </div>
-      </fieldset>
-      <div className="flex flex-col items-start gap-1.5">
-        <Button size="lg" className="h-10 px-4 text-base" onClick={choose} disabled={busy}>
-          {busy ? "Starting…" : SheetCatalog.makeLabel(picked)}
-        </Button>
-        <p className="text-sm text-muted-foreground">You can add the other sheets afterwards.</p>
-      </div>
     </>
   );
 }

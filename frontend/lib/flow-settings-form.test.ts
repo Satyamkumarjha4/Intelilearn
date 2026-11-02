@@ -28,8 +28,6 @@ const saved: FlowSettingsValues = {
   prerequisite_question_count: 5,
   prereq_trigger_max_correct: 2,
   mastery_requires_all_correct: true,
-  final_test_min: 10,
-  final_test_max: 15,
   max_interactives_per_page: 3,
   band_fail_below: 30,
   band_excellent_above: 90,
@@ -55,7 +53,6 @@ describe("fromSettings", () => {
 
     expect(values.diagnostic_questions_per_band).toBe("2");
     expect(values.retakes_per_day).toBe("3");
-    expect("final_test_min" in values || "final_test_max" in values).toBe(false);
     expect(values.mastery_requires_all_correct).toBe(true);
     expect(values.media_sources).toEqual(["wikimedia", "openverse"]);
   });
@@ -180,9 +177,9 @@ describe("toggle", () => {
 
 describe("serverErrors", () => {
   test("is the first message per field the API gave", () => {
-    const error = new ApiError(400, "invalid", "x", { final_test_max: ["Too big.", "Really."], media_sources: ["Unknown source."] });
+    const error = new ApiError(400, "invalid", "x", { question_batch_size: ["Too big.", "Really."], media_sources: ["Unknown source."] });
 
-    expect(FlowSettingsForm.serverErrors(error)).toEqual({ final_test_max: "Too big.", media_sources: "Unknown source." });
+    expect(FlowSettingsForm.serverErrors(error)).toEqual({ question_batch_size: "Too big.", media_sources: "Unknown source." });
   });
 
   test("is empty for a failure that is not about a field", () => {

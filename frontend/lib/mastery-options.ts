@@ -1,6 +1,6 @@
 import { ActionRefusedMessage } from "@/lib/action-refused";
 import { ApiError } from "@/lib/api";
-import type { LessonDetail, MasteryPick } from "@/lib/types";
+import type { MasteryPick } from "@/lib/types";
 
 export type MasteryOption = {
   pick: MasteryPick;
@@ -31,8 +31,7 @@ const OPTIONS: MasteryOption[] = [
 
 /**
  * The choice a learner gets after a perfect quick check: carry on with an Expert lesson, or take two study sheets and
- * stop. A lesson that was already waiting at the older three-sheet choice keeps showing those cards (`legacy`), so
- * nobody finds the options changed under them.
+ * stop.
  */
 export class MasteryOptions {
   static readonly DEFAULT: MasteryPick = "lesson";
@@ -43,11 +42,6 @@ export class MasteryOptions {
 
   static of(pick: MasteryPick): MasteryOption {
     return OPTIONS.find((option) => option.pick === pick)!;
-  }
-
-  /** The old three-sheet cards, for a lesson that was waiting at them. */
-  static legacy(lesson: Pick<LessonDetail, "mastery_options">): boolean {
-    return lesson.mastery_options === "three_sheets";
   }
 
   /** The button follows the card picked. */

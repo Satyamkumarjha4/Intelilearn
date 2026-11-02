@@ -140,8 +140,6 @@ export type LessonDetail = LessonSummary & {
   level_source: LevelSource;
   /** Stars, 0.5 to 5; null unless the lesson was started by a self-rating. */
   self_rating: number | null;
-  /** The choice a learner who aced the quick check is shown: the Expert lesson or sheets, or the old three sheets. */
-  mastery_options: "lesson_or_sheets" | "three_sheets";
   user_context: string;
   error: string;
   warnings: string[];
@@ -850,8 +848,6 @@ export type FlowSettingsValues = {
   prereq_trigger_max_correct: number;
   mastery_requires_all_correct: boolean;
   /** Retired: the test is fixed at ten questions. Still sent, never edited. */
-  final_test_min: number;
-  final_test_max: number;
   max_interactives_per_page: number;
   /** Percent under which an attempt is a Fail, and over which it is Excellent. */
   band_fail_below: number;

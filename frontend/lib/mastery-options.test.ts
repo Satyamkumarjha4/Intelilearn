@@ -2,14 +2,12 @@
  * Unit under test: `MasteryOptions`, the two cards a learner sees after a perfect quick check, and the words around them.
  *
  * Why: this is the one place a learner who did everything right decides what happens next. The two options must read
- * exactly as agreed, the Expert lesson must be what is picked unless they say otherwise, and a lesson that was already
- * waiting at the old three-sheet choice must keep those cards rather than change under the learner's feet.
+ * exactly as agreed, and the Expert lesson must be what is picked unless they say otherwise.
  *
  * Use cases:
  * - there are two options, the Expert lesson first, with exactly the agreed titles
  * - each has a line, two bullets and a time, and no word the learner should not see (a model, a run, a node)
  * - an option is found by its pick; the Expert lesson is the default
- * - a lesson shown the old choice keeps the old cards, and a lesson shown the new choice does not
  * - the button follows the card picked and says so while starting
  * - a refusal is said in its own words, a choice made twice says to reload, and anything else says to try again
  */
@@ -36,13 +34,6 @@ describe("the options", () => {
   test("an option is found by its pick, and the Expert lesson is the default", () => {
     expect(MasteryOptions.of("sheets").title).toContain("Cheat sheet");
     expect(MasteryOptions.DEFAULT).toBe("lesson");
-  });
-});
-
-describe("a lesson that was waiting at the old choice", () => {
-  test("keeps the old cards; one shown the new choice does not", () => {
-    expect(MasteryOptions.legacy({ mastery_options: "three_sheets" })).toBe(true);
-    expect(MasteryOptions.legacy({ mastery_options: "lesson_or_sheets" })).toBe(false);
   });
 });
 

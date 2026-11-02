@@ -12,8 +12,7 @@
  * - reads, deletes and retries a lesson
  * - reads a quiz and submits answers to its attempt endpoint
  * - reads the review and cancels a run
- * - chooses the Expert lesson or the sheets (or, for a lesson already waiting at the old choice, one sheet kind), asks
- *   for one sheet or both at once, lists a lesson's sheets, reads one (with revealed solutions) and grades practice
+ * - chooses the Expert lesson or the sheets, asks for one sheet or both at once, lists a lesson's sheets, reads one (with revealed solutions) and grades practice
  *   answers
  * - reads the lesson document, reports a crash for repair, lists versions and restores one
  * - reads the test to take, starts an attempt, saves an answer, submits, reads the attempts and one attempt, and grades a
@@ -148,7 +147,6 @@ describe("LessonsApi", () => {
 
     await api.choose("l1", "lesson");
     await api.choose("l1", "sheets");
-    await api.choose("l1", { kind: "cheat_sheet" });
     await api.requestMaterial("l1", ["revision_sheet"]);
     await api.requestMaterial("l1", ["cheat_sheet", "revision_sheet"]);
     await api.materials("l1");
@@ -159,7 +157,6 @@ describe("LessonsApi", () => {
     expect(calls).toEqual([
       { path: "/lessons/l1/choice", options: { method: "POST", body: { choice: "lesson" } } },
       { path: "/lessons/l1/choice", options: { method: "POST", body: { choice: "sheets" } } },
-      { path: "/lessons/l1/choice", options: { method: "POST", body: { kind: "cheat_sheet" } } },
       { path: "/lessons/l1/materials", options: { method: "POST", body: { kind: "revision_sheet" } } },
       { path: "/lessons/l1/materials", options: { method: "POST", body: { kinds: ["cheat_sheet", "revision_sheet"] } } },
       { path: "/lessons/l1/materials", options: undefined },

@@ -2,14 +2,9 @@ import { ApiError } from "@/lib/api";
 import { FlowBands, type BandSettings } from "@/lib/flow-bands";
 import type { FlowSettingsValues } from "@/lib/types";
 
-/** The test is fixed now (ten questions), so its old size settings are no longer edited, shown or sent. */
-type RetiredField = "final_test_min" | "final_test_max";
-type NumberField = Exclude<
-  {
-    [K in keyof FlowSettingsValues]: FlowSettingsValues[K] extends number ? K : never;
-  }[keyof FlowSettingsValues],
-  RetiredField
->;
+type NumberField = {
+  [K in keyof FlowSettingsValues]: FlowSettingsValues[K] extends number ? K : never;
+}[keyof FlowSettingsValues];
 type ListField = "media_sources" | "allowed_media_licenses";
 
 /** What the boxes hold: text for the numbers (it is not a number while someone types), the rest as it is. */

@@ -33,7 +33,7 @@ function fake() {
     models: reply("models", { results: [{ id: 1 }] }),
     routing: reply("routing", { phases: [{ nodes: [{ key: "a" }, { key: "b" }] }, { nodes: [{ key: "c" }] }] }),
     profiles: reply("profiles", [{ name: "cheap" }]),
-    flowSettings: reply("flowSettings", { final_test_min: 10 }),
+    flowSettings: reply("flowSettings", { alignment_max_rounds: 2 }),
     runs: reply("runs", {
       results: [
         { created_at: "2026-03-15T11:00:00Z" },
@@ -116,7 +116,7 @@ describe("ConsoleQueries fetchers", () => {
 
     expect(await run(queries.routing())).toEqual({ phases: [{ nodes: [{ key: "a" }, { key: "b" }] }, { nodes: [{ key: "c" }] }] } as never);
     expect(await run(queries.profiles())).toEqual([{ name: "cheap" }] as never);
-    expect(await run(queries.flowSettings())).toEqual({ final_test_min: 10 } as never);
+    expect(await run(queries.flowSettings())).toEqual({ alignment_max_rounds: 2 } as never);
     expect(calls.map(([name]) => name)).toEqual(["routing", "profiles", "flowSettings"]);
   });
 

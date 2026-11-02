@@ -7,7 +7,7 @@ export type Segment = "done" | "current" | "todo";
 export type DeckSnapshot = { index: number; answers: Record<string, DeckAnswer>; finished: boolean };
 
 /**
- * A learner working through a deck of cards (the quick check and the final test): one card at a time, forward only.
+ * A learner working through a deck of cards (the quick check and a test or quiz attempt): one card at a time, forward only.
  * The answer on the current card can change until they continue; continuing needs an answer, locks the card, and there
  * is no way back. Continuing on the last card finishes the deck. Answers stay here until the end, when all go to the
  * server in one request.

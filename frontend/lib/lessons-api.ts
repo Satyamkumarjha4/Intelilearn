@@ -103,11 +103,9 @@ export class LessonsApi {
     return this.client.request(`/lessons/${id}/quizzes/${kind}/review`);
   }
 
-  /** The pick after a perfect quick check: `lesson` or `sheets`; a lesson already waiting at the old three-sheet
-   *  choice sends the sheet kind it picked instead. */
-  choose(id: string, pick: MasteryPick | { kind: MaterialKind }): Promise<{ run_id: string }> {
-    const body = typeof pick === "string" ? { choice: pick } : { kind: pick.kind };
-    return this.client.request(`/lessons/${id}/choice`, { method: "POST", body });
+  /** The pick after a perfect quick check: the Expert lesson or the two sheets. */
+  choose(id: string, pick: MasteryPick): Promise<{ run_id: string }> {
+    return this.client.request(`/lessons/${id}/choice`, { method: "POST", body: { choice: pick } });
   }
 
   /** More sheets for a ready lesson: one kind, or both at once. `409 already_exists` carries the `kinds` that exist. */

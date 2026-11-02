@@ -19,10 +19,9 @@
  *   point, nothing is assumed done before it, and only a Beginner, who was not tested, has a step that chooses what to
  *   learn first; the path is read from the lesson (the entry, and the stars as the API sends them)
  * - sheets written together (the choice after a perfect quick check, a lesson that asked for sheets, another sheet or
- *   two on a ready lesson) have their own steps (writing, then checking and putting them together): the model switches
- *   to them on the first event only that path has, counts the sheets written, finishes writing when the join starts
- *   (whatever the number of sheets), and a snapshot from a client that connected late does the same; a single sheet of
- *   the older kind keeps its three steps
+ *   two on a ready lesson) have their own steps (writing, then checking and putting them together): a lesson writing
+ *   sheets shows them from the start, counts the sheets written, finishes writing when the join starts (whatever the
+ *   number of sheets), and a snapshot from a client that connected late does the same
  * - a lesson that asked for sheets starts with finding the level (the quiz's assessment, or the rating's starting
  *   point) and then has the sheets' steps; it never has the lesson's steps, prerequisites included
  * - the headline is the step being worked on
@@ -60,7 +59,7 @@ describe("steps", () => {
       "Getting to know you", "Writing your basics questions", "Checking the questions", "Getting your basics check ready",
     ]);
     expect(labels(new PipelineModel("generating_material"))).toEqual([
-      "Writing your study sheet", "Checking it", "Putting it together",
+      "Writing your study sheets", "Checking and putting them together",
     ]);
     expect(labels(new PipelineModel("ready"))).toEqual(["Writing your study sheets", "Checking and putting them together"]);
     expect(labels(new PipelineModel("generating_lesson"))).toEqual([
@@ -423,17 +422,10 @@ describe("the path of a lesson", () => {
 });
 
 describe("study sheets written together", () => {
-  test("a single sheet of the older kind keeps its three steps until an event shows it is the group", () => {
+  test("a lesson writing sheets shows the group's steps from the start, with no event needed", () => {
     const model = new PipelineModel("generating_material");
 
-    expect(labels(model)).toEqual(["Writing your study sheet", "Checking it", "Putting it together"]);
-    model.apply(node("generate_study_material", "running"));
-    expect(labels(model)).toHaveLength(3);
-  });
-
-  test("the first event only the group has switches to the group's steps", () => {
-    const model = new PipelineModel("generating_material");
-
+    expect(labels(model)).toEqual(["Writing your study sheets", "Checking and putting them together"]);
     model.apply(node("plan_sheets", "running"));
 
     expect(labels(model)).toEqual(["Writing your study sheets", "Checking and putting them together"]);

@@ -26,7 +26,7 @@ const SENTENCES = [
 
 /**
  * The self-rating scale: ten half-star values, each with the sentence the learner sees when they pick it (approved
- * wording, docs/to_be_developed/modular-lessons-implementation-plan.md D23), and the keys that move along it. The
+ * wording, docs/archive/modular-lessons-implementation-plan.md D23), and the keys that move along it. The
  * level a rating means is decided by the server; `levelOf` only says it back so the page can name it before the lesson
  * exists, and mirrors the server's table.
  */

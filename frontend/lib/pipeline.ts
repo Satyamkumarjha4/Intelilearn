@@ -129,27 +129,6 @@ const STEPS: Record<string, StepDef> = {
     doneWhen: "persist_lesson",
     registry: [],
   },
-  sheet_write: {
-    doing: "Writing your study sheet",
-    done: "Wrote your study sheet",
-    nodes: ["generate_study_material"],
-    doneWhen: "generate_study_material",
-    registry: ["study."],
-  },
-  sheet_check: {
-    doing: "Checking it",
-    done: "Checked it",
-    nodes: ["validate_study_material"],
-    doneWhen: "validate_study_material",
-    registry: [],
-  },
-  sheet_save: {
-    doing: "Putting it together",
-    done: "Put it together",
-    nodes: ["persist_study_material"],
-    doneWhen: "persist_study_material",
-    registry: [],
-  },
   // Sheets written together (the choice after a perfect quick check, a lesson that asked for sheets, more sheets for a
   // lesson that is ready) have their own steps, for one sheet or two.
   sheets_write: {
@@ -170,8 +149,6 @@ const STEPS: Record<string, StepDef> = {
   },
 };
 
-/** The nodes only the two-sheet path has: seeing one means the sheet steps are the pair's. */
-const SHEET_PAIR_NODES = new Set(["plan_sheets", "generate_sheet", "sheets_join"]);
 const SHEET_PAIR_STEPS = ["sheets_write", "sheets_save"];
 
 // A retry starts before the lesson says which stage it is back in: one calm step until it does (`setStage`).
@@ -180,7 +157,7 @@ STEPS.resume = { doing: "Picking up where it stopped", done: "Picked up where it
 const ORDER_BY_STAGE: Partial<Record<Stage, string[]>> = {
   failed: ["resume"],
   preparing_diagnostic: ["quiz_context", "quiz_write", "quiz_check", "quiz_publish"],
-  generating_material: ["sheet_write", "sheet_check", "sheet_save"],
+  generating_material: SHEET_PAIR_STEPS,
   ready: SHEET_PAIR_STEPS, // the only run a ready lesson shows is more study sheets
   generating_lesson: ["quiz", "assess", "plan", "write", "media", "check", "build", "sandbox"],
 };
@@ -219,9 +196,6 @@ export class PipelinePaths {
 /** Steps that finished in an earlier run of the lesson's flow, so no event of this run will say so. */
 const DONE_BEFORE: Partial<Record<Stage, string[]>> = { generating_lesson: ["quiz"] };
 
-/** The stages whose steps are a study sheet being written. */
-const STEPS_OF_SHEETS = new Set<Stage>(["generating_material"]);
-
 export type StepStatus = "pending" | "running" | "done";
 export type StepView = {
   key: string;
@@ -242,7 +216,6 @@ type Timing = { start?: number; end?: number };
  */
 export class PipelineModel {
   private keys: string[] = [];
-  private pair = false;
   private assumedDone = new Set<string>();
   private stage: Stage;
   private readonly nodeStatus = new Map<string, NodeStatus>();
@@ -278,8 +251,7 @@ export class PipelineModel {
   }
 
   private configure(stage: Stage): void {
-    const group = this.pair && STEPS_OF_SHEETS.has(stage) && !this.path.sheets;
-    this.keys = group ? SHEET_PAIR_STEPS : PipelinePaths.order(stage, this.path);
+    this.keys = PipelinePaths.order(stage, this.path);
     this.assumedDone = new Set(PipelinePaths.doneBefore(stage, this.path));
   }
 
@@ -290,7 +262,6 @@ export class PipelineModel {
       case "snapshot":
         for (const [node, status] of Object.entries(event.data.node_status)) {
           this.nodeStatus.set(node, status);
-          this.noticePair(node);
         }
         if (event.data.started_at) {
           const started = Date.parse(event.data.started_at);
@@ -298,7 +269,6 @@ export class PipelineModel {
         }
         break;
       case "node":
-        this.noticePair(event.data.node);
         this.nodeStatus.set(event.data.node, event.data.status);
         if (event.data.status === "done") this.doneCount.set(event.data.node, (this.doneCount.get(event.data.node) ?? 0) + 1);
         if (event.data.status === "retrying" && this.stepOfNode(event.data.node)) this.recovered = true;
@@ -403,15 +373,6 @@ export class PipelineModel {
     const timing = this.timings.get(key);
     if (!timing || timing.start === undefined || status === "pending") return null;
     return (status === "done" ? (timing.end ?? now) : now) - timing.start;
-  }
-
-  /** A node only the two-sheet path runs: from now on the sheet steps are the pair's. */
-  private noticePair(node: string): void {
-    if (this.pair || !SHEET_PAIR_NODES.has(node)) return;
-    const before = this.statuses();
-    this.pair = true;
-    this.configure(this.stage);
-    this.time(before, false);
   }
 
   private stepOfNode(node: string): string | undefined {
