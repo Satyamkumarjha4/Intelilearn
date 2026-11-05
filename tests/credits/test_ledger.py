@@ -8,7 +8,8 @@ what changed and what the balance was after.
 
 Use cases:
 - a wallet exists for a learner from their first movement, and is the same one afterwards
-- grant makes a bucket and a ledger row with the running balance; a repeated key changes nothing and returns the first
+- grant makes a bucket and a ledger row with the running balance and its source (so a history can say where credits
+  came from); a repeated key changes nothing and returns the first
   result; a key that belongs to another learner is refused; a non-positive amount or an unknown source is refused
 - the balance counts buckets that are live and not revoked; the reserved amount counts holds that are held
 - a hold takes its credits out of the buckets at once, earliest expiry first, and records where from on the hold and on
@@ -85,6 +86,11 @@ class TestGrant:
         assert CreditBucket.objects.get(source="signup").expires_at is None
         assert second.transaction.action == "daily" and second.transaction.created_at == clock.now()
         assert second.transaction.bucket_allocations == [{"bucket": str(made.pk), "amount": 1}]
+
+    def test_the_row_remembers_where_the_credits_came_from(self, ledger, user):
+        row = ledger.grant(user, "weekly_streak", 10, "g", meta={"streak": 7}).transaction
+
+        assert row.meta == {"source": "weekly_streak", "streak": 7}
 
     def test_a_purchase_id_is_kept_on_the_bucket(self, ledger, user):
         import uuid

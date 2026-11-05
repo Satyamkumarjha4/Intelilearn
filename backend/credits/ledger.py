@@ -117,8 +117,9 @@ class Ledger:
                 return Movement(books.seen, False)
             made = self._new_bucket(books, source, amount, expires_at, purchase_id)
             row = books.post(
-                Type.GRANT, amount, key, action=action, allocations=[self._part(made.pk, amount)], meta=meta
-            )
+                Type.GRANT, amount, key, action=action, allocations=[self._part(made.pk, amount)],
+                meta={"source": source, **(meta or {})},
+            )  # fmt: skip
         return Movement(row, True)
 
     def place_hold(

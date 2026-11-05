@@ -51,13 +51,17 @@ class SpendPlanner:
             raise ValueError("A spend cannot be negative.")
         allocations: list[BucketAllocation] = []
         needed = amount
-        for bucket in sorted(self._spendable(buckets, now), key=self._order):
+        for bucket in self.in_order(buckets, now):
             if needed == 0:
                 break
             take = min(needed, bucket.remaining)
             allocations.append(BucketAllocation(bucket.id, take))
             needed -= take
         return SpendPlan(tuple(allocations), needed)
+
+    def in_order(self, buckets: Iterable[SpendBucket], now: datetime) -> list[SpendBucket]:
+        """The buckets that can be spent from now, in the order they will be."""
+        return sorted(self._spendable(buckets, now), key=self._order)
 
     @staticmethod
     def _spendable(buckets: Iterable[SpendBucket], now: datetime) -> list[SpendBucket]:

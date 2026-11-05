@@ -15,6 +15,7 @@ Use cases:
 - a spend of zero allocates nothing and is never short; a negative spend is a programming error
 - a bucket that expired (at or before the instant), is empty or is revoked is skipped, and a bucket that expires a
   moment after the instant is still spendable
+- `in_order` lists the buckets that can be spent from, in spend order, and leaves out those that cannot
 - the plan never allocates more than a bucket holds, and its allocations add up to the spend minus the shortfall
 """
 
@@ -142,6 +143,27 @@ class TestWhatIsSkipped:
 
         assert taken(plan(buckets, 5, now=NOW)) == [("a", 5)]
         assert taken(plan(buckets, 5, now=NOW + 3 * DAY)) == [("b", 5)]
+
+
+class TestInOrder:
+    def test_it_lists_what_can_be_spent_in_the_order_it_will_be(self):
+        buckets = [
+            bucket("never", 5, None),
+            bucket("late", 5, 30),
+            bucket("lapsed", 5, -1),
+            bucket("empty", 0, 1),
+            bucket("revoked", 5, 2, revoked=True),
+            bucket("soon", 5, 2),
+        ]
+
+        assert [b.id for b in SpendPlanner().in_order(buckets, NOW)] == ["soon", "late", "never"]
+
+    def test_the_plan_takes_in_that_order(self):
+        buckets = [bucket("b", 3, 9), bucket("a", 3, 1)]
+
+        assert [a.bucket_id for a in plan(buckets, 4).allocations] == [
+            b.id for b in SpendPlanner().in_order(buckets, NOW)
+        ]
 
 
 class TestTheValues:
