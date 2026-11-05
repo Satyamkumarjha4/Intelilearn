@@ -62,7 +62,7 @@ On start, `make up` also recreates the frontend's anonymous `node_modules` and `
 
 ### The scheduler (`beat`)
 
-`beat` is a service beside `worker`: it wakes on the schedule in `CELERY_BEAT_SCHEDULE` (`backend/config/settings.py`) and queues each periodic task for the worker to run. It runs no task itself. The schedule is **empty** until the credits phases add their housekeeping (an hourly `credits.tick` and a five-minute `payments.reconcile`), so for now it starts, prints its configuration and waits. Rules:
+`beat` is a service beside `worker`: it wakes on the schedule in `CELERY_BEAT_SCHEDULE` (`backend/config/settings.py`) and queues each periodic task for the worker to run. It runs no task itself. The schedule runs **`credits.tick` every hour** (write off lapsed credits, release reserves nothing will settle, audit the credit ledger; a ledger break is logged as an error) and will gain a five-minute `payments.reconcile` with the payments phase. Rules:
 
 - **Run exactly one.** A second `beat` queues every task twice. Every task is written to be harmless when it runs twice, but do not rely on that: `docker compose ps` should list one `beat`. Do not scale it (`--scale beat=2`).
 - It keeps its schedule bookkeeping in `/tmp` inside the container, so a restart loses nothing that matters; a task that was due while it was down runs on the next tick, not in a burst.
@@ -189,9 +189,28 @@ docker compose exec backend python manage.py backfill_concept_index           # 
   from the stored plan and pages, so a quiz result can link to the right page. It fills only empty indexes, writes only
   that column and prints how many lessons and concepts it placed or could not place. A lesson it cannot place still
   works: its links open the lesson without a page. It is **not** run at start-up.
+- `grant_signup_credits` (phase 10.3) gives the 30 signup credits, which never expire, to every active account that was
+  made before credits existed. New accounts get them when they register. Run it with `--dry-run` first (it prints how many
+  accounts it would give them to and writes nothing), then for real, **once before the credit gate is switched on**. It is
+  safe to run again: an account that has them is left alone, and a closed account is skipped.
 - Migration `0021` (phase 9.8) refuses to run while any lesson still waits at the old three-sheet choice. If it stops,
   let those learners choose with the previous release, then migrate again. Migration `0019` moved every lesson's test
   onto the record of questions; it can be undone, and it does not touch attempts.
+
+### Erasing an account
+
+A person can ask us to delete their account (the Privacy page says to write by email). The account cannot be deleted, because
+the credit ledger is append-only and refers to it, so it is **erased in place**: run it with `--dry-run` first.
+
+```bash
+docker compose exec backend python manage.py erase_account someone@example.com --dry-run  # what would be erased
+docker compose exec backend python manage.py erase_account someone@example.com            # do it (the id works too)
+```
+
+It releases any credits reserved for work under way, erases the learner's lessons and quizzes with their checkpoints and model
+calls, writes off the credits they had left on the ledger, deletes their streak, empties their profile, and anonymises the user
+(the email becomes `deleted-<id>@erased.invalid`, the name is blank, the password unusable, the account inactive). It cannot be
+undone. It is safe to run again: an erased account is reported as such, and an attempt that stopped half way is finished.
 
 ## Tests
 

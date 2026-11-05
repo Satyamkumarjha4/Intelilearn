@@ -13,7 +13,7 @@ Items carried over from the phases below, plus gaps found since. Nothing here bl
 **Privacy and security**
 
 - [x] Delete a lesson's LangGraph checkpoints and its `ModelCall` rows together with the lesson (`LessonErasure`). See [data-model.md](../architecture/data-model.md#deleting-a-lesson).
-- [ ] The same clean-up for a user removed by hand (there is no self-service account deletion): their lessons' checkpoints and `ModelCall` rows are still left behind. *Planned in phase 10.3 as `AccountErasure`, which anonymises the account in place ([the plan](../to_be_developed/credits-implementation-plan.md)).*
+- [x] The same clean-up for a user removed by hand (there is no self-service account deletion): done in phase 10.3 as `AccountErasure` (`manage.py erase_account`), which anonymises the account in place and erases everything the learner made, checkpoints and `ModelCall` rows included. A user with a wallet can no longer be deleted by hand at all (the credit tables protect it). See [data-model.md](../architecture/data-model.md#deleting-a-lesson).
 - [ ] Make the per-address rate limits independent of a client-supplied `X-Forwarded-For` (the Next.js proxy forwards the client's own first entry). Use the connection address in the proxy, or overwrite the header at the edge. See [api.md](../reference/api.md).
 - [ ] `scripts/enable_rls.sql`: row-level security with no policies on every table, including the checkpoint tables, for use with Supabase *(skipped while running on the local Postgres)*.
 - [ ] Set `SUPABASE_DATABASE_URL`, then verify the sync and `/api/health` *(skipped while running on the local Postgres)*.
@@ -239,7 +239,7 @@ Credits for the work that costs model calls, earned by studying, bought through 
 - [x] 10.0 Apps, environment, the beat service, `Profile.timezone`, `ActivitySink` and its three call sites, the `quiz.retake` hint, `account_ready`, the 402 handler
 - [x] 10.1 Ledger: wallet, buckets, transactions, holds, spend order, append-only, audit
 - [x] 10.2 Prices, quote, `CreditGate`, `402`, exempt, hold reconciler, wallet and history endpoints
-- [ ] 10.3 Earning: signup, daily credit, streak, repair, the hourly tick, the backfill command
+- [x] 10.3 Earning: signup, daily credit, streak, repair, the hourly tick, the backfill command, and account erasure (built but switched on with the gate in 10.9, except the signup grant)
 - [ ] 10.4 Plans and periods: one-time, weekly drip, queueing, activation
 - [ ] 10.5 Wallet, history, streak and buy screens, notices, a cost on every button
 - [ ] 10.6 Payments core: the gateway port and registry, orders, webhooks, reconciliation, clawback, the fake gateway, the buy flow

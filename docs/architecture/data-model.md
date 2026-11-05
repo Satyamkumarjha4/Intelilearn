@@ -26,6 +26,7 @@ Conventions that hold for every table:
 | is_superuser | bool | Django's flag; the admin's full permissions |
 | date_joined | datetime | |
 | terms_accepted_at | datetime, null | When the person confirmed the Terms of Use and Privacy Policy at registration. Null for accounts made before the confirmation existed |
+| deleted_at | datetime, null | Set when the account was erased (`AccountErasure`, [design.md §4.26](design.md#426-credits-ledger-gate-and-earning-phases-101-to-103)). The row stays, **anonymised in place** (email `deleted-<id>@erased.invalid`, no name, unusable password, inactive, no staff powers), because the credit ledger is append-only and refers to it. Null for every live account |
 | terms_version | char, blank | `User.TERMS_VERSION` at that moment ("2026-10-25"). Blank for the same older accounts. Nothing compares it with the current version yet, so a newer version does not ask anyone to confirm again |
 
 ### `Profile` (one-to-one with User; created on registration and filled in during onboarding)
@@ -325,7 +326,7 @@ Written by `console.audit.AuditTrail` in the same transaction as the change.
 
 ## `credits` (phase 10.1)
 
-The ledger of the credits system ([plan §7.2](../to_be_developed/credits-implementation-plan.md), design in [design.md §4.26](design.md#426-credits-the-ledger-and-the-credit-gate-phases-101-and-102)). Money is a whole number: credits are integers, never a float or a Decimal. **Nothing writes these tables yet** (the gate, earning and plans arrive in 10.2 to 10.4), and no table here has a default timestamp: every `created_at` is given by the ledger's `Clock`. Exempt from the "ids are UUIDs" convention: `Wallet` is keyed by its learner and `CreditTransaction` has a big auto id, because it is ordered.
+The ledger of the credits system ([plan §7.2](../to_be_developed/credits-implementation-plan.md), design in [design.md §4.26](design.md#426-credits-ledger-gate-and-earning-phases-101-to-103)). Money is a whole number: credits are integers, never a float or a Decimal. **Nothing writes these tables yet** (the gate, earning and plans arrive in 10.2 to 10.4), and no table here has a default timestamp: every `created_at` is given by the ledger's `Clock`. Exempt from the "ids are UUIDs" convention: `Wallet` is keyed by its learner and `CreditTransaction` has a big auto id, because it is ordered.
 
 ### `Wallet` (one per learner, made by their first movement)
 
@@ -356,7 +357,7 @@ Index `(user, expires_at)` where `amount_remaining > 0`. Spend order: soonest `e
 |---|---|---|
 | id | big auto | |
 | user | FK User, `PROTECT` | |
-| type | enum `grant` \| `debit` \| `hold` \| `commit` \| `release` \| `refund` \| `repair` \| `admin_adjust` \| `expire` | |
+| type | enum `grant` \| `debit` \| `hold` \| `commit` \| `release` \| `refund` \| `repair` \| `admin_adjust` \| `expire` \| `forfeit` | `forfeit` writes off a closed account's remaining credits (phase 10.3) |
 | amount | int, signed | The change in the learner's balance: hold negative, release positive, commit zero, grant positive, expire negative |
 | balance_after | positive int | The running total after this row |
 | action | char, blank | A `MeteredAction`, or `streak_repair` / `payment_refund` |
@@ -386,6 +387,18 @@ Index `(user, expires_at)` where `amount_remaining > 0`. Spend order: soonest `e
 | created_at, settled_at | datetime, datetime null | |
 
 Partial unique `(action, subject_id)` where `status = 'held'`: one live hold for one piece of work. Index `(status, created_at)`.
+
+### `StreakDay` and `StreakState` (phase 10.3: the days a learner counts as active)
+
+| Field | Type | Notes |
+|---|---|---|
+| user | FK User, `PROTECT` | |
+| local_date | date | The day **in the learner's own time zone** (their profile zone, or Asia/Kolkata). Unique with `user`: one row per learner per date |
+| kind | enum `active` \| `repaired` | A repaired day keeps the streak alive and earned no daily credit |
+| repaired_on | date, null | The local day the repair was made; the repair limits count by it. Set exactly when `kind` is `repaired` (a check constraint) |
+| created_at | datetime | |
+
+The days are the truth about a streak. `StreakState` (one row per learner: `current_streak`, `longest_streak`, `run_started_on`, `last_day`, `updated_at`) is a cache of what they add up to, kept up to date by the sink and by a repair; nothing decides anything from it. Both are deleted when the account is erased.
 
 ### `ActionPrice` (phase 10.2: what things cost, versioned)
 
@@ -448,7 +461,7 @@ If erasing fails, the lesson stays and the delete can be repeated. A step that w
 
 The credit ledger is not touched: it names a lesson by a plain id, so its rows outlive the lesson (design.md §4.26).
 
-There is no self-service account deletion: the Privacy page tells people to ask by email. **Removing a user by hand still leaves both sets of rows behind** (open work in [roadmap.md](../process/roadmap.md)).
+There is no self-service account deletion: the Privacy page tells people to ask by email, and an operator then runs `manage.py erase_account` (phase 10.3). That does not delete the user: it **anonymises the row in place** and erases everything the learner made, through the same erasure code as above, so lessons, quizzes, checkpoints and model calls all go; see `User.deleted_at` and [design.md §4.26](design.md#426-credits-ledger-gate-and-earning-phases-101-to-103). A user removed by hand with `DELETE` is refused once they have a wallet (the credit tables hold a protected key), so there is no longer a way to leave those rows behind.
 
 ## Access rules
 
