@@ -2,17 +2,22 @@
 
 The ledger, the buckets and the holds are read-only: money moves through `Ledger`, never through a form. What an
 administrator may do is edit the credit settings, switch a wallet's `credits_exempt` flag, and give or take credits with
-the "Give or take credits" action, which asks for a reason and goes through the ledger.
+the "Give or take credits" action, which asks for a reason and goes through the ledger. Prices (`ActionPrice`) are
+edited
+here too: an edit adds a row and switches the old one off (`PriceCatalog`), so history is kept and nothing in flight
+changes.
 """
 
 from django.contrib import admin, messages
 from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
 from django.template.response import TemplateResponse
 
+from .clock import SystemClock
 from .errors import LedgerError
 from .forms import AdjustCreditsForm
 from .ledger import Ledger
-from .models import CreditBucket, CreditHold, CreditSettings, CreditTransaction, Wallet
+from .models import ActionPrice, CreditBucket, CreditHold, CreditSettings, CreditTransaction, Wallet
+from .pricing.book import PriceCatalog
 
 
 class ReadOnlyAdmin(admin.ModelAdmin):
@@ -117,3 +122,33 @@ class CreditSettingsAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(ActionPrice)
+class ActionPriceAdmin(admin.ModelAdmin):
+    """The price table. A live price is edited by adding a row, so its history stays; an old price is read-only, and no
+    price can be deleted. Switching a price off makes the key unavailable (`503 price_unavailable`), never free."""
+
+    list_display = ["key", "credits", "label", "active", "updated_by", "updated_at"]
+    list_filter = ["active"]
+    search_fields = ["key", "label"]
+    ordering = ["key", "-id"]
+
+    def get_readonly_fields(self, request, obj=None):
+        return ["key", "updated_by", "updated_at"] if obj else ["updated_by", "updated_at"]
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return obj is None or obj.active  # an old price is history: it can be read, not edited back to life
+
+    def save_model(self, request, obj, form, change):
+        now, who = SystemClock().now(), request.user.email
+        if not change:
+            obj.updated_by, obj.updated_at = who, now
+            return super().save_model(request, obj, form, change)
+        if not obj.active:
+            PriceCatalog().deactivate(obj.key, by=who, now=now)
+        else:
+            PriceCatalog().revise(obj.key, obj.credits, by=who, now=now, label=obj.label)

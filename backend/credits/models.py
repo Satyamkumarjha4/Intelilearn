@@ -180,6 +180,49 @@ class CreditTransaction(models.Model):
         raise AppendOnly("Ledger rows cannot be deleted.")
 
 
+class ActionPrice(models.Model):
+    """What something costs, in credits (docs/to_be_developed/credits-implementation-plan.md T10, K8). Prices are
+    versioned:
+    changing one adds a row and switches the old row off (`PriceCatalog.revise`), so there is one live row for a key
+    and the
+    old ones are the history. A key with no live row is unavailable, never free. `credits` may be 0: that is a price."""
+
+    key = models.CharField(max_length=60)
+    credits = models.PositiveIntegerField()
+    label = models.CharField(max_length=120, help_text="In the learner's words: it is a line of the quote.")
+    active = models.BooleanField(default=True)
+    updated_by = models.CharField(max_length=254, blank=True)
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        ordering = ["key", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["key"], condition=Q(active=True), name="action_price_one_live_per_key"),
+        ]
+
+    def __str__(self):
+        return f"{self.key} = {self.credits}" + ("" if self.active else " (old)")
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self._forget()
+
+    def delete(self, *args, **kwargs):
+        result = super().delete(*args, **kwargs)
+        self._forget()
+        return result
+
+    @staticmethod
+    def _forget():
+        """The book is cached: a saved price must show at once, and again once the transaction is over."""
+        from django.db import transaction
+
+        from .pricing.book import PriceBook
+
+        PriceBook.clear()
+        transaction.on_commit(PriceBook.clear)
+
+
 class CreditSettings(models.Model):
     """Singleton: every amount and window the credits rules use, edited in the admin (and later the console) the way
     `FlowSettings` is (T18). The defaults are the spec's."""
