@@ -19,6 +19,7 @@ import logging
 import uuid
 from itertools import count
 
+from lessons.activity import ActivityKind, ActivitySink, ActivitySinks
 from lessons.metering import ActionContext, ActionGate, Authorization, MeteredAction, RunOutcome
 
 from .errors import HoldConflict, HoldNotFound, HoldNotHeld, InsufficientBalance
@@ -44,11 +45,16 @@ SUBJECT_KINDS = {
 
 class CreditGate(ActionGate):
     def __init__(
-        self, quoter: PriceQuoter | None = None, ledger: Ledger | None = None, exempt: ExemptPolicy | None = None
+        self,
+        quoter: PriceQuoter | None = None,
+        ledger: Ledger | None = None,
+        exempt: ExemptPolicy | None = None,
+        activity: ActivitySink | None = None,
     ):
         self.quoter = quoter or PriceQuoter()
         self.ledger = ledger or Ledger()
         self.exempt = exempt or ExemptPolicy()
+        self.activity = ActivitySinks.guarded(activity)
 
     def authorize(self, context: ActionContext) -> Authorization:
         quote = self.quoter.quote(context.action, context.size)
@@ -68,13 +74,22 @@ class CreditGate(ActionGate):
         try:
             hold_id = uuid.UUID(authorization.id)
             if outcome is RunOutcome.SUCCEEDED:
-                self.ledger.commit(hold_id)
+                if self.ledger.commit(hold_id).created:
+                    self._report_study(hold_id)
             else:
                 self.ledger.release(hold_id)
         except HoldNotHeld:
             logger.info("Authorization %s was already settled; %s ignored.", authorization.id, outcome)
         except (HoldNotFound, ValueError):
             logger.warning("Authorization %s has no reserve here; %s ignored.", authorization.id, outcome)
+
+    def _report_study(self, hold_id) -> None:
+        """The work was done: that is study, on the day it was asked for (a lesson asked at 23:50 and ready at 00:05
+        is the
+        first day's). Only the settlement that really committed reports, so a second one, or a late one, adds
+        nothing."""
+        hold = CreditHold.objects.select_related("user").get(pk=hold_id)
+        self.activity.record(hold.user, ActivityKind.METERED_ACTION, hold.created_at)
 
     def _reserve(self, context: ActionContext, amount: int, lines: list, exempt: bool) -> CreditHold:
         for attempt in count():

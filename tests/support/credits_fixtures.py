@@ -3,6 +3,7 @@
 - `credits_on`: switches `ACTION_GATE` to `CreditGate`, makes sure the price table has the plan's prices (a test that
   flushes the database, `transaction=True`, takes the migration's seed with it), and gives back a `CreditsOn` to put
   credits in a learner's wallet and read what was reserved.
+- `earning_on`: `credits_on` plus `CreditsActivitySink`, so the daily credit and the streak are earned too.
 - `_pin_the_open_gate` (autouse): every test starts on `OpenGate` whatever the default becomes, so the day the default
   gate changes (phase 10.9) no existing test changes meaning. A test that wants another gate sets `ACTION_GATE` itself.
 
@@ -54,6 +55,15 @@ def _pin_the_open_gate():
 
     with override_settings(ACTION_GATE="lessons.metering.OpenGate"):
         yield
+
+
+@pytest.fixture
+def earning_on(credits_on, settings):
+    """The credit gate and earning together, as production will have them: studying earns the daily credit and the
+    streak.
+    Separate from `credits_on` so the tests that count credits exactly are not changed by the day's credit."""
+    settings.ACTIVITY_SINK = "credits.activity.CreditsActivitySink"
+    return credits_on
 
 
 @pytest.fixture

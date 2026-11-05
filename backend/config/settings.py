@@ -140,9 +140,12 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TIMEZONE = TIME_ZONE
-# What the `beat` service runs and when. Empty until the credits phases add their housekeeping (credits.tick every hour,
-# payments.reconcile every 5 minutes). Exactly one beat runs, or a task would be queued twice.
-CELERY_BEAT_SCHEDULE: dict = {}
+# What the `beat` service runs and when. credits.tick (expire lapsed credits, release reserves nothing will settle,
+# audit the ledger) every hour; payments.reconcile every 5 minutes arrives with the payments phase. Exactly one beat
+# runs, or a task would be queued twice (every task is harmless if it is, but do not rely on that).
+CELERY_BEAT_SCHEDULE: dict = {
+    "credits.tick": {"task": "credits.tick", "schedule": 3600.0},
+}
 
 # Shared cache (Redis db 2): the resolved model registry and per-minute LLM rate-limit counters.
 # Tests use an in-process cache so they don't depend on Redis.
