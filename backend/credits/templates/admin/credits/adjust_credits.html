@@ -1,0 +1,16 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<p>This moves credits through the ledger for the {{ wallets|length }} selected wallet(s). Nothing is edited in place:
+each movement is a new row, with your reason and your email on it.</p>
+<ul>{% for wallet in wallets %}<li>{{ wallet.user }}</li>{% endfor %}</ul>
+<form method="post">
+  {% csrf_token %}
+  {% for pk in selected %}<input type="hidden" name="_selected_action" value="{{ pk }}">{% endfor %}
+  <input type="hidden" name="action" value="adjust_credits">
+  <input type="hidden" name="apply" value="1">
+  {{ form.as_p }}
+  <input type="submit" class="default" value="Move credits">
+  <a href="{% url 'admin:credits_wallet_changelist' %}">Cancel</a>
+</form>
+{% endblock %}
