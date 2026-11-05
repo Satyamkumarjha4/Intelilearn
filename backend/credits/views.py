@@ -1,6 +1,8 @@
 """The credits endpoints a learner can call (credits plan §8.1): the wallet, a quote, and the history. Every one is
 owner-scoped; none makes a wallet; the quote runs the same code as the gate."""
 
+from datetime import timedelta
+
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
@@ -9,13 +11,25 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
+from .earning.days import StreakDays
+from .earning.localday import LocalDay
+from .earning.repair import StreakRepairService
+from .earning.streak import StreakMilestones
+from .earning.zone import LearnerZone
 from .exempt import ExemptPolicy
 from .ledger import Ledger
-from .models import CreditBucket, CreditTransaction
+from .models import CreditBucket, CreditSettings, CreditTransaction, StreakDay
 from .planner import SpendBucket, SpendPlanner
 from .pricing.hints import UnknownHints
 from .pricing.journey import JourneyQuote
-from .serializers import QuoteRequestSerializer, QuoteSerializer, TransactionSerializer, WalletSerializer
+from .serializers import (
+    QuoteRequestSerializer,
+    QuoteSerializer,
+    RepairResponseSerializer,
+    StreakSerializer,
+    TransactionSerializer,
+    WalletSerializer,
+)
 from .words import SubjectTitles, TransactionWords
 
 TAGS = ["credits"]
@@ -116,3 +130,90 @@ class TransactionListView(generics.ListAPIView):
         page = self.paginate_queryset(self.filter_queryset(self.get_queryset()))
         words = TransactionWords(SubjectTitles.for_rows(page, request.user))
         return self.get_paginated_response([words.describe(row) for row in page])
+
+
+class StreakView(APIView):
+    @extend_schema(
+        tags=TAGS,
+        summary="Your streak",
+        description=(
+            "The current and longest streak in your own time zone, whether today is done, the last 28 days, the next "
+            "bonus and whether yesterday can be repaired. A read changes nothing."
+        ),
+        responses={200: StreakSerializer},
+    )
+    def get(self, request):
+        ledger = Ledger()
+        zone = LearnerZone.of(request.user)
+        today = LocalDay.today(ledger.clock, zone).date
+        days = StreakDays(ledger.clock)
+        snapshot = days.snapshot(request.user, today)
+        outlook = StreakRepairService(ledger=ledger, days=days).outlook(request.user, today)
+        return Response(
+            {
+                "current": snapshot.current,
+                "longest": snapshot.longest,
+                "run_started_on": snapshot.run_started_on,
+                "alive": snapshot.alive,
+                "zone": zone,
+                "today": {"date": today, "done": snapshot.done_today},
+                "days": self._last_28(request.user, today),
+                "next_bonus": self._next_bonus(snapshot.current if snapshot.alive else 0),
+                "repair": {
+                    "available": outlook.available,
+                    "day": outlook.day,
+                    "reason": outlook.reason,
+                    "cost": outlook.cost,
+                    "left_week": outlook.left_week,
+                    "left_month": outlook.left_month,
+                },
+            }
+        )
+
+    @staticmethod
+    def _last_28(user, today) -> list[dict]:
+        first = today - timedelta(days=27)
+        kinds = dict(StreakDay.objects.filter(user=user, local_date__gte=first).values_list("local_date", "kind"))
+        out = []
+        for n in range(28):
+            day = first + timedelta(days=n)
+            state = kinds.get(day) or ("pending" if day == today else "missed")
+            out.append({"date": day, "state": state})
+        return out
+
+    @staticmethod
+    def _next_bonus(current: int) -> dict:
+        milestones = StreakMilestones()
+        settings = CreditSettings.load()
+        day = milestones.next_after(current)
+        credits = settings.weekly_streak_bonus + (settings.monthly_streak_bonus if day % milestones.MONTH == 0 else 0)
+        return {"streak_day": day, "credits": credits, "days_to_go": day - current}
+
+
+class StreakRepairView(APIView):
+    @extend_schema(
+        tags=TAGS,
+        summary="Repair yesterday",
+        description=(
+            "Spends a credit to count yesterday as a day, if you missed it and the day before was a streak day, and "
+            "the repair limits allow. `409 nothing_to_repair`, `409 repair_limit`, `402 insufficient_credits`."
+        ),
+        request=None,
+        responses={200: RepairResponseSerializer},
+    )
+    def post(self, request):
+        result = StreakRepairService().repair(request.user)
+        streak = result.streak
+        return Response(
+            {
+                "day": result.day,
+                "cost": result.cost,
+                "bonus": result.bonus,
+                "streak": {
+                    "current": streak.current,
+                    "longest": streak.longest,
+                    "run_started_on": streak.run_started_on,
+                    "alive": streak.alive,
+                },
+            }
+        )

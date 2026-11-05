@@ -1,20 +1,27 @@
 /**
- * The credits endpoints through the app's own address (credits plan phase 10.2). The credit gate is not switched on in the
- * stack yet (the open gate is the default until phase 10.9), so nothing a learner does costs anything; what is live is the
- * wallet, the quote and the history, and they must answer correctly through the Next.js proxy.
+ * The credits endpoints through the app's own address (credits plan phases 10.2 and 10.3). The credit gate and earning are
+ * not switched on in the stack yet (the open gate and the do-nothing sink are the defaults until phase 10.9), so nothing a
+ * learner does costs or earns anything; what is live is the signup grant, the wallet, the quote, the history and the streak,
+ * and they must answer correctly through the Next.js proxy.
  */
 import { expect, test } from "@playwright/test";
 
 import { Api } from "../support/api";
 import { E2E } from "../support/config";
 
-test("the wallet, the quote and the history answer for a learner, and the quote knows the plan's prices", async ({ page }) => {
+test("a new learner has the 30 signup credits, and the wallet, the quote and the history answer for them", async ({ page }) => {
   const api = new Api(page);
   await api.signUp(E2E.email("credits"), E2E.PASSWORD);
 
   const wallet = await api.call("GET", "/credits/wallet");
   expect(wallet.status).toBe(200);
-  expect(wallet.body).toEqual({ balance: 0, held: 0, buckets: [], next_expiry: null, exempt: false });
+  expect(wallet.body).toEqual({
+    balance: 30,
+    held: 0,
+    buckets: [{ source: "signup", remaining: 30, expires_at: null }],
+    next_expiry: null,
+    exempt: false,
+  });
 
   const check = await api.call("POST", "/credits/quote", {
     action: "lesson.create",
@@ -32,7 +39,26 @@ test("the wallet, the quote and the history answer for a learner, and the quote 
 
   const history = await api.call("GET", "/credits/transactions");
   expect(history.status).toBe(200);
-  expect(history.body.results).toEqual([]);
+  expect(history.body.results.map((row: { text: string }) => row.text)).toEqual(["Welcome gift: 30 credits"]);
+});
+
+test("a new learner has no streak, nothing to repair, and the read changes nothing", async ({ page }) => {
+  const api = new Api(page);
+  await api.signUp(E2E.email("streak"), E2E.PASSWORD);
+
+  const streak = await api.call("GET", "/credits/streak");
+
+  expect(streak.status).toBe(200);
+  expect(streak.body).toMatchObject({ current: 0, longest: 0, alive: false, zone: "Asia/Kolkata" });
+  expect(streak.body.today.done).toBe(false);
+  expect(streak.body.days).toHaveLength(28);
+  expect(streak.body.next_bonus).toEqual({ streak_day: 7, credits: 10, days_to_go: 7 });
+  expect(streak.body.repair).toMatchObject({ available: false, reason: "nothing_to_repair", cost: 1 });
+  expect((await api.call("GET", "/credits/wallet")).body.balance).toBe(30);
+
+  const repair = await api.call("POST", "/credits/streak/repair");
+  expect(repair.status).toBe(409);
+  expect(repair.body.code).toBe("nothing_to_repair");
 });
 
 test("the quote refuses what is not a real question, and nobody signed out can ask", async ({ page, playwright, baseURL }) => {
@@ -50,5 +76,6 @@ test("the quote refuses what is not a real question, and nobody signed out can a
   const stranger = await playwright.request.newContext({ baseURL });
   expect((await stranger.get("/api/credits/wallet")).status()).toBe(401);
   expect((await stranger.get("/api/credits/transactions")).status()).toBe(401);
+  expect((await stranger.get("/api/credits/streak")).status()).toBe(401);
   await stranger.dispose();
 });

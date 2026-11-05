@@ -71,3 +71,57 @@ class TransactionSerializer(serializers.Serializer):
     balance_after = serializers.IntegerField()
     created_at = serializers.DateTimeField()
     subject = SubjectSerializer(allow_null=True)
+
+
+class StreakDaySerializer(serializers.Serializer):
+    date = serializers.DateField()
+    state = serializers.ChoiceField(
+        choices=["active", "repaired", "missed", "pending"],
+        help_text="pending is today, not yet done.",
+    )
+
+
+class TodaySerializer(serializers.Serializer):
+    date = serializers.DateField(help_text="The learner's own date.")
+    done = serializers.BooleanField()
+
+
+class NextBonusSerializer(serializers.Serializer):
+    streak_day = serializers.IntegerField(help_text="The day of the streak of the next bonus (a multiple of 7).")
+    credits = serializers.IntegerField(help_text="What it pays; a multiple of 28 pays the week and the month.")
+    days_to_go = serializers.IntegerField()
+
+
+class RepairOutlookSerializer(serializers.Serializer):
+    available = serializers.BooleanField()
+    day = serializers.DateField(allow_null=True, help_text="The day that would be repaired (yesterday).")
+    reason = serializers.ChoiceField(choices=["nothing_to_repair", "repair_limit"], allow_null=True)
+    cost = serializers.IntegerField()
+    left_week = serializers.IntegerField(help_text="Repairs left in the last 7 days' allowance.")
+    left_month = serializers.IntegerField(help_text="Repairs left in the last 28 days' allowance.")
+
+
+class StreakSerializer(serializers.Serializer):
+    current = serializers.IntegerField(help_text="Consecutive days ending today or yesterday; 0 once a day was missed.")
+    longest = serializers.IntegerField()
+    run_started_on = serializers.DateField(allow_null=True)
+    alive = serializers.BooleanField()
+    zone = serializers.CharField(help_text="The time zone the learner's day is counted in.")
+    today = TodaySerializer()
+    days = StreakDaySerializer(many=True, help_text="The last 28 days, oldest first; the last is today.")
+    next_bonus = NextBonusSerializer()
+    repair = RepairOutlookSerializer()
+
+
+class RepairedStreakSerializer(serializers.Serializer):
+    current = serializers.IntegerField()
+    longest = serializers.IntegerField()
+    run_started_on = serializers.DateField(allow_null=True)
+    alive = serializers.BooleanField()
+
+
+class RepairResponseSerializer(serializers.Serializer):
+    day = serializers.DateField(help_text="The day that was repaired.")
+    cost = serializers.IntegerField()
+    bonus = serializers.IntegerField(help_text="Credits paid because the repair completed a streak bonus.")
+    streak = RepairedStreakSerializer()
