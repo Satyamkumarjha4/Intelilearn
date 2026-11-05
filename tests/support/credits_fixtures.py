@@ -1,0 +1,65 @@
+"""Fixtures for tests that run with the credit gate on (registered for every test through tests/conftest.py).
+
+- `credits_on`: switches `ACTION_GATE` to `CreditGate`, makes sure the price table has the plan's prices (a test that
+  flushes the database, `transaction=True`, takes the migration's seed with it), and gives back a `CreditsOn` to put
+  credits in a learner's wallet and read what was reserved.
+- `_pin_the_open_gate` (autouse): every test starts on `OpenGate` whatever the default becomes, so the day the default
+  gate changes (phase 10.9) no existing test changes meaning. A test that wants another gate sets `ACTION_GATE` itself.
+
+The models are imported inside the fixtures, because this module is loaded before Django is set up.
+"""
+
+import itertools
+from datetime import timedelta
+
+import pytest
+
+
+class CreditsOn:
+    """What a test does with credits: put some in a wallet, and look at the reserved and the spendable."""
+
+    def __init__(self):
+        from credits.ledger import Ledger
+
+        self.ledger = Ledger()
+        self.counter = itertools.count(1)
+
+    def fund(self, user, credits: int, *, days: int | None = None, source: str = "signup"):
+        """Give `user` a bucket of `credits` (expiring in `days`, or never)."""
+        expires = None if days is None else self.ledger.clock.now() + timedelta(days=days)
+        return self.ledger.grant(user, source, credits, f"fund-{user.pk}-{next(self.counter)}", expires_at=expires)
+
+    def balance(self, user) -> int:
+        return self.ledger.balance(user)
+
+    def reserved(self, user) -> int:
+        return self.ledger.reserved(user)
+
+    def holds(self, user=None):
+        from django.db.models import Min
+
+        from credits.models import CreditHold
+
+        found = CreditHold.objects.annotate(first=Min("transactions__id")).order_by("first")
+        return list(found.filter(user=user) if user is not None else found)
+
+    def live_holds(self, user=None):
+        return [h for h in self.holds(user) if h.status == "held"]
+
+
+@pytest.fixture(autouse=True)
+def _pin_the_open_gate():
+    """Not via the `settings` fixture: a test may take a parameter of that name (one does), which would shadow it."""
+    from django.test import override_settings
+
+    with override_settings(ACTION_GATE="lessons.metering.OpenGate"):
+        yield
+
+
+@pytest.fixture
+def credits_on(settings, db):
+    from credits.pricing.seed import PriceSeed
+
+    PriceSeed().apply()
+    settings.ACTION_GATE = "credits.gate.CreditGate"
+    return CreditsOn()

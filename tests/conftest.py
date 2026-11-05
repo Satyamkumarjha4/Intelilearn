@@ -6,6 +6,8 @@
 - `user`: ada@example.com, with the shared test PASSWORD.
 - `signed_in_client`: an APIClient signed in as `user` through the real login endpoint, so it carries the auth cookies.
 - `other_user`: a second learner (grace@example.com), to prove ownership checks.
+- `credits_on` (`support/credits_fixtures.py`): the credit gate switched on, with the plan's prices and `fund(user, n)`;
+  `_pin_the_open_gate` (autouse, same module) starts every test on `OpenGate` whatever the default becomes.
 - `make_lesson(**fields)`: creates lessons, by default owned by `user`; `lesson` is one at the first stage.
 """
 
@@ -16,6 +18,7 @@ from rest_framework.test import APIClient
 pytest_plugins = [
     "support.fixtures",
     "support.quiz_fixtures",
+    "support.credits_fixtures",
 ]  # graph and flow fixtures, shared by tests/graph and tests/lessons
 
 PASSWORD = "correct-horse-battery-staple"
