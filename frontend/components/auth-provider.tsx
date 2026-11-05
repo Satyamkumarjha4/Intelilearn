@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 import { apiClient, ApiError } from "@/lib/api";
+import { AuthRules } from "@/lib/auth-form";
+import { BrowserTimezone } from "@/lib/browser-timezone";
 import { SessionProbe } from "@/lib/session-probe";
 import type { User } from "@/lib/types";
 
@@ -59,7 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const register = useCallback(async (name: string, email: string, password: string, acceptTerms: boolean) => {
     const { user } = await apiClient.request<{ user: User }>("/auth/register", {
       method: "POST",
-      body: { name, email, password, accept_terms: acceptTerms },
+      body: AuthRules.registerBody({ name, email, password }, acceptTerms, BrowserTimezone.detect()),
     });
     setUser(user);
     return user;

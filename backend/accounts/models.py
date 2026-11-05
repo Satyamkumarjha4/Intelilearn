@@ -5,6 +5,8 @@ from django.contrib.auth.models import PermissionsMixin
 from django.db import models
 from django.utils import timezone
 
+from .timezones import TimeZoneNames
+
 
 class UserManager(BaseUserManager):
     use_in_migrations = True
@@ -113,10 +115,19 @@ class Profile(models.Model):
     learning_preference = models.CharField(max_length=20, choices=LearningPreference.choices, blank=True)
     goal = models.CharField(max_length=20, choices=Goal.choices, blank=True)
     notes = models.TextField(max_length=NOTES_MAX_LENGTH, blank=True)
+    # The learner's day is the day in this zone (an IANA name). Blank until set; the zone in force is then Asia/Kolkata.
+    # The first value (from the browser at sign-up) leaves `timezone_changed_at` empty; a later change stamps it and
+    # locks the next change for 30 days (`ProfileTimezone`).
+    timezone = models.CharField(max_length=TimeZoneNames.MAX_LENGTH, blank=True)
+    timezone_changed_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"Profile of {self.user}"
+
+    @property
+    def effective_timezone(self) -> str:
+        return TimeZoneNames.effective(self.timezone)
 
     @property
     def is_complete(self) -> bool:

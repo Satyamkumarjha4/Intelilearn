@@ -39,9 +39,11 @@ Conventions that hold for every table:
 | learning_preference | enum `visual` \| `reading` \| `hands_on` \| `mixed` | How many interactives, and which kinds |
 | goal | enum `exam_prep` \| `deep_understanding` \| `quick_overview` \| `interview_prep` | Tone and test style |
 | notes | text, at most 2000 characters | Anything else the learner wants the tutor to know |
+| timezone | char(64), blank | The learner's IANA time zone, which sets their day (the daily credit and the streak, [credits plan D9](../to_be_developed/credits-implementation-plan.md)). Blank until the browser's zone is taken at sign-up or the learner chooses one; the zone in force is then `Asia/Kolkata` (`Profile.effective_timezone`). Validated against the system's zone database, never against a list of ours |
+| timezone_changed_at | datetime, null | Null until the zone is **changed**: the first value set (from the browser) leaves it null and starts no lock. A later change stamps it, and another change is refused for 30 days (`ProfileTimezone`, `409 timezone_locked`) |
 | updated_at | datetime | |
 
-The graph turns this into `LearnerProfile` in `load_context`.
+The graph turns this into `LearnerProfile` in `load_context`; it does not read the time zone.
 
 ## `marketing`
 

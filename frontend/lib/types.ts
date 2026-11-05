@@ -23,11 +23,16 @@ export type Profile = {
   learning_preference: LearningPreference | "";
   goal: Goal | "";
   notes: string;
+  /** The IANA zone the learner's day is counted in; "" until set (then `effective_timezone` is Asia/Kolkata). */
+  timezone: string;
+  effective_timezone: string;
+  /** When the zone can next be changed (ISO instant), or null when it can be changed now. */
+  timezone_locked_until: string | null;
   profile_complete: boolean;
   updated_at: string;
 };
 
-export type ProfileInput = Omit<Profile, "email" | "profile_complete" | "updated_at">;
+export type ProfileInput = Omit<Profile, "email" | "profile_complete" | "updated_at" | "timezone" | "effective_timezone" | "timezone_locked_until">;
 
 // --- The landing page (docs/reference/api.md) ---
 

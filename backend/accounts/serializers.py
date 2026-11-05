@@ -1,9 +1,16 @@
+import logging
+
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from .models import Profile, User
+from .signals import account_ready
+from .timezones import ProfileTimezone, TimeZoneNames
+
+logger = logging.getLogger(__name__)
 
 CONSENT_MESSAGE = "Please confirm to continue."
 
@@ -25,6 +32,16 @@ class RegisterSerializer(serializers.Serializer):
         write_only=True,
         error_messages={"required": CONSENT_MESSAGE, "null": CONSENT_MESSAGE, "invalid": CONSENT_MESSAGE},
         help_text="Must be true: 18 or older, or a parent or guardian agreed to the Terms and Privacy Policy.",
+    )
+    timezone = serializers.CharField(
+        write_only=True,
+        required=False,
+        allow_blank=True,
+        max_length=TimeZoneNames.MAX_LENGTH,
+        help_text=(
+            "The browser's IANA time zone (for example `Asia/Kolkata`), which sets the learner's day. Optional: blank "
+            "or unknown name is ignored (never an error), and the zone stays unset until the learner chooses one."
+        ),
     )
 
     def validate_accept_terms(self, value):
@@ -48,9 +65,23 @@ class RegisterSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         validated_data.pop("accept_terms")  # only a yes gets this far; what is kept is when and to which version
-        return User.objects.create_user(
+        zone = validated_data.pop("timezone", "")
+        user = User.objects.create_user(
             **validated_data, terms_accepted_at=timezone.now(), terms_version=User.TERMS_VERSION
         )
+        if TimeZoneNames.is_valid(zone):  # a name no zone database knows must not stop anyone signing up
+            ProfileTimezone().apply(user.profile, zone)
+            user.profile.save(update_fields=["timezone", "timezone_changed_at", "updated_at"])
+        self._announce(user)
+        return user
+
+    @staticmethod
+    def _announce(user: User) -> None:
+        """Tell the rest of the app an account is ready to use. A receiver that fails is logged and cannot undo the
+        account: the person exists, and what the receiver does (the signup credits) can be run again for them."""
+        for receiver, outcome in account_ready.send_robust(sender=User, user=user):
+            if isinstance(outcome, Exception):
+                logger.error("account_ready receiver %r failed for user %s", receiver, user.pk, exc_info=outcome)
 
 
 class LoginSerializer(serializers.Serializer):
@@ -62,6 +93,20 @@ class ProfileSerializer(serializers.ModelSerializer):
     name = serializers.CharField(source="user.name", max_length=150, required=False)
     email = serializers.EmailField(source="user.email", read_only=True)
     profile_complete = serializers.BooleanField(source="is_complete", read_only=True)
+    timezone = serializers.CharField(
+        required=False,
+        max_length=TimeZoneNames.MAX_LENGTH,
+        help_text=(
+            "The learner's IANA time zone, which sets their day (daily credit, streak). Blank until set. Changing it "
+            "once it is set is allowed once every 30 days: `409 timezone_locked` otherwise."
+        ),
+    )
+    effective_timezone = serializers.CharField(
+        read_only=True, help_text="The zone in force: `timezone`, or Asia/Kolkata."
+    )
+    timezone_locked_until = serializers.SerializerMethodField(
+        help_text="When the zone can next be changed, or null when it can be changed now."
+    )
 
     class Meta:
         model = Profile
@@ -75,6 +120,9 @@ class ProfileSerializer(serializers.ModelSerializer):
             "learning_preference",
             "goal",
             "notes",
+            "timezone",
+            "effective_timezone",
+            "timezone_locked_until",
             "profile_complete",
             "updated_at",
         ]
@@ -90,7 +138,20 @@ class ProfileSerializer(serializers.ModelSerializer):
             for field in Profile.REQUIRED_FOR_ONBOARDING
         }
 
+    def validate_timezone(self, value):
+        if not TimeZoneNames.is_valid(value):
+            raise serializers.ValidationError("Choose a time zone from the list, such as Asia/Kolkata.")
+        return value
+
+    @extend_schema_field(serializers.DateTimeField(allow_null=True))
+    def get_timezone_locked_until(self, profile):
+        until = ProfileTimezone().locked_until(profile)
+        return serializers.DateTimeField().to_representation(until) if until else None
+
     def update(self, instance, validated_data):
+        # First, so a refused change leaves everything else in the same request unsaved.
+        if "timezone" in validated_data:
+            ProfileTimezone().apply(instance, validated_data.pop("timezone"))
         user_data = validated_data.pop("user", {})
         if "name" in user_data:
             instance.user.name = user_data["name"]

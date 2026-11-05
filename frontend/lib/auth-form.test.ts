@@ -16,6 +16,7 @@
  * - after signing in the learner goes to where they were headed, or through onboarding first when their profile is
  *   incomplete (keeping where they were headed)
  * - each mode has its copy, its pending label, its switch link and its page title
+ * - the create-account request carries the browser's time zone when it has one, and leaves the key out when it does not
  */
 import { describe, expect, test } from "bun:test";
 
@@ -125,5 +126,23 @@ describe("copy", () => {
     expect(AuthRules.href("register", "/lessons")).toBe("/auth?mode=register");
     expect(AuthRules.href("login", "/lessons/abc")).toBe("/auth?next=%2Flessons%2Fabc");
     expect(AuthRules.href("register", "/lessons/abc")).toBe("/auth?mode=register&next=%2Flessons%2Fabc");
+  });
+});
+
+describe("registerBody", () => {
+  const person = { name: "Ada", email: "ada@example.com", password: "a-long-password" };
+
+  test("sends the terms confirmation and the browser's time zone", () => {
+    expect(AuthRules.registerBody(person, true, "Europe/London")).toEqual({
+      name: "Ada",
+      email: "ada@example.com",
+      password: "a-long-password",
+      accept_terms: true,
+      timezone: "Europe/London",
+    });
+  });
+
+  test("leaves the time zone out when the browser cannot say", () => {
+    expect("timezone" in AuthRules.registerBody(person, true, null)).toBe(false);
   });
 });

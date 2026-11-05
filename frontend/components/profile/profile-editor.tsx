@@ -4,12 +4,14 @@ import { useState } from "react";
 import { FormField } from "@/components/form-field";
 import { ChoiceTiles } from "@/components/profile/choice-tiles";
 import { StudyFollowUp } from "@/components/profile/study-follow-up";
+import { TimezoneField } from "@/components/profile/timezone-field";
 import { useProfileOptions } from "@/components/use-profile-options";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { apiClient, ApiError, type FieldErrors } from "@/lib/api";
+import { BrowserTimezone } from "@/lib/browser-timezone";
 import { OnboardingFlow } from "@/lib/onboarding-flow";
 import type { Profile } from "@/lib/types";
 
@@ -20,6 +22,9 @@ export function ProfileEditor({ initial, onSaved }: Props) {
   const choices = useProfileOptions();
   const [flow, setFlow] = useState(() => OnboardingFlow.fromProfile(initial));
   const [name, setName] = useState(initial.name);
+  // What the server has: the zone and its lock change when a save changes the zone.
+  const [saved, setSaved] = useState(initial);
+  const [zone, setZone] = useState(() => BrowserTimezone.initial(initial.timezone, BrowserTimezone.detect()));
   const [fields, setFields] = useState<FieldErrors>({});
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -33,14 +38,26 @@ export function ProfileEditor({ initial, onSaved }: Props) {
     event.preventDefault();
     if (!name.trim()) return setFields({ name: ["Tell us your name."] });
     if (!flow.complete) return setError("Please answer each question first.");
+    if (!BrowserTimezone.isValid(zone, BrowserTimezone.names(undefined, saved.timezone, BrowserTimezone.detect()))) {
+      return setFields({ timezone: ["Choose a time zone from the list."] });
+    }
     setSaving(true);
     setError(null);
     setFields({});
     try {
-      onSaved(await apiClient.request<Profile>("/profile", { method: "PUT", body: { name: name.trim(), ...flow.profile() } }));
+      const profile = await apiClient.request<Profile>("/profile", {
+        method: "PUT",
+        body: { name: name.trim(), ...flow.profile(), ...BrowserTimezone.payload(zone, saved.timezone) },
+      });
+      setSaved(profile);
+      onSaved(profile);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "We couldn't save that. Check your connection and try again.");
-      setFields(err instanceof ApiError ? err.fields : {});
+      if (err instanceof ApiError && err.code === "timezone_locked") {
+        setFields({ timezone: [BrowserTimezone.lockedMessage(err.extra.locked_until, BrowserTimezone.initial(saved.timezone, null))] });
+      } else {
+        setError(err instanceof ApiError ? err.message : "We couldn't save that. Check your connection and try again.");
+        setFields(err instanceof ApiError ? err.fields : {});
+      }
     } finally {
       setSaving(false);
     }
@@ -83,6 +100,17 @@ export function ProfileEditor({ initial, onSaved }: Props) {
       <Section title="Which language should your lessons be in?">
         <ChoiceTiles label="Lesson language" icons={false} languages choices={choices("preferred_language")} value={a.preferred_language} onChange={(value) => update({ preferred_language: value })} error={fields.preferred_language?.[0]} />
       </Section>
+
+      <TimezoneField
+        value={zone}
+        onChange={(value) => {
+          setZone(value);
+          setFields((current) => ({ ...current, timezone: [] }));
+        }}
+        saved={saved.timezone}
+        lockedUntil={saved.timezone_locked_until}
+        errors={fields.timezone}
+      />
 
       <FormField id="notes" label="Anything else we should know? (optional)" hint="What you already know, what you find hard, upcoming exams…" errors={fields.notes}>
         <Textarea id="notes" rows={3} maxLength={2000} value={a.notes} onChange={(e) => update({ notes: e.target.value })} />
