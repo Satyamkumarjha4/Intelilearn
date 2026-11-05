@@ -42,6 +42,7 @@ Legend for status columns: ✅ in code · ◐ partly (functions still to wrap in
   - [4.23 `quizzes`, `graph` and `lessons`: quick quizzes (Phase 9.6)](#423-quizzes-graph-and-lessons-quick-quizzes-phase-96)
   - [4.24 `graph`, `lessons` and `quizzes`: concept tags and page links (Phase 9.7)](#424-graph-lessons-and-quizzes-concept-tags-and-page-links-phase-97)
   - [4.25 `lessons` and `graph`: retiring the legacy test, choice and call (Phase 9.8)](#425-lessons-and-graph-retiring-the-legacy-test-choice-and-call-phase-98)
+  - [4.26 `credits`: the ledger (Phase 10.1)](#426-credits-the-ledger-phase-101)
 - [5. How to extend](#5-how-to-extend)
 - [Refactor backlog](#refactor-backlog)
 
@@ -2623,6 +2624,121 @@ classDiagram
 - **One mastery choice.** `MasterySegment` is `publish_mastery_options → await_choice → (assess | sheets)`; `ChoiceRouter` has two exits; the three single-sheet nodes are gone and the sheets are written only by `SheetsSegment`. `PipelineModel` (frontend) shows the sheets' steps for every writing stage.
 - **The combined call is gone.** `POST /lessons/{id}/test/submissions`, `AttemptService.submit_once`, `AlreadySubmitted`, `TestSubmitSerializer` and the `test_submit` throttle were removed; the attempts endpoints do everything it did.
 - **Free-text concepts of old tests reach a page.** `ConceptIndex.nearest` maps a concept written in the model's own words to the plan's nearest concept (the same name, else the most words in common), and `ConceptLinks` uses it, so a legacy lesson's "Study this" links work without a model call.
+
+### 4.26 `credits`: the ledger (Phase 10.1)
+
+The first piece of the credits system ([plan](../to_be_developed/credits-implementation-plan.md), §6.1): wallets, buckets, an append-only ledger, holds, and the one class that moves credits between them. **Nothing calls it yet.** `lessons` and `quizzes` never import this app, `ACTION_GATE` is still `OpenGate`, and no learner sees any change; the gate (10.2), earning (10.3), plans (10.4) and payments (10.6) are built on top of this. Code: `backend/credits/`.
+
+```mermaid
+classDiagram
+    direction LR
+    class Wallet {
+        +user pk
+        +credits_exempt
+        +created_at
+    }
+    class CreditBucket {
+        +source
+        +amount_granted
+        +amount_remaining
+        +expires_at
+        +purchase_id
+        +revoked_at
+    }
+    class CreditTransaction {
+        <<append_only>>
+        +type
+        +amount
+        +balance_after
+        +action
+        +subject_kind
+        +subject_id
+        +bucket_allocations
+        +idempotency_key
+        +meta
+    }
+    class CreditHold {
+        +amount
+        +lines
+        +allocations
+        +status
+        +exempt
+        +orphan_deadline
+    }
+    class CreditSettings {
+        <<singleton>>
+        +load()$
+    }
+    class Ledger {
+        +grant(user, source, amount, key) Movement
+        +place_hold(user, amount, action, key) HoldMovement
+        +commit(hold_id) Movement
+        +release(hold_id) Movement
+        +debit(user, amount, action, key) Movement
+        +expire_due(user) list
+        +adjust(user, amount, key, reason, actor) Movement
+        +claw_back(user, purchase_id, credits, key) Clawback
+        +balance(user) int
+        +reserved(user) int
+    }
+    class SpendPlanner {
+        <<pure>>
+        +plan(buckets, amount, now) SpendPlan
+    }
+    class SpendBucket {
+        <<frozen>>
+    }
+    class BucketAllocation {
+        <<frozen>>
+        +bucket_id
+        +amount
+    }
+    class SpendPlan {
+        <<frozen>>
+        +allocations
+        +shortfall
+    }
+    class Clock {
+        <<interface>>
+        +now()
+    }
+    class SystemClock
+    class ExpiryService {
+        +run() ExpiryReport
+    }
+    class LedgerAudit {
+        +check(user) AuditReport
+        +check_all() AuditReport
+    }
+    class AdjustCreditsForm
+    Wallet "1" --> "*" CreditBucket
+    Wallet "1" --> "*" CreditTransaction
+    Wallet "1" --> "*" CreditHold
+    CreditHold "1" --> "*" CreditTransaction
+    Ledger --> Wallet : locks first
+    Ledger --> SpendPlanner
+    Ledger --> Clock
+    Ledger --> CreditSettings : refund and orphan windows
+    Clock <|.. SystemClock
+    SpendPlanner ..> SpendBucket
+    SpendPlanner ..> SpendPlan
+    SpendPlan ..> BucketAllocation
+    ExpiryService --> Ledger
+    LedgerAudit ..> CreditTransaction
+    LedgerAudit ..> CreditBucket
+    AdjustCreditsForm ..> Ledger : via the admin action
+```
+
+- **Pattern:** `Ledger` is a Facade over the models; `SpendPlanner` is a pure Strategy (the spend order), table-tested with no database; `Clock` is a port with `SystemClock` (production) and `FakeClock` (`tests/support/clock.py`). **No other source of "now" exists in `credits`:** no model has `auto_now` or a time default, every timestamp is given by the `Clock`, so a test moves the time instead of waiting for it.
+- **One lock, one order (T2).** Every movement runs in one transaction that first makes the learner's `Wallet` row if it is new (`INSERT … ON CONFLICT DO NOTHING`, so two concurrent first movements both succeed and leave one wallet) and then `SELECT … FOR UPDATE`s it; then the buckets, in id order. The caller's lesson, if it holds one, is locked before all of this. A learner's movements never interleave; two learners never wait for each other.
+- **Idempotent on a key (T8).** Under the lock, a key that is already on a ledger row returns that row with `created=False` and changes nothing; a key that belongs to another learner is `KeyReused`. A hold's key is its row's key; `commit` and `release` default to `commit:<hold id>` and `release:<hold id>`.
+- **What `amount` means (T4, K7).** A row's `amount` is the change in the learner's balance: hold negative, release positive, commit zero, grant positive, expire negative. `balance_after` is the running total, so the sum of a learner's rows always equals the sum of their buckets' `amount_remaining`, which `LedgerAudit` and `manage.py credits_audit [--user]` check (and the ledger tests check after seeded random walks of hundreds of movements). A lapsed bucket is excluded by every query and by `balance()` at once, and written off with an `expire` row by whatever movement of that wallet comes next (and by `ExpiryService`, the hourly pass from 10.3), so correctness never waits for a job (K4).
+- **Holds (T6, T7, T9).** `place_hold` takes the credits out of the buckets at once, earliest expiry first (`SpendPlanner`: soonest `expires_at`, never last, then the older bucket, then the lower id; lapsed, empty and revoked buckets skipped) and records where from on the hold and on its row. A hold of 0 is still a hold, and an exempt hold is always 0 and carries the lines it would have paid. A second held hold for one action and subject is `HoldConflict` (the partial unique constraint is the backstop). `release` returns each allocation to its source bucket; credits whose bucket has since lapsed go to a new `refund` bucket valid `refund_valid_days` (30), so a late failure loses nothing; credits whose bucket a refund revoked are **forfeited** and the row's `meta.forfeited` says how many. `commit` settles with a row of 0. A hold settled one way cannot be settled the other (`HoldNotHeld`).
+- **Claw-back (T32).** `claw_back` takes up to `credits` of one purchase's unspent credits, never below zero, writes a `refund` row (even for 0, so a shortfall is on the record), and returns what it took and the shortfall. Every bucket of the purchase left empty, even by spending, is revoked, so a hold released later cannot put refunded credits back.
+- **Append-only (T5), three ways.** The model refuses `save` on an existing row and `delete`; the queryset refuses `update`, `bulk_update` and `delete`; a Postgres trigger (migration `0002`) refuses `UPDATE` and `DELETE` from anyone. The admin shows the ledger, buckets and holds read-only.
+- **No cascade from the world (K2).** The ledger and holds name their subject by `subject_kind` and `subject_id`, and a bucket its purchase by `purchase_id`: plain columns, no foreign key, so deleting a lesson leaves the money alone. The user is the one foreign key and it is `PROTECT`: a learner with a wallet cannot be deleted until someone decides what happens to their ledger.
+- **Settings and admin (T18, §10).** `CreditSettings` is a singleton like `FlowSettings` (`CreditSettings.load()`), holding every amount and window the credits rules will use; the ledger reads only the refund period and the orphan deadline. The Django admin has the **Give or take credits…** action on wallets: a form with an amount and a **required** reason, sent once (a token in the form makes a double submit move the credits once), going through `Ledger.adjust`, with the reason and the administrator's email kept on the row.
+- **Tested in** `tests/credits/`: `test_spend_planner` (no database), `test_ledger`, `test_ledger_invariant` (seeded random walks), `test_ledger_concurrency` (real threads, `transaction=True`), `test_expiry_service`, `test_audit`, `test_admin`, `test_models`, `test_migrations`.
 
 ## 5. How to extend
 

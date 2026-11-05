@@ -237,7 +237,7 @@ For a decision: the quick check still fails now and then even with three attempt
 Credits for the work that costs model calls, earned by studying, bought through Stripe or Razorpay. The design is [the spec](../to_be_developed/credits-system.md) and [the implementation plan](../to_be_developed/credits-implementation-plan.md) (phases 10.0 to 10.9, each shippable, each ending with `make check` and `make e2e` green). Until 10.9 the default gate is still the open one, so a learner sees nothing change except the time zone field. Sign-in methods (Google, Apple, Microsoft, email OTP) are Phase 11, a separate plan; public launch waits for 10.9 and 11.
 
 - [x] 10.0 Apps, environment, the beat service, `Profile.timezone`, `ActivitySink` and its three call sites, the `quiz.retake` hint, `account_ready`, the 402 handler
-- [ ] 10.1 Ledger: wallet, buckets, transactions, holds, spend order, append-only, audit
+- [x] 10.1 Ledger: wallet, buckets, transactions, holds, spend order, append-only, audit
 - [ ] 10.2 Prices, quote, `CreditGate`, `402`, exempt, hold reconciler, wallet and history endpoints
 - [ ] 10.3 Earning: signup, daily credit, streak, repair, the hourly tick, the backfill command
 - [ ] 10.4 Plans and periods: one-time, weekly drip, queueing, activation

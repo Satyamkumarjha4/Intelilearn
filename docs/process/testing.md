@@ -97,6 +97,7 @@ The design injects every collaborator through a constructor or `FlowContext` ([d
 | `CodeSandbox` / `LatexChecker` | `FakeSandbox` returning canned LaTeX and code-check results | `tests/support/fakes.py` |
 | Question batches from a model | `ScriptedQuestions` (`tests/support/question_data.py`): answers `test.generate` with one question per line of the prompt, in order, and can spoil one answer on purpose (a wrong difficulty, a repeated text) to drive the retry and the second round | `tests/support/question_data.py` |
 | The action gate | `CountingGate`, `RefusingGate`, `SharedCountingGate` (the last for views, which reach the gate through the `ACTION_GATE` setting) | `tests/support/gates.py` |
+| The clock of the credits app | `FakeClock` (`now()`, `set()`, `advance(days=…)`): time stands still until the test moves it. `credits` has no other source of "now", so an expiry, a window or a day boundary is tested by moving the clock, never by sleeping | `tests/support/clock.py` |
 | The activity sink | `CountingActivity` (records user, kind and instant of each `record`) and `RaisingActivity` (to show a broken sink cannot undo a submit) | `tests/support/activity.py` |
 | Event publisher, task queue | A list-backed publisher and `RecordingQueue` (`LESSON_TASK_QUEUE` points the API at it) | `tests/lessons/test_runner.py`, `tests/support/fixtures.py` |
 | The real gateway and LangChain client | `tests/e2e/fake_llm_server.py`, a fake OpenAI-compatible server run in a thread | `tests/e2e/` |
@@ -126,6 +127,7 @@ Rules:
 | **Graph node** | Given a state and scripted `FakeGateway` output, the returned state update and emitted events; `AwaitNode` has no side effects |
 | **Router** | Every outgoing edge, table-driven |
 | **Graph** (end to end) | The node path taken, interrupts, resume with `Command(resume=…)`, targeted regeneration, degrade paths, final state |
+| **Money movement** (`credits.ledger.Ledger`) | Each method's rows and amounts, a repeated key changing nothing, every refusal writing nothing, the invariant (the ledger equals the buckets) after seeded random walks of hundreds of movements, and **real threads** (`django_db(transaction=True)` with a barrier) for concurrent holds, a hold racing an expiry, concurrent first movements and a repeated key. A concurrency test should fail when the lock is removed; check that once when you write one |
 | **Management command** | Exit code and output for success and failure, using `call_command` |
 | **Signal receiver** | The observed side effect happens on the triggering save/delete, and not on unrelated ones |
 | **Frontend class or util** | Public methods and edge inputs with `bun test`; network via a fake `fetch` |

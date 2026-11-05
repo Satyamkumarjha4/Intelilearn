@@ -6,7 +6,7 @@ All tables live in one Postgres database: the docker `db` service by default, or
 
 Conventions that hold for every table:
 
-- **Primary keys** are UUIDs for `accounts`, `lessons` and `quizzes`. The `llm_registry`, `marketing` and `console` tables use auto-incrementing integers.
+- **Primary keys** are UUIDs for `accounts`, `lessons` and `quizzes`. The `llm_registry`, `marketing` and `console` tables use auto-incrementing integers. The `credits` tables are the exception described in [their section](#credits-phase-101).
 - **Optional text is an empty string, not NULL.** A text column that may be left blank is stored as `''` (`blank=True` without `null=True`). Only the columns marked "null" below can hold NULL. JSON columns marked "null" are NULL until their stage has run; JSON lists and dicts default to `[]` and `{}`.
 - **Choice columns are plain `varchar`.** The allowed values are enforced by Django validation and the serializers, not by a database CHECK constraint.
 - **Foreign keys have no `ON DELETE` rule in the database.** Django cascades in code, so a delete done by hand in SQL has to remove children first. What a lesson delete does and does not remove is under [Deleting a lesson](#deleting-a-lesson).
@@ -323,6 +323,74 @@ Migrations: `quizzes/0001` creates the three tables; `lessons/0015` adds the thr
 
 Written by `console.audit.AuditTrail` in the same transaction as the change.
 
+## `credits` (phase 10.1)
+
+The ledger of the credits system ([plan §7.2](../to_be_developed/credits-implementation-plan.md), design in [design.md §4.26](design.md#426-credits-the-ledger-phase-101)). Money is a whole number: credits are integers, never a float or a Decimal. **Nothing writes these tables yet** (the gate, earning and plans arrive in 10.2 to 10.4), and no table here has a default timestamp: every `created_at` is given by the ledger's `Clock`. Exempt from the "ids are UUIDs" convention: `Wallet` is keyed by its learner and `CreditTransaction` has a big auto id, because it is ordered.
+
+### `Wallet` (one per learner, made by their first movement)
+
+| Field | Type | Notes |
+|---|---|---|
+| user | one-to-one User, primary key, `PROTECT` | The row every movement of the learner's credits locks first (`SELECT … FOR UPDATE`), so two movements never interleave and a learner with no credits yet still has something to lock |
+| credits_exempt | bool, default false | Work costs this learner nothing; every action is still recorded at 0 credits. Switched in the admin only |
+| created_at | datetime | |
+
+### `CreditBucket` (a parcel of credits with one source and one expiry)
+
+| Field | Type | Notes |
+|---|---|---|
+| id | UUID | |
+| user | FK User, `PROTECT` | |
+| source | enum `signup` \| `daily` \| `weekly_streak` \| `monthly_streak` \| `purchase` \| `subscription` \| `admin_grant` \| `refund` | `refund` is credits given back after a failure whose first bucket had lapsed |
+| amount_granted, amount_remaining | positive int | Check: `0 <= amount_remaining <= amount_granted` and `amount_granted > 0` |
+| expires_at | datetime, null | Null: never (signup credits, admin grants). A bucket is lapsed at `expires_at` itself |
+| purchase_id | UUID, null | The plan purchase it was bought with. A plain column (the purchase table arrives in 10.4); used to take a refund's credits back |
+| revoked_at | datetime, null | Set when a refund emptied it: a hold released later does not refill it |
+| created_at | datetime | |
+
+Index `(user, expires_at)` where `amount_remaining > 0`. Spend order: soonest `expires_at` first, never-expiring last, then oldest, then lowest id.
+
+### `CreditTransaction` (the ledger: append-only)
+
+| Field | Type | Notes |
+|---|---|---|
+| id | big auto | |
+| user | FK User, `PROTECT` | |
+| type | enum `grant` \| `debit` \| `hold` \| `commit` \| `release` \| `refund` \| `repair` \| `admin_adjust` \| `expire` | |
+| amount | int, signed | The change in the learner's balance: hold negative, release positive, commit zero, grant positive, expire negative |
+| balance_after | positive int | The running total after this row |
+| action | char, blank | A `MeteredAction`, or `streak_repair` / `payment_refund` |
+| subject_kind, subject_id | char blank, UUID null | What it was about (a lesson, a quiz, an attempt). **Plain columns, no foreign key**, so deleting a lesson leaves the money alone |
+| hold | FK CreditHold, null, `PROTECT` | |
+| bucket_allocations | JSON list | `[{bucket, amount}]`; a release adds `outcome`: `returned`, `refund_bucket` or `forfeited` |
+| idempotency_key | char, unique | A repeated key changes nothing |
+| meta | JSON | `reason` and `actor` for an admin adjustment; `forfeited` and `refund_bucket` for a release; `purchase`, `requested` and `shortfall` for a refund |
+| created_at | datetime | |
+
+**Invariant:** for every learner, the sum of `amount` equals the sum of their buckets' `amount_remaining`, and the last row's `balance_after` is that same number (`manage.py credits_audit`). **Append-only three ways:** the model refuses `save` on an existing row and `delete`, the queryset refuses `update` and `delete`, and a Postgres trigger (migration `0002`) refuses `UPDATE` and `DELETE` from anyone. Index `(user, -id)`.
+
+### `CreditHold` (credits reserved for one authorized action)
+
+| Field | Type | Notes |
+|---|---|---|
+| id | UUID | Becomes the authorization's id (10.2) |
+| user | FK User, `PROTECT` | |
+| action, subject_kind, subject_id | char, char blank, UUID null | |
+| amount | positive int | May be 0: a free action is still recorded |
+| lines | JSON | What was charged, line by line (written by the gate; history never depends on the current prices) |
+| allocations | JSON | `[{bucket, amount}]` the credits were taken from |
+| status | enum `held` \| `committed` \| `released` | |
+| exempt | bool | A hold of 0 for an exempt learner, with the lines it would have paid |
+| idempotency_key | char, unique | |
+| orphan_deadline | datetime, null | If no run has claimed the hold by then it is released; a hold whose run is merely paused is never released by age |
+| created_at, settled_at | datetime, datetime null | |
+
+Partial unique `(action, subject_id)` where `status = 'held'`: one live hold for one piece of work. Index `(status, created_at)`.
+
+### `CreditSettings` (singleton, edited in the admin)
+
+Every amount and window of the credits rules (plan T18), with the spec's defaults: signup 30, daily 1, weekly streak bonus 10, monthly streak bonus 10, bonus credits valid 90 days, purchased 365, refund bucket 30, repair cost 1 within 48 hours and at most 1 per week and 3 per 28 days, the expiry-notice windows (2 / 7 / 7 / 30 for 3 days / 7), one-time purchases 10 to 5,000 credits at 100 paise a credit, at most 12 queued plan periods and 3 pending orders, and 30 minutes before an unclaimed hold is released. The ledger reads only the refund period and the orphan deadline today.
+
 ## LangGraph checkpoint tables
 
 The tables `checkpoints`, `checkpoint_blobs`, `checkpoint_writes` and `checkpoint_migrations` are created by `PostgresSaver.setup()` (`manage.py setup_checkpointer`) in the same database. They are not Django models. Treat them as internal. A flow's `thread_id` is the lesson id; the `grade_test`, `study_material` and `runtime_repair` graphs use `<lesson id>:<run id>`. The checkpoints hold the generated quizzes with their answer keys, the learner's profile and topic, and the submitted test answers, so they are as sensitive as the lesson rows. If you use Supabase, enable row-level security on them (the lock-down script is still on the roadmap).
@@ -366,11 +434,14 @@ Two more things hold learner data and are not reached by the cascade, so `Lesson
 
 If erasing fails, the lesson stays and the delete can be repeated. A step that was still writing a checkpoint when the run was cancelled can leave one more behind in the instant before it notices.
 
+The credit ledger is not touched: it names a lesson by a plain id, so its rows outlive the lesson (design.md §4.26).
+
 There is no self-service account deletion: the Privacy page tells people to ask by email. **Removing a user by hand still leaves both sets of rows behind** (open work in [roadmap.md](../process/roadmap.md)).
 
 ## Access rules
 
 - Every lessons endpoint filters by `owner=request.user`. Another user's lesson ID returns `404`, not `403`.
 - Every `/api/console` endpoint requires `User.is_staff`; anyone else, signed in or not, gets a `404`.
+- A learner's wallet, buckets, holds and ledger are reachable only through `Ledger` and the Django admin (read-only apart from the exempt flag and the credit settings). No API route exposes them before phase 10.2, and a learner with a wallet cannot be deleted until the ledger's fate is decided (the user foreign keys are `PROTECT`).
 - Quiz answers and final-test answers stay server-side until the learner submits.
 - `MediaAsset` files are served through **signed, expiring URLs** (`/api/media/{asset_id}?exp=…&sig=…`, HMAC with `DJANGO_SECRET_KEY`). The URLs are generated when the lesson detail is fetched and passed into the sandbox as `LESSON.media`. Cookies can't be used here: the sandboxed iframe has an opaque origin, so the browser does not send the session cookie on its image requests.
