@@ -42,7 +42,7 @@ Legend for status columns: ✅ in code · ◐ partly (functions still to wrap in
   - [4.23 `quizzes`, `graph` and `lessons`: quick quizzes (Phase 9.6)](#423-quizzes-graph-and-lessons-quick-quizzes-phase-96)
   - [4.24 `graph`, `lessons` and `quizzes`: concept tags and page links (Phase 9.7)](#424-graph-lessons-and-quizzes-concept-tags-and-page-links-phase-97)
   - [4.25 `lessons` and `graph`: retiring the legacy test, choice and call (Phase 9.8)](#425-lessons-and-graph-retiring-the-legacy-test-choice-and-call-phase-98)
-  - [4.26 `credits`: the ledger (Phase 10.1)](#426-credits-the-ledger-phase-101)
+  - [4.26 `credits`: the ledger and the credit gate (Phases 10.1 and 10.2)](#426-credits-the-ledger-and-the-credit-gate-phases-101-and-102)
 - [5. How to extend](#5-how-to-extend)
 - [Refactor backlog](#refactor-backlog)
 
@@ -2087,6 +2087,7 @@ classDiagram
 - **The activity sink (Phase 10.0, `lessons/activity.py`).** The second seam of this kind: a port that tells a later feature when a learner studied, so a daily credit and a streak can be earned without `lessons` learning what a credit is. `ACTIVITY_SINK` names the class (default `NullActivity`, which does nothing), the way `ACTION_GATE` names the gate. Three services report a sealed attempt, once, with the owner, an `ActivityKind` and the instant it was sealed: `AttemptService.submit` (`TEST_ATTEMPT`), `QuizAttemptService.submit` (`QUIZ_ATTEMPT`) and `QuizService.submit` (`QUICK_CHECK`, for both the Quick check and the Basics check). It is called **after** the seal's transaction, before the next run is queued, through `GuardedActivity`, which logs a failing sink and swallows it: the answers are already stored and are worth more than a credit. **What counts:** an attempt sealed with at least one real answer. An attempt with every answer blank (Phase 9's blank-attempt rule: `all_blank`, stored, scores 0, no offer) does not, and for a Quick check, whose answers are an option or "I don't know", an attempt of only "I don't know" is the same thing. A submit that is refused or fails (an invalid answer, a sealed attempt, a stage that is not waiting, a refused gate) never reaches the call, nor does starting an attempt, saving one answer or beginning a retake. An attempt with written answers is reported when it is sealed, not when the model marks it. Tested in `tests/lessons/test_activity.py` with a counting sink (`tests/support/activity.py`).
 - **The `quiz.retake` hint.** The retake is asked with `num_questions` and, since 10.0, `source_type` (`topic` or `lessons`), because a quiz made from lessons will cost one credit more than a topic quiz of the same length and the gate could not tell them apart. No other hint was added.
 - **The refusal on the wire.** `ActionRefused` is still a `403`. The credits gate (phase 10.2) raises `InsufficientCredits`, a `402` with code `insufficient_credits` carrying `required` and `available`; the frontend's `ActionRefusedMessage` accepts both since 10.0 ([api.md](../reference/api.md)).
+- **The credit gate (Phase 10.2).** `credits.gate.CreditGate` is the second implementation of the port: it prices the action, reserves the credits with the ledger and answers with an `Authorization` whose id is the reserve's id (`tracked`, with the credits and lines in `meta`), commits the reserve when the action is `succeeded` and releases it when it is `failed` or `cancelled`. It is chosen by `ACTION_GATE`, which stays `OpenGate` until phase 10.9. Nothing in `lessons` or `quizzes` changed for it; `ActionRefused` now has two statuses on the wire (`403`, and `402 insufficient_credits` from `InsufficientCredits`). See [§4.26](#426-credits-the-ledger-and-the-credit-gate-phases-101-and-102).
 - **The open gate stores nothing:** its authorization is `tracked=False`, so run payloads (and every test that compares them) are exactly as before the seam existed.
 - **Idempotency:** `IdempotentRequest` wraps the two creation views. The key is the header made specific to the learner, endpoint and body (`IdempotencyKey`), kept in the cache (Redis) for `IDEMPOTENCY_TTL_S`; a `claim` makes a concurrent repeat a `409 request_in_progress`. The service passes the header on as `ActionContext.key`, so a gate can dedupe on its side too.
 
@@ -2625,9 +2626,9 @@ classDiagram
 - **The combined call is gone.** `POST /lessons/{id}/test/submissions`, `AttemptService.submit_once`, `AlreadySubmitted`, `TestSubmitSerializer` and the `test_submit` throttle were removed; the attempts endpoints do everything it did.
 - **Free-text concepts of old tests reach a page.** `ConceptIndex.nearest` maps a concept written in the model's own words to the plan's nearest concept (the same name, else the most words in common), and `ConceptLinks` uses it, so a legacy lesson's "Study this" links work without a model call.
 
-### 4.26 `credits`: the ledger (Phase 10.1)
+### 4.26 `credits`: the ledger and the credit gate (Phases 10.1 and 10.2)
 
-The first piece of the credits system ([plan](../to_be_developed/credits-implementation-plan.md), §6.1): wallets, buckets, an append-only ledger, holds, and the one class that moves credits between them. **Nothing calls it yet.** `lessons` and `quizzes` never import this app, `ACTION_GATE` is still `OpenGate`, and no learner sees any change; the gate (10.2), earning (10.3), plans (10.4) and payments (10.6) are built on top of this. Code: `backend/credits/`.
+The first piece of the credits system ([plan](../to_be_developed/credits-implementation-plan.md), §6.1): wallets, buckets, an append-only ledger, holds, and the one class that moves credits between them. **Nothing in `lessons` or `quizzes` calls it directly.** They never import this app, and `ACTION_GATE` is still `OpenGate`, so no learner is charged yet (the switch is phase 10.9). Phase 10.2 adds the prices and the gate in front of the ledger (below); earning (10.3), plans (10.4) and payments (10.6) are built on top. Code: `backend/credits/`.
 
 ```mermaid
 classDiagram
@@ -2738,7 +2739,135 @@ classDiagram
 - **Append-only (T5), three ways.** The model refuses `save` on an existing row and `delete`; the queryset refuses `update`, `bulk_update` and `delete`; a Postgres trigger (migration `0002`) refuses `UPDATE` and `DELETE` from anyone. The admin shows the ledger, buckets and holds read-only.
 - **No cascade from the world (K2).** The ledger and holds name their subject by `subject_kind` and `subject_id`, and a bucket its purchase by `purchase_id`: plain columns, no foreign key, so deleting a lesson leaves the money alone. The user is the one foreign key and it is `PROTECT`: a learner with a wallet cannot be deleted until someone decides what happens to their ledger.
 - **Settings and admin (T18, §10).** `CreditSettings` is a singleton like `FlowSettings` (`CreditSettings.load()`), holding every amount and window the credits rules will use; the ledger reads only the refund period and the orphan deadline. The Django admin has the **Give or take credits…** action on wallets: a form with an amount and a **required** reason, sent once (a token in the form makes a double submit move the credits once), going through `Ledger.adjust`, with the reason and the administrator's email kept on the row.
-- **Tested in** `tests/credits/`: `test_spend_planner` (no database), `test_ledger`, `test_ledger_invariant` (seeded random walks), `test_ledger_concurrency` (real threads, `transaction=True`), `test_expiry_service`, `test_audit`, `test_admin`, `test_models`, `test_migrations`.
+- **Tested in** `tests/credits/`: `test_spend_planner` (no database), `test_ledger`, `test_ledger_invariant` (seeded random walks), `test_ledger_concurrency` (real threads, `transaction=True`), `test_expiry_service`, `test_audit`, `test_admin`, `test_models`, `test_migrations`; and for 10.2 `test_price_rules` (the whole matrix), `test_price_book`, `test_price_admin`, `test_credit_gate`, `test_gate_call_sites`, `test_hold_reconciler`, `test_quote_equals_gate`, `test_views`.
+
+#### The prices and the credit gate (Phase 10.2)
+
+`CreditGate` is the real `ActionGate` ([§4.18](#418-lessons-the-action-gate-phase-9-metering-seam)): chosen by `ACTION_GATE=credits.gate.CreditGate` (the default is still `OpenGate`), it prices an action, reserves that many credits with `Ledger.place_hold`, and settles the reserve when the work ends.
+
+```mermaid
+classDiagram
+    direction LR
+    class ActionGate {
+        <<interface>>
+        +authorize(context) Authorization
+        +settle(authorization, outcome)
+    }
+    class OpenGate
+    class CreditGate {
+        +authorize(context) Authorization
+        +settle(authorization, outcome)
+    }
+    class PriceQuoter {
+        +quote(action, size) PriceQuote
+    }
+    class PriceRule {
+        <<abstract>>
+        +HINTS
+        +quote(size) PriceQuote
+        +keys(hints)* list
+    }
+    class PriceRules {
+        +for_action(action, book)$ PriceRule
+        +all(book)$ list
+    }
+    class LessonCreatePrice
+    class LessonContinuePrice
+    class LessonFollowupPrice
+    class TestRetakePrice
+    class QuizCreatePrice
+    class QuizRetakePrice
+    class SheetGeneratePrice
+    class HintReader {
+        +one_of(name, allowed)
+        +whole(name, minimum, maximum)
+        +flag(name)
+    }
+    class UnknownHints {
+        <<ValueError>>
+        +field
+    }
+    class PriceBook {
+        +line(key) PriceLine
+        +credits(key) int
+        +clear()$
+    }
+    class PriceCatalog {
+        +revise(key, credits, by, now, label)
+        +deactivate(key, by, now)
+    }
+    class ActionPrice {
+        <<versioned>>
+        +key
+        +credits
+        +active
+    }
+    class PriceLine {
+        <<frozen>>
+        +key
+        +label
+        +credits
+    }
+    class PriceQuote {
+        <<frozen>>
+        +lines
+        +total
+    }
+    class JourneyQuote {
+        +of(action, size) Journey
+    }
+    class ExemptPolicy {
+        +applies_to(user) bool
+    }
+    class HoldReconciler {
+        +run() ReconcileReport
+    }
+    class InsufficientCredits {
+        <<ActionRefused 402>>
+    }
+    class PriceUnavailable {
+        <<ActionRefused 503>>
+    }
+    class Ledger
+    ActionGate <|.. OpenGate
+    ActionGate <|.. CreditGate
+    CreditGate --> PriceQuoter
+    CreditGate --> Ledger
+    CreditGate --> ExemptPolicy
+    CreditGate ..> InsufficientCredits : raises
+    PriceQuoter --> PriceRules
+    PriceRules --> PriceRule
+    PriceRule <|-- LessonCreatePrice
+    PriceRule <|-- LessonContinuePrice
+    PriceRule <|-- LessonFollowupPrice
+    PriceRule <|-- TestRetakePrice
+    PriceRule <|-- QuizCreatePrice
+    PriceRule <|-- QuizRetakePrice
+    PriceRule <|-- SheetGeneratePrice
+    PriceRule --> HintReader
+    HintReader ..> UnknownHints : raises
+    PriceRule --> PriceBook
+    PriceBook ..> PriceUnavailable : raises
+    PriceBook --> ActionPrice
+    PriceCatalog --> ActionPrice
+    PriceRule ..> PriceQuote
+    PriceQuote o-- PriceLine
+    JourneyQuote --> PriceQuoter
+    HoldReconciler --> Ledger
+    HoldReconciler --> CreditGate
+```
+
+- **Pattern:** `ActionGate` stays the Strategy chosen by a setting and `OpenGate` the Null Object. `PriceRule` is a **Template Method** (`quote` reads the hints strictly, asks the subclass for the price keys, and looks them up) plus a **registry** (`PriceRules.RULES`), the way `AssessmentSources` and `QuestionTypes` work: a new action is a new rule and one line, never an `if`. A test fails when a `MeteredAction` has no rule.
+- **One question, one answer.** The gate and `POST /credits/quote` both call `PriceQuoter`, so the price shown and the price charged are the same code; `tests/credits/test_quote_equals_gate.py` holds them to the same table (`tests/support/pricing_matrix.py`, every row of the plan's §5.4 and §5.5) through the real endpoint and the real gate.
+- **The rules (plan §5.4, as corrected by changelog P2).** A lesson from a Quick check is 3 now (2 if recommended) and 7 after it; a self-rated lesson is 10 (9 recommended) and a lesson from a quiz result 9, all at once. Study sheets are priced **by the number of sheets and never by the score**: from a Quick check they are 3 now and then 0 (one sheet) or 2 (both); self-rated or from a quiz result 2 each; a sheet added to a lesson is 2, plus 1 once when it rests on the lesson's pages. A follow-up is 5 or 7, a test retake 2, a quiz 1/2/3 by length plus 1 once for a quiz made from lessons or with the warm-up (never both), and a quiz retake the same tier plus 1 only for a quiz made from lessons. The rules read the hints the services already send (the one added in 10.0 was `source_type` on `quiz.retake`).
+- **Hints are read strictly.** `HintReader` refuses a hint that is missing, unknown or the wrong kind of value (`UnknownHints`, naming it; a boolean is never a number). The quote endpoint turns that into a `400`, so it cannot be used to probe; a service that starts sending a hint the rules do not know fails loudly instead of being charged a wrong price.
+- **Prices live in the database (T10, T35).** `ActionPrice` rows are versioned: a change adds a row and switches the old one off (`PriceCatalog.revise`), one live row a key (a partial unique constraint). `PriceBook` reads the live rows through the Django cache (Redis) and every save clears it. A key with no live row is `PriceUnavailable` (`503 price_unavailable`): it is never free, and a price of 0 is a row with 0. The plan's prices are seeded by migration `0004` and by `PriceSeed` (for the test fixtures and a lost table), which adds only the keys that have no row at all.
+- **Authorize (T9).** `CreditGate.authorize` quotes, asks `ExemptPolicy` (the wallet's `credits_exempt` flag; `is_staff` does not exempt), and reserves. The authorization's `id` is the reserve's id and its `meta` carries `credits`, the `lines` charged and `exempt`, so the run it is stored on can find its reserve. **Every authorization makes a reserve, even for 0 credits**, so free work and an exempt learner's work are recorded. Too few credits is `InsufficientCredits` (`ActionRefused`, `402 insufficient_credits`, `required` and `available`), written before anything exists, so a refusal creates no row, run or attempt. A reserve is held on the key the metering layer builds (action, subject, `resume` number, client key).
+- **A repeated ask is not a new ask.** The same key while the reserve is still held returns the same authorization (a double click, a retried request). A key whose reserve is **settled** is new work (another sheet for the same lesson) and takes a fresh reserve under `key#n`; a Retry is asked as a `resume` and has a key of its own, so at most one reserve per piece of work is live. An ask that finds another reserve open for the same action and subject is `409 action_in_progress`.
+- **Settle.** `succeeded` commits (the credits stay spent); `failed` and `cancelled` release (each credit back to its bucket, or to a refund bucket if that bucket has lapsed). A second settle, a settle the other way and an authorization this gate never made are logged and ignored. The price is fixed when the reserve is made and stored on it, so an edit never changes work in flight or what a failure gives back.
+- **`HoldReconciler` (T13).** For every reserve still held it finds the latest run that carries it: failed or cancelled and unsettled → released (and the run marked settled, through `AuthorizationLedger.settle_once`); succeeded and unsettled → committed; queued, running or **paused → left alone however old**; no run at all → released once `orphan_deadline` (30 minutes from the ask, `CreditSettings.orphan_minutes`) has passed. Callable and safe to run twice; the hourly tick that calls it arrives in 10.3.
+- **The endpoints** (`credits/views.py`, plan §8.1): `GET /credits/wallet` (the balance, what is reserved, the spendable credits in spend order, the next expiry, the exempt flag; a read never makes a wallet), `POST /credits/quote` (throttle `credits_quote`; `JourneyQuote` adds what follows a Quick check), and `GET /credits/transactions` (cursor-paged, newest first, in the learner's words by `TransactionWords`, which never uses an internal term and sends none of the ledger's insides). All are owner-scoped.
+- **Tests.** `credits_on` (`tests/support/credits_fixtures.py`) switches the gate on and funds a learner; the autouse `_pin_the_open_gate` starts every other test on `OpenGate`, so changing the default in 10.9 changes no existing test. `tests/credits/test_gate_call_sites.py` runs the eight call sites and the Stop, failure and Retry walk through the real services and API.
 
 ## 5. How to extend
 

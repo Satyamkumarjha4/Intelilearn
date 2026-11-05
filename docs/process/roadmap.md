@@ -238,7 +238,7 @@ Credits for the work that costs model calls, earned by studying, bought through 
 
 - [x] 10.0 Apps, environment, the beat service, `Profile.timezone`, `ActivitySink` and its three call sites, the `quiz.retake` hint, `account_ready`, the 402 handler
 - [x] 10.1 Ledger: wallet, buckets, transactions, holds, spend order, append-only, audit
-- [ ] 10.2 Prices, quote, `CreditGate`, `402`, exempt, hold reconciler, wallet and history endpoints
+- [x] 10.2 Prices, quote, `CreditGate`, `402`, exempt, hold reconciler, wallet and history endpoints
 - [ ] 10.3 Earning: signup, daily credit, streak, repair, the hourly tick, the backfill command
 - [ ] 10.4 Plans and periods: one-time, weekly drip, queueing, activation
 - [ ] 10.5 Wallet, history, streak and buy screens, notices, a cost on every button

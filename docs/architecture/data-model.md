@@ -325,7 +325,7 @@ Written by `console.audit.AuditTrail` in the same transaction as the change.
 
 ## `credits` (phase 10.1)
 
-The ledger of the credits system ([plan §7.2](../to_be_developed/credits-implementation-plan.md), design in [design.md §4.26](design.md#426-credits-the-ledger-phase-101)). Money is a whole number: credits are integers, never a float or a Decimal. **Nothing writes these tables yet** (the gate, earning and plans arrive in 10.2 to 10.4), and no table here has a default timestamp: every `created_at` is given by the ledger's `Clock`. Exempt from the "ids are UUIDs" convention: `Wallet` is keyed by its learner and `CreditTransaction` has a big auto id, because it is ordered.
+The ledger of the credits system ([plan §7.2](../to_be_developed/credits-implementation-plan.md), design in [design.md §4.26](design.md#426-credits-the-ledger-and-the-credit-gate-phases-101-and-102)). Money is a whole number: credits are integers, never a float or a Decimal. **Nothing writes these tables yet** (the gate, earning and plans arrive in 10.2 to 10.4), and no table here has a default timestamp: every `created_at` is given by the ledger's `Clock`. Exempt from the "ids are UUIDs" convention: `Wallet` is keyed by its learner and `CreditTransaction` has a big auto id, because it is ordered.
 
 ### `Wallet` (one per learner, made by their first movement)
 
@@ -360,11 +360,11 @@ Index `(user, expires_at)` where `amount_remaining > 0`. Spend order: soonest `e
 | amount | int, signed | The change in the learner's balance: hold negative, release positive, commit zero, grant positive, expire negative |
 | balance_after | positive int | The running total after this row |
 | action | char, blank | A `MeteredAction`, or `streak_repair` / `payment_refund` |
-| subject_kind, subject_id | char blank, UUID null | What it was about (a lesson, a quiz, an attempt). **Plain columns, no foreign key**, so deleting a lesson leaves the money alone |
+| subject_kind, subject_id | char blank, UUID null | What it was about: `lesson`, `quiz`, `test_attempt` or `quiz_attempt` (the gate sets it from the action). **Plain columns, no foreign key**, so deleting a lesson leaves the money alone |
 | hold | FK CreditHold, null, `PROTECT` | |
 | bucket_allocations | JSON list | `[{bucket, amount}]`; a release adds `outcome`: `returned`, `refund_bucket` or `forfeited` |
 | idempotency_key | char, unique | A repeated key changes nothing |
-| meta | JSON | `reason` and `actor` for an admin adjustment; `forfeited` and `refund_bucket` for a release; `purchase`, `requested` and `shortfall` for a refund |
+| meta | JSON | `source` for a grant (so a history can say where credits came from); `reason` and `actor` for an admin adjustment; `forfeited` and `refund_bucket` for a release; `purchase`, `requested` and `shortfall` for a refund |
 | created_at | datetime | |
 
 **Invariant:** for every learner, the sum of `amount` equals the sum of their buckets' `amount_remaining`, and the last row's `balance_after` is that same number (`manage.py credits_audit`). **Append-only three ways:** the model refuses `save` on an existing row and `delete`, the queryset refuses `update` and `delete`, and a Postgres trigger (migration `0002`) refuses `UPDATE` and `DELETE` from anyone. Index `(user, -id)`.
@@ -386,6 +386,18 @@ Index `(user, expires_at)` where `amount_remaining > 0`. Spend order: soonest `e
 | created_at, settled_at | datetime, datetime null | |
 
 Partial unique `(action, subject_id)` where `status = 'held'`: one live hold for one piece of work. Index `(status, created_at)`.
+
+### `ActionPrice` (phase 10.2: what things cost, versioned)
+
+| Field | Type | Notes |
+|---|---|---|
+| key | char(60) | A row of the plan's price table: `lesson.check`, `lesson.rest`, `sheet.each`, `quiz.tier_10`… |
+| credits | positive int | May be 0: a free price is a price. A key with **no live row** is unavailable (`503 price_unavailable`), never free |
+| label | char(120) | In the learner's words: it is a line of a quote and of a reserve |
+| active | bool | One live row for a key (partial unique constraint); the old rows are the history |
+| updated_by, updated_at | email, datetime | Who made this row and when; the time comes from the `Clock` |
+
+An edit never changes a row in place: `PriceCatalog.revise` adds a row and switches the old one off, so what a price *was* is kept, and a reserve stores the lines it charged and does not read this table again. Rows cannot be deleted in the admin. Migration `0004_price_seed` seeds the 18 prices of the plan (§5.4); read through the Django cache, cleared on every save.
 
 ### `CreditSettings` (singleton, edited in the admin)
 
