@@ -97,6 +97,7 @@ The design injects every collaborator through a constructor or `FlowContext` ([d
 | `CodeSandbox` / `LatexChecker` | `FakeSandbox` returning canned LaTeX and code-check results | `tests/support/fakes.py` |
 | Question batches from a model | `ScriptedQuestions` (`tests/support/question_data.py`): answers `test.generate` with one question per line of the prompt, in order, and can spoil one answer on purpose (a wrong difficulty, a repeated text) to drive the retry and the second round | `tests/support/question_data.py` |
 | The action gate | `CountingGate`, `RefusingGate`, `SharedCountingGate` (the last for views, which reach the gate through the `ACTION_GATE` setting) | `tests/support/gates.py` |
+| The activity sink | `CountingActivity` (records user, kind and instant of each `record`) and `RaisingActivity` (to show a broken sink cannot undo a submit) | `tests/support/activity.py` |
 | Event publisher, task queue | A list-backed publisher and `RecordingQueue` (`LESSON_TASK_QUEUE` points the API at it) | `tests/lessons/test_runner.py`, `tests/support/fixtures.py` |
 | The real gateway and LangChain client | `tests/e2e/fake_llm_server.py`, a fake OpenAI-compatible server run in a thread | `tests/e2e/` |
 | HTTP (media sources) | `httpx.MockTransport` with recorded responses | per test file |

@@ -1,6 +1,6 @@
 # Roadmap
 
-**Current goal: a complete project that runs locally.** Deployment is out of scope until that goal is met. Phases 0 to 9 are built (phase 9, the modular lesson parts, is closed: see [phase 9](#phase-9-modular-lesson-parts) and the [spec](../architecture/modular-lessons.md)). What is left is the [open work](#open-work) below.
+**Current goal: a complete project that runs locally.** Deployment is out of scope until that goal is met. Phases 0 to 9 are built (phase 9, the modular lesson parts, is closed: see [phase 9](#phase-9-modular-lesson-parts) and the [spec](../architecture/modular-lessons.md)). Phase 10 (credits and payments) has begun: see [phase 10](#phase-10-credits-and-payments). What is left is the [open work](#open-work) below.
 
 Each phase ended with something runnable and checkable. Every phase was verified on the offline fake-LLM stack (`make fake-llm`, see [local-setup.md](../getting-started/local-setup.md#6-walk-through-the-app-without-api-keys)), driving the real frontend in a headless browser where it applied. Real models (Gemini and Groq) have been tried end to end only a few times, so lesson quality and the tuning of the registry for real models are still open.
 
@@ -231,6 +231,22 @@ Sixth live run (2 November 2026, same keys, after decisions 1 and 3; 24 minutes,
 | Graded attempt on a built lesson | **Fail**: the quick check failed its validator after three attempts (options of two questions not all different), so no lesson was built for it |
 
 For a decision: the quick check still fails now and then even with three attempts, so a check that fails the same way each time could be given the same fix as the others (a repair step that rewrites only the flagged questions rather than the whole bundle); the `NaN` SVG coordinate could be caught by the sandbox's static check before the render; the plan's `quantitative` flag could be derived from the topic judge (`topic.traits`) instead of a second opinion from the planner.
+
+### Phase 10: Credits and payments
+
+Credits for the work that costs model calls, earned by studying, bought through Stripe or Razorpay. The design is [the spec](../to_be_developed/credits-system.md) and [the implementation plan](../to_be_developed/credits-implementation-plan.md) (phases 10.0 to 10.9, each shippable, each ending with `make check` and `make e2e` green). Until 10.9 the default gate is still the open one, so a learner sees nothing change except the time zone field. Sign-in methods (Google, Apple, Microsoft, email OTP) are Phase 11, a separate plan; public launch waits for 10.9 and 11.
+
+- [x] 10.0 Apps, environment, the beat service, `Profile.timezone`, `ActivitySink` and its three call sites, the `quiz.retake` hint, `account_ready`, the 402 handler
+- [ ] 10.1 Ledger: wallet, buckets, transactions, holds, spend order, append-only, audit
+- [ ] 10.2 Prices, quote, `CreditGate`, `402`, exempt, hold reconciler, wallet and history endpoints
+- [ ] 10.3 Earning: signup, daily credit, streak, repair, the hourly tick, the backfill command
+- [ ] 10.4 Plans and periods: one-time, weekly drip, queueing, activation
+- [ ] 10.5 Wallet, history, streak and buy screens, notices, a cost on every button
+- [ ] 10.6 Payments core: the gateway port and registry, orders, webhooks, reconciliation, clawback, the fake gateway, the buy flow
+- [ ] 10.7 Stripe adapter (test mode)
+- [ ] 10.8 Razorpay adapter (test mode)
+- [ ] 10.9 Console, Terms and Privacy, retire `retakes_per_day`, backfill, switch the default gate, move the spec and plan into `docs/`
+- [ ] 11 Sign-in methods (its own plan); public launch waits for 10.9 and 11
 
 ## Across phases
 

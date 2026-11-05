@@ -206,7 +206,26 @@ classDiagram
         +str education_level
         +str learning_preference
         +str goal
+        +str timezone
+        +datetime timezone_changed_at
         +is_complete() bool
+        +effective_timezone() str
+    }
+    class TimeZoneNames {
+        +str DEFAULT
+        +is_valid(name)$ bool
+        +effective(stored)$ str
+    }
+    class ProfileTimezone {
+        +timedelta LOCK
+        +locked_until(profile) datetime
+        +apply(profile, name)
+    }
+    class TimezoneLocked {
+        <<APIException 409>>
+    }
+    class account_ready {
+        <<Signal>>
     }
     class CookieJWTAuthentication {
         +authenticate(request) tuple
@@ -237,6 +256,11 @@ classDiagram
 
     UserManager --> User : creates
     User "1" *-- "1" Profile
+    Profile ..> TimeZoneNames
+    ProfileTimezone ..> TimezoneLocked : raises
+    ProfileView ..> ProfileTimezone
+    RegisterView ..> ProfileTimezone
+    RegisterView ..> account_ready : sends
     PublicAuthView <|-- RegisterView
     PublicAuthView <|-- LoginView
     PublicAuthView <|-- RefreshView
@@ -253,6 +277,8 @@ classDiagram
 - `PublicAuthView` in the diagram is `_PublicAuthView` in code (module-private base).
 - `Profile` is created by a `post_save` receiver (Observer) that only calls `Profile.objects.get_or_create`.
 - `AuthCookies` (`cookies.py`) owns the cookie names, paths and flags; lifetimes and `Secure` come from settings unless injected. `CookieJWTAuthentication` and the OpenAPI scheme read `AuthCookies.ACCESS`.
+- **The learner's time zone (Phase 10.0, `timezones.py`).** The learner's day (the daily credit and the streak of [the credits plan](../to_be_developed/credits-implementation-plan.md), D9) is the day in `Profile.timezone`, an IANA name. `TimeZoneNames` says which names are real (the system's `zoneinfo`, so old spellings such as `Asia/Calcutta` pass) and what the default is (`Asia/Kolkata`, for a profile where it was never set). `ProfileTimezone` is the one rule for setting it: the first value is free (the browser's, at sign-up), the same value again is nothing, and any other change stamps `timezone_changed_at` and refuses the next change for 30 days with `409 timezone_locked`. Its clock is injected, so the tests never sleep. `apply` sets attributes and leaves saving to the caller; `ProfileSerializer.update` calls it before anything else is saved, so a refused change leaves the rest of the request unsaved. At registration a name the database does not know is dropped instead of refused: a sign-up must not fail over a field the person cannot see.
+- **`account_ready`** (`signals.py`) is a Django `Signal` sent with `user` when an account is usable: at registration today, when the email is confirmed once sign-in is built (Phase 11). The signup credits will hang from it. It is sent with `send_robust` and a failing receiver is logged, never undoing the account.
 
 ### 4.2 `core` and `config`
 
@@ -1414,6 +1440,7 @@ classDiagram
 - The console's shell, Overview and Usage pages (`components/console/`, `components/console/overview/`, `components/console/usage/`) keep every decision in static classes, and the components only draw. `ConsoleGate` (not the backend's `ConsoleAccess`) decides what the layout does with a session (wait, sign in, not-found, show); `ConsoleQueryClient` and `ConsoleQueries` are the only TanStack Query setup (a factory for the client and a set of `queryOptions` with an injectable `ConsoleApi` and clock); `ConsoleUrl` is the address as a value (forgiving reads, defaults left out when writing); `ConsoleNav` is the sidebar as data; `ConsoleFormat` is the one place that writes numbers. `lib/console-charts.ts` has one class per chart (`SpendChart`, `LatencyChart`, `OutcomeChart`, `FunnelChart`, `SlowestSteps`, `StepTable`) with the same three methods where they apply: shape the reply into rows, say what a hover shows (`tooltip`, a `TooltipData` value), and give the table form (`table`); `ProviderSeries` is the only mapping from a provider to a colour, so a series never changes colour with its rank. `UsageFilterOptions` builds the drop-down choices and keeps a chosen model consistent with its provider. Variants are added to a class, not branched in a component (a new chart is a new class and a thin card).
 - The Learners and Change log pages (`components/console/people/`) are thin views over `lib/console-people.ts` and `lib/console-audit.ts`. `LearnerText`, `LearnerStats`, `PeopleUrl` and `AdminLinks` (the only place a link out of the console is built, from an allow-listed scheme) are static classes; `AuditText` turns an `AuditEntry` into `Segment`s (a variant is a new `case` in one `switch` over the API's own action names, with a generic sentence as the fallback, so an action the frontend has not heard of still reads), `AuditAreas` maps a target to its area, and `AuditDiff` formats the changed fields. `PeopleQueries` holds the paged `infiniteQueryOptions` with an injectable `ConsoleApi`; it sits beside `ConsoleQueries` rather than in it so that each page's queries and shaping stay together. `useDebouncedText` (search to address) and `notFoundIfRefused` (the 404 rule for a paged list) are the only hooks.
 - The console's Models, Model routing and Lesson settings pages (`components/console/models/`, `routing/`, `settings/`) are views over small classes in `lib/`. **Value objects with static methods** (`ModelCatalog`, `RoutingDraft`, `RoutingProfile`, `RoutingView`, `FlowBands`, `FlowSettingsForm`, `ModelForm`, `ProviderForm`, `UnsavedGuard`, `ConsoleFailure`) hold every rule and never mutate what they are given: each edit returns a new step, so the page keeps the saved copy beside the edited one and the diff (`RoutingDraft.changed`) says exactly what Save sends. **`RoutingSaver`** and **`ProbeQueue`** are the classes with collaborators, injected through the constructor (`Pick<ConsoleApi, "saveNode">`, a probe function), so their tests use fakes: the saver sends one `PUT` per step and keeps each outcome apart (the API replaces one step atomically, so some can succeed while others are refused), and the queue is a worker pool of two over the probe endpoint. `FlowBands` mirrors `RoutingPolicy.thresholds` on the server and is tested against the values the API reports. Edits live in component state (`useRoutingEdits`, the settings form) and never in the query cache, which only holds what the server has; the two queries a page edits are not refetched on focus, so the saved copy does not move under the edits.
+- **Time zone and refusals (Phase 10.0).** `BrowserTimezone` (`lib/browser-timezone.ts`, static, bun-tested) holds what sign-up and the profile know about a zone: the browser's (`detect`), the one to show (`initial`), the list to offer (`names`), the search over it (`search`), the 30-day lock as words (`lockNote`, `lockedMessage`) and what a save sends (`payload`); `TimezoneField` only draws it. `ActionRefusedMessage` now recognises a `402 insufficient_credits` beside the `403` and its `refusal()` returns `{message, buyPath, required, available}`, so the screens that already show a refusal gain the way to buy more without being touched.
 - `useRunEvents`, `useProfile` and the `LessonSandbox` component are hooks/components that own one instance of these classes.
 - `SandboxMessages.from` accepts only messages whose `event.source` is the embedded iframe and gives every field a safe type; `HarnessBuilder` fills the harness with absolute addresses (the iframe's origin is opaque); `RepairGate` asks for a repair once per code version and stops when the server refuses; `HarnessSource` fetches the harness once; `RenderMessage` and `RepairReport` shape what is posted to the iframe and to `/repair`; `LessonPdf` prints the reading pages.
 
@@ -1998,6 +2025,25 @@ classDiagram
         +RESUMING
         +NEVER
     }
+    class ActivitySink {
+        <<interface>>
+        +record(user, kind, at)
+    }
+    class NullActivity
+    class GuardedActivity {
+        +sink
+        +record(user, kind, at)
+    }
+    class ActivityKind {
+        <<StrEnum>>
+        TEST_ATTEMPT
+        QUIZ_ATTEMPT
+        QUICK_CHECK
+    }
+    class ActivitySinks {
+        +configured()$ ActivitySink
+        +guarded(sink)$ GuardedActivity
+    }
     class IdempotentRequest {
         +run(request, scope, body, perform) Response
     }
@@ -2026,6 +2072,10 @@ classDiagram
     RunEffects --> AuthorizationSettlement
     IdempotentRequest --> IdempotencyStore
     IdempotentRequest ..> IdempotencyKey
+    ActivitySink <|.. NullActivity
+    GuardedActivity --> ActivitySink
+    ActivitySinks ..> GuardedActivity
+    ActivitySink ..> ActivityKind
 ```
 
 - **Pattern:** the gate is a Strategy chosen by a setting (`ACTION_GATE`), the way `LESSON_TASK_QUEUE` chooses the queue; `OpenGate` is the Null Object. `ActionMetering` is a Facade the services use; `AuthorizationSettlement` is a `RunEffects` collaborator, so the runner needs to know nothing about it.
@@ -2033,6 +2083,9 @@ classDiagram
 - **Wired today:** `lesson.create` (`LessonService.create`), `lesson.continue` (`QuizService.submit` for a diagnostic that is not perfect, after grading and before the attempt is stored; `MaterialService.choose` for a perfect one), `sheet.generate` (`MaterialService.request_extra`). `LessonService.retry` asks again for the action of the last flow run as a resume (`resume: true`), once, when Stop or a failure released it; `LessonService.delete` settles an open one as cancelled. `RunStarters` lists every service method that queues a run and how it is treated, and a test fails if a new one is missing. The other four actions exist in `MeteredAction` for the later phases and have no completion point yet (`CompletionPoints.of` says so).
 - **Settlement:** `RunEffects.on_finished(run, ended)` is called by the runner when a run pauses or ends; the authorization is settled `succeeded` when its `CompletionPoint` is reached (`lesson.create`: the quiz is served; `lesson.continue`: the lesson is ready; `sheet.generate`: the run ended). `RunEffects.on_stopped` settles `cancelled` after Stop and `failed` otherwise. `AuthorizationLedger.settle_once` marks the run under a row lock, so each authorization is reported once even when a task is redelivered or Stop and the runner both report; a gate that raises leaves it unmarked and is logged, never breaking the run.
 - **Carry:** the prerequisite quiz continues the work the diagnostic's `lesson.continue` authorized, so `ActionMetering.carry` copies that open authorization into its resume run instead of asking again.
+- **The activity sink (Phase 10.0, `lessons/activity.py`).** The second seam of this kind: a port that tells a later feature when a learner studied, so a daily credit and a streak can be earned without `lessons` learning what a credit is. `ACTIVITY_SINK` names the class (default `NullActivity`, which does nothing), the way `ACTION_GATE` names the gate. Three services report a sealed attempt, once, with the owner, an `ActivityKind` and the instant it was sealed: `AttemptService.submit` (`TEST_ATTEMPT`), `QuizAttemptService.submit` (`QUIZ_ATTEMPT`) and `QuizService.submit` (`QUICK_CHECK`, for both the Quick check and the Basics check). It is called **after** the seal's transaction, before the next run is queued, through `GuardedActivity`, which logs a failing sink and swallows it: the answers are already stored and are worth more than a credit. **What counts:** an attempt sealed with at least one real answer. An attempt with every answer blank (Phase 9's blank-attempt rule: `all_blank`, stored, scores 0, no offer) does not, and for a Quick check, whose answers are an option or "I don't know", an attempt of only "I don't know" is the same thing. A submit that is refused or fails (an invalid answer, a sealed attempt, a stage that is not waiting, a refused gate) never reaches the call, nor does starting an attempt, saving one answer or beginning a retake. An attempt with written answers is reported when it is sealed, not when the model marks it. Tested in `tests/lessons/test_activity.py` with a counting sink (`tests/support/activity.py`).
+- **The `quiz.retake` hint.** The retake is asked with `num_questions` and, since 10.0, `source_type` (`topic` or `lessons`), because a quiz made from lessons will cost one credit more than a topic quiz of the same length and the gate could not tell them apart. No other hint was added.
+- **The refusal on the wire.** `ActionRefused` is still a `403`. The credits gate (phase 10.2) raises `InsufficientCredits`, a `402` with code `insufficient_credits` carrying `required` and `available`; the frontend's `ActionRefusedMessage` accepts both since 10.0 ([api.md](../reference/api.md)).
 - **The open gate stores nothing:** its authorization is `tracked=False`, so run payloads (and every test that compares them) are exactly as before the seam existed.
 - **Idempotency:** `IdempotentRequest` wraps the two creation views. The key is the header made specific to the learner, endpoint and body (`IdempotencyKey`), kept in the cache (Redis) for `IDEMPOTENCY_TTL_S`; a `claim` makes a concurrent repeat a `409 request_in_progress`. The service passes the header on as `ActionContext.key`, so a gate can dedupe on its side too.
 

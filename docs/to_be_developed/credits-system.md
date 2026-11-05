@@ -45,6 +45,7 @@ Answers of 2026-11-03 to the open questions (second pass):
 | A25 | **Technical choices accepted:** a `Wallet` row per user as the lock anchor; repair limits counted over rolling 7 and 28 day windows; a release returns credits to their source buckets, or to a `refund` bucket when the source has expired; a stateless `POST /credits/quote`; a Celery beat service; `ActionRefused` for credits is HTTP 402 and the frontend handler follows | 11 |
 | A26 | **Sheets-only lessons are priced by the number of sheets, whatever the score.** A Quick check with one sheet is **3** in total (3 + 0) and with both sheets **5** (3 + 2), for any score, perfect or not. The half-price rule of §2.1, and its "half your credits back" message, apply **only to the mastery choice of a lesson** (a perfect Quick check that chose the cheat sheet and the revision sheet instead of an Expert lesson). This replaces the perfect-check part of A14 | 2.1, 2.3 |
 | A27 | **Confirmed:** the streak keeps counting past day 28, with +10 at every multiple of 7 and a further +10 at every multiple of 28, each paid once per run; and a sheet added later to a sheets-only lesson that started from a Quick check costs 2 | 2.3, 4.3 |
+| A28 | **A blank attempt is not activity** (decided in the Phase 10.0 brief). An attempt with every answer blank, or a Quick check of only "I don't know", is stored as before but never reported to the activity sink, so it earns no daily credit and no streak day. Any attempt with at least one real answer counts, at the instant it is handed in. Spec §4.2 says so | 4.2 |
 
 ---
 
@@ -220,6 +221,8 @@ The user must perform **at least one meaningful action** that day. Visiting a pa
 - attempting or completing a test or quiz (including one generated earlier)
 
 The action does **not** need to cost credits. For example, generating a lesson on day 1 and taking its included test on day 2 counts as two active days.
+
+An attempt handed in with **every answer blank** (stored, scoring 0, as Phase 9's blank-attempt rule has it) is not an action: it does not count. For a Quick check, whose answers are an option or "I don't know", an attempt of only "I don't know" is the same. Otherwise a request that learns nothing would earn the day's credit.
 
 The day boundary is the **user's local midnight**. The zone is `Profile.timezone`, an IANA name such as `Asia/Kolkata`, taken from the browser at sign-up. The learner can change it **once per 30 days** (so a changing zone cannot earn two days in one). An account with none uses `Asia/Kolkata`.
 

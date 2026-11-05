@@ -6,6 +6,10 @@ the chunky buttons, `lucide-react` icons and the copy rules of [CLAUDE.md](../..
 have not had is a designer's eye. This is the one list for a mockup session: add each screen to the mockup, get it approved,
 then adjust the code. Nothing here blocks a release.
 
+Phase 10 (credits and payments, [the plan](../to_be_developed/credits-implementation-plan.md)) adds section 7. Only its
+time zone field exists yet (built in phase 10.0); the other screens are listed here ahead of being built, each with the
+phase that builds it, so the designer sees the whole set before the code does.
+
 The order is the learner's: from asking for a lesson, to taking a test, to what follows it, to the quick quizzes. The code
 for each is named so a change is easy to find. How each screen behaves is in [frontend.md](../reference/frontend.md).
 
@@ -67,7 +71,28 @@ for each is named so a change is easy to find. How each screen behaves is in [fr
 | Quiz page | `/quizzes/[id]` (`QuizTaker`, `QuizResult`) | The stage-driven page: header, the deck, and the result with the history. The result shows "Create a lesson for this" for a topic quiz, and for a quiz from lessons a card for each lesson with a row for each weak concept: its name, where it is taught, and a **Study this** (or **Open the lesson**) link; a deleted lesson is a plain note |
 | Header link | `SiteHeader` | A "Quizzes" link beside "My lessons" |
 
-## 7. The staff console
+## 7. Credits, the wallet and buying (Phase 10)
+
+The approved mockup has none of these. Each is built from existing components and tokens in the phase named, and learners never
+see the words hold, ledger, gateway, webhook, order state or settle ("credits" is fine). Copy for the cost labels is in
+[the plan, section 5.5](../to_be_developed/credits-implementation-plan.md#55-what-the-learner-sees-stages-and-totals).
+
+| Screen | Where | What needs a look |
+|---|---|---|
+| Time zone field | `/profile` (`TimezoneField` in `ProfileEditor`), built in 10.0 | A box that searches the zone names as you type (a native suggestion list today), with the note "Your day starts at midnight in this zone. You can change this once every 30 days." and, after a change, "You can change your time zone again on 5 December 2026." with the box shut. The suggestion list is the browser's own, and 400 names is a lot on a phone |
+| Balance chip | Site header, linking to `/wallet` (10.5) | A small pill with the number of credits, beside "My lessons" and "Quizzes". How it looks at 400px, where the header already scrolls; whether it also shows that some credits are reserved for a lesson being made |
+| Wallet | `/wallet` (10.5) | The balance, what is reserved for lessons being made, the credits grouped by when they run out, and a link to buy. The grouped list is a table of dates and amounts; it wants a shape that makes "these 40 go first" obvious |
+| History | `/wallet/history` (10.5) | A long list of plain-language rows (what was earned, spent, given back, or ran out) with a date and the balance after. Filters and the empty state |
+| Notices | A banner under the site header, and the top of `/wallet` (10.5) | "This is your last day to use 40 credits." and its softer earlier forms. Dismissable for the day. Colour role (marigold, "waiting for you") and what it does to the page below it |
+| Streak | `/streak` (10.5) | The streak count, today's state, the last 28 days as a grid, what the next bonus is, and **Repair yesterday** with the repairs left. The grid and the repaired-day mark are new |
+| Buy | `/buy` (10.5 shell, 10.6 live) | The plans and the one-time amount, the provider picker (shown only when two or more are enabled), the Buy button, and "Buying isn't open yet" when none is. The plan cards, the amount stepper and the price in rupees |
+| Back from paying | `/buy/return` (10.6) | A waiting state while the server confirms the payment, then the new balance; a calm "still confirming" if it takes long, and a failed or cancelled state. No celebration is promised until the server says so |
+| Cost label | On every button that starts paid work (10.5) | "3 credits" or a total such as "Quick check 3 + lesson 7" beside the New lesson, Take the test again, Make a lesson on this, quiz and sheet buttons. It updates as choices change |
+| Not enough credits | The refusal card on the create screens, from 10.2 (the 402 path is ready in 10.0) | "You need 10 credits for that and have 4." with a **Buy credits** button. Today a refusal is a plain message |
+| Half-price message | The mastery choice (10.5) | "You already know this. Here's half your credits back." Tone and where it sits |
+| Console: prices, plans, settings, wallets, payments | `/console/credits` and a revenue block on `/console/usage` (10.9) | Staff screens in the console's existing style: the price table with its history, plan editor, the reward settings, a learner's wallet with grant and revoke (a reason is required), the payments list with refund |
+
+## 8. The staff console
 
 | Screen | Where | What needs a look |
 |---|---|---|
@@ -75,7 +100,7 @@ for each is named so a change is easy to find. How each screen behaves is in [fr
 | Runs for quizzes | `/console/runs` | A run now belongs to a lesson or to a quiz: the lesson column, the "Open quiz" button and the filter. Quiz runs share the lesson layout |
 | Usage by quiz | `/console/usage` | Model calls logged to a quiz show in the same table |
 
-## 8. The mockup itself
+## 9. The mockup itself
 
 The approved mockups still carry words the product retired. When the screens above are added, change these too:
 
