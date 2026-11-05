@@ -191,7 +191,8 @@ class QuickQuizService:
             attempt_id = uuid.uuid4()
             number = (quiz.attempts.order_by("-attempt_no").values_list("attempt_no", flat=True).first() or 0) + 1
             authorization = self.metering.authorize(
-                quiz.owner, MeteredAction.QUIZ_RETAKE, size={"num_questions": quiz.config["num_questions"]},
+                quiz.owner, MeteredAction.QUIZ_RETAKE,
+                size={"num_questions": quiz.config["num_questions"], "source_type": quiz.source_type},
                 subject_id=attempt_id, client_key=idempotency_key,
             )  # fmt: skip
             with self.metering.guard(authorization):

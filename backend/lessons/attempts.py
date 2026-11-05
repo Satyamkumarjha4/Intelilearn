@@ -24,6 +24,7 @@ from graph.questions import LessonTestBlueprint
 from graph.schemas import public_question
 from graph.scoring import AttemptTrend
 
+from .activity import ActivityKind, ActivitySink, ActivitySinks
 from .bank import QuestionBank
 from .effects import RunEffects
 from .errors import (
@@ -116,8 +117,10 @@ class AttemptService:
         outcome: AttemptOutcome | None = None,
         cleaner: AnswerCleaner | None = None,
         bank: QuestionBank | None = None,
+        activity: ActivitySink | None = None,
     ):
         self.metering = ActionMetering(gate)
+        self.activity = ActivitySinks.guarded(activity)
         self.dispatcher = RunDispatcher(queue, RunEffects(settlement=AuthorizationSettlement(gate)))
         self.grader = grader or AnswerGrader()
         self.cards = cards or ScoreCard()
@@ -254,6 +257,8 @@ class AttemptService:
             extra = self.cleaner.many(attempt.questions, answers or {})
             merged = {**{q: v for q, v in extra.items() if q not in attempt.answers}, **attempt.answers}
             run = self._seal(lesson, attempt, merged)
+        if not attempt.all_blank:  # an attempt of only blank answers is no study (Phase 9's blank-attempt rule)
+            self.activity.record(lesson.owner, ActivityKind.TEST_ATTEMPT, attempt.submitted_at)
         if run:
             self.dispatcher.dispatch(run)
         return Submitted(attempt, run)

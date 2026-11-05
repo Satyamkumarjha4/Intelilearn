@@ -15,6 +15,7 @@ from django.utils import timezone
 from graph.attempt_stores import QuizAttemptStore
 from graph.grading import AnswerGrader, ScoreCard
 from graph.scoring import AttemptTrend, ScoreBand
+from lessons.activity import ActivityKind, ActivitySink, ActivitySinks
 from lessons.attempts import AnswerCleaner, AttemptQuestions
 from lessons.effects import RunEffects
 from lessons.errors import (
@@ -43,7 +44,9 @@ class QuizAttemptService:
         gate: ActionGate | None = None,
         cleaner: AnswerCleaner | None = None,
         store: QuizAttemptStore | None = None,
+        activity: ActivitySink | None = None,
     ):
+        self.activity = ActivitySinks.guarded(activity)
         self.dispatcher = RunDispatcher(queue, RunEffects(settlement=AuthorizationSettlement(gate)))
         self.grader = grader or AnswerGrader()
         self.cards = cards or ScoreCard()
@@ -124,6 +127,8 @@ class QuizAttemptService:
             extra = self.cleaner.many(attempt.questions, answers or {})
             merged = {**{q: v for q, v in extra.items() if q not in attempt.answers}, **attempt.answers}
             run = self._seal(quiz, attempt, merged)
+        if not attempt.all_blank:  # an attempt of only blank answers is no study (Phase 9's blank-attempt rule)
+            self.activity.record(quiz.owner, ActivityKind.QUIZ_ATTEMPT, attempt.submitted_at)
         if run:
             self.dispatcher.dispatch(run)
         return attempt, run

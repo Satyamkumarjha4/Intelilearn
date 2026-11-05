@@ -357,7 +357,7 @@ class TestRetaking:
         assert (taken.run.graph, taken.run.trigger) == ("quick_quiz", "retake")
         assert taken.run.payload["input"] == {"attempt_id": str(taken.attempt.pk)}
         (asked,) = service.gate.authorized
-        assert str(asked.action) == "quiz.retake" and asked.size == {"num_questions": 10}
+        assert str(asked.action) == "quiz.retake" and asked.size == {"num_questions": 10, "source_type": "topic"}
         assert queue.runs[-1] == taken.run
 
     def test_an_open_attempt_is_returned_and_nothing_is_asked_again(self, ready):

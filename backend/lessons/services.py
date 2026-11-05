@@ -22,6 +22,7 @@ from llm_registry.resolver import RegistryResolver
 from quizzes.models import QuickQuizAttempt
 from quizzes.results import QuizResultFacts
 
+from .activity import ActivityKind, ActivitySink, ActivitySinks
 from .document import LessonDocumentBuilder
 from .effects import RunEffects
 from .erasure import LessonErasure
@@ -300,11 +301,13 @@ class QuizService:
         grader: QuizGrader | None = None,
         policy: RoutingPolicy | None = None,
         gate: ActionGate | None = None,
+        activity: ActivitySink | None = None,
     ):
         self.metering = ActionMetering(gate)
         self.dispatcher = RunDispatcher(queue, RunEffects(settlement=AuthorizationSettlement(gate)))
         self.grader = grader or QuizGrader()
         self.policy = policy or RoutingPolicy()
+        self.activity = ActivitySinks.guarded(activity)
 
     def for_learner(self, lesson: Lesson, kind: str) -> dict:
         quiz = self._quiz(lesson, kind)
@@ -342,6 +345,8 @@ class QuizService:
                     trigger=trigger,
                     payload={"resume": str(attempt.id), **self.metering_payload(lesson, kind, authorization)},
                 )
+        if result.dont_know < result.total:  # a check of only "I don't know" is no study (the blank-attempt rule)
+            self.activity.record(lesson.owner, ActivityKind.QUICK_CHECK, attempt.submitted_at)
         self.dispatcher.dispatch(run)
         # A lesson that asked for sheets is neither a lesson nor a mastery lesson, so it is shown no route.
         return result.summary(None if lesson.intent == Intent.SHEETS else route), run
