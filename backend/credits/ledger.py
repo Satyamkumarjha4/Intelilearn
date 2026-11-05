@@ -202,6 +202,36 @@ class Ledger:
             row = books.post(Type.ADMIN_ADJUST, amount, key, allocations=allocations, meta=meta)
         return Movement(row, True)
 
+    def forfeit(self, user, key: str, *, reason: str) -> Movement:
+        """Write off everything the learner has left, for an account that is closed: every bucket is emptied and one
+        row of
+        `forfeit` takes the whole balance (0 if there is none, so the closing is on the record). Holds are not part
+        of the
+        balance and are not touched: release them first."""
+        with self._locked(self._id(user), key) as books:
+            if books.seen:
+                return Movement(books.seen, False)
+            taken = []
+            for bucket in self._buckets(books):
+                taken.append(self._part(bucket.pk, bucket.amount_remaining))
+                bucket.amount_remaining = 0
+                bucket.save(update_fields=["amount_remaining"])
+            total = sum(part["amount"] for part in taken)
+            row = books.post(Type.FORFEIT, -total, key, allocations=taken, meta={"reason": reason})
+        return Movement(row, True)
+
+    @contextmanager
+    def exclusive(self, user) -> Iterator[None]:
+        """Hold the learner's wallet lock across several steps, so a rule can be checked and then acted on with no other
+        movement of theirs in between. Makes the wallet if it is new. Ledger calls inside nest in the same
+        transaction."""
+        with transaction.atomic():
+            Wallet.objects.bulk_create(
+                [Wallet(user_id=self._id(user), created_at=self.clock.now())], ignore_conflicts=True
+            )
+            Wallet.objects.select_for_update().get(pk=self._id(user))
+            yield
+
     def claw_back(self, user, purchase_id, credits: int, key: str, *, meta: dict | None = None) -> Clawback:
         """A purchase was refunded: take back up to `credits` of its credits that are still unspent, never going below
         zero, and say how many could not be taken. A bucket of the purchase left empty is revoked, so a hold that is

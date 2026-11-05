@@ -48,6 +48,10 @@ class User(AbstractBaseUser, PermissionsMixin):
     # Accounts made before the terms existed have neither.
     terms_accepted_at = models.DateTimeField(null=True, blank=True)
     terms_version = models.CharField(max_length=20, blank=True)
+    # Set when the account was erased (`credits.erasure.AccountErasure`): the row stays, anonymised, because the
+    # credit ledger
+    # is append-only and refers to it; everything personal is gone.
+    deleted_at = models.DateTimeField(null=True, blank=True)
 
     #: The version of the Terms of Use and Privacy Policy a new account agrees to (the date they were last updated).
     TERMS_VERSION = "2026-10-25"

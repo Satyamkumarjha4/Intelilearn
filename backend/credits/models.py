@@ -147,6 +147,7 @@ class CreditTransaction(models.Model):
         REPAIR = "repair", "Streak repair"
         ADMIN_ADJUST = "admin_adjust", "Admin adjustment"
         EXPIRE = "expire", "Expiry"
+        FORFEIT = "forfeit", "Forfeit (account closed)"
 
     id = models.BigAutoField(primary_key=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="credit_transactions")
@@ -178,6 +179,55 @@ class CreditTransaction(models.Model):
 
     def delete(self, *args, **kwargs):
         raise AppendOnly("Ledger rows cannot be deleted.")
+
+
+class StreakDay(models.Model):
+    """A day the learner counts as active, in their own time zone. The days are the truth about a streak;
+    `StreakState` is
+    only a cache of what they add up to. A repaired day keeps the streak alive but earned no daily credit."""
+
+    class Kind(models.TextChoices):
+        ACTIVE = "active", "Active"
+        REPAIRED = "repaired", "Repaired"
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="streak_days")
+    local_date = models.DateField()
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.ACTIVE)
+    repaired_on = models.DateField(
+        null=True, blank=True, help_text="The local day the repair was made; the limits count it."
+    )
+    created_at = models.DateTimeField()
+
+    class Meta:
+        ordering = ["user", "local_date"]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "local_date"], name="streak_day_one_per_user_and_date"),
+            models.CheckConstraint(
+                condition=Q(kind="active", repaired_on__isnull=True) | Q(kind="repaired", repaired_on__isnull=False),
+                name="streak_day_repaired_on_only_when_repaired",
+            ),
+        ]
+        indexes = [models.Index(fields=["user", "repaired_on"], name="streak_day_repairs_idx")]
+
+    def __str__(self):
+        return f"{self.local_date} ({self.kind})"
+
+
+class StreakState(models.Model):
+    """What a learner's days add up to, kept for reading without adding them up. A cache: it can be rebuilt from the
+    `StreakDay`s at any time, and nothing decides anything from it."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, primary_key=True, related_name="streak_state"
+    )
+    current_streak = models.PositiveIntegerField(default=0)
+    longest_streak = models.PositiveIntegerField(default=0)
+    run_started_on = models.DateField(null=True, blank=True)
+    last_day = models.DateField(null=True, blank=True)
+    updated_at = models.DateTimeField()
+
+    def __str__(self):
+        return f"{self.current_streak} (longest {self.longest_streak})"
 
 
 class ActionPrice(models.Model):

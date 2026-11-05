@@ -11,6 +11,7 @@ Use cases:
 - the other credits tables can be updated (buckets and holds change as credits move)
 - the ledger needs only the user table, so undoing the newer accounts migrations (as the accounts migration tests do)
   leaves the credits tables and the trigger in place
+- no credits migration needs more of accounts than its first, whatever migrations have been added to accounts
 - undoing 0002 removes the trigger and migrating forward puts it back; undoing 0001 drops the tables and keeps the
   learners
 """
@@ -130,3 +131,18 @@ def test_undoing_the_newer_accounts_migrations_leaves_the_ledger_alone(user):
         assert set(TABLES) <= tables() and has_trigger()
     finally:
         migrate(list(MigrationExecutor(connection).loader.graph.leaf_nodes()))
+
+
+@pytest.mark.django_db
+def test_no_credits_migration_needs_more_of_accounts_than_its_first(user):
+    """Else undoing a newer accounts migration would undo that credits migration too (the accounts tests do)."""
+    graph = MigrationExecutor(connection).loader.graph
+    needed = {
+        parent.key
+        for key, node in graph.node_map.items()
+        if key[0] == "credits"
+        for parent in node.parents
+        if parent.key[0] == "accounts"
+    }
+
+    assert needed == {("accounts", "0001_initial")}

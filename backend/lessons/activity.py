@@ -27,6 +27,7 @@ class ActivityKind(StrEnum):
     TEST_ATTEMPT = "test_attempt"  # a lesson's test handed in
     QUIZ_ATTEMPT = "quiz_attempt"  # a quick quiz handed in
     QUICK_CHECK = "quick_check"  # a Quick check, or the Basics check that follows it, handed in
+    METERED_ACTION = "metered_action"  # an action the gate charged for was done (reported by the gate, not a service)
 
 
 class ActivitySink(Protocol):

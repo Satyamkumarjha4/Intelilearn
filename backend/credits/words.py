@@ -106,6 +106,8 @@ class TransactionWords:
                 return "adjusted", (f"{n} added by Socra" if row.amount > 0 else f"{n} taken off by Socra")
             case Type.EXPIRE:
                 return "expired", f"{n} expired"
+            case Type.FORFEIT:
+                return "taken_back", f"{n} removed with the account"
             case Type.REFUND:
                 return "taken_back", f"{n} taken back after a refund"
         return "used", f"{n}"  # a kind this version does not know: still readable
