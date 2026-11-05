@@ -13,7 +13,7 @@ Items carried over from the phases below, plus gaps found since. Nothing here bl
 **Privacy and security**
 
 - [x] Delete a lesson's LangGraph checkpoints and its `ModelCall` rows together with the lesson (`LessonErasure`). See [data-model.md](../architecture/data-model.md#deleting-a-lesson).
-- [ ] The same clean-up for a user removed by hand (there is no self-service account deletion): their lessons' checkpoints and `ModelCall` rows are still left behind.
+- [ ] The same clean-up for a user removed by hand (there is no self-service account deletion): their lessons' checkpoints and `ModelCall` rows are still left behind. *Planned in phase 10.3 as `AccountErasure`, which anonymises the account in place ([the plan](../to_be_developed/credits-implementation-plan.md)).*
 - [ ] Make the per-address rate limits independent of a client-supplied `X-Forwarded-For` (the Next.js proxy forwards the client's own first entry). Use the connection address in the proxy, or overwrite the header at the edge. See [api.md](../reference/api.md).
 - [ ] `scripts/enable_rls.sql`: row-level security with no policies on every table, including the checkpoint tables, for use with Supabase *(skipped while running on the local Postgres)*.
 - [ ] Set `SUPABASE_DATABASE_URL`, then verify the sync and `/api/health` *(skipped while running on the local Postgres)*.

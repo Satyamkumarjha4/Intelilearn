@@ -7,7 +7,7 @@ behind is the configuration the later phases read; if a name is missing or misty
 in production instead of in a test.
 
 Use cases:
-- the `credits` and `payments` apps are installed, and have no models yet
+- the `credits` and `payments` apps are installed; `payments` has no models yet (`credits` got its in phase 10.1)
 - the action gate is still the open one, and the activity sink does nothing
 - the payment settings exist with the right types: gateways enabled (a list, none by default), the default gateway, the
   keys of each provider (text), the return base URL, the fake-gateway switch (off) and the dollar-rupee rate (positive)
@@ -24,12 +24,16 @@ from django.conf import settings
 from config.celery import app as celery_app
 
 
-@pytest.mark.parametrize("label", ["credits", "payments"])
+@pytest.mark.parametrize("label", ["payments"])
 def test_the_new_apps_are_installed_and_hold_no_models_yet(label):
     config = apps.get_app_config(label)
 
     assert list(config.get_models()) == []
     assert label in [name.split(".")[0] for name in settings.INSTALLED_APPS]
+
+
+def test_the_credits_app_is_installed():
+    assert "credits" in [name.split(".")[0] for name in settings.INSTALLED_APPS]
 
 
 def test_the_action_gate_is_still_the_open_one_and_the_activity_sink_does_nothing():
