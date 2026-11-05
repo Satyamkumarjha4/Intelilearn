@@ -33,6 +33,8 @@ services:
       - "127.0.0.1:${E2E_BACKEND_PORT:-7110}:8000"
   worker:
     environment: *e2e-env
+  beat:
+    environment: *e2e-env
   frontend:
     ports: !override
       - "127.0.0.1:${E2E_FRONTEND_PORT:-7100}:3000"

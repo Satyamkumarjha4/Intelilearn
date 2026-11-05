@@ -102,6 +102,13 @@ services:
     # watchfiles restarts the worker when Python files change
     command: watchfiles --filter python "celery -A config worker -l info --concurrency 4" /app
 
+  # The scheduler: queues the periodic tasks named in CELERY_BEAT_SCHEDULE (config/settings.py) for the worker to run. It
+  # runs no task itself and holds no state worth keeping (the schedule file is rebuilt on start). Run EXACTLY ONE of
+  # these: a second would queue every task twice. The schedule is empty until the credits phases add their housekeeping.
+  beat:
+    <<: *backend
+    command: watchfiles --filter python "celery -A config beat -l info --schedule /tmp/celerybeat-schedule" /app
+
   # Dev-only stand-in for an LLM provider (profile `e2e`; see `make fake-llm` and docs/getting-started/local-setup.md).
   fake-llm:
     profiles: ["e2e"]

@@ -6,6 +6,7 @@ injects. Every value has a development default, so CI and tests run with no .env
 
 import sys
 from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 from urllib.parse import quote
 
@@ -55,6 +56,8 @@ INSTALLED_APPS = [
     "onboarding",
     "marketing",
     "console",
+    "credits",
+    "payments",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -137,6 +140,9 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TIMEZONE = TIME_ZONE
+# What the `beat` service runs and when. Empty until the credits phases add their housekeeping (credits.tick every hour,
+# payments.reconcile every 5 minutes). Exactly one beat runs, or a task would be queued twice.
+CELERY_BEAT_SCHEDULE: dict = {}
 
 # Shared cache (Redis db 2): the resolved model registry and per-minute LLM rate-limit counters.
 # Tests use an in-process cache so they don't depend on Redis.
@@ -158,6 +164,9 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": FLOW_RUN_LOCK_TTL_S}
 LESSON_TASK_QUEUE = "lessons.tasks.CeleryTaskQueue"
 # Who may start work that costs model calls (the ActionGate port, lessons/metering.py). The open gate allows everything.
 ACTION_GATE = env("ACTION_GATE", default="lessons.metering.OpenGate")
+# Who is told when a learner studied (the ActivitySink port, lessons/activity.py): a sealed attempt is reported once.
+# The default does nothing; the credits app plugs in here when the daily credit and the streak exist.
+ACTIVITY_SINK = env("ACTIVITY_SINK", default="lessons.activity.NullActivity")
 # How long a creation request's answer is kept for a replayed `Idempotency-Key` (lessons/idempotency.py).
 IDEMPOTENCY_TTL_S = env.int("IDEMPOTENCY_TTL_S", default=86400)
 # Seconds between keep-alive comments on a run's event stream, so proxies don't close an idle connection.
@@ -210,6 +219,29 @@ LLM_TRACING = env("LLM_TRACING", default="none")
 # date against it; nothing is cut off when it is passed.
 CONSOLE_MONTHLY_BUDGET_USD = env("CONSOLE_MONTHLY_BUDGET_USD", default="25")
 
+# --- Payments (docs/to_be_developed/credits-implementation-plan.md; nothing reads these before phase 10.6) ---
+# Which payment providers a learner can pay through, in the order they are offered. Empty: buying is closed.
+# The adapters are `stripe`, `razorpay` and, only when PAYMENT_ALLOW_FAKE_GATEWAY is true, `fake`.
+PAYMENT_GATEWAYS_ENABLED = [
+    name.strip().lower() for name in env.list("PAYMENT_GATEWAYS_ENABLED", default=[]) if name.strip()
+]
+# The provider used when the learner is not asked, and the one listed first when they are.
+PAYMENT_DEFAULT_GATEWAY = env("PAYMENT_DEFAULT_GATEWAY", default="stripe").strip().lower()
+# Test-mode keys in development; live keys only on the production host. Never logged, never in the repo.
+STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY", default="")
+STRIPE_WEBHOOK_SECRET = env("STRIPE_WEBHOOK_SECRET", default="")
+RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID", default="")
+RAZORPAY_KEY_SECRET = env("RAZORPAY_KEY_SECRET", default="")
+RAZORPAY_WEBHOOK_SECRET = env("RAZORPAY_WEBHOOK_SECRET", default="")
+# Where a provider sends the browser back to after paying (the site's own address, no trailing slash).
+PAYMENT_RETURN_BASE_URL = env(
+    "PAYMENT_RETURN_BASE_URL", default=f"http://localhost:{env('FRONTEND_PORT', default='3000')}"
+).rstrip("/")
+# Registers the fake gateway that the browser tests buy through. Never true outside the throwaway test stack.
+PAYMENT_ALLOW_FAKE_GATEWAY = env.bool("PAYMENT_ALLOW_FAKE_GATEWAY", default=False)
+# Rupees per US dollar, to show what model calls cost (recorded in dollars) next to revenue (in rupees).
+USD_INR_RATE = Decimal(env("USD_INR_RATE", default="85"))
+
 # --- DRF / OpenAPI ---
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
@@ -232,6 +264,14 @@ REST_FRAMEWORK = {
             "TOPIC_SUGGESTIONS_THROTTLE_RATE", default="30/min"
         ),  # per user; may cost a model call
         "console": env("CONSOLE_THROTTLE_RATE", default="120/min"),  # staff-only console API, per user
+        # credits and payments (docs/to_be_developed/credits-implementation-plan.md §8.5)
+        "credits_quote": env("CREDITS_QUOTE_THROTTLE_RATE", default="120/min"),  # a price before a click, per user
+        "payment_order": env("PAYMENT_ORDER_THROTTLE_RATE", default="10/hour"),  # starting a checkout, per user
+        "payment_status": env(
+            "PAYMENT_STATUS_THROTTLE_RATE", default="60/min"
+        ),  # asking if an order was paid, per user
+        # providers' own addresses are not allow-listed: the webhook's signature is the control, this is a ceiling
+        "payment_webhook": env("PAYMENT_WEBHOOK_THROTTLE_RATE", default="600/min"),  # per client address
     },
     # Requests arrive through the Next.js proxy; the client address is the X-Forwarded-For entry it appends.
     # Keep the API port bound to localhost (BIND_ADDRESS) so nobody can reach Django directly with a forged header.

@@ -11,7 +11,7 @@ help: ## List commands
 env: ## Create .env from .env.example (keeps an existing one)
 	@test -f .env && echo ".env already exists" || (cp .env.example .env && echo "created .env")
 
-up: ## Build and start the stack (db, redis, backend, worker, frontend)
+up: ## Build and start the stack (db, redis, backend, worker, beat, frontend)
 	@# Remove the frontend container *with* its anonymous node_modules/.next volumes, so new packages are picked up.
 	@# (--renew-anon-volumes would leave every old copy behind as a dangling volume.)
 	$(COMPOSE) rm --force --stop --volumes frontend
@@ -77,6 +77,9 @@ frontend-log:
 worker-log:
 	$(COMPOSE) logs -f worker
 
+beat-log:
+	$(COMPOSE) logs -f beat
+
 db-log:
 	$(COMPOSE) logs -f db
 
@@ -87,4 +90,4 @@ reload: #rebuilds backend and frontend
 	$(COMPOSE) build backend frontend
 	$(COMPOSE) restart backend frontend
 
-.PHONY: help env up down logs migrate makemigrations superuser shell sync-supabase test lint check
+.PHONY: help env up down logs migrate makemigrations superuser shell sync-supabase test lint check beat-log

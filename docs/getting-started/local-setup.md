@@ -1,6 +1,6 @@
 # Local setup
 
-Everything runs locally with **Docker Compose**: Postgres, Redis, the Django API, the Celery worker, and the Next.js app. The Python backend is managed with **uv** and the frontend with **bun**. Deployment is out of scope.
+Everything runs locally with **Docker Compose**: Postgres, Redis, the Django API, the Celery worker, the Celery beat scheduler, and the Next.js app. The Python backend is managed with **uv** and the frontend with **bun**. Deployment is out of scope.
 
 ## Prerequisites
 
@@ -36,6 +36,7 @@ The root `.env` is the **single source of configuration**. Django reads it, `doc
 | Landing page | `LANDING_DEMO_THROTTLE_RATE`, `LANDING_DEMO_IDS_TTL_S` | 60/min, 600 (10 min) |
 | Onboarding | `TOPIC_SUGGESTIONS_THROTTLE_RATE`, `ONBOARDING_SUGGESTION_TTL_S` | 30/min, 30 days |
 | Lesson flow | `FLOW_RUN_LOCK_TTL_S`, `LESSON_CREATE_THROTTLE_RATE`, `SSE_HEARTBEAT_S`, `SANDBOX_DIR`, `NODE_BINARY`, `SANDBOX_CHECK_TIMEOUT_S`, `SANDBOX_RENDER_TIMEOUT_S`, `SANDBOX_PAGE_TIMEOUT_MS`, `GIPHY_API_KEY`, `MEDIA_URL_TTL_S` | 600, 30/hour, 30/hour, 15, `<repo>/sandbox`, node, 30, 180, 8000, empty, 21600 (6 h) |
+| Credits and payments (nothing reads them before phase 10.6; names are in `.env.example`, all commented) | `ACTIVITY_SINK`, `PAYMENT_GATEWAYS_ENABLED`, `PAYMENT_DEFAULT_GATEWAY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `PAYMENT_RETURN_BASE_URL`, `PAYMENT_ALLOW_FAKE_GATEWAY`, `USD_INR_RATE`, `CREDITS_QUOTE_THROTTLE_RATE`, `PAYMENT_ORDER_THROTTLE_RATE`, `PAYMENT_STATUS_THROTTLE_RATE`, `PAYMENT_WEBHOOK_THROTTLE_RATE` | the do-nothing sink, none enabled, stripe, empty keys, `http://localhost:${FRONTEND_PORT}`, false, 85, 120/min, 10/hour, 60/min, 600/min |
 | Offline walk-through | `FAKE_LLM_API_KEY` | empty (any value; not a secret) |
 
 - The `POSTGRES_HOST`, `POSTGRES_PORT`, `REDIS_HOST`, and `REDIS_PORT` values in `.env` describe how the **host** reaches the services. Inside docker, compose overrides them with the service names and internal ports (`db:5432`, `redis:6379`).
@@ -58,6 +59,15 @@ On start, `make up` also recreates the frontend's anonymous `node_modules` and `
 | `http://localhost:${BACKEND_PORT}/api/health` | Health JSON (`200` ok, `503` degraded) |
 | `http://localhost:${FRONTEND_PORT}/console` | The staff console (usage and cost, lesson runs, models and routing, learners, change log). Only a user with `is_staff` can open it; anyone else sees a not-found page. `make superuser` makes one. |
 | `http://localhost:${BACKEND_PORT}/admin/` | Django admin (run `make superuser` first) |
+
+### The scheduler (`beat`)
+
+`beat` is a service beside `worker`: it wakes on the schedule in `CELERY_BEAT_SCHEDULE` (`backend/config/settings.py`) and queues each periodic task for the worker to run. It runs no task itself. The schedule is **empty** until the credits phases add their housekeeping (an hourly `credits.tick` and a five-minute `payments.reconcile`), so for now it starts, prints its configuration and waits. Rules:
+
+- **Run exactly one.** A second `beat` queues every task twice. Every task is written to be harmless when it runs twice, but do not rely on that: `docker compose ps` should list one `beat`. Do not scale it (`--scale beat=2`).
+- It keeps its schedule bookkeeping in `/tmp` inside the container, so a restart loses nothing that matters; a task that was due while it was down runs on the next tick, not in a burst.
+- `make beat-log` follows its log. Like the worker, it restarts when a Python file changes (`watchfiles`).
+- The browser-test stack (`make e2e`) starts its own `beat`, with the same blanked keys as its worker.
 
 ## 3. Databases: local Postgres and Supabase
 

@@ -6,7 +6,7 @@ An AI tutor that diagnoses what a learner knows, then generates a lesson or stud
 
 - **Backend**: Django 5.2 + DRF + Celery in `backend/`, managed with **uv** (`uv add`, `uv run`). Never use pip or requirements files.
 - **Frontend**: Next.js 16 in `frontend/`, managed with **bun** (`bun add`, `bunx`). Never use npm, yarn, or pnpm. Next 16 differs from older versions (for example, `middleware.ts` is now `proxy.ts`): follow `frontend/AGENTS.md` and check `frontend/node_modules/next/dist/docs/` before writing frontend code.
-- **Running**: Docker Compose (`make up`). Services: `db` (Postgres), `redis`, `backend`, `worker`, `frontend`. `make help` lists every command.
+- **Running**: Docker Compose (`make up`). Services: `db` (Postgres), `redis`, `backend`, `worker`, `beat` (the scheduler; exactly one), `frontend`. `make help` lists every command.
 - After adding a dependency, rebuild with `docker compose up --build`.
 
 ## Configuration
