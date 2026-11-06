@@ -3040,6 +3040,93 @@ classDiagram
 - **Notices in the browser.** `NoticesBanner` asks `GET /credits/notices` only when the balance says there are some, shows at most two, and `NoticeDismissals` hides one for the rest of the browser's day (T27); nothing is stored on the server.
 - **`/buy` is a shell** until phase 10.6: `BuyState.OPEN` is `false`, so the plans and the one-time amount (checked against the server's smallest and largest by `PlanWords.check`) are shown with a disabled **Buying isn't open yet**. The e2e stack opts into `CreditGate` and `CreditsActivitySink` (the dev default stays `OpenGate` and the do-nothing sink).
 
+#### Payments (Phase 10.6)
+
+Taking money and turning it into credits, with no provider in the way: everything below the port is provider-neutral, and a provider is one subclass, one registry line and its settings (Stripe and Razorpay arrive in 10.7 and 10.8). Code: `backend/payments/`. The pattern is the codebase's usual Strategy and registry (as for media sources and model providers) behind a **Facade** per use case (`CheckoutService`, `WebhookProcessor`, `OrderReconciler`).
+
+```mermaid
+classDiagram
+    direction LR
+    class PaymentGateway {
+        <<abstract>>
+        +key
+        +display_name
+        +supported_currencies
+        +capabilities
+        +create_checkout(order, urls) CheckoutSession
+        +verify_webhook(headers, raw_body) list~PaymentEvent~
+        +fetch_status(provider_ref) PaymentStatus
+        +refund(payment_ref, amount) RefundResult
+    }
+    class FakeGateway
+    class PaymentGateways {
+        +register(cls)
+        +enabled() list
+        +default() PaymentGateway
+        +for_key(key) PaymentGateway
+        +lookup(key) PaymentGateway
+    }
+    class GatewayConfig {
+        <<frozen>>
+    }
+    class CheckoutService {
+        +start(user, plan, quantity, credits, gateway) PaymentOrder
+    }
+    class WebhookProcessor {
+        +handle(gateway, headers, raw_body) list~Applied~
+    }
+    class OrderEvents {
+        +apply(gateway, event) Applied
+    }
+    class OrderReconciler {
+        +refresh(order) PaymentOrder
+        +run() ReconcileReport
+    }
+    class FulfilmentService {
+        +fulfil(order) PaymentOrder
+    }
+    class ClawbackService {
+        +on_refund(order, amount_paise) Clawed
+    }
+    class OrderLifecycle {
+        +fail(order, reason) bool
+        +expire(order) bool
+    }
+    class PaymentOrder
+    class PaymentEventLog
+    PaymentGateway <|-- FakeGateway
+    PaymentGateways o-- PaymentGateway
+    PaymentGateway --> GatewayConfig
+    CheckoutService --> PaymentGateways
+    CheckoutService --> PurchaseDesk
+    CheckoutService --> OrderLifecycle
+    WebhookProcessor --> PaymentGateways
+    WebhookProcessor --> OrderEvents
+    OrderReconciler --> PaymentGateways
+    OrderReconciler --> OrderEvents
+    OrderReconciler --> FulfilmentService
+    OrderEvents --> FulfilmentService
+    OrderEvents --> ClawbackService
+    OrderEvents --> OrderLifecycle
+    OrderEvents --> PaymentEventLog
+    FulfilmentService --> PlanFulfilment
+    ClawbackService --> Ledger
+    CheckoutService --> PaymentOrder
+```
+
+- **The port (§6.4).** `PaymentGateway` is an ABC with `key`, `display_name`, `supported_currencies`, `capabilities` and `required_config`, three abstract methods (`create_checkout`, `verify_webhook`, `fetch_status`) and an optional `refund` that raises `NotSupported` unless the gateway declares the `refund` capability. The values it passes are frozen dataclasses: `CheckoutOrder`, `ReturnUrls`, `CheckoutSession` (`redirect`, or `client` with an `adapter` name and non-secret parameters), `PaymentEvent` (`succeeded`, `failed`, `refunded`, `disputed`), `PaymentStatus`, `RefundResult`. `GatewayConfig` holds a gateway's keys read from the settings, and its `repr` shows the names and never the values. `verify_webhook` is pure (no database), which is what lets the processor prove a callback before touching anything.
+- **The registry (T25).** `PaymentGateways` lists what the environment switches on (`PAYMENT_GATEWAYS_ENABLED`, in order) and the default (`PAYMENT_DEFAULT_GATEWAY`, else the first). `for_key` refuses a gateway that is not on (`400 gateway_not_enabled`) whatever a client names; `lookup` finds one that was switched off since, because an order made through it must still be settled. The fake gateway is known only when `PAYMENT_ALLOW_FAKE_GATEWAY` is true. A **system check** (`payments.E001` unknown name, `E002` an enabled gateway without its keys, `E003` the fake gateway without its switch) makes a misconfiguration an error when the app starts.
+- **Orders (§7.3).** `PaymentOrder` (one per `PlanPurchase`, integer paise, INR) moves `created` → `pending` → `paid` → `fulfilled`, or `failed` / `expired`. A refund does not change the state; it adds to `refunded_paise` (a database check keeps it within the amount). `PaymentEventLog` is unique on (gateway, event id), keeps only normalised fields (never the raw body) and the shortfall of a refund.
+- **Starting a payment (`CheckoutService`).** The price is the plan table's, through `PurchaseDesk` (the client names a plan and a quantity or an amount of credits, never a price). Under the learner's wallet lock it counts the waiting orders (at most `max_pending_orders`, 3: `409 too_many_pending`), opens the purchase (so `queue_full` and `invalid_*` are refused before a provider is asked) and writes the order. The provider is asked for a checkout **outside any transaction**; one that cannot be reached leaves the order `failed` and its purchase void (`502 gateway_unavailable`), with nothing granted. `Idempotency-Key` makes a double click one order.
+- **Hearing the provider (`WebhookProcessor`, `OrderEvents`; T22, T23).** The view is the only one with no authentication and no CSRF cookie. It reads the raw body, refuses more than 256 KB (`413`), and the processor finds the gateway (`404` if it is not on) and verifies the signature **before any database work** (`400`). `OrderEvents.apply` then takes the order's row lock, refuses an event id it has seen, compares amount and currency with the order (a success must match exactly; a refund may be partial but not more, nor in another currency), and writes the event row and its effect in **one transaction**, so an event takes effect at most once and a crash leaves neither. A success after an order expired or failed still grants (the money was taken; `FulfilmentService` revives the void purchase). The same method applies an answer the reconciler read off the provider, as an event with a synthetic id (`status:<order>:<kind>`), so there is one path to a grant.
+- **Granting (`FulfilmentService`).** `paid` → `fulfilled` in one guarded step through `PlanFulfilment`, which is idempotent on the purchase (one-time credits are keyed `purchase:<id>`, one purchase per order, so this is the plan's `order:<id>` key): a webhook, its retry, the reconciler and a second thread grant once. The order row is locked first and the wallet second everywhere, so two paths cannot wait on each other.
+- **Taking back (`ClawbackService`, T32, D14).** A refund of `x` of `amount` takes back `credits * refunded_after / amount - credits * refunded_before / amount` credits, so refunds in parts add up exactly to the whole. They come **first from periods that have not started** (they hold nothing yet, so cancelling costs the learner nothing; they end), then from the purchase's own buckets through `Ledger.claw_back` (never below zero, emptied buckets revoked so a late release does not refill them). What was already spent is the shortfall, recorded on the event and the ledger row. Credits from any other source are never touched. A dispute is treated as a refund of the amount disputed.
+- **Not waiting for the provider (`OrderReconciler`, T24).** The browser's return grants nothing. `GET /payments/orders/{id}` calls `refresh` (ask the provider, apply the answer) when a waiting order is over 30 seconds old; the `payments.reconcile` task (a thin Celery task on beat every 5 minutes) calls `run`: ask about orders waiting over 15 minutes, fail an order whose checkout was never made, let go of an unpaid order past its deadline (`expired`, purchase void), and fulfil a `paid` order that was never fulfilled. A provider that cannot be reached changes nothing.
+- **Refunds by an administrator (D14).** The order admin is read-only with one action, *Refund*: it asks a gateway that declares the capability to refund what is left (and writes a change-log entry), or names the provider's dashboard otherwise. **In both cases the credits are taken back only when the provider's refund event arrives**, so what is refunded is always what the provider says.
+- **The fake gateway (T26).** Registered only where `PAYMENT_ALLOW_FAKE_GATEWAY` is true (the e2e stack). Its checkout is a redirect to the return page, and it verifies a hex HMAC-SHA256 in `X-Fake-Signature` made with `PAYMENT_FAKE_GATEWAY_SECRET`: a test "pays" by sending a signed callback, as a provider would. `tests/support/payments.py` has a second, separate `ScriptedGateway` that subclasses the real ABC, so the port is shown implementable by something other than the shipped fake.
+
+**The frontend (`lib/payments/`, `components/payments/`).** `PaymentsApi`; `CheckoutAdapters` (the registry the screen calls with whatever checkout the server returned, `RedirectCheckout` today and an `UnknownCheckout` error for an adapter nobody registered: components never branch on a provider); `GatewayChoices` (the picker only for two or more ways to pay); `OneTimeChoices` and `PlanQuantity` (the chips, the box, the stepper and the totals they show); `OrderWatch` (what the return page does while it waits: quick, then gentle, then "still confirming", then stops); `PaymentWords`; `BuyReturn` (where to send a learner back to after buying). `useBuy` makes one press one order (the idempotency key is reused for the same purchase), and the return page (`/buy/return`) asks the server for the order and decides nothing from its own address.
+
 #### Earning and closing an account (Phase 10.3)
 
 Studying becomes credits. **Nothing here is switched on yet**: `ACTIVITY_SINK` keeps defaulting to the do-nothing sink, so no learner earns a daily credit until the gate is switched on with it in phase 10.9. The one thing that is live is the signup grant, given on `account_ready` (and backfilled for older accounts). The `earning_on` test fixture switches the gate and the sink on together.
