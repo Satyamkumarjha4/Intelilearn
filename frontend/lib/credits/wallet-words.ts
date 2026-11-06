@@ -30,12 +30,12 @@ export class WalletWords {
 
   /** When credits run out, in the learner's calendar. `now` is injected so the words are the same in a test. */
   static expiry(expiresAt: string | null, now: Date = new Date()): string {
-    if (!expiresAt) return "Never run out";
+    if (!expiresAt) return "Never runs out";
     const at = new Date(expiresAt);
     const days = Math.round((WalletWords.startOfDay(at) - WalletWords.startOfDay(now)) / DAY_MS);
-    if (days <= 0) return "Run out today";
-    if (days === 1) return "Run out tomorrow";
-    return `Run out on ${WalletWords.date(at)}`;
+    if (days <= 0) return "Runs out today";
+    if (days === 1) return "Runs out tomorrow";
+    return `Runs out on ${WalletWords.date(at)}`;
   }
 
   /** "Fri 14 Nov". */

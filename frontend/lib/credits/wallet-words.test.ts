@@ -30,10 +30,10 @@ describe("names", () => {
 
 describe("expiry", () => {
   test("never, today, tomorrow, and a date", () => {
-    expect(WalletWords.expiry(null, NOW)).toBe("Never run out");
-    expect(WalletWords.expiry(at(5, 20), NOW)).toBe("Run out today");
-    expect(WalletWords.expiry(at(6, 1), NOW)).toBe("Run out tomorrow");
-    expect(WalletWords.expiry(at(14), NOW)).toBe("Run out on Sat 14 Nov");
+    expect(WalletWords.expiry(null, NOW)).toBe("Never runs out");
+    expect(WalletWords.expiry(at(5, 20), NOW)).toBe("Runs out today");
+    expect(WalletWords.expiry(at(6, 1), NOW)).toBe("Runs out tomorrow");
+    expect(WalletWords.expiry(at(14), NOW)).toBe("Runs out on Sat 14 Nov");
   });
 });
 
@@ -49,8 +49,8 @@ describe("groups", () => {
     );
 
     expect(groups.map((g) => [g.label, g.remaining, g.expiry])).toEqual([
-      ["Daily credits", 5, "Run out on Sun 8 Nov"],
-      ["Welcome credits", 30, "Never run out"],
+      ["Daily credits", 5, "Runs out on Sun 8 Nov"],
+      ["Welcome credits", 30, "Never runs out"],
     ]);
   });
 
