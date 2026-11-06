@@ -66,7 +66,7 @@ class TestWallet:
     def test_a_new_learner_has_nothing_and_the_read_makes_no_wallet(self, signed_in_client, user):
         body = signed_in_client.get(self.URL).json()
 
-        assert body == {"balance": 0, "held": 0, "buckets": [], "next_expiry": None, "exempt": False}
+        assert body == {"balance": 0, "reserved": 0, "buckets": [], "next_expiry": None, "exempt": False}
         assert not Wallet.objects.filter(user=user).exists()
 
     def test_it_gives_the_balance_what_is_held_and_the_credits_in_the_order_they_will_be_spent(
@@ -79,7 +79,7 @@ class TestWallet:
 
         body = signed_in_client.get(self.URL).json()
 
-        assert (body["balance"], body["held"]) == (41, 4)
+        assert (body["balance"], body["reserved"]) == (41, 4)
         assert [(b["source"], b["remaining"]) for b in body["buckets"]] == [
             ("weekly_streak", 6),
             ("daily", 5),

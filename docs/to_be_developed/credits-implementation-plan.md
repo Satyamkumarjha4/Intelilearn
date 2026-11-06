@@ -869,7 +869,7 @@ Paths have no trailing slash, every endpoint has `@extend_schema`, JSON is `snak
 
 | Method and path | Does | Phase |
 |---|---|---|
-| `GET /credits/wallet` | `balance` (spendable), `held`, `buckets` in spend order (source, remaining, expires), `next_expiry`, `exempt` | 10.2 |
+| `GET /credits/wallet` | `balance` (spendable), `reserved` (renamed from `held` in 10.6), `buckets` in spend order (source, remaining, expires), `next_expiry`, `exempt` | 10.2 |
 | `POST /credits/quote` | `{action, size}` → the lines, `due_now`, `later`, `total`. Accepts only the gate's actions and known hints (T36). Throttle `credits_quote` | 10.2 |
 | `GET /credits/transactions` | The history, newest first, with learner words (`Used 3 credits for "…"`, `Reserved`, `Returned`, `Earned`, `Bought`, `Expired`) | 10.2 |
 | `GET /credits/streak` | Current and longest streak, today's state, repair availability and the repairs left this week and this month | 10.3 |

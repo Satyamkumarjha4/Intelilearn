@@ -67,7 +67,7 @@ class WalletView(APIView):
         return Response(
             {
                 "balance": sum(row.amount_remaining for row in ordered),
-                "held": ledger.reserved(request.user),
+                "reserved": ledger.reserved(request.user),
                 "buckets": [
                     {"source": r.source, "remaining": r.amount_remaining, "expires_at": r.expires_at} for r in ordered
                 ],

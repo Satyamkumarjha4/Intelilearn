@@ -22,7 +22,7 @@ test("a new learner has the 30 signup credits, and the wallet, the quote and the
   expect(wallet.status).toBe(200);
   expect(wallet.body).toEqual({
     balance: 30,
-    held: 0,
+    reserved: 0,
     buckets: [{ source: "signup", remaining: 30, expires_at: null }],
     next_expiry: null,
     exempt: false,

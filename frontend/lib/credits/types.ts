@@ -17,7 +17,7 @@ export type WalletBucket = { source: string; remaining: number; expires_at: stri
 
 export type Wallet = {
   balance: number;
-  held: number;
+  reserved: number;
   buckets: WalletBucket[];
   next_expiry: { at: string; credits: number } | null;
   exempt: boolean;

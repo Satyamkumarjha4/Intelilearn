@@ -30,9 +30,9 @@ export default function WalletPage() {
                 <CoinsIcon className="size-9 text-marigold-text" aria-hidden="true" /> {wallet.data.balance}
                 <span className="text-lg font-semibold text-muted-foreground">{wallet.data.balance === 1 ? "credit" : "credits"}</span>
               </p>
-              {wallet.data.held > 0 && (
+              {wallet.data.reserved > 0 && (
                 <p className="text-sm text-muted-foreground" data-testid="wallet-reserved">
-                  {WalletWords.reserved(wallet.data.held)}.
+                  {WalletWords.reserved(wallet.data.reserved)}.
                 </p>
               )}
               {wallet.data.exempt && <p className="text-sm font-bold text-success-text">Lessons and quizzes are free for you.</p>}

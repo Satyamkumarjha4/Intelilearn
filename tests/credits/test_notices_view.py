@@ -90,7 +90,7 @@ class TestBalance:
 
         chip, wallet = signed_in_client.get(BALANCE).json(), signed_in_client.get(WALLET).json()
 
-        assert (chip["balance"], chip["reserved"]) == (wallet["balance"], wallet["held"])
+        assert (chip["balance"], chip["reserved"]) == (wallet["balance"], wallet["reserved"])
 
     def test_another_learners_credits_are_not_counted(self, signed_in_client, other_user, real):
         real.grant(other_user, "daily", 50, "g", expires_at=in_days(1))

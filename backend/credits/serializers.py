@@ -21,7 +21,7 @@ class NextExpirySerializer(serializers.Serializer):
 
 class WalletSerializer(serializers.Serializer):
     balance = serializers.IntegerField(help_text="What can be spent now.")
-    held = serializers.IntegerField(help_text="Set aside for work that has not finished; not part of the balance.")
+    reserved = serializers.IntegerField(help_text="Set aside for work that has not finished; not part of the balance.")
     buckets = BucketSerializer(many=True, help_text="The credits that can be spent, in the order they will be.")
     next_expiry = NextExpirySerializer(allow_null=True)
     exempt = serializers.BooleanField(help_text="Work costs this learner nothing.")
