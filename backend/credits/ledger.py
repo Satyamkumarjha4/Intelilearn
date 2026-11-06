@@ -32,6 +32,7 @@ from .errors import (
 )
 from .models import CreditBucket, CreditHold, CreditSettings, CreditTransaction, Wallet
 from .planner import SpendBucket, SpendPlanner
+from .plans.activator import PeriodActivator
 
 Type = CreditTransaction.Type
 Source = CreditBucket.Source
@@ -68,6 +69,8 @@ class _Books:
         self.balance = balance
         self.seen = seen
         self.expired: list[Movement] = []  # the buckets written off at the start of this movement
+        self.periods_started = 0  # plan periods started and ended at the start of this movement
+        self.periods_ended = 0
 
     def post(
         self, type: str, amount: int, key: str, *, action="", subject_kind="", subject_id=None, hold=None,
@@ -84,9 +87,12 @@ class _Books:
 class Ledger:
     SPENDS = (Type.DEBIT, Type.REPAIR)
 
-    def __init__(self, clock: Clock | None = None, planner: SpendPlanner | None = None):
+    def __init__(
+        self, clock: Clock | None = None, planner: SpendPlanner | None = None, periods: PeriodActivator | None = None
+    ):
         self.clock = clock or SystemClock()
         self.planner = planner or SpendPlanner()
+        self.periods = periods or PeriodActivator()
 
     # --- reading (no lock, no write) -----------------------------------------------------------------------------
 
@@ -176,6 +182,16 @@ class Ledger:
                 allocations=allocations, meta=meta,
             )  # fmt: skip
         return Movement(row, True)
+
+    def activate_periods(self, user) -> tuple[int, int]:
+        """Start the plan periods that are due and end those that are over, if there are any. -> how many of each. Every
+        movement does this itself; this is for a read that should show the new week's credits and for the hourly job. It
+        makes no wallet for a learner with nothing due."""
+        uid = self._id(user)
+        if not self.periods.has_due(uid, self.clock.now()):
+            return 0, 0
+        with self._locked(uid, None) as books:
+            return books.periods_started, books.periods_ended
 
     def expire_due(self, user) -> list[Movement]:
         """Write off every bucket that has lapsed. Any other movement does this first, so the hourly job only makes the
@@ -275,7 +291,11 @@ class Ledger:
             Wallet.objects.select_for_update().get(pk=user_id)
             seen = self._seen(user_id, key) if key else None
             books = _Books(user_id, now, self._running_balance(user_id), seen)
-            books.expired = [] if seen else self._expire_lapsed(books)
+            if seen is None:
+                # Start the plan periods that are due first, so their credits are spendable now, and so a period that
+                # has already passed is granted and then written off by the expiry just below.
+                self.periods.start_due(books, self._new_bucket)
+                books.expired = self._expire_lapsed(books)
             yield books
 
     def _settle(self, hold_id, type: str, key: str) -> Movement:

@@ -1,4 +1,5 @@
-"""The hourly job (credits plan T14, §5.9): write off lapsed buckets, release the reserves nothing will settle, and
+"""The hourly job (credits plan T14, §5.9): start and end plan periods, write off lapsed buckets, release the
+reserves nothing will settle, and
 check the
 ledger. Correctness never waits for it (a lapsed bucket is already unspendable, a movement writes it off itself); it
 makes the
@@ -15,6 +16,7 @@ from dataclasses import dataclass, field
 from .audit import LedgerAudit
 from .expiry import ExpiryService
 from .ledger import Ledger
+from .plans.activator import PeriodActivator
 from .reconcile import HoldReconciler
 
 logger = logging.getLogger(__name__)
@@ -27,6 +29,8 @@ class TickReport:
     released_holds: int = 0
     audit_breaks: int = 0
     failed: list = field(default_factory=list)
+    periods_started: int = 0  # not in the task's answer, which keeps its shape
+    periods_ended: int = 0
 
     def as_dict(self) -> dict:
         return {
@@ -39,14 +43,19 @@ class TickReport:
 
 
 class HourlyTick:
-    def __init__(self, ledger: Ledger | None = None, expiry=None, reconciler=None, audit: LedgerAudit | None = None):
+    def __init__(
+        self, ledger: Ledger | None = None, expiry=None, reconciler=None, audit: LedgerAudit | None = None, periods=None
+    ):
         ledger = ledger or Ledger()
+        self.ledger = ledger
+        self.periods = periods or PeriodActivator()
         self.expiry = expiry or ExpiryService(ledger)
         self.reconciler = reconciler or HoldReconciler(ledger)
         self.audit = audit or LedgerAudit()
 
     def run(self) -> TickReport:
         failed: list[str] = []
+        stepped = self._part("periods", failed, lambda: self.periods.sweep(self.ledger))
         expired = self._part("expiry", failed, self.expiry.run)
         reconciled = self._part("reconciler", failed, self.reconciler.run)
         audited = self._part("audit", failed, self.audit.check_all)
@@ -59,6 +68,8 @@ class HourlyTick:
             released_holds=(reconciled.released_failed + reconciled.released_orphans) if reconciled else 0,
             audit_breaks=len(breaks),
             failed=failed,
+            periods_started=stepped.started if stepped else 0,
+            periods_ended=stepped.ended if stepped else 0,
         )
 
     @staticmethod
