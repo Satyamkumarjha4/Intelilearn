@@ -10,7 +10,7 @@
  * - a plan reads as its price and what it gives, for a week and for other lengths; one-time credits read as a price a credit
  * - a running period reads as running until, a waiting one as starting
  * - the amount: whole numbers within the server's limits give credits and paise; text, fractions, zero and out-of-range do not
- * - buying is closed in this phase and says so in the product's words
+ * - when no way to pay is on, the buy page says so in the product's words
  */
 import { describe, expect, test } from "bun:test";
 
@@ -77,7 +77,6 @@ describe("the one-time amount", () => {
   });
 });
 
-test("buying is closed in this phase, and says so", () => {
-  expect(BuyState.OPEN).toBe(false);
+test("buying that is not open says so in the product's words", () => {
   expect(BuyState.CLOSED_TEXT).toBe("Buying isn't open yet");
 });

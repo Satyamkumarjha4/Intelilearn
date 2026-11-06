@@ -1,35 +1,51 @@
 "use client";
 
-import { CoinsIcon, ShoppingBagIcon } from "lucide-react";
 import { useState } from "react";
 
 import { LoadFailure, PageFrame } from "@/components/credits/page-frame";
 import { useLoaded } from "@/components/credits/use-loaded";
+import { GatewayPicker } from "@/components/payments/gateway-picker";
+import { OneTimeCard } from "@/components/payments/one-time-card";
+import { PlanCard } from "@/components/payments/plan-card";
+import { useBuy } from "@/components/payments/use-buy";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { creditsApi } from "@/lib/credits/credits-api";
 import { BuyState, PlanWords } from "@/lib/credits/plan-words";
+import { GatewayChoices } from "@/lib/payments/gateway-choices";
+import { paymentsApi } from "@/lib/payments/payments-api";
 
 export default function BuyPage() {
   const plans = useLoaded(() => creditsApi.plans(), "We couldn't load the plans.");
-  const [amount, setAmount] = useState("");
+  const ways = useLoaded(() => paymentsApi.gateways(), "We couldn't load the ways to pay.");
+  const { busy, error, buy } = useBuy();
+  const [picked, setPicked] = useState<string | null>(null);
+
   const data = plans.data;
-  const check = data?.one_time && amount.trim() ? PlanWords.check(amount, data.one_time) : null;
+  const gateways = ways.data;
+  const open = gateways ? GatewayChoices.open(gateways) : false;
+  const gateway = gateways ? (picked ?? GatewayChoices.initial(gateways) ?? "") : "";
+  const chosen = gateways ? GatewayChoices.request(gateways, gateway) : undefined;
+  const loadError = plans.error ?? ways.error;
 
   return (
     <PageFrame eyebrow="Credits" title="Get more credits">
-      {plans.error && <LoadFailure message={plans.error} />}
-      {!data && !plans.error && <Skeleton className="h-64 rounded-[22px]" aria-busy="true" aria-label="Loading the plans" />}
+      {loadError && <LoadFailure message={loadError} />}
+      {(!data || !gateways) && !loadError && <Skeleton className="h-64 rounded-[22px]" aria-busy="true" aria-label="Loading the plans" />}
 
-      {data && (
+      {data && gateways && (
         <>
-          <p className="rounded-xl bg-muted px-3 py-2 text-sm font-semibold" role="status" data-testid="buy-closed">
-            {BuyState.CLOSED_TEXT}. {BuyState.CLOSED_HELP}
-          </p>
+          {!open && (
+            <p className="rounded-xl bg-muted px-3 py-2 text-sm font-semibold" role="status" data-testid="buy-closed">
+              {BuyState.CLOSED_TEXT}. {BuyState.CLOSED_HELP}
+            </p>
+          )}
+          {error && (
+            <Alert variant="destructive" role="alert" data-testid="buy-error">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
           {data.periods.length > 0 && (
             <section aria-labelledby="yours" className="flex flex-col gap-2">
@@ -48,6 +64,22 @@ export default function BuyPage() {
             </section>
           )}
 
+          {open && <GatewayPicker gateways={gateways} value={gateway} onChange={setPicked} disabled={busy !== null} />}
+
+          {data.one_time && (
+            <section aria-labelledby="own" className="flex flex-col gap-3">
+              <h2 id="own" className="font-heading text-xl font-semibold">
+                Credits
+              </h2>
+              <OneTimeCard
+                rules={data.one_time}
+                open={open}
+                busy={busy !== null}
+                onBuy={(credits) => void buy("one_time", { plan: "one_time", credits, gateway: chosen })}
+              />
+            </section>
+          )}
+
           <section aria-labelledby="plans" className="flex flex-col gap-3">
             <h2 id="plans" className="font-heading text-xl font-semibold">
               Plans
@@ -55,55 +87,11 @@ export default function BuyPage() {
             <ul className="grid gap-3 sm:grid-cols-2" data-testid="buy-plans">
               {PlanWords.recurring(data).map((plan) => (
                 <li key={plan.key}>
-                  <Card className="h-full">
-                    <CardContent className="flex h-full flex-col gap-2">
-                      <h3 className="font-heading text-lg font-semibold">{plan.name}</h3>
-                      <p className="font-heading text-2xl font-semibold">{PlanWords.price(plan)}</p>
-                      <p className="flex-1 text-sm text-muted-foreground">{PlanWords.gives(plan)}</p>
-                      <Button disabled className="gap-1.5" aria-label={`${BuyState.CLOSED_TEXT}: ${plan.name}`}>
-                        <ShoppingBagIcon aria-hidden="true" /> {BuyState.CLOSED_TEXT}
-                      </Button>
-                    </CardContent>
-                  </Card>
+                  <PlanCard plan={plan} open={open} busy={busy !== null} onBuy={(quantity) => void buy(plan.key, { plan: plan.key, quantity, gateway: chosen })} />
                 </li>
               ))}
             </ul>
           </section>
-
-          {data.one_time && (
-            <section aria-labelledby="own" className="flex flex-col gap-3">
-              <h2 id="own" className="font-heading text-xl font-semibold">
-                Pick your own amount
-              </h2>
-              <Card>
-                <CardContent className="flex flex-col gap-3">
-                  <p className="text-sm text-muted-foreground">
-                    {PlanWords.rupees(data.one_time.price_paise_per_credit)} a credit, from {data.one_time.min_credits} to {data.one_time.max_credits} credits. They last{" "}
-                    {PlanWords.valid(data.one_time.valid_days)}.
-                  </p>
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="amount">How many credits?</Label>
-                    <Input
-                      id="amount"
-                      inputMode="numeric"
-                      autoComplete="off"
-                      value={amount}
-                      onChange={(event) => setAmount(event.target.value)}
-                      aria-invalid={check?.ok === false}
-                      aria-describedby="amount-help"
-                      className="max-w-48"
-                    />
-                    <p id="amount-help" className="text-sm" role="status" data-testid="amount-help">
-                      {check === null ? " " : check.ok ? `${check.credits} credits: ${PlanWords.rupees(check.paise)}` : check.message}
-                    </p>
-                  </div>
-                  <Button disabled className="w-fit gap-1.5">
-                    <CoinsIcon aria-hidden="true" /> {BuyState.CLOSED_TEXT}
-                  </Button>
-                </CardContent>
-              </Card>
-            </section>
-          )}
         </>
       )}
     </PageFrame>

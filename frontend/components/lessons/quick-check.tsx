@@ -72,10 +72,13 @@ function Cards({ quiz, lessonId, kind, onSubmitted, onAlreadyAttempted }: Props 
   const [failure, setFailure] = useState("");
   // Too few credits for the rest of the lesson: the answers stay in this browser and can be sent once there are enough.
   const [buyPath, setBuyPath] = useState<string | null>(null);
+  // A finished deck found on arrival (a refresh, or back from buying credits) has not been sent from this page yet.
+  const [sentFromHere, setSentFromHere] = useState(false);
   const byId = new Map(quiz.questions.map((q) => [q.id, q]));
 
   const send = async () => {
     setPhase("sending");
+    setSentFromHere(true);
     setBuyPath(null);
     try {
       const { result, run_id } = await lessonsApi.submitQuiz(lessonId, kind, deck.payload() as Record<string, number | typeof DONT_KNOW>);
@@ -100,7 +103,7 @@ function Cards({ quiz, lessonId, kind, onSubmitted, onAlreadyAttempted }: Props 
     if (last) void send();
   };
 
-  if (deck.finished) return <QuickCheckDone kind={kind} state={phase === "failed" ? "failed" : "sending"} error={failure} buyPath={buyPath} onRetry={send} />;
+  if (deck.finished) return <QuickCheckDone kind={kind} state={phase === "failed" ? "failed" : "sending"} error={failure} buyPath={buyPath} resumed={!sentFromHere} onRetry={send} />;
 
   return (
     <div className="flex flex-col gap-4">

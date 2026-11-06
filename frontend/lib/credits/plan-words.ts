@@ -69,9 +69,8 @@ export class PlanWords {
   }
 }
 
-/** Whether buying is switched on. The pages are a shell until the payment flow is built (phase 10.6). */
+/** What the buy page says when no way to pay is switched on (`GatewayChoices.open` says whether one is). */
 export class BuyState {
-  static readonly OPEN = false;
   static readonly CLOSED_TEXT = "Buying isn't open yet";
   static readonly CLOSED_HELP = "You can see what's coming. We'll let you know here as soon as you can buy credits.";
 }

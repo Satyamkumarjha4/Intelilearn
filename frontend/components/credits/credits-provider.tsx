@@ -9,6 +9,7 @@ import { apiClient } from "@/lib/api";
 import { creditsApi } from "@/lib/credits/credits-api";
 import { QuoteClient, quoteClient } from "@/lib/credits/quote-client";
 import type { Balance } from "@/lib/credits/types";
+import { BuyReturn } from "@/lib/payments/buy-return";
 
 type CreditsState = {
   /** What the header shows; null until the first answer, and for someone who is signed out. */
@@ -48,6 +49,9 @@ export function CreditsProvider({ children }: { children: React.ReactNode }) {
       // the chip simply keeps what it had; nothing else depends on this call
     }
   }, [signedIn]);
+
+  // Remember the last page that was not the shop, so after buying the learner can carry on where they were.
+  useEffect(() => BuyReturn.visit(`${pathname}${window.location.search}`, window.sessionStorage), [pathname]);
 
   // Moving to another page is the usual moment something was spent or earned.
   useEffect(() => {

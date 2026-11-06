@@ -21,7 +21,7 @@ export class ApiError extends Error {
   }
 }
 
-export type RequestOptions = { method?: string; body?: unknown };
+export type RequestOptions = { method?: string; body?: unknown; /** Extra request headers (for example `Idempotency-Key`). */ headers?: Record<string, string> };
 
 /** Told about every failed request, so one place can react to what many screens share (a 402: too few credits). */
 export type ErrorListener = (error: ApiError, path: string) => void;
@@ -53,6 +53,7 @@ export class ApiClient {
     const send = async () => {
       const headers: Record<string, string> = { Accept: "application/json" };
       if (options.body !== undefined) headers["Content-Type"] = "application/json";
+      Object.assign(headers, options.headers);
       if (UNSAFE_METHODS.has(method)) headers["X-CSRFToken"] = await this.csrfToken();
       return this.fetcher(`/api${path}`, {
         method,

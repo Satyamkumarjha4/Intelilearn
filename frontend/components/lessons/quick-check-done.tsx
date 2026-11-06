@@ -16,6 +16,8 @@ type Props = {
   error?: string;
   /** Set when the answers were not taken because there are too few credits: where to get more. */
   buyPath?: string | null;
+  /** The answers were found saved on arrival (a refresh, or back from buying), and have not been sent from this page. */
+  resumed?: boolean;
   onRetry?: () => void;
 };
 
@@ -25,7 +27,7 @@ const NEXT: Record<QuizKind, string> = {
 };
 
 /** The card that flips in when the last question is done. */
-export function QuickCheckDone({ kind, state, error, buyPath, onRetry }: Props) {
+export function QuickCheckDone({ kind, state, error, buyPath, resumed = false, onRetry }: Props) {
   const card = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
@@ -51,6 +53,15 @@ export function QuickCheckDone({ kind, state, error, buyPath, onRetry }: Props) 
                 </Link>
                 <Button onClick={onRetry}>Send my answers</Button>
               </div>
+            </>
+          ) : state === "failed" && resumed ? (
+            <>
+              <p className="text-muted-foreground" data-testid="quick-check-resume">
+                Your answers are saved on this page. Press <strong>Send my answers</strong> when you&apos;re ready to finish your Quick check.
+              </p>
+              <Button size="lg" onClick={onRetry}>
+                Send my answers
+              </Button>
             </>
           ) : state === "failed" ? (
             <>
