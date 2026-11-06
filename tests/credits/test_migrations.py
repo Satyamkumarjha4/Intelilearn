@@ -32,7 +32,9 @@ TABLES = [
 
 
 def latest():
-    return list(MigrationExecutor(connection).loader.graph.leaf_nodes("credits"))
+    """Where everything goes back to: every app's newest migration. `payments` depends on `credits` and is undone with
+    it, and going forward again to only the newest of `credits` would leave its tables missing for later tests."""
+    return list(MigrationExecutor(connection).loader.graph.leaf_nodes())
 
 
 def migrate(targets):

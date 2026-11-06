@@ -141,10 +141,11 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TIMEZONE = TIME_ZONE
 # What the `beat` service runs and when. credits.tick (expire lapsed credits, release reserves nothing will settle,
-# audit the ledger) every hour; payments.reconcile every 5 minutes arrives with the payments phase. Exactly one beat
-# runs, or a task would be queued twice (every task is harmless if it is, but do not rely on that).
+# audit the ledger) every hour; payments.reconcile (settle payments whose webhook was late or lost) every 5 minutes.
+# Exactly one beat runs, or a task would be queued twice (every task is harmless if it is, but do not rely on that).
 CELERY_BEAT_SCHEDULE: dict = {
     "credits.tick": {"task": "credits.tick", "schedule": 3600.0},
+    "payments.reconcile": {"task": "payments.reconcile", "schedule": 300.0},
 }
 
 # Shared cache (Redis db 2): the resolved model registry and per-minute LLM rate-limit counters.
@@ -242,6 +243,8 @@ PAYMENT_RETURN_BASE_URL = env(
 ).rstrip("/")
 # Registers the fake gateway that the browser tests buy through. Never true outside the throwaway test stack.
 PAYMENT_ALLOW_FAKE_GATEWAY = env.bool("PAYMENT_ALLOW_FAKE_GATEWAY", default=False)
+# The secret the fake gateway signs its webhooks with. Not a real secret: it exists only where the fake gateway does.
+PAYMENT_FAKE_GATEWAY_SECRET = env("PAYMENT_FAKE_GATEWAY_SECRET", default="fake-gateway-dev-secret")
 # Rupees per US dollar, to show what model calls cost (recorded in dollars) next to revenue (in rupees).
 USD_INR_RATE = Decimal(env("USD_INR_RATE", default="85"))
 

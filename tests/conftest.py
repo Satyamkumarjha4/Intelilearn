@@ -8,6 +8,8 @@
 - `other_user`: a second learner (grace@example.com), to prove ownership checks.
 - `credits_on` (`support/credits_fixtures.py`): the credit gate switched on, with the plan's prices and `fund(user, n)`;
   `_pin_the_open_gate` (autouse, same module) starts every test on `OpenGate` whatever the default becomes.
+- `payments` (`support/payments.py`): a scripted payment gateway switched on, to buy, to send signed events and to read
+  what happened.
 - `make_lesson(**fields)`: creates lessons, by default owned by `user`; `lesson` is one at the first stage.
 """
 
@@ -19,6 +21,7 @@ pytest_plugins = [
     "support.fixtures",
     "support.quiz_fixtures",
     "support.credits_fixtures",
+    "support.payments",
 ]  # graph and flow fixtures, shared by tests/graph and tests/lessons
 
 PASSWORD = "correct-horse-battery-staple"

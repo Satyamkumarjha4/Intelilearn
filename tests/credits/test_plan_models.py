@@ -149,7 +149,8 @@ class TestTheMigrations:
 
     @staticmethod
     def latest():
-        return list(MigrationExecutor(connection).loader.graph.leaf_nodes("credits"))
+        # every app's newest: `payments` is undone with `credits` and has to come back with it
+        return list(MigrationExecutor(connection).loader.graph.leaf_nodes())
 
     @pytest.mark.django_db
     def test_0007_seeds_the_plans_the_seed_class_holds(self):

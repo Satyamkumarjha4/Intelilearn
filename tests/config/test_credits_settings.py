@@ -7,12 +7,12 @@ behind is the configuration the later phases read; if a name is missing or misty
 in production instead of in a test.
 
 Use cases:
-- the `credits` and `payments` apps are installed; `payments` has no models yet (`credits` got its in phase 10.1)
+- the `credits` and `payments` apps are installed; `payments` holds its two models (orders and their events, phase 10.6)
 - the action gate is still the open one, and the activity sink does nothing
 - the payment settings exist with the right types: gateways enabled (a list, none by default), the default gateway, the
   keys of each provider (text), the return base URL, the fake-gateway switch (off) and the dollar-rupee rate (positive)
 - the four new throttle scopes have a rate
-- the beat schedule runs `credits.tick` every hour and nothing else yet (the payments job joins it in its phase)
+- the beat schedule runs `credits.tick` every hour and `payments.reconcile` every five minutes, and nothing else
 """
 
 from decimal import Decimal
@@ -25,10 +25,10 @@ from config.celery import app as celery_app
 
 
 @pytest.mark.parametrize("label", ["payments"])
-def test_the_new_apps_are_installed_and_hold_no_models_yet(label):
+def test_the_payments_app_is_installed_and_holds_its_two_models(label):
     config = apps.get_app_config(label)
 
-    assert list(config.get_models()) == []
+    assert sorted(model.__name__ for model in config.get_models()) == ["PaymentEventLog", "PaymentOrder"]
     assert label in [name.split(".")[0] for name in settings.INSTALLED_APPS]
 
 
@@ -89,8 +89,11 @@ def test_the_new_throttle_scopes_have_their_planned_rates(scope, rate):
     assert settings.REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"][scope] == rate
 
 
-def test_the_beat_schedule_runs_the_credits_tick_every_hour_and_nothing_else_yet():
-    expected = {"credits.tick": {"task": "credits.tick", "schedule": 3600.0}}
+def test_the_beat_schedule_runs_the_credits_tick_every_hour_and_the_payments_job_every_five_minutes():
+    expected = {
+        "credits.tick": {"task": "credits.tick", "schedule": 3600.0},
+        "payments.reconcile": {"task": "payments.reconcile", "schedule": 300.0},
+    }
 
     assert settings.CELERY_BEAT_SCHEDULE == expected
     assert celery_app.conf.beat_schedule == expected
