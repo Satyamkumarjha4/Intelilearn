@@ -27,6 +27,30 @@ class WalletSerializer(serializers.Serializer):
     exempt = serializers.BooleanField(help_text="Work costs this learner nothing.")
 
 
+class BalanceSerializer(serializers.Serializer):
+    balance = serializers.IntegerField(help_text="What can be spent now.")
+    reserved = serializers.IntegerField(help_text="Set aside for lessons being made; not part of the balance.")
+    notices = serializers.IntegerField(help_text="How many messages about credits running out there are.")
+
+
+class NoticeSerializer(serializers.Serializer):
+    id = serializers.CharField(help_text="One for each day credits run out, so a browser can hide it for the day.")
+    expires_on = serializers.DateField(
+        help_text="The last day the credits can be used, in the learner's own time zone."
+    )
+    days_left = serializers.IntegerField(help_text="0 on the last day.")
+    credits = serializers.IntegerField(help_text="Everything that runs out that day.")
+    text = serializers.CharField()
+
+
+class NoticesSerializer(serializers.Serializer):
+    notices = NoticeSerializer(many=True)
+
+
+class RetryQuoteQuerySerializer(serializers.Serializer):
+    lesson = serializers.UUIDField(help_text="The failed lesson to retry.")
+
+
 class QuoteRequestSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=[a.value for a in MeteredAction])
     size = serializers.DictField(

@@ -269,6 +269,7 @@ REST_FRAMEWORK = {
         "console": env("CONSOLE_THROTTLE_RATE", default="120/min"),  # staff-only console API, per user
         # credits and payments (docs/to_be_developed/credits-implementation-plan.md §8.5)
         "credits_quote": env("CREDITS_QUOTE_THROTTLE_RATE", default="120/min"),  # a price before a click, per user
+        "credits_balance": env("CREDITS_BALANCE_THROTTLE_RATE", default="240/min"),  # the header chip, per user
         "payment_order": env("PAYMENT_ORDER_THROTTLE_RATE", default="10/hour"),  # starting a checkout, per user
         "payment_status": env(
             "PAYMENT_STATUS_THROTTLE_RATE", default="60/min"

@@ -3,6 +3,7 @@ owner-scoped; none makes a wallet; the quote runs the same code as the gate."""
 
 from datetime import timedelta
 
+from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
@@ -10,6 +11,8 @@ from rest_framework.pagination import CursorPagination
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
+
+from lessons.models import Lesson
 
 from .earning.days import StreakDays
 from .earning.localday import LocalDay
@@ -19,14 +22,20 @@ from .earning.zone import LearnerZone
 from .exempt import ExemptPolicy
 from .ledger import Ledger
 from .models import CreditBucket, CreditSettings, CreditTransaction, Plan, PlanPeriod, StreakDay
+from .notices import ExpiryNotices
 from .planner import SpendBucket, SpendPlanner
 from .pricing.hints import UnknownHints
 from .pricing.journey import JourneyQuote
+from .quotes import QuoteAnswer
+from .retry import RetryQuote
 from .serializers import (
+    BalanceSerializer,
+    NoticesSerializer,
     PlansSerializer,
     QuoteRequestSerializer,
     QuoteSerializer,
     RepairResponseSerializer,
+    RetryQuoteQuerySerializer,
     StreakSerializer,
     TransactionSerializer,
     WalletSerializer,
@@ -68,6 +77,71 @@ class WalletView(APIView):
         )
 
 
+class BalanceView(APIView):
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "credits_balance"
+
+    @extend_schema(
+        tags=TAGS,
+        summary="Your balance, for the header",
+        description=(
+            "What you can spend, what is set aside for work under way, and how many notices about credits running "
+            "out there are. Light enough to ask on every page; it says what the wallet says. A read makes no wallet."
+        ),
+        responses={200: BalanceSerializer},
+    )
+    def get(self, request):
+        ledger = Ledger()
+        ledger.activate_periods(request.user)
+        return Response(
+            {
+                "balance": ledger.balance(request.user),
+                "reserved": ledger.reserved(request.user),
+                "notices": ExpiryNotices(ledger.clock).count(request.user),
+            }
+        )
+
+
+class NoticesView(APIView):
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "credits_balance"
+
+    @extend_schema(
+        tags=TAGS,
+        summary="Credits about to run out",
+        description=(
+            "Messages about credits that are close to running out, soonest first, counted in your own days. Credits "
+            "that run out on the same day are one message. Worked out on every read; nothing is stored."
+        ),
+        responses={200: NoticesSerializer},
+    )
+    def get(self, request):
+        ledger = Ledger()
+        ledger.activate_periods(request.user)
+        return Response({"notices": [n.as_json() for n in ExpiryNotices(ledger.clock).for_user(request.user)]})
+
+
+class RetryQuoteView(APIView):
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "credits_quote"
+
+    @extend_schema(
+        tags=TAGS,
+        summary="What Retry will cost",
+        description=(
+            "The price of trying a failed lesson again: what the stopped step asked for, priced now. Nothing is due "
+            "when the work was kept. `400` for a lesson id that is not one, `404` for a lesson that is not yours."
+        ),
+        parameters=[RetryQuoteQuerySerializer],
+        responses={200: QuoteSerializer},
+    )
+    def get(self, request):
+        asked = RetryQuoteQuerySerializer(data=request.query_params)
+        asked.is_valid(raise_exception=True)
+        lesson = get_object_or_404(Lesson, pk=asked.validated_data["lesson"], owner=request.user)
+        return Response(RetryQuote().of(lesson))
+
+
 class QuoteView(APIView):
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "credits_quote"
@@ -92,18 +166,7 @@ class QuoteView(APIView):
             journey = JourneyQuote().of(action, size)
         except UnknownHints as bad:
             raise ValidationError({"size": [str(bad)]}) from None
-        return Response(
-            {
-                "action": action,
-                "lines": journey.due_now.as_json(),
-                "due_now": journey.due_now.total,
-                "later_lines": journey.later.as_json(),
-                "later": journey.later.total,
-                "total": journey.total,
-                "exempt": ExemptPolicy().applies_to(request.user),
-            },
-            status=status.HTTP_200_OK,
-        )
+        return Response(QuoteAnswer.of(action, journey, request.user), status=status.HTTP_200_OK)
 
 
 class TransactionCursorPagination(CursorPagination):
