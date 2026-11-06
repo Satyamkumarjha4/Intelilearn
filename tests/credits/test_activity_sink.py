@@ -28,9 +28,9 @@ Use cases:
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from credits.activity import CreditsActivitySink
 from support.clock import FakeClock
 
+from credits.activity import CreditsActivitySink
 from credits.ledger import Ledger
 from credits.models import CreditBucket, CreditSettings, CreditTransaction, StreakDay, StreakState
 from lessons.activity import ActivityKind
