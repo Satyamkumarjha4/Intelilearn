@@ -6,9 +6,10 @@ the chunky buttons, `lucide-react` icons and the copy rules of [CLAUDE.md](../..
 have not had is a designer's eye. This is the one list for a mockup session: add each screen to the mockup, get it approved,
 then adjust the code. Nothing here blocks a release.
 
-Phase 10 (credits and payments, [the plan](../to_be_developed/credits-implementation-plan.md)) adds section 7. Only its
-time zone field exists yet (built in phase 10.0); the other screens are listed here ahead of being built, each with the
-phase that builds it, so the designer sees the whole set before the code does.
+Phase 10 (credits and payments, [the plan](../to_be_developed/credits-implementation-plan.md)) adds section 7. Its time zone
+field was built in phase 10.0 and the wallet, history, streak, notices, buy shell and cost labels in phase 10.5; the screens of
+the later phases are listed here ahead of being built, each with the phase that builds it, so the designer sees the whole set
+before the code does.
 
 The order is the learner's: from asking for a lesson, to taking a test, to what follows it, to the quick quizzes. The code
 for each is named so a change is easy to find. How each screen behaves is in [frontend.md](../reference/frontend.md).
@@ -80,16 +81,16 @@ see the words hold, ledger, gateway, webhook, order state or settle ("credits" i
 | Screen | Where | What needs a look |
 |---|---|---|
 | Time zone field | `/profile` (`TimezoneField` in `ProfileEditor`), built in 10.0 | A box that searches the zone names as you type (a native suggestion list today), with the note "Your day starts at midnight in this zone. You can change this once every 30 days." and, after a change, "You can change your time zone again on 5 December 2026." with the box shut. The suggestion list is the browser's own, and 400 names is a lot on a phone |
-| Balance chip | Site header, linking to `/wallet` (10.5) | A small pill with the number of credits, beside "My lessons" and "Quizzes". How it looks at 400px, where the header already scrolls; whether it also shows that some credits are reserved for a lesson being made |
-| Wallet | `/wallet` (10.5) | The balance, what is reserved for lessons being made, the credits grouped by when they run out, and a link to buy. The grouped list is a table of dates and amounts; it wants a shape that makes "these 40 go first" obvious |
-| History | `/wallet/history` (10.5) | A long list of plain-language rows (what was earned, spent, given back, or ran out) with a date and the balance after. Filters and the empty state |
-| Notices | A banner under the site header, and the top of `/wallet` (10.5) | "This is your last day to use 40 credits." and its softer earlier forms. Dismissable for the day. Colour role (marigold, "waiting for you") and what it does to the page below it |
-| Streak | `/streak` (10.5) | The streak count, today's state, the last 28 days as a grid, what the next bonus is, and **Repair yesterday** with the repairs left. The grid and the repaired-day mark are new |
-| Buy | `/buy` (10.5 shell, 10.6 live) | The plans and the one-time amount, the provider picker (shown only when two or more are enabled), the Buy button, and "Buying isn't open yet" when none is. The plan cards, the amount stepper and the price in rupees |
+| Balance chip | Site header, linking to `/wallet` (built in 10.5: `BalanceChip`) | A ghost button with a coin and the number, beside "Quizzes", and a small marigold dot when some credits are about to run out. How it looks at 400px, where the header is already full; whether it should also say that some credits are being used for a lesson |
+| Wallet | `/wallet` (built in 10.5: `app/wallet/page.tsx`) | The balance as a big number, "N credits being used for lessons being made", the notices, the credits grouped by kind and the day they run out (in the order they are used), and links to buy, the history and the streak. The grouped list is plain cards today; it wants a shape that makes "these 40 go first" obvious |
+| History | `/wallet/history` (built in 10.5: `app/wallet/history/page.tsx`) | Rows grouped under Today, Yesterday and dated headings, each a plain sentence with the time and a signed change; "Show older" pages by cursor. The balance after each row is not shown. Filters and the empty state |
+| Notices | A banner under the site header (`NoticesBanner`), and the top of `/wallet` (built in 10.5) | "This is your last day to use 40 credits." and its softer earlier forms, at most two at a time, each with a **Hide for today** cross. Marigold today; what it does to the page below it, and whether two is the right number |
+| Streak | `/streak` (built in 10.5: `app/streak/page.tsx`, `StreakCalendar`) | The streak count with a flame, today's state, the last 28 days as a grid of seven (studied, repaired, missed, today), the next bonus, and **Repair yesterday** with the repairs left and a refusal shown in words. The grid, the repaired-day mark and today's dashed ring are new |
+| Buy | `/buy` (shell built in 10.5, live in 10.6: `app/buy/page.tsx`) | The plans and the one-time amount (a box that checks the smallest and largest and shows the price in rupees), the running and waiting periods, and disabled Buy buttons that say "Buying isn't open yet". In 10.6 the provider picker (shown only when two or more are enabled) and the live Buy button join. The plan cards, the amount box (a stepper would be kinder) and the price in rupees |
 | Back from paying | `/buy/return` (10.6) | A waiting state while the server confirms the payment, then the new balance; a calm "still confirming" if it takes long, and a failed or cancelled state. No celebration is promised until the server says so |
-| Cost label | On every button that starts paid work (10.5) | "3 credits" or a total such as "Quick check 3 + lesson 7" beside the New lesson, Take the test again, Make a lesson on this, quiz and sheet buttons. It updates as choices change |
-| Not enough credits | The refusal card on the create screens, from 10.2 (the 402 path is ready in 10.0) | "You need 10 credits for that and have 4." with a **Buy credits** button. Today a refusal is a plain message |
-| Half-price message | The mastery choice (10.5) | "You already know this. Here's half your credits back." Tone and where it sits |
+| Cost label | On every button that starts paid work (built in 10.5: `CostLabel`) | A marigold pill with a coin: "Costs 3 credits", or for a lesson from a Quick check "Costs 3 credits now, 7 after the Quick check · 10 credits in all" with the parts under it. On the new-lesson form, the mastery choice, the follow-up dialog and card, Try again on a test, Make a lesson on this, Create a lesson for this, the quiz wizard (live), quiz Try again, Add a sheet (one and both), and the Retry card. It turns red with a **Buy credits** link when there are too few; the button stays pressable. Where it sits beside each button, and whether the loading placeholder is needed |
+| Not enough credits | A toast on any screen, and a card on the Quick check (built in 10.5) | The toast says "Not enough credits" with a **Buy credits** action; the Quick check keeps its answers and shows "You need 7 credits for that and have 3 … Your answers are saved on this page" with **Get more credits** and **Send my answers**. Each screen still writes its own sentence (a toast or an alert); a single card shape would be better |
+| Half-price message | The mastery choice (built in 10.5) | "You already know this. Here's half your credits back." sits under the cost of the two-sheets card, in success green. Tone and where it sits |
 | Console: prices, plans, settings, wallets, payments | `/console/credits` and a revenue block on `/console/usage` (10.9) | Staff screens in the console's existing style: the price table with its history, plan editor, the reward settings, a learner's wallet with grant and revoke (a reason is required), the payments list with refund |
 
 ## 8. The staff console

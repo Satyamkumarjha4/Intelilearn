@@ -2948,6 +2948,98 @@ classDiagram
 - **Give a plan (admin).** The wallet admin's action writes an administrator's purchase for each selected wallet, fulfils it, and writes a console `AuditEntry` (`credits.give_plan`, with the plan, quantity or amount, reason and purchase). The reason is required; the form validates with the same `PlanPricing` as a purchase; the form's token makes the purchase id (`uuid5`), so sending it twice gives the plan once; a wallet whose queue is full is reported and the rest are still given it.
 - **`GET /credits/plans`** (plan §8.1): the plans that are on with their prices in paise and their limits, the one-time rules, the learner's running and waiting periods soonest first, and how many are open against the limit.
 
+#### Notices, the light balance and the price of a Retry (Phase 10.5)
+
+What a learner is told and what a button says, all computed on read: nothing here writes. The frontend half is in the same subsection because it is the same idea seen from the other side: the server prices, the client only words the answer.
+
+```mermaid
+classDiagram
+    direction LR
+    class ExpiryNotices {
+        +for_user(user) list~ExpiryNotice~
+        +count(user) int
+        +of(buckets, now, zone, settings) list~ExpiryNotice~
+    }
+    class NoticePolicy {
+        <<abstract>>
+        +shows(days_left, settings) bool
+        #in_window(days_left, settings) bool
+    }
+    class WeeklyWindow
+    class MonthlyWindow
+    class BonusWindow
+    class PurchasedWindow
+    class NeverAnnounced
+    class NoticePolicies {
+        +of(bucket) NoticePolicy
+    }
+    class NoticeWords {
+        +of(days_left, credits, day) str
+    }
+    class RetryQuote {
+        +of(lesson) dict
+    }
+    class QuoteAnswer {
+        +of(action, journey, user) dict
+        +free(action, user) dict
+    }
+    ExpiryNotices --> NoticePolicies
+    ExpiryNotices --> NoticeWords
+    ExpiryNotices --> LearnerZone
+    NoticePolicies --> NoticePolicy
+    NoticePolicy <|-- WeeklyWindow
+    NoticePolicy <|-- MonthlyWindow
+    NoticePolicy <|-- BonusWindow
+    NoticePolicy <|-- PurchasedWindow
+    NoticePolicy <|-- NeverAnnounced
+    RetryQuote --> JourneyQuote
+    RetryQuote --> QuoteAnswer
+    RetryQuote --> AuthorizationLedger
+```
+
+- **Notices (§5.10, `credits/notices.py`).** `ExpiryNotices` turns the learner's live, dated parcels into messages in their own days (`LearnerZone`, so Asia/Kolkata when unset). The *last day* of a parcel is the local day of the instant before it lapses, so a parcel that lapses at local midnight has the day before as its last day. Each parcel's `NoticePolicy` (Strategy, chosen by `NoticePolicies`) says from when it is announced: a week of Pro from `weekly_notice_days` (2) before the end; Monthly Pro and Pro Plus and the bonus sources (daily, weekly and monthly streak) in the last 7 days; bought credits at `purchased_notice_days` (30) left for `purchased_notice_show_days` (3) days and again in the last 7; signup, admin and refund credits never, and a kind the registry does not know never. Parcels that lapse on the same local day are **one** message with their credits summed ("This is your last day to use 40 credits."), including any that would not have been announced alone, so the number is true. The windows are `CreditSettings`, not constants. Nothing is stored, so a notice can never be stale or disagree with the wallet. A new kind of credit is a new policy in the registry, not a branch.
+- **`GET /credits/notices`, `GET /credits/balance` (§8.1).** The first lists the notices, each with an `id` that is the same all day (`expiry-<date>`), so a browser can hide it for the day. The second is the header chip's: `{balance, reserved, notices}` from the same `Ledger` reads as the wallet, so the chip and the wallet cannot disagree; both start a plan period that is due, make no wallet, and share the `credits_balance` throttle scope (`CREDITS_BALANCE_THROTTLE_RATE`, `240/min`, because the chip asks on every page).
+- **`GET /credits/retry-quote?lesson=<id>`.** Retry on a failed lesson asks the gate for the stopped run's action again, with the same hints (`AuthorizationLedger.ask_again`). The screen does not know them, so `RetryQuote` reads the last flow run's stored authorization and prices it with `JourneyQuote`, the rule the gate uses; a run that held nothing, or whose work was kept, costs nothing and answers with the free quote. The lesson must be the learner's (`404` otherwise). `QuoteAnswer` is the one place a price becomes the API's shape, for this and for `POST /credits/quote`.
+
+**The frontend (`frontend/lib/credits/`).** All logic is in pure classes with `bun test`; components stay thin.
+
+```mermaid
+classDiagram
+    direction LR
+    class CostSizes {
+        +newLesson(entry, intent, sheets) CostAsk
+        +mastery(pick) CostAsk
+        +followup(level) CostAsk
+        +testRetake(no) CostAsk
+        +sheets(count, grounding) CostAsk
+        +quiz(request) CostAsk
+    }
+    class QuoteClient {
+        +quote(ask) Quote
+        +retry(lessonId) Quote
+        +clear()
+    }
+    class CostWords
+    class WalletWords
+    class NoticeDismissals
+    class StreakView
+    class PlanWords
+    class HistoryWords
+    class CreditsApi
+    CostSizes ..> CostAsk
+    QuoteClient --> CreditsApi
+    CostLabel --> QuoteClient
+    CostLabel --> CostWords
+    CreditsProvider --> CreditsApi
+    CreditsProvider --> ApiClient : observe 402
+    NoticesBanner --> NoticeDismissals
+```
+
+- **`CostSizes` builds the hints, the server prices them.** The hints are the very ones the services send (`LessonService.size_of`, `MaterialService.size_of`, `FollowupService.size_of`, the quiz create), and the server refuses any it does not know, so a wrong hint shows no price rather than a wrong one. `QuoteClient` asks `POST /credits/quote`, remembers each answer 30 seconds by action and hints (in any order), shares a request between two labels that ask at once, and turns a failure into "no price" so a label never blocks the action. `CostLabel` is the one component that shows it; it turns red with a **Buy credits** link when the learner has too few for what is due now, and the button beside it stays pressable (the server decides on the click, and a price shown to a learner who is exempt reads "Free for you").
+- **`CreditsProvider`** (inside `AuthProvider`) keeps the balance for the header chip: it asks `GET /credits/balance` when the page changes, on focus and every minute, and subscribes to `ApiClient.observe` so any `402 insufficient_credits` from any screen refreshes the balance and shows one toast with a **Buy credits** action. Each screen still writes its own sentence for a refusal (`ActionRefusedMessage`); the provider adds only what they share. A Quick check handed in with too few credits keeps its answers in `sessionStorage` (as before) and shows a card with **Get more credits** and **Send my answers**.
+- **Notices in the browser.** `NoticesBanner` asks `GET /credits/notices` only when the balance says there are some, shows at most two, and `NoticeDismissals` hides one for the rest of the browser's day (T27); nothing is stored on the server.
+- **`/buy` is a shell** until phase 10.6: `BuyState.OPEN` is `false`, so the plans and the one-time amount (checked against the server's smallest and largest by `PlanWords.check`) are shown with a disabled **Buying isn't open yet**. The e2e stack opts into `CreditGate` and `CreditsActivitySink` (the dev default stays `OpenGate` and the do-nothing sink).
+
 #### Earning and closing an account (Phase 10.3)
 
 Studying becomes credits. **Nothing here is switched on yet**: `ACTIVITY_SINK` keeps defaulting to the do-nothing sink, so no learner earns a daily credit until the gate is switched on with it in phase 10.9. The one thing that is live is the signup grant, given on `account_ready` (and backfilled for older accounts). The `earning_on` test fixture switches the gate and the sink on together.
