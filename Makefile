@@ -60,10 +60,14 @@ fake-llm: ## Start the throwaway stack on a fake LLM (own database), with its re
 	@echo "waiting for the API..."; for i in $$(seq 1 90); do curl -sf -o /dev/null http://localhost:$(E2E_BACKEND_PORT)/api/health && break; sleep 2; done; curl -sf -o /dev/null http://localhost:$(E2E_BACKEND_PORT)/api/health
 	$(E2E_COMPOSE) exec -T backend python manage.py seed_registry --file /tests/e2e/fake_registry.json
 	$(E2E_COMPOSE) exec -T -e STAFF_EMAIL=$(E2E_STAFF_EMAIL) -e STAFF_PASSWORD=$(E2E_STAFF_PASSWORD) backend python manage.py shell -c "import os; from accounts.models import User; u, _ = User.objects.get_or_create(email=os.environ['STAFF_EMAIL'], defaults={'name': 'Staff'}); u.is_staff = True; u.set_password(os.environ['STAFF_PASSWORD']); u.save()"
+	@# This stack charges for real (docker-compose.e2e.yml), so a spec that builds several lessons for one learner would run out of the 30
+	@# signup credits. The daily credit is made large here: it is earned by the first study, so the signup grant (30) that the credits specs
+	@# read is untouched, and a learner is never short once they have studied. The dev defaults are not changed.
+	$(E2E_COMPOSE) exec -T backend python manage.py shell -c "from credits.models import CreditSettings; s = CreditSettings.load(); s.daily_credits = 100000; s.save()"
 	@echo "up: http://localhost:$(E2E_FRONTEND_PORT)  (staff: $(E2E_STAFF_EMAIL))"
 
 e2e: fake-llm ## Run the Playwright smoke tests against the fake-LLM stack (first run: cd e2e && bun install && bunx playwright install chromium)
-	cd e2e && E2E_BASE_URL=http://localhost:$(E2E_FRONTEND_PORT) E2E_API_URL=http://localhost:$(E2E_BACKEND_PORT) E2E_STAFF_EMAIL=$(E2E_STAFF_EMAIL) E2E_STAFF_PASSWORD=$(E2E_STAFF_PASSWORD) bun run test
+	cd e2e && E2E_COMPOSE="$(E2E_COMPOSE)" E2E_BASE_URL=http://localhost:$(E2E_FRONTEND_PORT) E2E_API_URL=http://localhost:$(E2E_BACKEND_PORT) E2E_STAFF_EMAIL=$(E2E_STAFF_EMAIL) E2E_STAFF_PASSWORD=$(E2E_STAFF_PASSWORD) bun run test
 
 e2e-down: ## Stop the throwaway stack and delete its database
 	$(E2E_COMPOSE) down -v
