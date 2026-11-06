@@ -20,7 +20,10 @@ Use cases:
 - a staff account loses its powers
 - erasing again changes nothing and says so; a learner is erased even if a previous attempt stopped half way
 - the dry run reports what it would do and changes nothing
-- the command erases by email or id, with a dry run, and refuses an unknown learner
+- the command shows what it will do and erases only when the account's email is typed; a wrong answer, or no
+  terminal, does
+  nothing; `--yes` skips the question for scripts and `--dry-run` never asks; it erases by email or id and refuses an
+  unknown learner
 """
 
 from io import StringIO
@@ -292,13 +295,13 @@ class TestTheCommand:
     def test_it_erases_by_email(self, user, give):
         give(user, 5)
 
-        out = self.run(EMAIL)
+        out = self.run(EMAIL, "--yes")
 
         user.refresh_from_db()
         assert user.deleted_at is not None and "Erased" in out and "5 credits forfeited" in out
 
     def test_it_erases_by_id(self, user):
-        self.run(str(user.pk))
+        self.run(str(user.pk), "--yes")
 
         user.refresh_from_db()
         assert user.deleted_at is not None
@@ -318,6 +321,105 @@ class TestTheCommand:
             self.run(str(uuid4()))
 
     def test_an_erased_learner_is_reported_as_already_erased(self, user):
-        self.run(EMAIL)
+        self.run(EMAIL, "--yes")
 
         assert "already erased" in self.run(str(user.pk)).lower()
+
+
+class TestTheConfirmation:
+    """The command asks for the account's email before it erases anything, unless told not to."""
+
+    def run(self, *args):
+        out = StringIO()
+        call_command("erase_account", *args, stdout=out)
+        return out.getvalue()
+
+    @pytest.fixture(autouse=True)
+    def no_checkpoint_tables(self, monkeypatch):
+        monkeypatch.setattr("lessons.erasure.CheckpointThreads.delete", lambda self, ids: None)
+
+    def answer(self, monkeypatch, text):
+        asked = []
+        monkeypatch.setattr("builtins.input", lambda prompt="": asked.append(prompt) or text)
+        return asked
+
+    def test_typing_the_accounts_email_goes_ahead(self, user, give, monkeypatch):
+        give(user, 5)
+        asked = self.answer(monkeypatch, EMAIL)
+
+        out = self.run(EMAIL)
+
+        user.refresh_from_db()
+        assert user.deleted_at is not None and len(asked) == 1 and "Erased" in out
+
+    def test_it_shows_what_it_will_do_before_it_asks(self, user, give, monkeypatch):
+        give(user, 5)
+        self.answer(monkeypatch, EMAIL)
+
+        out = self.run(EMAIL)
+
+        assert "This will erase account" in out and EMAIL in out and "5 credits forfeited" in out
+        assert "cannot be undone" in out
+
+    def test_the_case_of_the_email_and_stray_spaces_do_not_matter(self, user, monkeypatch):
+        self.answer(monkeypatch, "  ADA@Example.com ")
+
+        self.run(str(user.pk))
+
+        user.refresh_from_db()
+        assert user.deleted_at is not None
+
+    @pytest.mark.parametrize("typed", ["", "yes", "y", "grace@example.com", "ada"])
+    def test_anything_else_does_nothing(self, user, give, monkeypatch, typed):
+        give(user, 5)
+        self.answer(monkeypatch, typed)
+        rows = CreditTransaction.objects.count()
+
+        with pytest.raises(CommandError, match="nothing was done"):
+            self.run(EMAIL)
+
+        user.refresh_from_db()
+        assert user.deleted_at is None and user.email == EMAIL and CreditTransaction.objects.count() == rows
+
+    def test_with_no_terminal_it_does_nothing_and_says_to_use_yes(self, user, monkeypatch):
+        def no_terminal(prompt=""):
+            raise EOFError
+
+        monkeypatch.setattr("builtins.input", no_terminal)
+
+        with pytest.raises(CommandError, match="--yes"):
+            self.run(EMAIL)
+
+        user.refresh_from_db()
+        assert user.deleted_at is None
+
+    def test_yes_erases_without_asking(self, user, monkeypatch):
+        asked = self.answer(monkeypatch, "never read")
+
+        self.run(EMAIL, "--yes")
+
+        user.refresh_from_db()
+        assert user.deleted_at is not None and asked == []
+
+    def test_a_dry_run_never_asks(self, user, monkeypatch):
+        asked = self.answer(monkeypatch, "never read")
+
+        out = self.run(EMAIL, "--dry-run")
+
+        assert asked == [] and "Dry run" in out
+
+    def test_an_erased_account_is_not_asked_about_again(self, user, monkeypatch):
+        self.run(EMAIL, "--yes")
+        asked = self.answer(monkeypatch, "never read")
+
+        out = self.run(str(user.pk))
+
+        assert asked == [] and "already erased" in out.lower()
+
+    def test_an_unknown_learner_is_refused_before_asking(self, monkeypatch):
+        asked = self.answer(monkeypatch, "never read")
+
+        with pytest.raises(CommandError, match="No learner"):
+            self.run("nobody@example.com")
+
+        assert asked == []
