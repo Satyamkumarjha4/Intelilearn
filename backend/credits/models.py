@@ -74,6 +74,9 @@ class CreditBucket(models.Model):
                 condition=Q(amount_remaining__gt=0),
                 name="credit_bucket_spendable_idx",
             ),
+            models.Index(
+                fields=["purchase_id"], condition=Q(purchase_id__isnull=False), name="credit_bucket_purchase_idx"
+            ),
         ]
 
     def __str__(self):
@@ -179,6 +182,113 @@ class CreditTransaction(models.Model):
 
     def delete(self, *args, **kwargs):
         raise AppendOnly("Ledger rows cannot be deleted.")
+
+
+class Plan(models.Model):
+    """What can be bought (docs/to_be_developed/credits-implementation-plan.md §7.2, D1): one-time credits at a price
+    a credit,
+    and three plans that give credits for a period. Edited in the admin. A purchase stores what it cost, and a period
+    what it
+    grants, so an edit never changes what was already bought."""
+
+    class Key(models.TextChoices):
+        ONE_TIME = "one_time", "One-time credits"
+        WEEKLY_PRO = "weekly_pro", "Weekly Pro"
+        MONTHLY_PRO = "monthly_pro", "Monthly Pro"
+        PRO_PLUS = "pro_plus", "Pro Plus"
+
+    key = models.CharField(max_length=20, choices=Key.choices, unique=True)
+    name = models.CharField(max_length=60)
+    credits = models.PositiveIntegerField(
+        help_text="Credits each period gives. 0 for one-time credits (the buyer chooses)."
+    )
+    period_days = models.PositiveIntegerField(
+        help_text="How long a period lasts; for one-time credits, how long they last."
+    )
+    price_paise = models.PositiveIntegerField(
+        help_text="In paise (100 paise = 1 rupee), tax included. For one-time credits, the price of one credit."
+    )
+    max_quantity = models.PositiveSmallIntegerField(default=1, help_text="Most that can be bought at once.")
+    active = models.BooleanField(default=True, help_text="Off: not offered. Purchases already made are not affected.")
+    sort = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort", "id"]
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def is_one_time(self) -> bool:
+        return self.key == self.Key.ONE_TIME
+
+
+class PlanPurchase(models.Model):
+    """Someone bought, or was given, a plan. Opened `pending` with the amount the server computed (never the
+    client's), and
+    `fulfilled` once, by `PlanFulfilment`, which is where its credits come from. An administrator's gift is marked
+    (`source` admin), costs nothing, and keeps who gave it and why in `meta`."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        FULFILLED = "fulfilled", "Fulfilled"
+        VOID = "void", "Void"
+
+    class Source(models.TextChoices):
+        PAYMENT = "payment", "Payment"
+        ADMIN = "admin", "Given by an administrator"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="plan_purchases")
+    plan = models.ForeignKey(Plan, on_delete=models.PROTECT, related_name="purchases")
+    quantity = models.PositiveSmallIntegerField(default=1, help_text="Weeks of Weekly Pro; 1 for the rest.")
+    credits = models.PositiveIntegerField(default=0, help_text="The one-time amount bought; 0 for a plan.")
+    amount_paise = models.PositiveIntegerField(help_text="What it cost, in paise. 0 for a gift.")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    source = models.CharField(max_length=10, choices=Source.choices, default=Source.PAYMENT)
+    meta = models.JSONField(default=dict, blank=True, help_text="For a gift: reason, by, list_amount_paise.")
+    created_at = models.DateTimeField()
+    fulfilled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [models.CheckConstraint(condition=Q(quantity__gte=1), name="plan_purchase_quantity_at_least_one")]
+        indexes = [models.Index(fields=["user", "status"], name="plan_purchase_user_idx")]
+
+    def __str__(self):
+        return f"{self.plan.name} x{self.quantity} ({self.status})"
+
+
+class PlanPeriod(models.Model):
+    """One period of a plan: it grants its credits when it starts, not before, and they last until it ends. Periods
+    of one
+    learner never overlap; a purchase of several weeks makes several."""
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", "Waiting"
+        ACTIVE = "active", "Running"
+        ENDED = "ended", "Ended"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="plan_periods")
+    purchase = models.ForeignKey(PlanPurchase, on_delete=models.PROTECT, related_name="periods")
+    position = models.PositiveSmallIntegerField(help_text="1 for the first week of a purchase.")
+    starts_at = models.DateTimeField()
+    ends_at = models.DateTimeField()
+    credits = models.PositiveIntegerField()
+    bucket = models.OneToOneField(
+        "CreditBucket", null=True, blank=True, on_delete=models.PROTECT, related_name="period",
+        help_text="Made when the period starts; empty while it waits.",
+    )  # fmt: skip
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.QUEUED)
+
+    class Meta:
+        ordering = ["starts_at", "position"]
+        constraints = [models.UniqueConstraint(fields=["purchase", "position"], name="plan_period_one_per_position")]
+        indexes = [models.Index(fields=["user", "starts_at"], name="plan_period_user_idx")]
+
+    def __str__(self):
+        return f"{self.purchase.plan.name} {self.starts_at:%Y-%m-%d} ({self.status})"
 
 
 class StreakDay(models.Model):
