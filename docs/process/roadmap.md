@@ -240,7 +240,7 @@ Credits for the work that costs model calls, earned by studying, bought through 
 - [x] 10.1 Ledger: wallet, buckets, transactions, holds, spend order, append-only, audit
 - [x] 10.2 Prices, quote, `CreditGate`, `402`, exempt, hold reconciler, wallet and history endpoints
 - [x] 10.3 Earning: signup, daily credit, streak, repair, the hourly tick, the backfill command, and account erasure (built but switched on with the gate in 10.9, except the signup grant)
-- [ ] 10.4 Plans and periods: one-time, weekly drip, queueing, activation
+- [x] 10.4 Plans and periods: one-time, weekly drip, queueing, activation
 - [ ] 10.5 Wallet, history, streak and buy screens, notices, a cost on every button
 - [ ] 10.6 Payments core: the gateway port and registry, orders, webhooks, reconciliation, clawback, the fake gateway, the buy flow
 - [ ] 10.7 Stripe adapter (test mode)

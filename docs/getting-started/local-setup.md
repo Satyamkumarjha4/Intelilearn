@@ -62,7 +62,7 @@ On start, `make up` also recreates the frontend's anonymous `node_modules` and `
 
 ### The scheduler (`beat`)
 
-`beat` is a service beside `worker`: it wakes on the schedule in `CELERY_BEAT_SCHEDULE` (`backend/config/settings.py`) and queues each periodic task for the worker to run. It runs no task itself. The schedule runs **`credits.tick` every hour** (write off lapsed credits, release reserves nothing will settle, audit the credit ledger; a ledger break is logged as an error) and will gain a five-minute `payments.reconcile` with the payments phase. Rules:
+`beat` is a service beside `worker`: it wakes on the schedule in `CELERY_BEAT_SCHEDULE` (`backend/config/settings.py`) and queues each periodic task for the worker to run. It runs no task itself. The schedule runs **`credits.tick` every hour** (start the plan periods that are due and end those that are over, write off lapsed credits, release reserves nothing will settle, audit the credit ledger; a ledger break is logged as an error) and will gain a five-minute `payments.reconcile` with the payments phase. Rules:
 
 - **Run exactly one.** A second `beat` queues every task twice. Every task is written to be harmless when it runs twice, but do not rely on that: `docker compose ps` should list one `beat`. Do not scale it (`--scale beat=2`).
 - It keeps its schedule bookkeeping in `/tmp` inside the container, so a restart loses nothing that matters; a task that was due while it was down runs on the next tick, not in a burst.

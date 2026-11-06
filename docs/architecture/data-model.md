@@ -26,7 +26,7 @@ Conventions that hold for every table:
 | is_superuser | bool | Django's flag; the admin's full permissions |
 | date_joined | datetime | |
 | terms_accepted_at | datetime, null | When the person confirmed the Terms of Use and Privacy Policy at registration. Null for accounts made before the confirmation existed |
-| deleted_at | datetime, null | Set when the account was erased (`AccountErasure`, [design.md §4.26](design.md#426-credits-ledger-gate-and-earning-phases-101-to-103)). The row stays, **anonymised in place** (email `deleted-<id>@erased.invalid`, no name, unusable password, inactive, no staff powers), because the credit ledger is append-only and refers to it. Null for every live account |
+| deleted_at | datetime, null | Set when the account was erased (`AccountErasure`, [design.md §4.26](design.md#426-credits-ledger-gate-earning-and-plans-phases-101-to-104)). The row stays, **anonymised in place** (email `deleted-<id>@erased.invalid`, no name, unusable password, inactive, no staff powers), because the credit ledger is append-only and refers to it. Null for every live account |
 | terms_version | char, blank | `User.TERMS_VERSION` at that moment ("2026-10-25"). Blank for the same older accounts. Nothing compares it with the current version yet, so a newer version does not ask anyone to confirm again |
 
 ### `Profile` (one-to-one with User; created on registration and filled in during onboarding)
@@ -326,7 +326,7 @@ Written by `console.audit.AuditTrail` in the same transaction as the change.
 
 ## `credits` (phase 10.1)
 
-The ledger of the credits system ([plan §7.2](../to_be_developed/credits-implementation-plan.md), design in [design.md §4.26](design.md#426-credits-ledger-gate-and-earning-phases-101-to-103)). Money is a whole number: credits are integers, never a float or a Decimal. **Nothing writes these tables yet** (the gate, earning and plans arrive in 10.2 to 10.4), and no table here has a default timestamp: every `created_at` is given by the ledger's `Clock`. Exempt from the "ids are UUIDs" convention: `Wallet` is keyed by its learner and `CreditTransaction` has a big auto id, because it is ordered.
+The ledger of the credits system ([plan §7.2](../to_be_developed/credits-implementation-plan.md), design in [design.md §4.26](design.md#426-credits-ledger-gate-earning-and-plans-phases-101-to-104)). Money is a whole number: credits are integers, never a float or a Decimal. **Nothing writes these tables yet** (the gate, earning and plans arrive in 10.2 to 10.4), and no table here has a default timestamp: every `created_at` is given by the ledger's `Clock`. Exempt from the "ids are UUIDs" convention: `Wallet` is keyed by its learner and `CreditTransaction` has a big auto id, because it is ordered.
 
 ### `Wallet` (one per learner, made by their first movement)
 
@@ -345,7 +345,7 @@ The ledger of the credits system ([plan §7.2](../to_be_developed/credits-implem
 | source | enum `signup` \| `daily` \| `weekly_streak` \| `monthly_streak` \| `purchase` \| `subscription` \| `admin_grant` \| `refund` | `refund` is credits given back after a failure whose first bucket had lapsed |
 | amount_granted, amount_remaining | positive int | Check: `0 <= amount_remaining <= amount_granted` and `amount_granted > 0` |
 | expires_at | datetime, null | Null: never (signup credits, admin grants). A bucket is lapsed at `expires_at` itself |
-| purchase_id | UUID, null | The plan purchase it was bought with. A plain column (the purchase table arrives in 10.4); used to take a refund's credits back |
+| purchase_id | UUID, null | The plan purchase it came from (one-time credits and every subscription bucket). A plain column, not a foreign key, with a partial index (see `PlanPurchase` below); used to take a refund's credits back |
 | revoked_at | datetime, null | Set when a refund emptied it: a hold released later does not refill it |
 | created_at | datetime | |
 
@@ -387,6 +387,38 @@ Index `(user, expires_at)` where `amount_remaining > 0`. Spend order: soonest `e
 | created_at, settled_at | datetime, datetime null | |
 
 Partial unique `(action, subject_id)` where `status = 'held'`: one live hold for one piece of work. Index `(status, created_at)`.
+
+### `Plan`, `PlanPurchase` and `PlanPeriod` (phase 10.4: what money buys)
+
+`Plan` is the table of what can be bought, seeded by migration `0007` and edited in the admin (not added to or deleted):
+
+| Field | Type | Notes |
+|---|---|---|
+| key | enum `one_time` \| `weekly_pro` \| `monthly_pro` \| `pro_plus`, unique | |
+| name | char | In the learner's words |
+| credits | positive int | What each period gives; 0 for one-time credits (the buyer chooses the amount) |
+| period_days | positive int | A period's length; for one-time credits, how long they last (365) |
+| price_paise | positive int | **Paise**, tax included. A week, a month, or for one-time credits one credit. The server computes every amount from this and never takes a price from the client |
+| max_quantity | small int | The most that can be bought at once (Weekly Pro 12, the rest 1) |
+| active, sort | bool, small int | Switched off: not offered; purchases already made are unaffected |
+
+Seeded: one-time 100 paise a credit; Weekly Pro 100 credits, 7 days, 4,900; Monthly Pro 500, 28 days, 19,900; Pro Plus 750, 28 days, 27,900.
+
+`PlanPurchase` (UUID; user and plan are `PROTECT`):
+
+| Field | Type | Notes |
+|---|---|---|
+| quantity | small int, at least 1 | Weeks of Weekly Pro; 1 otherwise |
+| credits | positive int | The one-time amount bought; 0 for a plan |
+| amount_paise | positive int | What it cost, **as computed by the server**; 0 for an administrator's gift |
+| status | enum `pending` \| `fulfilled` \| `void` | Opened `pending`; `fulfilled` once by `PlanFulfilment` |
+| source | enum `payment` \| `admin` | An administrator's gift is marked |
+| meta | JSON | For a gift: `reason`, `by` (the administrator's email) and `list_amount_paise` (what it would have cost) |
+| created_at, fulfilled_at | datetime, datetime null | |
+
+`PlanPeriod` (UUID; user and purchase `PROTECT`): `position` (1 for the first week of a purchase; unique with the purchase), `starts_at`, `ends_at`, `credits` (copied from the plan when the purchase was fulfilled), `bucket` (one-to-one, `PROTECT`, empty while the period waits and made **when it starts**), and `status` `queued` \| `active` \| `ended`. One learner's periods never overlap. Index `(user, starts_at)`.
+
+**How a bucket is tied to a purchase.** `CreditBucket.purchase_id` is a plain UUID column, not a foreign key (K2), and both the one-time bucket and every subscription bucket carry the id of the purchase they came from, with a partial index on it: that is how a refund finds "the unspent credits of that purchase" (phase 10.6), and the ledger rows of a period say which period and purchase they were for (`meta`).
 
 ### `StreakDay` and `StreakState` (phase 10.3: the days a learner counts as active)
 
@@ -461,7 +493,7 @@ If erasing fails, the lesson stays and the delete can be repeated. A step that w
 
 The credit ledger is not touched: it names a lesson by a plain id, so its rows outlive the lesson (design.md §4.26).
 
-There is no self-service account deletion: the Privacy page tells people to ask by email, and an operator then runs `manage.py erase_account` (phase 10.3). That does not delete the user: it **anonymises the row in place** and erases everything the learner made, through the same erasure code as above, so lessons, quizzes, checkpoints and model calls all go; see `User.deleted_at` and [design.md §4.26](design.md#426-credits-ledger-gate-and-earning-phases-101-to-103). A user removed by hand with `DELETE` is refused once they have a wallet (the credit tables hold a protected key), so there is no longer a way to leave those rows behind.
+There is no self-service account deletion: the Privacy page tells people to ask by email, and an operator then runs `manage.py erase_account` (phase 10.3). That does not delete the user: it **anonymises the row in place** and erases everything the learner made, through the same erasure code as above, so lessons, quizzes, checkpoints and model calls all go; see `User.deleted_at` and [design.md §4.26](design.md#426-credits-ledger-gate-earning-and-plans-phases-101-to-104). A user removed by hand with `DELETE` is refused once they have a wallet (the credit tables hold a protected key), so there is no longer a way to leave those rows behind.
 
 ## Access rules
 

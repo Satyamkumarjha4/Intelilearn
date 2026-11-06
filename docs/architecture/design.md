@@ -42,7 +42,7 @@ Legend for status columns: ✅ in code · ◐ partly (functions still to wrap in
   - [4.23 `quizzes`, `graph` and `lessons`: quick quizzes (Phase 9.6)](#423-quizzes-graph-and-lessons-quick-quizzes-phase-96)
   - [4.24 `graph`, `lessons` and `quizzes`: concept tags and page links (Phase 9.7)](#424-graph-lessons-and-quizzes-concept-tags-and-page-links-phase-97)
   - [4.25 `lessons` and `graph`: retiring the legacy test, choice and call (Phase 9.8)](#425-lessons-and-graph-retiring-the-legacy-test-choice-and-call-phase-98)
-  - [4.26 `credits`: ledger, gate and earning (Phases 10.1 to 10.3)](#426-credits-ledger-gate-and-earning-phases-101-to-103)
+  - [4.26 `credits`: ledger, gate, earning and plans (Phases 10.1 to 10.4)](#426-credits-ledger-gate-earning-and-plans-phases-101-to-104)
 - [5. How to extend](#5-how-to-extend)
 - [Refactor backlog](#refactor-backlog)
 
@@ -279,7 +279,7 @@ classDiagram
 - `Profile` is created by a `post_save` receiver (Observer) that only calls `Profile.objects.get_or_create`.
 - `AuthCookies` (`cookies.py`) owns the cookie names, paths and flags; lifetimes and `Secure` come from settings unless injected. `CookieJWTAuthentication` and the OpenAPI scheme read `AuthCookies.ACCESS`.
 - **The learner's time zone (Phase 10.0, `timezones.py`).** The learner's day (the daily credit and the streak of [the credits plan](../to_be_developed/credits-implementation-plan.md), D9) is the day in `Profile.timezone`, an IANA name. `TimeZoneNames` says which names are real (the system's `zoneinfo`, so old spellings such as `Asia/Calcutta` pass) and what the default is (`Asia/Kolkata`, for a profile where it was never set). `ProfileTimezone` is the one rule for setting it: the first value is free (the browser's, at sign-up), the same value again is nothing, and any other change stamps `timezone_changed_at` and refuses the next change for 30 days with `409 timezone_locked`. Its clock is injected, so the tests never sleep. `apply` sets attributes and leaves saving to the caller; `ProfileSerializer.update` calls it before anything else is saved, so a refused change leaves the rest of the request unsaved. At registration a name the database does not know is dropped instead of refused: a sign-up must not fail over a field the person cannot see.
-- **`account_ready`** (`signals.py`) is a Django `Signal` sent with `user` when an account is usable: at registration today, when the email is confirmed once sign-in is built (Phase 11). The signup credits hang from it (`credits.signals`, live since phase 10.3), and `User.deleted_at` marks an account erased and anonymised in place ([§4.26](#426-credits-ledger-gate-and-earning-phases-101-to-103)). It is sent with `send_robust` and a failing receiver is logged, never undoing the account.
+- **`account_ready`** (`signals.py`) is a Django `Signal` sent with `user` when an account is usable: at registration today, when the email is confirmed once sign-in is built (Phase 11). The signup credits hang from it (`credits.signals`, live since phase 10.3), and `User.deleted_at` marks an account erased and anonymised in place ([§4.26](#426-credits-ledger-gate-earning-and-plans-phases-101-to-104)). It is sent with `send_robust` and a failing receiver is logged, never undoing the account.
 
 ### 4.2 `core` and `config`
 
@@ -2087,7 +2087,7 @@ classDiagram
 - **The activity sink (Phase 10.0, `lessons/activity.py`).** The second seam of this kind: a port that tells a later feature when a learner studied, so a daily credit and a streak can be earned without `lessons` learning what a credit is. `ACTIVITY_SINK` names the class (default `NullActivity`, which does nothing), the way `ACTION_GATE` names the gate. Three services report a sealed attempt, once, with the owner, an `ActivityKind` and the instant it was sealed: `AttemptService.submit` (`TEST_ATTEMPT`), `QuizAttemptService.submit` (`QUIZ_ATTEMPT`) and `QuizService.submit` (`QUICK_CHECK`, for both the Quick check and the Basics check). It is called **after** the seal's transaction, before the next run is queued, through `GuardedActivity`, which logs a failing sink and swallows it: the answers are already stored and are worth more than a credit. **What counts:** an attempt sealed with at least one real answer. An attempt with every answer blank (Phase 9's blank-attempt rule: `all_blank`, stored, scores 0, no offer) does not, and for a Quick check, whose answers are an option or "I don't know", an attempt of only "I don't know" is the same thing. A submit that is refused or fails (an invalid answer, a sealed attempt, a stage that is not waiting, a refused gate) never reaches the call, nor does starting an attempt, saving one answer or beginning a retake. An attempt with written answers is reported when it is sealed, not when the model marks it. Tested in `tests/lessons/test_activity.py` with a counting sink (`tests/support/activity.py`).
 - **The `quiz.retake` hint.** The retake is asked with `num_questions` and, since 10.0, `source_type` (`topic` or `lessons`), because a quiz made from lessons will cost one credit more than a topic quiz of the same length and the gate could not tell them apart. No other hint was added.
 - **The refusal on the wire.** `ActionRefused` is still a `403`. The credits gate (phase 10.2) raises `InsufficientCredits`, a `402` with code `insufficient_credits` carrying `required` and `available`; the frontend's `ActionRefusedMessage` accepts both since 10.0 ([api.md](../reference/api.md)).
-- **The credit gate (Phase 10.2).** `credits.gate.CreditGate` is the second implementation of the port: it prices the action, reserves the credits with the ledger and answers with an `Authorization` whose id is the reserve's id (`tracked`, with the credits and lines in `meta`), commits the reserve when the action is `succeeded` and releases it when it is `failed` or `cancelled`. It is chosen by `ACTION_GATE`, which stays `OpenGate` until phase 10.9. Nothing in `lessons` or `quizzes` changed for it; `ActionRefused` now has two statuses on the wire (`403`, and `402 insufficient_credits` from `InsufficientCredits`). See [§4.26](#426-credits-ledger-gate-and-earning-phases-101-to-103).
+- **The credit gate (Phase 10.2).** `credits.gate.CreditGate` is the second implementation of the port: it prices the action, reserves the credits with the ledger and answers with an `Authorization` whose id is the reserve's id (`tracked`, with the credits and lines in `meta`), commits the reserve when the action is `succeeded` and releases it when it is `failed` or `cancelled`. It is chosen by `ACTION_GATE`, which stays `OpenGate` until phase 10.9. Nothing in `lessons` or `quizzes` changed for it; `ActionRefused` now has two statuses on the wire (`403`, and `402 insufficient_credits` from `InsufficientCredits`). See [§4.26](#426-credits-ledger-gate-earning-and-plans-phases-101-to-104).
 - **The open gate stores nothing:** its authorization is `tracked=False`, so run payloads (and every test that compares them) are exactly as before the seam existed.
 - **Idempotency:** `IdempotentRequest` wraps the two creation views. The key is the header made specific to the learner, endpoint and body (`IdempotencyKey`), kept in the cache (Redis) for `IDEMPOTENCY_TTL_S`; a `claim` makes a concurrent repeat a `409 request_in_progress`. The service passes the header on as `ActionContext.key`, so a gate can dedupe on its side too.
 
@@ -2626,9 +2626,9 @@ classDiagram
 - **The combined call is gone.** `POST /lessons/{id}/test/submissions`, `AttemptService.submit_once`, `AlreadySubmitted`, `TestSubmitSerializer` and the `test_submit` throttle were removed; the attempts endpoints do everything it did.
 - **Free-text concepts of old tests reach a page.** `ConceptIndex.nearest` maps a concept written in the model's own words to the plan's nearest concept (the same name, else the most words in common), and `ConceptLinks` uses it, so a legacy lesson's "Study this" links work without a model call.
 
-### 4.26 `credits`: ledger, gate and earning (Phases 10.1 to 10.3)
+### 4.26 `credits`: ledger, gate, earning and plans (Phases 10.1 to 10.4)
 
-The first piece of the credits system ([plan](../to_be_developed/credits-implementation-plan.md), §6.1): wallets, buckets, an append-only ledger, holds, and the one class that moves credits between them. **Nothing in `lessons` or `quizzes` calls it directly.** They never import this app, and `ACTION_GATE` is still `OpenGate`, so no learner is charged yet (the switch is phase 10.9). Phase 10.2 adds the prices and the gate in front of the ledger, and phase 10.3 earning and closing an account (below); plans (10.4) and payments (10.6) are built on top. Code: `backend/credits/`.
+The first piece of the credits system ([plan](../to_be_developed/credits-implementation-plan.md), §6.1): wallets, buckets, an append-only ledger, holds, and the one class that moves credits between them. **Nothing in `lessons` or `quizzes` calls it directly.** They never import this app, and `ACTION_GATE` is still `OpenGate`, so no learner is charged yet (the switch is phase 10.9). Phase 10.2 adds the prices and the gate in front of the ledger, and phase 10.3 earning and closing an account (below); phase 10.4 plans and periods; payments (10.6) are built on top. Code: `backend/credits/`.
 
 ```mermaid
 classDiagram
@@ -2869,6 +2869,85 @@ classDiagram
 - **The endpoints** (`credits/views.py`, plan §8.1): `GET /credits/wallet` (the balance, what is reserved, the spendable credits in spend order, the next expiry, the exempt flag; a read never makes a wallet), `POST /credits/quote` (throttle `credits_quote`; `JourneyQuote` adds what follows a Quick check), and `GET /credits/transactions` (cursor-paged, newest first, in the learner's words by `TransactionWords`, which never uses an internal term and sends none of the ledger's insides). All are owner-scoped.
 - **Tests.** `credits_on` (`tests/support/credits_fixtures.py`) switches the gate on and funds a learner; the autouse `_pin_the_open_gate` starts every other test on `OpenGate`, so changing the default in 10.9 changes no existing test. `tests/credits/test_gate_call_sites.py` runs the eight call sites and the Stop, failure and Retry walk through the real services and API.
 
+#### Plans and periods (Phase 10.4)
+
+What money buys, built before any payment exists so the whole path can be tested: one-time credits, and plans that give credits a period at a time. `PlanFulfilment` is the **only** path that grants plan credits; phase 10.6's payment handling will call it, and for now an administrator's **Give a plan…** does.
+
+```mermaid
+classDiagram
+    direction LR
+    class Plan {
+        +key
+        +credits
+        +period_days
+        +price_paise
+        +max_quantity
+        +active
+    }
+    class PlanPurchase {
+        +status
+        +source
+        +amount_paise
+        +meta
+    }
+    class PlanPeriod {
+        +position
+        +starts_at
+        +ends_at
+        +credits
+        +status
+    }
+    class CreditBucket
+    class PlanPricing {
+        +price(plan, quantity, credits, minimum, maximum) PricedPurchase
+    }
+    class PlanChain {
+        <<pure>>
+        +periods(last_end, now, period_days, credits, quantity, open_periods, limit) list
+    }
+    class PurchaseDesk {
+        +open(user, plan_key, quantity, credits, source, by, reason, purchase_id) PlanPurchase
+    }
+    class PlanFulfilment {
+        +fulfil(purchase) FulfilmentResult
+    }
+    class PeriodActivator {
+        +start_due(books, new_bucket)
+        +has_due(user_id, now) bool
+        +sweep(ledger) SweepReport
+    }
+    class Ledger {
+        +activate_periods(user)
+    }
+    class HourlyTick
+    class QueueFull {
+        <<APIException 409>>
+    }
+    class InvalidPlanRequest {
+        <<APIException 400>>
+    }
+    Plan "1" --> "*" PlanPurchase
+    PlanPurchase "1" --> "*" PlanPeriod
+    PlanPeriod "1" --> "0..1" CreditBucket : made when it starts
+    PurchaseDesk --> PlanPricing
+    PurchaseDesk ..> InvalidPlanRequest : raises
+    PurchaseDesk ..> QueueFull : raises
+    PlanFulfilment --> PlanChain
+    PlanFulfilment --> Ledger
+    Ledger --> PeriodActivator : before every movement
+    HourlyTick --> PeriodActivator : sweep
+    PlanChain ..> QueueFull
+```
+
+- **What can be bought (D1, T20).** `Plan` rows (edited in the admin): one-time credits at 100 paise a credit, Weekly Pro (100 credits, 7 days, 4,900 paise, up to 12 weeks at once), Monthly Pro (500, 28 days, 19,900), Pro Plus (750, 28 days, 27,900). `PlanPricing` decides what a purchase costs and gives from the plan and the settings: the client names a plan and a quantity (or a one-time amount between `min_one_time_credits` and `max_one_time_credits`) and never a price; anything else is `InvalidPlanRequest` (`400 invalid_plan` or `invalid_amount`). A plan's price is the plan table's: the older `CreditSettings.paise_per_credit` is not read.
+- **Opening a purchase.** `PurchaseDesk.open` checks the plan is on, prices the purchase, checks there is room in the queue (`QueueFull`, `409 queue_full`), and writes a `PlanPurchase` `pending` with the amount the server computed. Nothing is granted. An administrator's purchase (`source` admin) costs 0, needs a reason, and keeps who and why and the price it would have had in `meta`. The room is checked here, so a payment is never taken for a purchase that cannot be fulfilled, and not again at fulfilment, so a payment that was taken is always honoured.
+- **When periods run (T19).** `PlanChain` is pure. One plan is active at a time, so a purchase starts when the learner's last open period ends (or now, if nothing is running or it already ended); several weeks are consecutive periods with no gap and no overlap; the number of **open** periods (running or waiting) may not pass `max_queued_periods` (12). A different plan queues behind the current one and so does the same plan again. One-time credits are not periods.
+- **Fulfilment (idempotent on the purchase).** Under the learner's wallet lock: one-time credits become a `purchase` bucket valid `purchased_valid_days` (365), spendable at once and on top of any plan; a plan becomes its `PlanPeriod`s, queued behind the last. The purchase is marked `fulfilled`, and the first period is started at once. Fulfilling again returns the same periods and grants nothing.
+- **Periods start when they start (T14, §5.7).** `PeriodActivator.start_due` runs **inside every movement of the wallet**, under its lock, before the ledger writes anything: a queued period whose time has come gets a `subscription` bucket of its credits expiring at its end (keyed `period:<id>`, tagged with the purchase) and becomes active, and a period that is over becomes ended. So credits are spendable the moment a period starts with no job running, and three weeks drip one at a time. A period that passed while nobody looked is granted and then written off by the ledger's expiry in the same movement, so the history says what happened. `Ledger.activate_periods` does the same for a read (the wallet and the plans endpoints) and does nothing, not even make a wallet, for a learner with nothing due; the hourly `credits.tick` sweeps the learners nobody touched (`PeriodActivator.sweep`), one transaction each.
+- **Which bucket belongs to which purchase.** `CreditBucket.purchase_id` stays a **plain UUID column** (K2), now with a partial index; both a one-time bucket and every subscription bucket carry their purchase's id, which is what `ClawbackService` (10.6) will use to find "the unspent credits of that purchase". A foreign key would add nothing but a cascade rule the append-only ledger does not want.
+- **Give a plan (admin).** The wallet admin's action writes an administrator's purchase for each selected wallet, fulfils it, and writes a console `AuditEntry` (`credits.give_plan`, with the plan, quantity or amount, reason and purchase). The reason is required; the form validates with the same `PlanPricing` as a purchase; the form's token makes the purchase id (`uuid5`), so sending it twice gives the plan once; a wallet whose queue is full is reported and the rest are still given it.
+- **`GET /credits/plans`** (plan §8.1): the plans that are on with their prices in paise and their limits, the one-time rules, the learner's running and waiting periods soonest first, and how many are open against the limit.
+
 #### Earning and closing an account (Phase 10.3)
 
 Studying becomes credits. **Nothing here is switched on yet**: `ACTIVITY_SINK` keeps defaulting to the do-nothing sink, so no learner earns a daily credit until the gate is switched on with it in phase 10.9. The one thing that is live is the signup grant, given on `account_ready` (and backfilled for older accounts). The `earning_on` test fixture switches the gate and the sink on together.
@@ -2965,7 +3044,7 @@ classDiagram
 - **Streaks (T17).** A streak is the run of consecutive `StreakDay`s ending today or yesterday; it is alive until the end of the day after its last day. `StreakCalculator` is pure. It keeps counting past 28. `StreakMilestones` pays +10 at every multiple of 7 and +10 more at every multiple of 28 (day 7 pays 10, day 28 pays 20, day 35 pays 10, day 56 pays 20; a continuous 28 days earns at most 78). `StreakBonuses` pays them, each keyed `streak:<user>:<run start>:<n>:<weekly|monthly>`, so a bonus is paid once however often the run is looked at and a run that broke and began again earns its own. `StreakState` caches the result (the days are the truth).
 - **Repair (T17, D2).** On the learner's day T, `RepairPolicy` allows a repair of T - 1 only if it is missing and T - 2 is a streak day, and only while fewer than 1 repair was made in the last 7 days and fewer than 3 in the last 28, **counted from the day each repair was made** (`repaired_on`), so breaking the streak resets nothing. `StreakRepairService.repair` does it under the learner's wallet lock (`Ledger.exclusive`): it debits 1 credit (a `repair` row, refused with `402` if short), writes the repaired day (which earns no daily credit), refreshes the cache and pays a bonus the repair completed, once. `409 nothing_to_repair`, `409 repair_limit`. `GET /credits/streak` and `POST /credits/streak/repair`.
 - **The signup grant (D10, D15, T30).** `SignupGrant` gives 30 credits that never expire, keyed `signup:<user>`, from a thin receiver on `account_ready` (live from this phase). `manage.py grant_signup_credits [--dry-run]` gives them to active accounts that predate credits; it is safe to run again, a dry run writes nothing, closed accounts are skipped.
-- **The hourly job (T14).** `HourlyTick` runs `ExpiryService`, `HoldReconciler` and `LedgerAudit`, each harmless to repeat; a part that raises is reported and the others still run, and a break in the ledger is logged as an error. The Celery task `credits.tick` is thin (it builds a `HourlyTick` and calls `run`), and `CELERY_BEAT_SCHEDULE` runs it every 3600 seconds in the single `beat` service.
+- **The hourly job (T14).** `HourlyTick` runs the plan-period sweep (10.4), `ExpiryService`, `HoldReconciler` and `LedgerAudit`, each harmless to repeat; a part that raises is reported and the others still run, and a break in the ledger is logged as an error. The Celery task `credits.tick` is thin (it builds a `HourlyTick` and calls `run`), and `CELERY_BEAT_SCHEDULE` runs it every 3600 seconds in the single `beat` service.
 - **Closing an account (P5).** The ledger is append-only and the user is a protected key, so a closed account cannot be deleted; `AccountErasure` **anonymises it in place**. Open reserves are released first, then the learner's lessons and quizzes are erased through the existing services (which also erase checkpoints and model calls), and then, together: one `forfeit` ledger row writes off the balance (`Ledger.forfeit`, so the ledger still equals the buckets), streak days and the cached streak are deleted, the profile is emptied, and the user row gets a scrubbed email (`deleted-<id>@erased.invalid`) and name, an unusable password, `is_active` false, no staff powers and `deleted_at`. Ledger rows are never edited. An attempt that stops half way is finished by the next, because the anonymising comes last; an erased account is reported as such. `manage.py erase_account IDENTIFIER [--dry-run]`. A staff member's console audit entries keep their email by design (the trail's purpose is to say who it was).
 
 ## 5. How to extend
