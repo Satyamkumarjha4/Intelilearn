@@ -12,7 +12,7 @@ Use cases:
 - the payment settings exist with the right types: gateways enabled (a list, none by default), the default gateway, the
   keys of each provider (text), the return base URL, the fake-gateway switch (off) and the dollar-rupee rate (positive)
 - the four new throttle scopes have a rate
-- the beat schedule exists and is empty, so the `beat` service starts and does nothing
+- the beat schedule runs `credits.tick` every hour and nothing else yet (the payments job joins it in its phase)
 """
 
 from decimal import Decimal
@@ -89,6 +89,8 @@ def test_the_new_throttle_scopes_have_their_planned_rates(scope, rate):
     assert settings.REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"][scope] == rate
 
 
-def test_the_beat_schedule_is_empty_for_now():
-    assert settings.CELERY_BEAT_SCHEDULE == {}
-    assert celery_app.conf.beat_schedule == {}
+def test_the_beat_schedule_runs_the_credits_tick_every_hour_and_nothing_else_yet():
+    expected = {"credits.tick": {"task": "credits.tick", "schedule": 3600.0}}
+
+    assert settings.CELERY_BEAT_SCHEDULE == expected
+    assert celery_app.conf.beat_schedule == expected
