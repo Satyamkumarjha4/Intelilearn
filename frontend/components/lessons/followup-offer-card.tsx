@@ -2,9 +2,11 @@
 
 import { LightbulbIcon, SproutIcon, TrendingUpIcon } from "lucide-react";
 
+import { CostLabel } from "@/components/credits/cost-label";
 import { useFollowup } from "@/components/lessons/use-followup";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { CostSizes } from "@/lib/credits/cost-sizes";
 import { FollowupOffers } from "@/lib/followup-offer";
 import type { FollowupOffer } from "@/lib/types";
 
@@ -24,6 +26,7 @@ export function FollowupOfferCard({ lessonId, offer }: Props) {
           <div className="flex min-w-0 flex-col gap-0.5">
             <h2 className="font-heading text-base font-semibold">{view.title}</h2>
             <p className="max-w-prose text-sm text-muted-foreground">{view.message}</p>
+            {view.step?.intent === "make" && <CostLabel ask={CostSizes.followup(view.step.level)} className="pt-1" />}
           </div>
         </div>
         {view.step && (

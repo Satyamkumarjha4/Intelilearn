@@ -2,8 +2,10 @@
 
 import { DownloadIcon, Loader2Icon, PlusIcon, PrinterIcon } from "lucide-react";
 
+import { CostLabel } from "@/components/credits/cost-label";
 import { SHEET_ICONS } from "@/components/lessons/sheet-icons";
 import { Button } from "@/components/ui/button";
+import { CostSizes } from "@/lib/credits/cost-sizes";
 import { SheetCatalog, SheetRequests, type SheetTab } from "@/lib/study-sheets";
 import type { MaterialKind, OfferedSheet } from "@/lib/types";
 
@@ -16,6 +18,8 @@ type Props = {
   canExport: boolean;
   /** The lesson has neither sheet, so both can be asked for at once. */
   canAskForBoth: boolean;
+  /** What the sheets rest on, which is part of their price. */
+  grounding: "lesson" | "quiz" | "none";
   onSelect: (kind: MaterialKind) => void;
   onAdd: (kinds: OfferedSheet[]) => void;
   onPdf: () => void;
@@ -23,7 +27,7 @@ type Props = {
 
 /** One chunky tab per sheet the lesson has, a dashed "+ Add" tab for each it lacks (and one for both when it has
  *  neither), and the PDF on the right. */
-export function SheetTabRow({ tabs, selected, locked, canExport, canAskForBoth, onSelect, onAdd, onPdf }: Props) {
+export function SheetTabRow({ tabs, selected, locked, canExport, canAskForBoth, grounding, onSelect, onAdd, onPdf }: Props) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
       <div role="group" aria-label="Your study sheets" className="flex flex-wrap gap-2.5 pb-1">
@@ -31,15 +35,17 @@ export function SheetTabRow({ tabs, selected, locked, canExport, canAskForBoth, 
           const Icon = SHEET_ICONS[tab.kind];
           if (tab.state === "missing") {
             return (
-              <Button
-                key={tab.kind}
-                variant="outline"
-                className="h-9 border-dashed px-3 text-muted-foreground shadow-none"
-                disabled={locked}
-                onClick={() => onAdd(SheetRequests.one(tab.kind as OfferedSheet))}
-              >
-                <PlusIcon aria-hidden="true" /> {SheetCatalog.addLabel(tab.kind)}
-              </Button>
+              <div key={tab.kind} className="flex flex-col items-start gap-1">
+                <Button
+                  variant="outline"
+                  className="h-9 border-dashed px-3 text-muted-foreground shadow-none"
+                  disabled={locked}
+                  onClick={() => onAdd(SheetRequests.one(tab.kind as OfferedSheet))}
+                >
+                  <PlusIcon aria-hidden="true" /> {SheetCatalog.addLabel(tab.kind)}
+                </Button>
+                <CostLabel ask={CostSizes.sheets(1, grounding)} />
+              </div>
             );
           }
           return (
@@ -57,9 +63,12 @@ export function SheetTabRow({ tabs, selected, locked, canExport, canAskForBoth, 
           );
         })}
         {canAskForBoth && (
-          <Button variant="outline" className="h-9 border-dashed px-3 text-muted-foreground shadow-none" disabled={locked} onClick={() => onAdd(SheetRequests.pair())}>
-            <PlusIcon aria-hidden="true" /> {SheetRequests.bothLabel()}
-          </Button>
+          <div className="flex flex-col items-start gap-1">
+            <Button variant="outline" className="h-9 border-dashed px-3 text-muted-foreground shadow-none" disabled={locked} onClick={() => onAdd(SheetRequests.pair())}>
+              <PlusIcon aria-hidden="true" /> {SheetRequests.bothLabel()}
+            </Button>
+            <CostLabel ask={CostSizes.sheets(2, grounding)} />
+          </div>
         )}
       </div>
       <div className="flex items-center gap-2">

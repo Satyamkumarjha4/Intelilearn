@@ -16,7 +16,7 @@ export type Refusal = { message: string; buyPath: string | null; required: numbe
 export class ActionRefusedMessage {
   static readonly FALLBACK = "That isn't available to you right now.";
   static readonly INSUFFICIENT_FALLBACK = "You don't have enough credits for that.";
-  /** Where to buy more. The screen arrives in phase 10.5; until then it is the path it will have. */
+  /** Where to buy more (the buy page, `app/buy`). */
   static readonly BUY_PATH = "/buy";
   private static readonly INSUFFICIENT_CODE = "insufficient_credits";
 

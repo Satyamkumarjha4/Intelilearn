@@ -12,7 +12,7 @@
  * - a recommended lesson ("Make a lesson on this") says so; a lesson from a quiz result enters by it
  * - the mastery choice is the lesson or two sheets after a perfect Quick check
  * - a follow-up says its level; a test retake is always attempt 2 or later
- * - extra sheets say how many and what they rest on
+ * - extra sheets say how many and what they rest on, which is the lesson's pages, the Quick check, or nothing
  * - a new quiz says its count, source, number of sources and how its level is found; a retake says its count and source
  */
 import { describe, expect, test } from "bun:test";
@@ -64,6 +64,12 @@ describe("the choices after a lesson is under way", () => {
 
   test("extra sheets say how many and what they rest on", () => {
     expect(CostSizes.sheets(2, "lesson")).toEqual({ action: "sheet.generate", size: { sheets: 2, grounding: "lesson" } });
+  });
+
+  test("a lesson with pages grounds its sheets on them; a sheets-only one on its Quick check, or on nothing", () => {
+    expect(CostSizes.groundingOf({ sheets_only: false, entry: "self_rating" })).toBe("lesson");
+    expect(CostSizes.groundingOf({ sheets_only: true, entry: "diagnostic" })).toBe("quiz");
+    expect(CostSizes.groundingOf({ sheets_only: true, entry: "self_rating" })).toBe("none");
   });
 });
 

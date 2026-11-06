@@ -6,6 +6,7 @@ import { FlashcardDeck } from "@/components/lessons/flashcard-deck";
 import { QuickCheckDone } from "@/components/lessons/quick-check-done";
 import { useDeck } from "@/components/lessons/use-deck";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ActionRefusedMessage } from "@/lib/action-refused";
 import { ApiError } from "@/lib/api";
 import { DONT_KNOW, type DeckAnswer } from "@/lib/deck-session";
 import { lessonsApi } from "@/lib/lessons-api";
@@ -69,10 +70,13 @@ function Cards({ quiz, lessonId, kind, onSubmitted, onAlreadyAttempted }: Props 
   // A refresh after the last card leaves a finished deck whose answers never got sent: offer to send them.
   const [phase, setPhase] = useState<"idle" | "sending" | "failed">(deck.finished ? "failed" : "idle");
   const [failure, setFailure] = useState("");
+  // Too few credits for the rest of the lesson: the answers stay in this browser and can be sent once there are enough.
+  const [buyPath, setBuyPath] = useState<string | null>(null);
   const byId = new Map(quiz.questions.map((q) => [q.id, q]));
 
   const send = async () => {
     setPhase("sending");
+    setBuyPath(null);
     try {
       const { result, run_id } = await lessonsApi.submitQuiz(lessonId, kind, deck.payload() as Record<string, number | typeof DONT_KNOW>);
       clear();
@@ -83,7 +87,9 @@ function Cards({ quiz, lessonId, kind, onSubmitted, onAlreadyAttempted }: Props 
         onAlreadyAttempted();
         return;
       }
-      setFailure(err instanceof ApiError ? err.message : "");
+      const refusal = ActionRefusedMessage.refusal(err);
+      setFailure(refusal?.message ?? (err instanceof ApiError ? err.message : ""));
+      setBuyPath(refusal?.buyPath ?? null);
       setPhase("failed");
     }
   };
@@ -94,7 +100,7 @@ function Cards({ quiz, lessonId, kind, onSubmitted, onAlreadyAttempted }: Props 
     if (last) void send();
   };
 
-  if (deck.finished) return <QuickCheckDone kind={kind} state={phase === "failed" ? "failed" : "sending"} error={failure} onRetry={send} />;
+  if (deck.finished) return <QuickCheckDone kind={kind} state={phase === "failed" ? "failed" : "sending"} error={failure} buyPath={buyPath} onRetry={send} />;
 
   return (
     <div className="flex flex-col gap-4">

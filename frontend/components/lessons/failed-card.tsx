@@ -4,12 +4,13 @@ import { CloudAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
+import { CostLabel } from "@/components/credits/cost-label";
 import { StatusCard } from "@/components/status-card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { PlainError } from "@/lib/plain-notes";
 
 /** A lesson that stopped: what happened in plain words, and the two things to do about it. */
-export function FailedCard({ error, onRetry }: { error: string; onRetry: () => void | Promise<void> }) {
+export function FailedCard({ error, lessonId, onRetry }: { error: string; lessonId?: string; onRetry: () => void | Promise<void> }) {
   const [retrying, setRetrying] = useState(false);
   const retry = async () => {
     setRetrying(true);
@@ -38,6 +39,7 @@ export function FailedCard({ error, onRetry }: { error: string; onRetry: () => v
     >
       <p>{PlainError.of(error)}</p>
       <p className="text-sm">Nothing is lost. Retry carries on from the last saved step.</p>
+      {lessonId && <CostLabel ask={null} retryLessonId={lessonId} className="items-center" />}
     </StatusCard>
   );
 }

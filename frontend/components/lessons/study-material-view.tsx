@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError } from "@/lib/api";
 import { ActionRefusedMessage } from "@/lib/action-refused";
+import { CostSizes } from "@/lib/credits/cost-sizes";
 import { lessonsApi } from "@/lib/lessons-api";
 import type { PipelineModel } from "@/lib/pipeline";
 import { SheetCatalog, SheetRequests, SheetTabs } from "@/lib/study-sheets";
@@ -113,6 +114,7 @@ export function StudyMaterialView({ lesson, pipeline, onRequested }: Props) {
         locked={writing || starting}
         canExport={Boolean(open && loaded[open])}
         canAskForBoth={SheetRequests.canAskForBoth(have)}
+        grounding={CostSizes.groundingOf(lesson)}
         onSelect={setWanted}
         onAdd={request}
         onPdf={pdf}

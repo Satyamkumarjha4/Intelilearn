@@ -4,8 +4,10 @@ import { CheckIcon, ClockIcon, GraduationCapIcon, ScrollTextIcon, TrophyIcon, ty
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { CostLabel } from "@/components/credits/cost-label";
 import { QuizReview } from "@/components/lessons/quiz-review";
 import { Button } from "@/components/ui/button";
+import { CostSizes } from "@/lib/credits/cost-sizes";
 import { lessonsApi } from "@/lib/lessons-api";
 import { MasteryOptions } from "@/lib/mastery-options";
 import { MasteryBanner } from "@/lib/study-sheets";
@@ -41,10 +43,10 @@ export function MasteryChoice({ lesson, onChosen }: Props) {
   );
 }
 
-type CardProps = { name: string; value: string; selected: boolean; onSelect: () => void; icon: LucideIcon; title: string; text: string; bullets: string[]; time: string };
+type CardProps = { name: string; value: string; selected: boolean; onSelect: () => void; icon: LucideIcon; title: string; text: string; bullets: string[]; time: string; cost?: React.ReactNode };
 
 /** One card of a choice: a radio button that looks like a card, picked with the mouse or the keyboard. */
-function ChoiceCard({ name, value, selected, onSelect, icon: Icon, title, text, bullets, time }: CardProps) {
+function ChoiceCard({ name, value, selected, onSelect, icon: Icon, title, text, bullets, time, cost }: CardProps) {
   return (
     <label
       className={cn(
@@ -68,6 +70,7 @@ function ChoiceCard({ name, value, selected, onSelect, icon: Icon, title, text, 
           </li>
         ))}
       </ul>
+      {cost}
       <span className="mt-auto flex items-center gap-1.5 pt-1 font-mono text-xs font-bold text-muted-foreground">
         <ClockIcon className="size-3.5" aria-hidden="true" /> {time}
       </span>
@@ -103,6 +106,7 @@ function TwoOptions({ lessonId, onChosen }: { lessonId: string; onChosen: () => 
               selected={picked === option.pick}
               onSelect={() => setPicked(option.pick)}
               icon={PICK_ICONS[option.pick]}
+              cost={<CostLabel ask={CostSizes.mastery(option.pick)} halfBack={option.pick === "sheets"} />}
               {...option}
             />
           ))}

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { CostLabel } from "@/components/credits/cost-label";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AttemptHistory } from "@/components/lessons/attempt-history";
@@ -13,6 +14,7 @@ import { FollowupDialog } from "@/components/lessons/followup-dialog";
 import { FollowupOfferCard } from "@/components/lessons/followup-offer-card";
 import { QuestionBreakdown, ScoreHero } from "@/components/lessons/result-parts";
 import { ApiError } from "@/lib/api";
+import { CostSizes } from "@/lib/credits/cost-sizes";
 import { AttemptHistoryView } from "@/lib/attempt-history";
 import { FollowupOffers } from "@/lib/followup-offer";
 import { DateText } from "@/lib/format";
@@ -79,6 +81,7 @@ export function TestResults({ lessonId, lessonTitle, attempt: shown, history, fr
   };
 
   const card = attempt.result;
+  const nextAttemptNo = Math.max(attempt.attempt_no, ...(history?.attempts.map((a) => a.attempt_no) ?? [])) + 1;
   const row = history ? AttemptHistoryView.rows(history).find((r) => r.attemptNo === attempt.attempt_no) : undefined;
   const facts = [
     `Attempt ${attempt.attempt_no}`,
@@ -119,7 +122,10 @@ export function TestResults({ lessonId, lessonTitle, attempt: shown, history, fr
       {attempt.status === "graded" && (
         <Card>
           <CardContent className="flex flex-wrap items-center justify-between gap-3">
-            <p className="max-w-prose text-sm text-muted-foreground">Want a better score? Try again with new questions. Your best result is kept.</p>
+            <div className="flex max-w-prose flex-col gap-1.5">
+              <p className="text-sm text-muted-foreground">Want a better score? Try again with new questions. Your best result is kept.</p>
+              <CostLabel ask={CostSizes.testRetake(nextAttemptNo)} />
+            </div>
             <Button variant="marigold" onClick={onTryAgain} disabled={trying}>
               <RotateCcwIcon className="size-4" aria-hidden="true" />
               {trying ? "Getting ready…" : "Try again"}
@@ -175,6 +181,7 @@ function Revisit({ lessonId, topics, links, lessonTitle, attemptId }: RevisitPro
                   <p className="font-semibold">{topic}</p>
                   {study(topic).where && <p className="text-xs text-muted-foreground">{study(topic).where}</p>}
                 </div>
+                <CostLabel ask={CostSizes.lessonOnThis()} />
                 <div className="flex flex-wrap gap-2">
                   <Link href={study(topic).href} className={buttonVariants({ variant: "outline", size: "sm" })}>
                     {study(topic).button}

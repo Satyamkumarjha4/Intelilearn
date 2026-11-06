@@ -1,8 +1,10 @@
 "use client";
 
+import { CostLabel } from "@/components/credits/cost-label";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useFollowup } from "@/components/lessons/use-followup";
+import { CostSizes } from "@/lib/credits/cost-sizes";
 import { FollowupOffers } from "@/lib/followup-offer";
 import type { FollowupOffer } from "@/lib/types";
 
@@ -19,6 +21,7 @@ export function FollowupDialog({ lessonId, offer, open, onOpenChange }: Props) {
         <DialogHeader className="pr-0">
           <DialogTitle>{view.title}</DialogTitle>
           <DialogDescription>{view.message}</DialogDescription>
+          {view.step?.intent === "make" && <CostLabel ask={CostSizes.followup(view.step.level)} className="pt-1" />}
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>

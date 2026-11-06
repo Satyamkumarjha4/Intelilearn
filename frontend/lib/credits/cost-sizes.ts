@@ -47,6 +47,12 @@ export class CostSizes {
     return { action: "test.retake", size: { question_count: 10, attempt_no: Math.max(2, attemptNo) } };
   }
 
+  /** What a lesson's extra sheets rest on: its pages, or for sheets-only the Quick check it took, or only the topic. */
+  static groundingOf(lesson: { sheets_only: boolean; entry: Entry }): "lesson" | "quiz" | "none" {
+    if (!lesson.sheets_only) return "lesson";
+    return lesson.entry === "diagnostic" ? "quiz" : "none";
+  }
+
   /** Sheets added to a lesson: `grounding` is what they rest on ("lesson" when the lesson has pages). */
   static sheets(count: number, grounding: "lesson" | "quiz" | "none"): CostAsk {
     return { action: "sheet.generate", size: { sheets: count, grounding } };

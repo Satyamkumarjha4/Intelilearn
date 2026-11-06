@@ -170,7 +170,7 @@ function Workspace({ id }: { id: string }) {
         <LessonTabBar tabs={tabs} active={activeTab} onChange={selectTab} panels={panels} />
       ) : (
         <>
-          {screen === "failed" && <FailedCard error={lesson.error} onRetry={retry} />}
+          {screen === "failed" && <FailedCard error={lesson.error} lessonId={lesson.id} onRetry={retry} />}
           {!building && <ResultsSummary lesson={lesson} skip={screen === "choice" ? "diagnostic" : justSubmitted?.kind} />}
 
           {justSubmitted ? (

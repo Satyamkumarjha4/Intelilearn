@@ -5,11 +5,13 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { CostLabel } from "@/components/credits/cost-label";
 import { AttemptHistory } from "@/components/lessons/attempt-history";
 import { QuestionBreakdown, ScoreHero } from "@/components/lessons/result-parts";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AttemptHistoryView } from "@/lib/attempt-history";
+import { CostSizes } from "@/lib/credits/cost-sizes";
 import { DateText } from "@/lib/format";
 import { QuizMessages } from "@/lib/quiz-messages";
 import { QuizResults } from "@/lib/quiz-results";
@@ -124,9 +126,12 @@ export function QuizResult({ quiz, attempt: shown, trying, onTryAgain, onSelect,
                 {QuizResults.CREATE_HINT}
               </p>
             </div>
-            <Button onClick={() => void createLesson()} disabled={making}>
-              <SparklesIcon aria-hidden="true" /> {making ? "Starting…" : QuizResults.CREATE_LESSON}
-            </Button>
+            <div className="flex flex-col items-start gap-1.5">
+              <CostLabel ask={CostSizes.lessonFromQuiz()} />
+              <Button onClick={() => void createLesson()} disabled={making}>
+                <SparklesIcon aria-hidden="true" /> {making ? "Starting…" : QuizResults.CREATE_LESSON}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -169,7 +174,10 @@ export function QuizResult({ quiz, attempt: shown, trying, onTryAgain, onSelect,
       {attempt.status === "graded" && (
         <Card>
           <CardContent className="flex flex-wrap items-center justify-between gap-3">
-            <p className="max-w-prose text-sm text-muted-foreground">{QuizResults.RETAKE_NOTE}</p>
+            <div className="flex max-w-prose flex-col gap-1.5">
+              <p className="text-sm text-muted-foreground">{QuizResults.RETAKE_NOTE}</p>
+              <CostLabel ask={CostSizes.quizRetake(quiz.config.num_questions, quiz.source_type)} />
+            </div>
             <Button variant="marigold" onClick={onTryAgain} disabled={trying}>
               <RotateCcwIcon className="size-4" aria-hidden="true" />
               {trying ? "Getting ready…" : QuizResults.RETAKE}

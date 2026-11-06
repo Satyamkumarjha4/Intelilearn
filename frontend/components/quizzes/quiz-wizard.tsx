@@ -4,12 +4,14 @@ import { ArrowLeftIcon, ArrowRightIcon, CheckIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import { CostLabel } from "@/components/credits/cost-label";
 import { ChoiceCards } from "@/components/lessons/choice-cards";
 import { StarRating } from "@/components/lessons/star-rating";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { CostSizes } from "@/lib/credits/cost-sizes";
 import { LevelChoice, type LevelSource } from "@/lib/level-choice";
 import { lessonsApi } from "@/lib/lessons-api";
 import { QuestionTypeCatalog, type TopicKinds } from "@/lib/question-type-catalog";
@@ -75,6 +77,14 @@ export function QuizWizard() {
   const scored = QuizConfigForm.scores(state, known);
   const at = QuizConfigForm.STEPS.indexOf(step);
   const last = at === QuizConfigForm.STEPS.length - 1;
+
+  // The price follows the choices as they are made, before the form is complete: the count, where the questions come from,
+  // and how the level is found are all it depends on.
+  const ask = CostSizes.quiz({
+    num_questions: state.count,
+    source: state.source === "topic" ? { type: "topic", topic: state.topic } : { type: "lessons", lesson_ids: state.lessonIds },
+    level: { mode },
+  });
 
   const submit = async () => {
     const request = QuizConfigForm.request(state, known);
@@ -214,6 +224,8 @@ export function QuizWizard() {
           </ChoiceCards>
         )}
       </section>
+
+      <CostLabel ask={ask} breakdown={last} className="items-center self-center text-center" />
 
       <div className="flex items-center justify-between gap-3">
         <Button type="button" variant="ghost" disabled={at === 0 || busy} onClick={() => setStep(QuizConfigForm.STEPS[at - 1])}>

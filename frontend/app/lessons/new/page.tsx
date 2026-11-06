@@ -4,11 +4,13 @@ import { ArrowRightIcon, ChevronDownIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { CostLabel } from "@/components/credits/cost-label";
 import { ChoiceCards } from "@/components/lessons/choice-cards";
 import { StarRating } from "@/components/lessons/star-rating";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { CostSizes } from "@/lib/credits/cost-sizes";
 import { lessonsApi } from "@/lib/lessons-api";
 import { NewLesson, type SheetPick } from "@/lib/new-lesson";
 import type { Entry, Intent } from "@/lib/types";
@@ -135,6 +137,8 @@ export default function NewLessonPage() {
             </li>
           ))}
         </ol>
+
+        <CostLabel ask={CostSizes.newLesson(entry, intent, NewLesson.sheetsOf(sheets).length)} breakdown className="items-center self-center text-center" />
 
         <Button type="submit" size="lg" disabled={!NewLesson.canStart(topic, busy, entry, rating)} className="h-12 self-center px-8 text-base">
           {NewLesson.buttonLabel(entry, busy, intent, sheets)}
