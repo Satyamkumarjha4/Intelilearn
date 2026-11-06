@@ -143,6 +143,11 @@ test("the wallet, the history and the header chip say what the API says", async 
   const lessonId = (await api.call("POST", "/lessons", { topic: "Binary search", entry: "self_rating", self_rating: 4 })).body.lesson_id as string;
   await api.until(lessonId, (lesson) => lesson.stage === "ready");
 
+  // The day's credit is written as the run is settled, a moment after the lesson is ready: wait for it, so the API and the
+  // screen are read at the same balance.
+  await expect
+    .poll(async () => ((await api.call("GET", "/credits/transactions")).body.results as { text: string }[]).some((row) => /studying today/i.test(row.text)))
+    .toBe(true);
   const wallet = (await api.call("GET", "/credits/wallet")).body;
   await page.goto("/wallet");
   const balance = page.getByTestId("wallet-balance");
@@ -229,7 +234,7 @@ test("a learner who cannot pay is told so beside the button, and the refusal off
   await expect(page.getByText("Not enough credits").first()).toBeVisible();
   await page.getByRole("button", { name: "Buy credits" }).click();
   await page.waitForURL(/\/buy$/);
-  await expect(page.getByTestId("buy-closed")).toContainText("Buying isn't open yet");
+  await expect(page.getByTestId("buy-one_time")).toBeVisible(); // the fake gateway is on in this stack, so buying is open
   expect((await api.call("GET", "/lessons")).body.results).toHaveLength(0); // nothing was made
 });
 
