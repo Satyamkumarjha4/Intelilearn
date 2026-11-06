@@ -3,6 +3,7 @@ import { Fredoka, JetBrains_Mono, Nunito } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 
 import { AuthProvider } from "@/components/auth-provider";
+import { CreditsProvider } from "@/components/credits/credits-provider";
 import { SiteHeader } from "@/components/site-header";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -38,9 +39,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="flex min-h-full flex-col bg-background font-sans text-foreground">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <AuthProvider>
-            <SiteHeader />
-            <div className="flex flex-1 flex-col">{children}</div>
-            <Toaster richColors position="top-center" />
+            <CreditsProvider>
+              <SiteHeader />
+              <div className="flex flex-1 flex-col">{children}</div>
+              <Toaster richColors position="top-center" />
+            </CreditsProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

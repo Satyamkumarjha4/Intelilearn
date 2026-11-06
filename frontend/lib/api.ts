@@ -23,6 +23,9 @@ export class ApiError extends Error {
 
 export type RequestOptions = { method?: string; body?: unknown };
 
+/** Told about every failed request, so one place can react to what many screens share (a 402: too few credits). */
+export type ErrorListener = (error: ApiError, path: string) => void;
+
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -36,6 +39,7 @@ function documentCookie(name: string): string | null {
 
 export class ApiClient {
   private refreshing: Promise<boolean> | null = null;
+  private readonly listeners = new Set<ErrorListener>();
 
   // Collaborators are injected so tests can drive the client without a browser or a server.
   constructor(
@@ -62,8 +66,28 @@ export class ApiClient {
     if (response.status === 401 && !NO_REFRESH_PATHS.has(path) && (await this.refreshSession())) {
       response = await send();
     }
-    if (!response.ok) throw await this.toApiError(response);
+    if (!response.ok) {
+      const error = await this.toApiError(response);
+      this.tell(error, path);
+      throw error;
+    }
     return (response.status === 204 ? undefined : await response.json()) as T;
+  }
+
+  /** Be told about every request that fails (after the silent refresh). Returns the way to stop. */
+  observe(listener: ErrorListener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private tell(error: ApiError, path: string): void {
+    for (const listener of this.listeners) {
+      try {
+        listener(error, path);
+      } catch {
+        // an observer must never turn a failed request into a different failure
+      }
+    }
   }
 
   /** Renew the access cookie. Concurrent 401s share one refresh request. */

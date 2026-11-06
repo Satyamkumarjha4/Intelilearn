@@ -1,12 +1,14 @@
 "use client";
 
-import { BookOpenIcon, LayoutDashboardIcon, ListChecksIcon, LogOutIcon, UserIcon } from "lucide-react";
+import { BookOpenIcon, CoinsIcon, FlameIcon, LayoutDashboardIcon, ListChecksIcon, LogOutIcon, UserIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth-provider";
 import { Logo } from "@/components/brand/logo";
+import { BalanceChip } from "@/components/credits/balance-chip";
+import { NoticesBanner } from "@/components/credits/notices-banner";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -41,6 +43,7 @@ export function SiteHeader() {
   if (["/", "/auth", "/privacy", "/terms", "/contact", "/onboarding"].includes(pathname) || pathname === "/console" || pathname.startsWith("/console/")) return null;
 
   return (
+    <>
     <header className="border-b">
       <div className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between px-4">
         <Link href="/" aria-label="Socra home" className="rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
@@ -53,6 +56,7 @@ export function SiteHeader() {
               <ListChecksIcon aria-hidden="true" /> Quizzes
             </Link>
           ) : null}
+          {user ? <BalanceChip /> : null}
           <ThemeToggle />
           {loading ? null : user ? (
             <DropdownMenu>
@@ -75,6 +79,12 @@ export function SiteHeader() {
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => router.push("/quizzes")}>
                   <ListChecksIcon /> Your quizzes
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push("/wallet")}>
+                  <CoinsIcon /> Your credits
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push("/streak")}>
+                  <FlameIcon /> Your streak
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => router.push("/profile")}>
                   <UserIcon /> Profile
@@ -102,5 +112,7 @@ export function SiteHeader() {
         </div>
       </div>
     </header>
+    {user ? <NoticesBanner /> : null}
+    </>
   );
 }
