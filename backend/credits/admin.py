@@ -85,11 +85,20 @@ def adjust_credits(modeladmin, request, queryset):
         for wallet in queryset.select_related("user"):
             key = f"admin:{form.cleaned_data['token']}:{wallet.pk}"
             try:
-                ledger.adjust(
-                    wallet.user_id, form.cleaned_data["amount"], key, reason=form.cleaned_data["reason"],
-                    actor=request.user.email,
-                )  # fmt: skip
-                done += 1
+                with transaction.atomic():
+                    before = ledger.balance(wallet.user_id)
+                    moved = ledger.adjust(
+                        wallet.user_id, form.cleaned_data["amount"], key, reason=form.cleaned_data["reason"],
+                        actor=request.user.email,
+                    )  # fmt: skip
+                    if moved.created:  # the same form sent twice moves the credits once, and is recorded once
+                        AuditTrail(request.user).record(
+                            "credits.adjust", "wallet", wallet.pk,
+                            before={"balance": before},
+                            after={"balance": ledger.balance(wallet.user_id), "amount": form.cleaned_data["amount"],
+                                   "reason": form.cleaned_data["reason"]},
+                        )  # fmt: skip
+                        done += 1
             except LedgerError as exc:
                 modeladmin.message_user(request, f"{wallet.user}: {exc}", messages.ERROR)
         if done:

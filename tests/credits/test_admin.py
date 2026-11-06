@@ -17,6 +17,8 @@ Use cases:
 - with an amount and a reason it gives credits through the ledger, with the reason and the administrator's email on the
   row, and the books balance; a negative amount takes credits, and one larger than the balance is refused with a message
   and moves nothing
+- every credit movement made there is written to the console's change log with the administrator, the reason and the
+  balance before and after; a refusal, a repeat and a missing reason write nothing
 - sending the same form twice moves the credits once
 - a learner who is not staff cannot reach any of it
 """
@@ -182,6 +184,33 @@ class TestGiveOrTakeCredits:
         self.apply(admin_client, [wallet], 10, "Once", token=token)
 
         assert CreditTransaction.objects.filter(type="admin_adjust").count() == 1 and ledger.balance(funded) == 18
+
+    def test_it_writes_the_change_log_with_who_why_and_the_balance_before_and_after(self, admin_client, funded):
+        from console.models import AuditEntry
+
+        wallet = Wallet.objects.get(user=funded)
+
+        self.apply(admin_client, [wallet], 25, "Goodwill after the outage")
+
+        entry = AuditEntry.objects.get()
+        assert (entry.action, entry.target_type, entry.target_id) == ("credits.adjust", "wallet", str(wallet.pk))
+        assert entry.actor_email == "admin@example.com"
+        assert entry.before == {"balance": 8}
+        assert entry.after == {"balance": 33, "amount": 25, "reason": "Goodwill after the outage"}
+
+    def test_a_refusal_a_repeat_and_a_missing_reason_write_nothing_to_the_change_log(self, admin_client, funded):
+        from console.models import AuditEntry
+
+        wallet = Wallet.objects.get(user=funded)
+        token = uuid4()
+        self.apply(admin_client, [wallet], -50, "Too much")  # more than the balance
+        self.apply(admin_client, [wallet], 5, "")  # no reason
+        assert AuditEntry.objects.count() == 0
+
+        self.apply(admin_client, [wallet], 5, "Once", token=token)
+        self.apply(admin_client, [wallet], 5, "Once", token=token)
+
+        assert AuditEntry.objects.count() == 1
 
     def test_it_works_for_several_wallets_at_once(self, admin_client, funded, other_user, give):
         give(other_user, 1)
