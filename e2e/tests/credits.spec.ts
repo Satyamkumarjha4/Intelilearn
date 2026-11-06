@@ -42,6 +42,23 @@ test("a new learner has the 30 signup credits, and the wallet, the quote and the
   expect(history.body.results.map((row: { text: string }) => row.text)).toEqual(["Welcome gift: 30 credits"]);
 });
 
+test("the plans on offer carry the spec's prices in paise, and a new learner has none running", async ({ page }) => {
+  const api = new Api(page);
+  await api.signUp(E2E.email("plans"), E2E.PASSWORD);
+
+  const plans = await api.call("GET", "/credits/plans");
+
+  expect(plans.status).toBe(200);
+  const byKey = Object.fromEntries(plans.body.plans.map((plan: { key: string }) => [plan.key, plan]));
+  expect(Object.keys(byKey)).toEqual(["one_time", "weekly_pro", "monthly_pro", "pro_plus"]);
+  expect(byKey.weekly_pro).toMatchObject({ credits: 100, period_days: 7, price_paise: 4900, max_quantity: 12 });
+  expect(byKey.monthly_pro).toMatchObject({ credits: 500, period_days: 28, price_paise: 19900 });
+  expect(byKey.pro_plus).toMatchObject({ credits: 750, period_days: 28, price_paise: 27900 });
+  expect(plans.body.one_time).toEqual({ min_credits: 10, max_credits: 5000, price_paise_per_credit: 100, valid_days: 365 });
+  expect(plans.body.periods).toEqual([]);
+  expect(plans.body.queue).toEqual({ open: 0, limit: 12 });
+});
+
 test("a new learner has no streak, nothing to repair, and the read changes nothing", async ({ page }) => {
   const api = new Api(page);
   await api.signUp(E2E.email("streak"), E2E.PASSWORD);
@@ -77,5 +94,6 @@ test("the quote refuses what is not a real question, and nobody signed out can a
   expect((await stranger.get("/api/credits/wallet")).status()).toBe(401);
   expect((await stranger.get("/api/credits/transactions")).status()).toBe(401);
   expect((await stranger.get("/api/credits/streak")).status()).toBe(401);
+  expect((await stranger.get("/api/credits/plans")).status()).toBe(401);
   await stranger.dispose();
 });

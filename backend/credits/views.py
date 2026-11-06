@@ -18,11 +18,12 @@ from .earning.streak import StreakMilestones
 from .earning.zone import LearnerZone
 from .exempt import ExemptPolicy
 from .ledger import Ledger
-from .models import CreditBucket, CreditSettings, CreditTransaction, StreakDay
+from .models import CreditBucket, CreditSettings, CreditTransaction, Plan, PlanPeriod, StreakDay
 from .planner import SpendBucket, SpendPlanner
 from .pricing.hints import UnknownHints
 from .pricing.journey import JourneyQuote
 from .serializers import (
+    PlansSerializer,
     QuoteRequestSerializer,
     QuoteSerializer,
     RepairResponseSerializer,
@@ -47,6 +48,7 @@ class WalletView(APIView):
     )
     def get(self, request):
         ledger = Ledger()
+        ledger.activate_periods(request.user)  # the new week's credits are here the moment the week starts
         now = ledger.clock.now()
         rows = CreditBucket.objects.filter(user=request.user, revoked_at__isnull=True, amount_remaining__gt=0)
         by_id = {row.pk: row for row in rows}
@@ -215,5 +217,63 @@ class StreakRepairView(APIView):
                     "run_started_on": streak.run_started_on,
                     "alive": streak.alive,
                 },
+            }
+        )
+
+
+class PlansView(APIView):
+    @extend_schema(
+        tags=TAGS,
+        summary="What you can buy",
+        description=(
+            "The plans on offer with their prices in paise, the rules for one-time credits, and your own running and "
+            "waiting periods. Reading starts a period that is due, so the credits are there when the page is."
+        ),
+        responses={200: PlansSerializer},
+    )
+    def get(self, request):
+        Ledger().activate_periods(request.user)
+        settings = CreditSettings.load()
+        plans = list(Plan.objects.filter(active=True))
+        one_time = next((p for p in plans if p.is_one_time), None)
+        periods = list(
+            PlanPeriod.objects.filter(
+                user=request.user, status__in=[PlanPeriod.Status.QUEUED, PlanPeriod.Status.ACTIVE]
+            ).select_related("purchase__plan")
+        )
+        return Response(
+            {
+                "plans": [
+                    {
+                        "key": p.key,
+                        "name": p.name,
+                        "kind": "one_time" if p.is_one_time else "recurring",
+                        "credits": p.credits,
+                        "period_days": p.period_days,
+                        "price_paise": p.price_paise,
+                        "max_quantity": p.max_quantity,
+                    }
+                    for p in plans
+                ],
+                "one_time": {
+                    "min_credits": settings.min_one_time_credits,
+                    "max_credits": settings.max_one_time_credits,
+                    "price_paise_per_credit": one_time.price_paise,
+                    "valid_days": settings.purchased_valid_days,
+                }
+                if one_time
+                else None,
+                "periods": [
+                    {
+                        "plan": p.purchase.plan.key,
+                        "plan_name": p.purchase.plan.name,
+                        "status": p.status,
+                        "starts_at": p.starts_at,
+                        "ends_at": p.ends_at,
+                        "credits": p.credits,
+                    }
+                    for p in periods
+                ],
+                "queue": {"open": len(periods), "limit": settings.max_queued_periods},
             }
         )

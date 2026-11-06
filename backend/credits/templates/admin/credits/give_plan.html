@@ -1,0 +1,16 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<p>This puts a plan on the {{ wallets|length }} selected wallet(s) <strong>for nothing</strong>. It is marked as given by an
+administrator, with your reason and your email, and it is written to the change log. Nothing is edited in place.</p>
+<ul>{% for wallet in wallets %}<li>{{ wallet.user }}</li>{% endfor %}</ul>
+<form method="post">
+  {% csrf_token %}
+  {% for pk in selected %}<input type="hidden" name="_selected_action" value="{{ pk }}">{% endfor %}
+  <input type="hidden" name="action" value="give_plan">
+  <input type="hidden" name="apply" value="1">
+  {{ form.as_p }}
+  <input type="submit" class="default" value="Give the plan">
+  <a href="{% url 'admin:credits_wallet_changelist' %}">Cancel</a>
+</form>
+{% endblock %}

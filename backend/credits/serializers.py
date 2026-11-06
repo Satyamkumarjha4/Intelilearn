@@ -125,3 +125,41 @@ class RepairResponseSerializer(serializers.Serializer):
     cost = serializers.IntegerField()
     bonus = serializers.IntegerField(help_text="Credits paid because the repair completed a streak bonus.")
     streak = RepairedStreakSerializer()
+
+
+class PlanSerializer(serializers.Serializer):
+    key = serializers.CharField()
+    name = serializers.CharField()
+    kind = serializers.ChoiceField(choices=["one_time", "recurring"])
+    credits = serializers.IntegerField(help_text="Credits each period gives; 0 for one-time credits.")
+    period_days = serializers.IntegerField()
+    price_paise = serializers.IntegerField(help_text="Paise, tax included. For one-time credits, one credit.")
+    max_quantity = serializers.IntegerField(help_text="The most that can be bought at once.")
+
+
+class OneTimeRulesSerializer(serializers.Serializer):
+    min_credits = serializers.IntegerField()
+    max_credits = serializers.IntegerField()
+    price_paise_per_credit = serializers.IntegerField()
+    valid_days = serializers.IntegerField(help_text="How long one-time credits last.")
+
+
+class PlanPeriodSerializer(serializers.Serializer):
+    plan = serializers.CharField()
+    plan_name = serializers.CharField()
+    status = serializers.ChoiceField(choices=["active", "queued"])
+    starts_at = serializers.DateTimeField()
+    ends_at = serializers.DateTimeField()
+    credits = serializers.IntegerField()
+
+
+class QueueSerializer(serializers.Serializer):
+    open = serializers.IntegerField(help_text="Periods running or waiting.")
+    limit = serializers.IntegerField(help_text="The most that may be open at once.")
+
+
+class PlansSerializer(serializers.Serializer):
+    plans = PlanSerializer(many=True)
+    one_time = OneTimeRulesSerializer(allow_null=True)
+    periods = PlanPeriodSerializer(many=True, help_text="The learner's running and waiting periods, soonest first.")
+    queue = QueueSerializer()

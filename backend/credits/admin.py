@@ -8,15 +8,33 @@ here too: an edit adds a row and switches the old one off (`PriceCatalog`), so h
 changes.
 """
 
+import uuid
+
 from django.contrib import admin, messages
 from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
+from django.db import transaction
 from django.template.response import TemplateResponse
+
+from console.audit import AuditTrail
 
 from .clock import SystemClock
 from .errors import LedgerError
-from .forms import AdjustCreditsForm
+from .forms import AdjustCreditsForm, GivePlanForm
 from .ledger import Ledger
-from .models import ActionPrice, CreditBucket, CreditHold, CreditSettings, CreditTransaction, Wallet
+from .models import (
+    ActionPrice,
+    CreditBucket,
+    CreditHold,
+    CreditSettings,
+    CreditTransaction,
+    Plan,
+    PlanPeriod,
+    PlanPurchase,
+    Wallet,
+)
+from .plans.desk import PurchaseDesk
+from .plans.errors import InvalidPlanRequest, QueueFull
+from .plans.fulfilment import PlanFulfilment
 from .pricing.book import PriceCatalog
 
 
@@ -88,6 +106,53 @@ def adjust_credits(modeladmin, request, queryset):
     return TemplateResponse(request, "admin/credits/adjust_credits.html", context)
 
 
+@admin.action(description="Give a plan…")
+def give_plan(modeladmin, request, queryset):
+    """Put a plan on the selected wallets for nothing, with a reason: the whole path of a purchase before payments
+    exist. Each
+    gift is a purchase marked as an administrator's, is fulfilled like any other, and is written to the change log."""
+    form = GivePlanForm(request.POST if "apply" in request.POST else None)
+    if "apply" in request.POST and form.is_valid():
+        data, desk, fulfilment = form.cleaned_data, PurchaseDesk(), PlanFulfilment()
+        given = 0
+        for wallet in queryset.select_related("user"):
+            purchase_id = uuid.uuid5(data["token"], str(wallet.pk))  # the same form sent twice is the same purchase
+            try:
+                with transaction.atomic():
+                    purchase = desk.open(
+                        wallet.user, data["plan"], quantity=data["quantity"], credits=data["credits"], source="admin",
+                        by=request.user.email, reason=data["reason"], purchase_id=purchase_id,
+                    )  # fmt: skip
+                    if fulfilment.fulfil(purchase).created:
+                        AuditTrail(request.user).record(
+                            "credits.give_plan", "wallet", wallet.pk,
+                            after={"plan": data["plan"], "quantity": data["quantity"], "credits": data["credits"],
+                                   "reason": data["reason"], "purchase": str(purchase.pk)},
+                        )  # fmt: skip
+                        given += 1
+            except QueueFull as full:
+                modeladmin.message_user(
+                    request,
+                    f"{wallet.user}: the plan queue is full "
+                    f"({full.extra['open_periods']} of {full.extra['limit']} periods are open).",
+                    messages.ERROR,
+                )
+            except InvalidPlanRequest as refused:
+                modeladmin.message_user(request, f"{wallet.user}: {refused.detail}", messages.ERROR)
+        if given:
+            modeladmin.message_user(request, f"Gave the plan to {given} wallet(s).", messages.SUCCESS)
+        return None
+    context = {
+        **modeladmin.admin_site.each_context(request),
+        "title": "Give a plan",
+        "form": form,
+        "wallets": queryset.select_related("user"),
+        "selected": request.POST.getlist(ACTION_CHECKBOX_NAME),
+        "opts": modeladmin.model._meta,
+    }
+    return TemplateResponse(request, "admin/credits/give_plan.html", context)
+
+
 @admin.register(Wallet)
 class WalletAdmin(admin.ModelAdmin):
     list_display = ["user", "credits_exempt", "balance", "reserved", "created_at"]
@@ -95,7 +160,7 @@ class WalletAdmin(admin.ModelAdmin):
     search_fields = ["user__email"]
     fields = ["user", "credits_exempt", "balance", "reserved", "created_at"]
     readonly_fields = ["user", "balance", "reserved", "created_at"]
-    actions = [adjust_credits]
+    actions = [adjust_credits, give_plan]
     list_select_related = ["user"]
 
     def has_add_permission(self, request):
@@ -152,3 +217,39 @@ class ActionPriceAdmin(admin.ModelAdmin):
             PriceCatalog().deactivate(obj.key, by=who, now=now)
         else:
             PriceCatalog().revise(obj.key, obj.credits, by=who, now=now, label=obj.label)
+
+
+@admin.register(Plan)
+class PlanAdmin(admin.ModelAdmin):
+    """What can be bought. Prices and credits can be edited (a purchase keeps what it cost and a period what it
+    grants, so an
+    edit changes nothing already bought); a plan can be switched off but not added or deleted."""
+
+    list_display = ["name", "key", "credits", "period_days", "price_paise", "max_quantity", "active", "sort"]
+    list_editable = ["active"]
+    ordering = ["sort"]
+
+    def get_readonly_fields(self, request, obj=None):
+        return ["key"] if obj else []
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PlanPurchase)
+class PlanPurchaseAdmin(ReadOnlyAdmin):
+    list_display = ["id", "user", "plan", "quantity", "credits", "amount_paise", "source", "status", "created_at"]
+    list_filter = ["status", "source", "plan"]
+    search_fields = ["user__email"]
+    list_select_related = ["user", "plan"]
+
+
+@admin.register(PlanPeriod)
+class PlanPeriodAdmin(ReadOnlyAdmin):
+    list_display = ["id", "user", "purchase", "position", "starts_at", "ends_at", "credits", "status"]
+    list_filter = ["status"]
+    search_fields = ["user__email"]
+    list_select_related = ["user", "purchase__plan"]
