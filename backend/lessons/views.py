@@ -523,7 +523,7 @@ class AttemptsView(OwnedLessons, APIView):
             201: AttemptStartedSerializer,
             202: AttemptStartedSerializer,
             409: OpenApiResponse(description="The lesson is not ready, or the same keyed request is still running."),
-            429: OpenApiResponse(description="Too many starts (`TEST_ATTEMPT_THROTTLE_RATE`), or `retakes_per_day`."),
+            429: OpenApiResponse(description="Too many starts (`TEST_ATTEMPT_THROTTLE_RATE`)."),
         },
     )
     def post(self, request, lesson_id):

@@ -862,7 +862,6 @@ export type FlowSettingsValues = {
   batch_max_long: number;
   batch_max_short: number;
   /** Retakes of one lesson (or quick quiz) in 24 hours. */
-  retakes_per_day: number;
   /** The most lessons one quick quiz can combine, the tokens of summary per lesson, and the length of the calibration. */
   quiz_max_source_lessons: number;
   quiz_source_token_budget: number;

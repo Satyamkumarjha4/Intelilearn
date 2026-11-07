@@ -122,7 +122,6 @@ export function SettingsView() {
           </Section>
 
           <Section title="Test and retakes">
-            {numberRow("retakes_per_day", "Retakes per lesson per day", "Each retake writes a fresh set of ten questions")}
             {numberRow("band_fail_below", "Fail below (%)", "An attempt under this percent is a Fail")}
             {numberRow("band_excellent_above", "Excellent above (%)", "An attempt over this percent is Excellent")}
             {numberRow("question_batch_size", "Questions per model call", "5 to 10; the test is ten questions, written in batches")}

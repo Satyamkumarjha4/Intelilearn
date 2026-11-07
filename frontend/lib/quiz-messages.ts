@@ -21,7 +21,7 @@ export class QuizMessages {
   static retake(error: unknown): string {
     const refused = ActionRefusedMessage.of(error);
     if (refused) return refused;
-    if (error instanceof ApiError && error.status === 429) return "That's enough tries for today. You can try again tomorrow.";
+    if (error instanceof ApiError && error.status === 429) return "You're going a bit fast. Wait a moment and try again.";
     if (error instanceof ApiError && error.code === "source_missing") return "A lesson this quiz was made from has been deleted, so it can't be taken again. Make a new quiz.";
     return error instanceof ApiError ? error.message : "We couldn't start a new try. Please try again.";
   }

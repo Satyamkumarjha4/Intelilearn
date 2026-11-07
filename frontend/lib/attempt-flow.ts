@@ -38,7 +38,6 @@ export class AttemptErrors {
   static message(error: unknown, fallback: string): string {
     const refused = ActionRefusedMessage.of(error);
     if (refused) return refused;
-    if (error instanceof ApiError && error.code === "retake_limit") return "That's enough tries for today. You can try again tomorrow.";
     if (error instanceof ApiError && error.status === 429) return "You're going a bit fast. Wait a moment and try again.";
     return error instanceof ApiError ? error.message : fallback;
   }

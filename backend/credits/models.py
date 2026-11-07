@@ -415,7 +415,6 @@ class CreditSettings(models.Model):
     # --- buying
     min_one_time_credits = models.PositiveIntegerField(default=10, validators=[MinValueValidator(1)])
     max_one_time_credits = models.PositiveIntegerField(default=5000, validators=[MinValueValidator(1)])
-    paise_per_credit = models.PositiveIntegerField(default=100, validators=[MinValueValidator(1)])
     max_queued_periods = models.PositiveIntegerField(
         default=12, validators=[MinValueValidator(1), MaxValueValidator(60)], help_text="Plan periods lined up at once."
     )

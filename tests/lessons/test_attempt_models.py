@@ -116,12 +116,12 @@ class TestFlowSettingsAdditions:
 
         assert (settings.band_fail_below, settings.band_excellent_above) == (30, 90)
         assert (settings.question_batch_size, settings.batch_max_long, settings.batch_max_short) == (5, 1, 2)
-        assert settings.retakes_per_day == 3
+        assert not hasattr(settings, "retakes_per_day")  # retired (T33): the hourly throttle is the limit
 
     def test_the_snapshot_carries_them_so_a_lesson_keeps_the_rules_it_started_with(self):
         snapshot = FlowSettings.load().snapshot()
 
-        assert snapshot["band_fail_below"] == 30 and snapshot["retakes_per_day"] == 3
+        assert snapshot["band_fail_below"] == 30 and "retakes_per_day" not in snapshot
 
     def test_the_default_settings_are_valid(self):
         FlowSettings.load().full_clean()
@@ -150,7 +150,3 @@ class TestFlowSettingsAdditions:
     def test_a_percent_over_100_is_refused(self, percent):
         with pytest.raises(ValidationError):
             FlowSettings(band_excellent_above=percent).full_clean()
-
-    def test_no_retakes_a_day_is_refused(self):
-        with pytest.raises(ValidationError):
-            FlowSettings(retakes_per_day=0).full_clean()

@@ -23,7 +23,6 @@ const RANGES: Record<NumberField, [min: number, max: number]> = {
   question_batch_size: [5, 10],
   batch_max_long: [0, 10],
   batch_max_short: [0, 10],
-  retakes_per_day: [1, 50],
   quiz_max_source_lessons: [1, 10],
   quiz_source_token_budget: [200, 6000],
   calibration_questions: [3, 7],

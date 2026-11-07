@@ -34,7 +34,6 @@ const saved: FlowSettingsValues = {
   question_batch_size: 5,
   batch_max_long: 1,
   batch_max_short: 2,
-  retakes_per_day: 3,
   quiz_max_source_lessons: 10,
   quiz_source_token_budget: 1500,
   calibration_questions: 5,
@@ -52,7 +51,7 @@ describe("fromSettings", () => {
     const values = FlowSettingsForm.fromSettings(saved);
 
     expect(values.diagnostic_questions_per_band).toBe("2");
-    expect(values.retakes_per_day).toBe("3");
+    expect(values.calibration_questions).toBe("5");
     expect(values.mastery_requires_all_correct).toBe(true);
     expect(values.media_sources).toEqual(["wikimedia", "openverse"]);
   });
@@ -78,7 +77,6 @@ describe("errors", () => {
     ["diagnostic_questions_per_band", "5", "Enter a number from 1 to 4."],
     ["prerequisite_question_count", "11", "Enter a number from 1 to 10."],
     ["alignment_min_score", "6", "Enter a number from 1 to 5."],
-    ["retakes_per_day", "0", "Enter a number from 1 to 50."],
     ["quiz_max_source_lessons", "11", "Enter a number from 1 to 10."],
     ["quiz_source_token_budget", "100", "Enter a number from 200 to 6000."],
     ["calibration_questions", "2", "Enter a number from 3 to 7."],
@@ -92,7 +90,7 @@ describe("errors", () => {
   });
 
   test("spaces around a number are fine", () => {
-    expect(FlowSettingsForm.errors(form({ retakes_per_day: " 4 " }))).toEqual({});
+    expect(FlowSettingsForm.errors(form({ calibration_questions: " 4 " }))).toEqual({});
   });
 
   test("a Fail line at or above the Excellent line is called out on the Fail line", () => {
@@ -121,7 +119,7 @@ describe("errors", () => {
 
 describe("patch", () => {
   test("sends only what changed, as numbers", () => {
-    expect(FlowSettingsForm.patch(saved, form({ retakes_per_day: "5", alignment_min_score: "4" }))).toEqual({ retakes_per_day: 5, alignment_min_score: 4 });
+    expect(FlowSettingsForm.patch(saved, form({ calibration_questions: "6", alignment_min_score: "4" }))).toEqual({ calibration_questions: 6, alignment_min_score: 4 });
   });
 
   test("sends the switch and the lists when they changed", () => {
@@ -143,21 +141,21 @@ describe("patch", () => {
 describe("dirty", () => {
   test("names the fields that differ from what is saved", () => {
     expect(FlowSettingsForm.dirty(saved, form())).toEqual([]);
-    expect(FlowSettingsForm.dirty(saved, form({ retakes_per_day: "4", media_sources: ["wikimedia"] }))).toEqual(["retakes_per_day", "media_sources"]);
+    expect(FlowSettingsForm.dirty(saved, form({ calibration_questions: "4", media_sources: ["wikimedia"] }))).toEqual(["calibration_questions", "media_sources"]);
   });
 
   test("an unusable box counts as unsaved (it differs), without being sent", () => {
-    expect(FlowSettingsForm.dirty(saved, form({ retakes_per_day: "" }))).toEqual(["retakes_per_day"]);
-    expect(FlowSettingsForm.patch(saved, form({ retakes_per_day: "" }))).toEqual({});
+    expect(FlowSettingsForm.dirty(saved, form({ calibration_questions: "" }))).toEqual(["calibration_questions"]);
+    expect(FlowSettingsForm.patch(saved, form({ calibration_questions: "" }))).toEqual({});
   });
 });
 
 describe("numbers", () => {
   test("uses the saved value where a box is unusable", () => {
-    const numbers = FlowSettingsForm.numbers(saved, form({ diagnostic_questions_per_band: "", retakes_per_day: "5" }));
+    const numbers = FlowSettingsForm.numbers(saved, form({ diagnostic_questions_per_band: "", calibration_questions: "6" }));
 
     expect(numbers.diagnostic_questions_per_band).toBe(2);
-    expect(numbers.retakes_per_day).toBe(5);
+    expect(numbers.calibration_questions).toBe(6);
   });
 });
 

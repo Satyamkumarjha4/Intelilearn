@@ -209,7 +209,8 @@ class TestSettings:
             1,
             3,
         )
-        assert (first.min_one_time_credits, first.max_one_time_credits, first.paise_per_credit) == (10, 5000, 100)
+        assert (first.min_one_time_credits, first.max_one_time_credits) == (10, 5000)
+        assert not hasattr(first, "paise_per_credit")  # the plan table prices one-time credits, not a setting
         assert (first.max_queued_periods, first.orphan_minutes) == (12, 30)
 
     def test_a_second_instance_overwrites_the_one_row(self):

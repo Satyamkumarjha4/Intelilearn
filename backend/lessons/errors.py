@@ -150,9 +150,3 @@ class QuestionLocked(LessonError):
     status_code = status.HTTP_409_CONFLICT
     default_code = "locked"
     default_detail = "That question was already answered. Answers cannot be changed."
-
-
-class RetakeLimitReached(LessonError):
-    status_code = status.HTTP_429_TOO_MANY_REQUESTS
-    default_code = "retake_limit"
-    default_detail = "That is enough retakes for today. Try again tomorrow."

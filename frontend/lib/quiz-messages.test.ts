@@ -40,7 +40,7 @@ describe("making a quiz", () => {
 describe("a new try", () => {
   test.each([
     [refused, "Not available on your plan."],
-    [new ApiError(429, "retake_limit", "x"), "That's enough tries for today. You can try again tomorrow."],
+    [new ApiError(429, "throttled", "x"), "You're going a bit fast. Wait a moment and try again."],
     [new ApiError(409, "source_missing", "x"), "A lesson this quiz was made from has been deleted, so it can't be taken again. Make a new quiz."],
     [new ApiError(409, "wrong_stage", "The quiz is not ready."), "The quiz is not ready."],
     [new TypeError("network"), "We couldn't start a new try. Please try again."],

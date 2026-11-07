@@ -65,7 +65,6 @@ describe("AttemptErrors", () => {
   });
 
   test.each([
-    [new ApiError(429, "retake_limit", "server words"), "That's enough tries for today. You can try again tomorrow."],
     [new ApiError(429, "throttled", "server words"), "You're going a bit fast. Wait a moment and try again."],
     [new ApiError(409, "wrong_stage", "The lesson is not ready."), "The lesson is not ready."],
     [new ApiError(403, "out_of_credits", "You have used all your tries for today."), "You have used all your tries for today."],
@@ -211,7 +210,7 @@ describe("AttemptPreparation", () => {
 
   test("a start that is refused rejects with the server's error", async () => {
     const flow = new AttemptPreparation(
-      { startAttempt: async () => Promise.reject(new ApiError(429, "retake_limit", "x")), test: async () => test_(null), cancelRun: async () => {} },
+      { startAttempt: async () => Promise.reject(new ApiError(429, "throttled", "x")), test: async () => test_(null), cancelRun: async () => {} },
       () => () => {},
     );
 

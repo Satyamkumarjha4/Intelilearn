@@ -496,9 +496,6 @@ class FlowSettings(models.Model):
     batch_max_short = models.PositiveSmallIntegerField(
         default=2, validators=[MaxValueValidator(10)], help_text="Short answers per batch, unless only short are asked."
     )
-    retakes_per_day = models.PositiveSmallIntegerField(
-        default=3, validators=[MinValueValidator(1), MaxValueValidator(50)], help_text="Per lesson, in 24 hours."
-    )
     quiz_max_source_lessons = models.PositiveSmallIntegerField(
         default=10, validators=[MinValueValidator(1), MaxValueValidator(10)],
         help_text="The most lessons one quick quiz can combine.",

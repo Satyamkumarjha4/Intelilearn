@@ -10,7 +10,7 @@ Use cases:
 - start: attempt 1 is a 201 with its questions and no keys; a repeat is a 200 with the same attempt and its saved
   answers; a retake is a 202 with a run id and no questions, and a repeat returns the same attempt and run
 - the Idempotency-Key makes a repeated retake start return the first answer and ask the gate once
-- start is rate limited, and a retake past the lesson's daily limit is a 429; a refused action creates nothing
+- start is rate limited; a refused action creates nothing
 - answer: a saved answer locks its question (a second PUT is a 409 `locked`), a bad shape is a 400, and a sealed or
   preparing attempt is a 409
 - submit: a lesson attempt is graded in the same request (200, score, band, offer, the card), a sealed one is a 409
@@ -200,17 +200,6 @@ class TestStart:
 
         assert response.status_code == 403 and response.json()["code"] == "test_refused"
         assert TestSubmission.objects.filter(lesson=ready).count() == 1 and queue.runs == []
-
-    def test_a_retake_past_the_daily_limit_is_a_429(self, signed_in_client, make_lesson, queue):
-        lesson = make_lesson(
-            stage=Stage.READY, code="x", final_test=TEST, plan=make_plan(), settings_snapshot={"retakes_per_day": 1}
-        )
-        graded(lesson, 1, 14)
-        graded(lesson, 2, 15)
-
-        response = signed_in_client.post(attempts_url(lesson))
-
-        assert response.status_code == 429 and response.json()["code"] == "retake_limit" and queue.runs == []
 
     def test_starting_is_rate_limited(self, signed_in_client, make_lesson, queue, monkeypatch):
         monkeypatch.setitem(SimpleRateThrottle.THROTTLE_RATES, "test_attempt", "2/hour")

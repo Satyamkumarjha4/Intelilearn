@@ -12,7 +12,6 @@ open-ended questions queues `grade_test`; both call `AttemptOutcome`, the one ru
 
 import uuid
 from dataclasses import dataclass
-from datetime import timedelta
 from typing import NamedTuple
 
 from django.core.exceptions import ValidationError
@@ -32,7 +31,6 @@ from .errors import (
     InvalidAnswers,
     NotFailed,
     QuestionLocked,
-    RetakeLimitReached,
     RunInProgress,
     SubmissionNotFound,
     WrongStage,
@@ -105,9 +103,6 @@ class AnswerCleaner:
 
 
 class AttemptService:
-    RETAKE_WINDOW = timedelta(hours=24)
-    DEFAULT_RETAKES_PER_DAY = 3
-
     def __init__(
         self,
         queue: TaskQueue | None = None,
@@ -198,7 +193,6 @@ class AttemptService:
         return Started(attempt, run, created=True)
 
     def _begin_retake(self, lesson: Lesson, number: int, idempotency_key: str) -> tuple[TestSubmission, GraphRun]:
-        self._check_daily_limit(lesson)
         attempt_id = uuid.uuid4()
         authorization = self.metering.authorize(
             lesson.owner,
@@ -218,14 +212,6 @@ class AttemptService:
                 payload={"input": {"attempt_id": str(attempt.id)}, **self.metering.payload(authorization)},
             )
         return attempt, run
-
-    def _check_daily_limit(self, lesson: Lesson) -> None:
-        limit = (lesson.settings_snapshot or {}).get("retakes_per_day", self.DEFAULT_RETAKES_PER_DAY)
-        recent = TestSubmission.objects.filter(
-            lesson=lesson, attempt_no__gte=2, started_at__gte=timezone.now() - self.RETAKE_WINDOW
-        )
-        if recent.count() >= limit:
-            raise RetakeLimitReached()
 
     # --- answering -----------------------------------------------------------------------------------------------
 

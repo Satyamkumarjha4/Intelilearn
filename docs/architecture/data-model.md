@@ -258,7 +258,7 @@ There is one row per Celery execution segment of any graph, for example start, e
 | band_fail_below / band_excellent_above | 30 / 90 (percent: under the first is a Fail, over the second Excellent; the first must be below the second) |
 | question_batch_size | 5 (5 to 10: questions written per model call) |
 | batch_max_long / batch_max_short | 1 / 2 (written answers per batch; off when only short or long answers were asked) |
-| retakes_per_day | 3 (per lesson or per quick quiz, in 24 hours; attempt 1 does not count) |
+| (retired in 10.9) | `retakes_per_day` is gone: retakes are limited by the hourly throttle, the one open attempt, and what they cost |
 | quiz_max_source_lessons | 10 (1 to 10: the most lessons one quick quiz combines) |
 | quiz_source_token_budget | 1500 (200 to 6000: tokens of concept summary per source lesson, estimated as characters divided by four) |
 | calibration_questions | 5 (3 to 7: the length of the calibration walk; the table that gives the level is written for five and scaled) |

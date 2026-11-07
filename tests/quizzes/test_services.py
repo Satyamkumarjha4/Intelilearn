@@ -16,7 +16,7 @@ Use cases:
 - a topic nobody could judge allows every kind its count allows; a judged non-quantitative topic refuses numerical
 - the same settings give the same hash; a gate that refuses creates nothing; the idempotency key reaches the gate
 - a retake is a new attempt with a queued run and one `quiz.retake`; an open attempt is returned with no new ask; it
-  needs a ready quiz and live source lessons, and is limited per day
+  needs a ready quiz and live source lessons
 - delete stops the runs, settles the authorization cancelled, erases the checkpoints and model calls, and removes the
   quiz
 - the calibration walk: one question at a time with no band or answer, final, in the ladder's order; after the last
@@ -30,7 +30,7 @@ from rest_framework.exceptions import NotFound, ValidationError
 from support.gates import CountingGate, RefusingGate
 
 from graph.questions.traits import TopicTraits
-from lessons.errors import LessonNotConfigured, RetakeLimitReached, WrongStage
+from lessons.errors import LessonNotConfigured, WrongStage
 from lessons.metering import ActionRefused
 from lessons.models import FlowSettings, GraphRun, Lesson, TestSubmission
 from llm_registry.models import ModelCall
@@ -394,15 +394,6 @@ class TestRetaking:
 
         with pytest.raises(SourceMissing):
             service.retake(QuickQuiz.objects.get(pk=made.quiz.pk))
-
-    def test_retakes_are_limited_per_day(self, ready):
-        service, quiz = ready
-        QuickQuiz.objects.filter(pk=quiz.pk).update(settings_snapshot={**quiz.settings_snapshot, "retakes_per_day": 1})
-        service.retake(QuickQuiz.objects.get(pk=quiz.pk))
-        QuickQuizAttempt.objects.filter(status="generating").update(status="graded")
-
-        with pytest.raises(RetakeLimitReached):
-            service.retake(QuickQuiz.objects.get(pk=quiz.pk))
 
     def test_the_idempotency_key_reaches_the_gate(self, ready):
         service, quiz = ready

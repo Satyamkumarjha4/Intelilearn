@@ -10,7 +10,7 @@ Use cases:
   legacy lesson's test was moved there by migration 0019), is never metered, and is returned again by a repeated start
 - a retake is created `generating`, asks the gate for test.retake once with its size, queues the question_bank run with
   the authorization on it, and is returned again by a repeated start without asking again
-- a refused retake creates no attempt and queues nothing; a retake past the daily limit is refused with 429's error
+- a refused retake creates no attempt and queues nothing
 - a start for a lesson that is not ready, or is a mastery lesson, is refused
 - reading the test shows the open attempt's questions without keys and the answers saved so far, never starts anything,
   and says which attempt a start would make
@@ -38,7 +38,6 @@ from lessons.errors import (
     AttemptSealed,
     InvalidAnswers,
     QuestionLocked,
-    RetakeLimitReached,
     SubmissionNotFound,
     WrongStage,
 )
@@ -195,32 +194,6 @@ class TestStartARetake:
             Clashing(queue=queue, gate=gate).start(lesson)
 
         assert gate.settled and gate.settled[0][1] == "failed"
-
-    def test_a_retake_past_the_daily_limit_is_refused_and_asks_the_gate_nothing(self, make_lesson, queue):
-        gate = CountingGate()
-        lesson = self.retakeable(make_lesson, settings_snapshot={"retakes_per_day": 2})
-        graded_attempt(lesson, number=2)
-        graded_attempt(lesson, number=3)
-
-        with pytest.raises(RetakeLimitReached):
-            AttemptService(queue=queue, gate=gate).start(lesson)
-
-        assert gate.authorized == [] and TestSubmission.objects.filter(lesson=lesson).count() == 3
-
-    def test_retakes_older_than_a_day_do_not_count_and_the_default_is_three(self, make_lesson, queue):
-        lesson = self.retakeable(make_lesson)
-        for number in (2, 3, 4):
-            graded_attempt(lesson, number=number)
-        TestSubmission.objects.filter(lesson=lesson, attempt_no__gte=2).update(
-            started_at=lesson.created_at.replace(year=2020)
-        )
-
-        assert AttemptService(queue=queue).start(lesson).attempt.attempt_no == 5
-
-    def test_the_first_attempt_does_not_count_toward_the_limit(self, make_lesson, queue):
-        lesson = self.retakeable(make_lesson, settings_snapshot={"retakes_per_day": 1})
-
-        assert AttemptService(queue=queue).start(lesson).created is True
 
 
 class TestReadTheTest:

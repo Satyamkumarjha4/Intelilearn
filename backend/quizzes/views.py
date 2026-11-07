@@ -249,7 +249,7 @@ class QuizAttemptsView(OwnedQuizzes, APIView):
             200: AttemptStartedSerializer,
             202: AttemptStartedSerializer,
             409: OpenApiResponse(description="The quiz is not ready, or a lesson it was made from was deleted."),
-            429: OpenApiResponse(description="QUIZ_CREATE_THROTTLE_RATE, or `retakes_per_day`."),
+            429: OpenApiResponse(description="QUIZ_CREATE_THROTTLE_RATE."),
         },
     )
     def post(self, request, quiz_id):

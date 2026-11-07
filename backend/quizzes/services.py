@@ -7,17 +7,15 @@ attempts at a quiz are in `attempts.py`.
 
 import uuid
 from dataclasses import dataclass
-from datetime import timedelta
 
 from django.db import transaction
-from django.utils import timezone
 from rest_framework.exceptions import NotFound, ValidationError
 
 from graph.ladder import AdaptiveLadder
 from graph.questions.traits import TopicTraits
 from graph.quiz_config import QuizConfig, QuizConfigError
 from lessons.effects import RunEffects
-from lessons.errors import LessonNotConfigured, RetakeLimitReached, RunInProgress, WrongStage
+from lessons.errors import LessonNotConfigured, RunInProgress, WrongStage
 from lessons.metering import ActionGate, ActionMetering, AuthorizationSettlement, MeteredAction, RunOutcome
 from lessons.models import FlowSettings, GraphRun
 from lessons.services import LessonService, RunDispatcher, TaskQueue, has_active_run
@@ -49,8 +47,6 @@ class QuickQuizService:
     #: the steps a quiz needs a model for, by how its level is found
     NODES = ("test.generate",)
     CALIBRATION_NODES = ("diagnostic.generate",)
-    RETAKE_WINDOW = timedelta(hours=24)
-    DEFAULT_RETAKES_PER_DAY = 3
 
     def __init__(
         self,
@@ -187,7 +183,6 @@ class QuickQuizService:
                 return Retaken(open_attempt, self.generating_run(open_attempt), created=False)
             if quiz.sources.filter(lesson__isnull=True).exists():
                 raise SourceMissing()
-            self._check_daily_limit(quiz)
             attempt_id = uuid.uuid4()
             number = (quiz.attempts.order_by("-attempt_no").values_list("attempt_no", flat=True).first() or 0) + 1
             authorization = self.metering.authorize(
@@ -207,12 +202,6 @@ class QuickQuizService:
                 )
         self.dispatcher.dispatch(run)
         return Retaken(attempt, run, created=True)
-
-    def _check_daily_limit(self, quiz: QuickQuiz) -> None:
-        limit = (quiz.settings_snapshot or {}).get("retakes_per_day", self.DEFAULT_RETAKES_PER_DAY)
-        recent = quiz.attempts.filter(attempt_no__gte=2, started_at__gte=timezone.now() - self.RETAKE_WINDOW)
-        if recent.count() >= limit:
-            raise RetakeLimitReached()
 
     @staticmethod
     def generating_run(attempt: QuickQuizAttempt) -> GraphRun | None:

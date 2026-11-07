@@ -33,7 +33,7 @@ FIELDS = {
     "mastery_requires_all_correct", "max_interactives_per_page",
     "alignment_min_score", "alignment_max_rounds", "render_check_max_rounds", "max_auto_runtime_repairs",
     "media_sources", "allowed_media_licenses", "band_fail_below", "band_excellent_above", "question_batch_size",
-    "batch_max_long", "batch_max_short", "retakes_per_day", "quiz_max_source_lessons", "quiz_source_token_budget",
+    "batch_max_long", "batch_max_short", "quiz_max_source_lessons", "quiz_source_token_budget",
     "calibration_questions",
 }  # fmt: skip
 
