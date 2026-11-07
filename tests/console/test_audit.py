@@ -9,8 +9,8 @@ Use cases:
 - an entry keeps who, what, the target and the target before and after, as plain JSON (ids, decimals and dates as text)
 - the log lists newest first in pages, names the fields that changed, and keeps the actor's email after the account goes
 - it can only be read: nothing writes, edits or deletes entries through the API, and a learner cannot read it
-- every endpoint that changes something writes exactly one entry, with the action named for it; reading, previewing a
-  profile and refused requests write none
+- every endpoint that changes something writes exactly one entry, with the action named for it (the credit, wallet and
+  payment endpoints of phase 10.9 included); reading, previewing a profile and refused requests write none
 - a new endpoint that changes something cannot be added without being listed here (a guard over the URL configuration)
 - the log is read in a fixed number of queries
 """
@@ -25,8 +25,10 @@ from langchain_core.messages import AIMessage
 from accounts.models import User
 from console.audit import AuditTrail
 from console.models import AuditEntry
+from credits.pricing.seed import PriceSeed
 from lessons.models import GraphRun
 from lessons.stages import Stage
+from payments.models import RefundAttempt
 
 pytestmark = pytest.mark.django_db
 
@@ -153,7 +155,7 @@ class Chat:
 
 
 @pytest.fixture
-def changes(registry, make_lesson, queue, monkeypatch):
+def changes(registry, make_lesson, queue, monkeypatch, user, payments):
     """Each endpoint that changes something: (url name, method) → (action it must log, a call that makes the change)."""
     monkeypatch.setattr("llm_registry.providers.CHAT_MODEL_FACTORY", lambda model, timeout: Chat())
     failed_lesson = make_lesson(stage=Stage.FAILED, error="boom")
@@ -165,6 +167,12 @@ def changes(registry, make_lesson, queue, monkeypatch):
                  "bindings": [{"model": registry.models["lite"].id}]}  # fmt: skip
     new_model = {"provider": "groq", "name": "openai/gpt-oss-20b", "supports_structured_output": True,
                  "context_window": 131_072, "max_output_tokens": 65_536}  # fmt: skip
+    PriceSeed().apply()
+    order = payments.buy("one_time", credits=100)
+    payments.send("succeeded", order)
+    attempt = RefundAttempt.objects.create(
+        token=uuid4(), order=order, amount_paise=100, refund_ref="r1", created_at=order.created_at
+    )
 
     def do(method, path, body=None):
         return lambda client: (
@@ -186,6 +194,38 @@ def changes(registry, make_lesson, queue, monkeypatch):
         ("console-flow-settings", "patch"): (
             "flow_settings.update",
             do("patch", "/api/console/flow-settings", {"alignment_max_rounds": 3}),
+        ),
+        ("console-credit-price", "patch"): (
+            "credits.price",
+            do("patch", "/api/console/credits/prices/lesson.full", {"credits": 11}),
+        ),
+        ("console-credit-plan", "patch"): (
+            "credits.plan",
+            do("patch", "/api/console/credits/plans/weekly_pro", {"credits": 120}),
+        ),
+        ("console-credit-settings", "patch"): (
+            "credits.settings",
+            do("patch", "/api/console/credits/settings", {"signup_credits": 31}),
+        ),
+        ("console-wallet", "patch"): (
+            "credits.exempt",
+            do("patch", f"/api/console/learners/{user.pk}/wallet", {"credits_exempt": True}),
+        ),
+        ("console-wallet-adjust", "post"): (
+            "credits.adjust",
+            do(
+                "post",
+                f"/api/console/learners/{user.pk}/wallet/adjust",
+                {"amount": 5, "reason": "r", "token": str(uuid4())},
+            ),
+        ),
+        ("console-payment-refund", "post"): (
+            "payments.refund",
+            do("post", f"/api/console/payments/{order.pk}/refund", {"token": str(uuid4())}),
+        ),
+        ("console-refund-failed", "post"): (
+            "payments.refund_failed",
+            do("post", f"/api/console/refunds/{attempt.pk}/mark-failed"),
         ),
     }
 
