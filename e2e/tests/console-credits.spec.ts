@@ -33,7 +33,7 @@ test("a price edited in the console is the live price, and the old one is kept",
   const before = await live();
   try {
     await page.goto("/console/credits");
-    const box = page.getByLabel("Credits for lesson.check");
+    const box = page.getByLabel("Credits for lesson.check", { exact: true });
     await expect(box).toHaveValue(String(before.credits));
     await box.fill(String(before.credits + 1));
     await page.getByRole("button", { name: "Save changes" }).click();
