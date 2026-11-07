@@ -232,6 +232,7 @@ PAYMENT_GATEWAYS_ENABLED = [
 # The provider used when the learner is not asked, and the one listed first when they are.
 PAYMENT_DEFAULT_GATEWAY = env("PAYMENT_DEFAULT_GATEWAY", default="stripe").strip().lower()
 # Test-mode keys in development; live keys only on the production host. Never logged, never in the repo.
+STRIPE_PUBLISHABLE_KEY = env("STRIPE_PUBLISHABLE_KEY", default="")  # not secret; for an on-page checkout
 STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY", default="")
 STRIPE_WEBHOOK_SECRET = env("STRIPE_WEBHOOK_SECRET", default="")
 RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID", default="")
@@ -241,6 +242,9 @@ RAZORPAY_WEBHOOK_SECRET = env("RAZORPAY_WEBHOOK_SECRET", default="")
 PAYMENT_RETURN_BASE_URL = env(
     "PAYMENT_RETURN_BASE_URL", default=f"http://localhost:{env('FRONTEND_PORT', default='3000')}"
 ).rstrip("/")
+# Real money: false unless set on purpose. A live Stripe or Razorpay key with this off stops the app at start
+# (payments.E005), so a live key left in a development `.env` charges nobody.
+PAYMENTS_LIVE_MODE = env.bool("PAYMENTS_LIVE_MODE", default=False)
 # Registers the fake gateway that the browser tests buy through. Never true outside the throwaway test stack.
 PAYMENT_ALLOW_FAKE_GATEWAY = env.bool("PAYMENT_ALLOW_FAKE_GATEWAY", default=False)
 # The secret the fake gateway signs its webhooks with. Not a real secret: it exists only where the fake gateway does.

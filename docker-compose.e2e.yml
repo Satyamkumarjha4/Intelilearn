@@ -26,6 +26,8 @@ x-e2e-env: &e2e-env
   # gate and the do-nothing sink until phase 10.9. `make fake-llm` makes the daily credit large, so a learner who has studied is never short.
   # The fake payment gateway (only ever on this stack): the browser "pays" by a signed callback the test sends through the
   # frontend's own address, as a provider would. The secret is not a real one.
+  # payments.E004 refuses the fake gateway unless DEBUG is on, so this stack says so itself (a CI run has no .env).
+  DJANGO_DEBUG: "true"
   PAYMENT_ALLOW_FAKE_GATEWAY: "true"
   PAYMENT_GATEWAYS_ENABLED: fake
   PAYMENT_DEFAULT_GATEWAY: fake
