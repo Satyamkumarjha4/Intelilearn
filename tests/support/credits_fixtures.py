@@ -4,8 +4,9 @@
   flushes the database, `transaction=True`, takes the migration's seed with it), and gives back a `CreditsOn` to put
   credits in a learner's wallet and read what was reserved.
 - `earning_on`: `credits_on` plus `CreditsActivitySink`, so the daily credit and the streak are earned too.
-- `_pin_the_open_gate` (autouse): every test starts on `OpenGate` whatever the default becomes, so the day the default
-  gate changes (phase 10.9) no existing test changes meaning. A test that wants another gate sets `ACTION_GATE` itself.
+- `_pin_the_open_gate` (autouse): every test starts on `OpenGate` and the do-nothing activity sink whatever the defaults
+  are (they became the credit gate and the credits sink in phase 10.9), so no test written before that changes meaning.
+  A test that wants another gate sets `ACTION_GATE` itself.
 
 The models are imported inside the fixtures, because this module is loaded before Django is set up.
 """
@@ -50,10 +51,12 @@ class CreditsOn:
 
 @pytest.fixture(autouse=True)
 def _pin_the_open_gate():
-    """Not via the `settings` fixture: a test may take a parameter of that name (one does), which would shadow it."""
+    """Not via the `settings` fixture: a test may take a parameter of that name (one does), which would shadow it. The
+    do-nothing sink is pinned with the open gate: since phase 10.9 the defaults earn and charge, and a test that wants
+    either asks for it (`credits_on`, `earning_on`)."""
     from django.test import override_settings
 
-    with override_settings(ACTION_GATE="lessons.metering.OpenGate"):
+    with override_settings(ACTION_GATE="lessons.metering.OpenGate", ACTIVITY_SINK="lessons.activity.NullActivity"):
         yield
 
 

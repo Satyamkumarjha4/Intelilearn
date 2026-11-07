@@ -22,8 +22,9 @@ x-e2e-env: &e2e-env
   LESSON_CREATE_THROTTLE_RATE: 10000/hour
   CREDITS_QUOTE_THROTTLE_RATE: 10000/min
   CREDITS_BALANCE_THROTTLE_RATE: 10000/min
-  # This stack charges and earns for real, so the credit screens can be driven end to end. The dev default stays the open
-  # gate and the do-nothing sink until phase 10.9. `make fake-llm` makes the daily credit large, so a learner who has studied is never short.
+  # This stack charges and earns for real (the credit gate and the credits sink are the defaults since phase 10.9, so it
+  # needs no opt-in), and the credit screens are driven end to end. `make fake-llm` makes the daily credit large, so a
+  # learner who has studied is never short.
   # The fake payment gateway (only ever on this stack): the browser "pays" by a signed callback the test sends through the
   # frontend's own address, as a provider would. The secret is not a real one.
   # payments.E004 refuses the fake gateway unless DEBUG is on, so this stack says so itself (a CI run has no .env).
@@ -42,8 +43,6 @@ x-e2e-env: &e2e-env
   PAYMENT_ORDER_THROTTLE_RATE: 10000/hour
   PAYMENT_STATUS_THROTTLE_RATE: 10000/min
   PAYMENT_WEBHOOK_THROTTLE_RATE: 10000/min
-  ACTION_GATE: credits.gate.CreditGate
-  ACTIVITY_SINK: credits.activity.CreditsActivitySink
 
 services:
   # Nothing but the app and its API is published: the dev stack owns the usual database and Redis ports.

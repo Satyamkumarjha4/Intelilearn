@@ -166,11 +166,14 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": FLOW_RUN_LOCK_TTL_S}
 
 # Where a started run is queued (the TaskQueue port, lessons/services.py). Tests swap it for an in-memory queue.
 LESSON_TASK_QUEUE = "lessons.tasks.CeleryTaskQueue"
-# Who may start work that costs model calls (the ActionGate port, lessons/metering.py). The open gate allows everything.
-ACTION_GATE = env("ACTION_GATE", default="lessons.metering.OpenGate")
+# Who may start work that costs model calls (the ActionGate port, lessons/metering.py). Credits are on: the default
+# gate charges (`credits.gate.CreditGate`). The open gate (`lessons.metering.OpenGate`) allows everything and is what
+# the tests run on unless a test asks for credits. Switched on in phase 10.9, after `manage.py grant_signup_credits`.
+ACTION_GATE = env("ACTION_GATE", default="credits.gate.CreditGate")
 # Who is told when a learner studied (the ActivitySink port, lessons/activity.py): a sealed attempt is reported once.
-# The default does nothing; the credits app plugs in here when the daily credit and the streak exist.
-ACTIVITY_SINK = env("ACTIVITY_SINK", default="lessons.activity.NullActivity")
+# The default earns the daily credit and the streak (`credits.activity.CreditsActivitySink`);
+# `lessons.activity.NullActivity` does nothing.
+ACTIVITY_SINK = env("ACTIVITY_SINK", default="credits.activity.CreditsActivitySink")
 # How long a creation request's answer is kept for a replayed `Idempotency-Key` (lessons/idempotency.py).
 IDEMPOTENCY_TTL_S = env.int("IDEMPOTENCY_TTL_S", default=86400)
 # Seconds between keep-alive comments on a run's event stream, so proxies don't close an idle connection.
