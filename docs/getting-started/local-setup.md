@@ -36,7 +36,7 @@ The root `.env` is the **single source of configuration**. Django reads it, `doc
 | Landing page | `LANDING_DEMO_THROTTLE_RATE`, `LANDING_DEMO_IDS_TTL_S` | 60/min, 600 (10 min) |
 | Onboarding | `TOPIC_SUGGESTIONS_THROTTLE_RATE`, `ONBOARDING_SUGGESTION_TTL_S` | 30/min, 30 days |
 | Lesson flow | `FLOW_RUN_LOCK_TTL_S`, `LESSON_CREATE_THROTTLE_RATE`, `SSE_HEARTBEAT_S`, `SANDBOX_DIR`, `NODE_BINARY`, `SANDBOX_CHECK_TIMEOUT_S`, `SANDBOX_RENDER_TIMEOUT_S`, `SANDBOX_PAGE_TIMEOUT_MS`, `GIPHY_API_KEY`, `MEDIA_URL_TTL_S` | 600, 30/hour, 30/hour, 15, `<repo>/sandbox`, node, 30, 180, 8000, empty, 21600 (6 h) |
-| Credits and payments (all read since phase 10.6, except the Stripe and Razorpay keys, which their adapters read in 10.7 and 10.8; names are in `.env.example`, all commented) | `ACTIVITY_SINK`, `PAYMENT_GATEWAYS_ENABLED`, `PAYMENT_DEFAULT_GATEWAY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `PAYMENT_RETURN_BASE_URL`, `PAYMENT_ALLOW_FAKE_GATEWAY`, `PAYMENT_FAKE_GATEWAY_SECRET`, `USD_INR_RATE`, `CREDITS_QUOTE_THROTTLE_RATE`, `CREDITS_BALANCE_THROTTLE_RATE`, `PAYMENT_ORDER_THROTTLE_RATE`, `PAYMENT_STATUS_THROTTLE_RATE`, `PAYMENT_WEBHOOK_THROTTLE_RATE` | the do-nothing sink, none enabled, stripe, empty keys, `http://localhost:${FRONTEND_PORT}`, false, a development value (used only where the fake gateway is allowed), 85, 120/min, 240/min, 10/hour, 60/min, 600/min |
+| Credits and payments (all read since phase 10.6, except the Razorpay keys, which its adapter reads in 10.8; names are in `.env.example`, all commented) | `ACTIVITY_SINK`, `PAYMENT_GATEWAYS_ENABLED`, `PAYMENT_DEFAULT_GATEWAY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `PAYMENT_RETURN_BASE_URL`, `PAYMENTS_LIVE_MODE`, `PAYMENT_ALLOW_FAKE_GATEWAY`, `PAYMENT_FAKE_GATEWAY_SECRET`, `USD_INR_RATE`, `CREDITS_QUOTE_THROTTLE_RATE`, `CREDITS_BALANCE_THROTTLE_RATE`, `PAYMENT_ORDER_THROTTLE_RATE`, `PAYMENT_STATUS_THROTTLE_RATE`, `PAYMENT_WEBHOOK_THROTTLE_RATE` | the do-nothing sink, none enabled, stripe, empty keys (the Stripe test keys go in your `.env`, which is not committed), `http://localhost:${FRONTEND_PORT}`, false, false, a development value (used only where the fake gateway is allowed), 85, 120/min, 240/min, 10/hour, 60/min, 600/min |
 | Offline walk-through | `FAKE_LLM_API_KEY` | empty (any value; not a secret) |
 
 - The `POSTGRES_HOST`, `POSTGRES_PORT`, `REDIS_HOST`, and `REDIS_PORT` values in `.env` describe how the **host** reaches the services. Inside docker, compose overrides them with the service names and internal ports (`db:5432`, `redis:6379`).
@@ -139,6 +139,42 @@ make e2e-down      # when you are done: stops it and deletes its database
 ```
 
 It is `docker-compose.e2e.yml` on top of the normal file (own ports, `SUPABASE_DATABASE_URL` and the provider keys blanked, trusted origins for its own two ports), with the registry loaded and a staff user made. `make e2e` runs the browser tests on it ([testing.md](../process/testing.md)). The fake is reached at `http://fake-llm.lan:9000/v1` (the registry insists on a domain-like host name, so the compose service has that alias). The fake also serves the media services the lesson flow searches (a Wikimedia-style API and generated PNGs), so run the stack with `WIKIMEDIA_API_URL=http://fake-llm.lan:9000/w/api.php` and `MEDIA_ALLOW_PRIVATE_HOSTS=true` for the media agent to find a picture. Add a builder to the fake whenever a phase adds an LLM output schema.
+
+## Paying with Stripe's test mode (optional)
+
+Stripe is the default way to pay once it is switched on. It needs three values from your Stripe dashboard **in test mode** (the "Test mode" or sandbox toggle; never a live key on a development machine). They go in `.env`, which git ignores:
+
+```bash
+STRIPE_SECRET_KEY=sk_test_...        # Developers > API keys
+STRIPE_PUBLISHABLE_KEY=pk_test_...   # the same page (not secret; Stripe's page needs no browser key today)
+STRIPE_WEBHOOK_SECRET=whsec_...      # see "Webhooks" below
+PAYMENT_GATEWAYS_ENABLED=stripe
+PAYMENT_DEFAULT_GATEWAY=stripe
+```
+
+The app refuses to start (`payments.E002`) if `stripe` is enabled without its secret key and webhook secret, and (`payments.E005`) if any key is a live one while `PAYMENTS_LIVE_MODE` is not `true`; the error names the setting, never the key. A test key can **expire** or be rolled in the dashboard: Stripe then answers `api_key_expired`, and the buy page says it could not reach the payment service (the backend log says why). Make a new one and replace it.
+
+Pay on Stripe's page with the test card `4242 4242 4242 4242`, any future expiry, any CVC. Stripe sends the browser back to `PAYMENT_RETURN_BASE_URL/buy/return`, and that page asks our server, which asks Stripe, so credits arrive **without any webhook**, after the order is about half a minute old.
+
+**Webhooks (optional, and what a real deployment relies on).** Stripe tells us of a payment, a refund and a dispute with a signed callback to `POST /api/payments/webhooks/stripe`. Send it **through the frontend's own address** (the Next proxy passes the raw body and the signature header on untouched, which is what the signature is computed over), with the Stripe CLI:
+
+```bash
+stripe login
+stripe listen --forward-to localhost:3000/api/payments/webhooks/stripe     # 3000 is FRONTEND_PORT
+```
+
+It prints a signing secret (`whsec_...`); that one, not the dashboard's, is `STRIPE_WEBHOOK_SECRET` while you listen. Restart the backend after changing `.env`. For an endpoint made in the dashboard instead, give it these events and no others are needed: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`, `refund.created`, `refund.updated`, `charge.dispute.created` (an unsubscribed event is simply never sent; one we do not know is ignored). A refund is counted from `refund.created`, never from `charge.refunded`, which only carries the running total. The admin's **Refund** action on a Stripe order refunds through Stripe, and the credits come back when `refund.created` arrives.
+
+The API version is pinned in the code (`StripeApi.API_VERSION`, sent as `Stripe-Version` on every call); webhook bodies use the version of the endpoint or listener that sends them. The fields we read are in every recent version.
+
+Two checks that use your test key and are never part of `make check`:
+
+```bash
+make payments-live   # creates a real test-mode Checkout Session, asks about it, expires it (no payment is made)
+make e2e-payments    # a browser pays with the test card on a stack where Stripe is the only way to pay
+```
+
+`make e2e-payments` leaves that stack with Stripe as its only way to pay; `make fake-llm` or `make e2e` puts the fake gateway back. Both are skipped, or refuse to start, without a `sk_test_` key in `.env`.
 
 ## Tracing and usage (optional)
 

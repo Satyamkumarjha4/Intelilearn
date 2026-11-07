@@ -3042,7 +3042,7 @@ classDiagram
 
 #### Payments (Phase 10.6)
 
-Taking money and turning it into credits, with no provider in the way: everything below the port is provider-neutral, and a provider is one subclass, one registry line and its settings (Stripe and Razorpay arrive in 10.7 and 10.8). Code: `backend/payments/`. The pattern is the codebase's usual Strategy and registry (as for media sources and model providers) behind a **Facade** per use case (`CheckoutService`, `WebhookProcessor`, `OrderReconciler`).
+Taking money and turning it into credits, with no provider in the way: everything below the port is provider-neutral, and a provider is one subclass, one registry line and its settings (Stripe arrived in 10.7, Razorpay arrives in 10.8). Code: `backend/payments/`. The pattern is the codebase's usual Strategy and registry (as for media sources and model providers) behind a **Facade** per use case (`CheckoutService`, `WebhookProcessor`, `OrderReconciler`).
 
 ```mermaid
 classDiagram
@@ -3126,6 +3126,50 @@ classDiagram
 - **The fake gateway (T26).** Registered only where `PAYMENT_ALLOW_FAKE_GATEWAY` is true (the e2e stack). Its checkout is a redirect to the return page, and it verifies a hex HMAC-SHA256 in `X-Fake-Signature` made with `PAYMENT_FAKE_GATEWAY_SECRET`: a test "pays" by sending a signed callback, as a provider would. `tests/support/payments.py` has a second, separate `ScriptedGateway` that subclasses the real ABC, so the port is shown implementable by something other than the shipped fake.
 
 **The frontend (`lib/payments/`, `components/payments/`).** `PaymentsApi`; `CheckoutAdapters` (the registry the screen calls with whatever checkout the server returned, `RedirectCheckout` today and an `UnknownCheckout` error for an adapter nobody registered: components never branch on a provider); `GatewayChoices` (the picker only for two or more ways to pay); `OneTimeChoices` and `PlanQuantity` (the chips, the box, the stepper and the totals they show); `OrderWatch` (what the return page does while it waits: quick, then gentle, then "still confirming", then stops); `PaymentWords`; `BuyReturn` (where to send a learner back to after buying). `useBuy` makes one press one order (the idempotency key is reused for the same purchase), and the return page (`/buy/return`) asks the server for the order and decides nothing from its own address.
+
+#### Stripe (Phase 10.7)
+
+The first real adapter: one `PaymentGateway` subclass over `httpx`, no SDK (T21), and two start-up checks. Code: `backend/payments/stripe_gateway.py`, `stripe_events.py`, `checks.py`.
+
+```mermaid
+classDiagram
+    direction LR
+    class PaymentGateway {
+        <<abstract>>
+    }
+    class StripeGateway {
+        +create_checkout(order, urls) CheckoutSession
+        +verify_webhook(headers, raw_body) list~PaymentEvent~
+        +fetch_status(provider_ref) PaymentStatus
+        +refund(payment_ref, amount) RefundResult
+    }
+    class StripeApi {
+        +API_VERSION
+        +post(path, form, idempotency_key) dict
+        +get(path) dict
+    }
+    class StripeSignature {
+        +verify(header, raw_body, secret, now)
+    }
+    class StripeEventReader {
+        +read(event) list~PaymentEvent~
+    }
+    class PaymentSafety {
+        +errors() list~Error~
+    }
+    PaymentGateway <|-- StripeGateway
+    StripeGateway --> StripeApi
+    StripeGateway --> StripeSignature
+    StripeGateway --> StripeEventReader
+    StripeGateway ..> GatewayRejected
+    GatewayRejected --|> GatewayUnavailable
+```
+
+- **`StripeApi` is the only code that talks to Stripe.** Form-encoded bodies, HTTP Basic with the secret key as the user name, `Stripe-Version` pinned on every request (`API_VERSION`; moving it is a reviewed change, checked with `make payments-live`), an optional `Idempotency-Key`, a 15 second timeout. It turns every failure into the port's errors without a key in any message: no connection, a timeout, a 5xx, a 429 and a 409 are `GatewayUnavailable`; any other 4xx is `GatewayRejected`, a subclass (so every caller that handles an unavailable gateway handles it, and a log can tell "try later" from "our request is wrong"). A refused key is described by Stripe's fixed `code` (`api_key_expired`), never its message, which quotes the key.
+- **`create_checkout`** makes a Checkout Session (`mode=payment`, one INR line item with the order's paise, our order id as `client_reference_id` and in the session's and the payment intent's metadata, the return URLs, the buyer's email, an expiry 23 hours out, the order id as the idempotency key) and returns a redirect. **`fetch_status`** reads the session: `paid` when `payment_status` is `paid` (with the amount and the payment intent as the payment reference), `expired` when `status` is `expired`, else `pending` (a delayed method completes the session before it pays). **`refund`** posts the payment intent and the amount; a refund Stripe says failed is an error. It sends no idempotency key on purpose (a key that is the same for a repeated click would also swallow a second, deliberate partial refund, and Stripe already refuses more than is left).
+- **The webhook (`StripeSignature`, `StripeEventReader`; T23).** The signature is `Stripe-Signature: t=…,v1=…`: HMAC-SHA256 of `t.body` with the endpoint secret, compared in constant time against every `v1` (a rolled secret sends two), other schemes ignored, a timestamp more than five minutes from now refused either way. Only then is the body read. `checkout.session.completed` (when paid) and `async_payment_succeeded` are *succeeded*; `async_payment_failed` and `expired` are *failed* (the port has no separate kind, as the reconciler already treats an expired answer); `refund.created` and `refund.updated` (when the refund succeeded) are *refunded*; `charge.dispute.created` is *disputed*. Everything else is `[]`. **A refund is counted from the refund object, not `charge.refunded`:** that event carries the charge's running total and no promise of order, so adding its figure would count a refund twice; the refund's own amount, under the event id `refund:<id>` (shared by `created` and `updated`), is taken once.
+- **Finding the order by payment (`OrderEvents`).** A refund or a dispute names the payment intent, not the Checkout Session the order was stored under. An event with no checkout reference is therefore looked up by its payment reference (within the gateway), which the order kept when it was paid. An unknown one is an unknown order, as before.
+- **Start-up safety (`PaymentSafety`, `payments.E004`, `E005`).** The fake gateway allowed while `DJANGO_DEBUG` is false, and a live-mode key (`sk_live_`, `rk_live_`, `pk_live_`, `rzp_live_`) without `PAYMENTS_LIVE_MODE=true`, stop the app at start, and name the setting and never the value. The Razorpay key id is listed so 10.8 inherits the check. A webhook secret has no mode marker (`whsec_` either way), so it is not checked alone: the key beside it tells the modes apart.
 
 #### Earning and closing an account (Phase 10.3)
 

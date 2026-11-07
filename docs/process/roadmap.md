@@ -243,7 +243,7 @@ Credits for the work that costs model calls, earned by studying, bought through 
 - [x] 10.4 Plans and periods: one-time, weekly drip, queueing, activation
 - [x] 10.5 Wallet, history, streak and buy screens, notices, a cost on every button
 - [x] 10.6 Payments core: the gateway port and registry, orders, webhooks, reconciliation, clawback, the fake gateway, the buy flow
-- [ ] 10.7 Stripe adapter (test mode)
+- [x] 10.7 Stripe adapter (test mode): `StripeGateway` over `httpx` with a pinned API version, signature and event reading, status lookup and refund; start-up safety checks (`payments.E004`, `E005`); the live checks wait on a working test key
 - [ ] 10.8 Razorpay adapter (test mode)
 - [ ] 10.9 Console, Terms and Privacy, retire `retakes_per_day`, backfill, switch the default gate, move the spec and plan into `docs/`
 - [ ] 11 Sign-in methods (its own plan); public launch waits for 10.9 and 11

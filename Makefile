@@ -69,6 +69,15 @@ fake-llm: ## Start the throwaway stack on a fake LLM (own database), with its re
 e2e: fake-llm ## Run the Playwright smoke tests against the fake-LLM stack (first run: cd e2e && bun install && bunx playwright install chromium)
 	cd e2e && E2E_COMPOSE="$(E2E_COMPOSE)" E2E_BASE_URL=http://localhost:$(E2E_FRONTEND_PORT) E2E_API_URL=http://localhost:$(E2E_BACKEND_PORT) E2E_STAFF_EMAIL=$(E2E_STAFF_EMAIL) E2E_STAFF_PASSWORD=$(E2E_STAFF_PASSWORD) bun run test
 
+payments-live: ## Check Stripe's real test mode (needs STRIPE_SECRET_KEY=sk_test_... in .env; no payment is made)
+	$(RUN_BACKEND) pytest -m payments_live ../tests/payments/test_stripe_live.py
+
+e2e-payments: ## Pay through Stripe's real test mode in a browser (needs STRIPE_SECRET_KEY=sk_test_... in .env)
+	@grep -q '^STRIPE_SECRET_KEY=sk_test_' .env 2>/dev/null || { echo "needs STRIPE_SECRET_KEY=sk_test_... in .env (docs/getting-started/local-setup.md)"; exit 1; }
+	E2E_PAYMENT_GATEWAYS=stripe E2E_PAYMENT_DEFAULT=stripe $(MAKE) fake-llm
+	cd e2e && E2E_STRIPE=1 E2E_COMPOSE="$(E2E_COMPOSE)" E2E_BASE_URL=http://localhost:$(E2E_FRONTEND_PORT) E2E_API_URL=http://localhost:$(E2E_BACKEND_PORT) bunx playwright test tests/payments-stripe.spec.ts
+	@echo "The stack still has Stripe as its only way to pay: run \`make fake-llm\` (or \`make e2e\`) to put the fake gateway back."
+
 e2e-down: ## Stop the throwaway stack and delete its database
 	$(E2E_COMPOSE) down -v
 

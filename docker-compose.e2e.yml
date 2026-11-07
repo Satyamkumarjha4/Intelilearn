@@ -29,8 +29,12 @@ x-e2e-env: &e2e-env
   # payments.E004 refuses the fake gateway unless DEBUG is on, so this stack says so itself (a CI run has no .env).
   DJANGO_DEBUG: "true"
   PAYMENT_ALLOW_FAKE_GATEWAY: "true"
-  PAYMENT_GATEWAYS_ENABLED: fake
-  PAYMENT_DEFAULT_GATEWAY: fake
+  # `make e2e-payments` swaps in `stripe` (Stripe's test mode) for these two; the usual stack is fake only.
+  PAYMENT_GATEWAYS_ENABLED: ${E2E_PAYMENT_GATEWAYS:-fake}
+  PAYMENT_DEFAULT_GATEWAY: ${E2E_PAYMENT_DEFAULT:-fake}
+  # Stripe's webhook secret is only used by the endpoint that Stripe calls, which that run does not need (the return page
+  # asks Stripe itself), but a gateway is not switched on without one. A real one in .env is passed through.
+  STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-whsec_not_used_by_this_stack}
   PAYMENT_FAKE_GATEWAY_SECRET: ${PAYMENT_FAKE_GATEWAY_SECRET:-e2e-fake-gateway-secret}
   PAYMENT_RETURN_BASE_URL: http://localhost:${E2E_FRONTEND_PORT:-7100}
   PAYMENT_ORDER_THROTTLE_RATE: 10000/hour

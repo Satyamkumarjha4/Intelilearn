@@ -22,6 +22,12 @@ class GatewayUnavailable(PaymentError):
     """The provider could not be reached or answered with an error."""
 
 
+class GatewayRejected(GatewayUnavailable):
+    """The provider was reached and refused the request (a bad key, a bad parameter, a refund too large). Nothing is
+    gained by trying again unchanged. It is still an unavailable checkout to whoever was buying, so callers that
+    handle `GatewayUnavailable` handle this too."""
+
+
 class GatewayNotEnabled(APIException):
     status_code = status.HTTP_400_BAD_REQUEST
     default_code = "gateway_not_enabled"

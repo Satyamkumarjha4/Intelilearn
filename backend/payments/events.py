@@ -55,13 +55,7 @@ class OrderEvents:
             return Applied(Outcome.DUPLICATE)
 
     def _apply(self, gateway_key: str, event: PaymentEvent) -> Applied:
-        order = None
-        if event.provider_ref:
-            order = (
-                PaymentOrder.objects.select_for_update()
-                .filter(gateway=gateway_key, provider_ref=event.provider_ref)
-                .first()
-            )
+        order = self._find(gateway_key, event)
         if PaymentEventLog.objects.filter(gateway=gateway_key, event_id=event.event_id).exists():
             return Applied(Outcome.DUPLICATE, str(order.pk) if order else "")
         if order is None:
@@ -84,6 +78,18 @@ class OrderEvents:
             received_at=self.clock.now(),
         )  # fmt: skip
         return Applied(outcome, str(order.pk) if order else "", shortfall)
+
+    @staticmethod
+    def _find(gateway_key: str, event: PaymentEvent) -> PaymentOrder | None:
+        """The order the event is about, locked. By the checkout's reference when the event has one, else by the
+        payment's: a refund or a dispute says which payment (Stripe names the payment intent), not which checkout."""
+        if event.provider_ref:
+            found = {"provider_ref": event.provider_ref}
+        elif event.payment_ref:
+            found = {"payment_ref": event.payment_ref}
+        else:
+            return None
+        return PaymentOrder.objects.select_for_update().filter(gateway=gateway_key, **found).first()
 
     @staticmethod
     def _amount_matters(event: PaymentEvent, order: PaymentOrder) -> bool:
