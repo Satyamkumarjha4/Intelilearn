@@ -13,6 +13,8 @@
  * - lists and changes providers; lists, adds, changes, deletes and tests models
  * - reads the routing, saves a step with PUT, lists the profiles and previews one with POST
  * - reads and changes the lesson settings, lists learners (searched, paged) and the change log
+ * - reads the credits and changes a price, a plan and the settings; reads a wallet, gives credits and switches the exemption;
+ *   lists payments, refunds and marks a refund failed; reads revenue for the usage range
  * - a 404 renews the session and is tried once more; at most one renewal a minute; any other failure is passed on
  * - extracts the cursor from a `next` link, and handles no link
  */
@@ -251,5 +253,66 @@ describe("ConsoleApi.cursorOf", () => {
     expect(ConsoleApi.cursorOf("http://backend:8000/api/console/runs?cursor=cD0yMDI2&page_size=2")).toBe("cD0yMDI2");
     expect(ConsoleApi.cursorOf(null)).toBeNull();
     expect(ConsoleApi.cursorOf("http://x/api/console/runs")).toBeNull();
+  });
+
+  test("reads the credits, and changes a price, a plan and the settings with PATCH (the key escaped)", async () => {
+    const { api, calls } = fakeClient();
+
+    await api.credits();
+    await api.revisePrice("lesson.full", { credits: 12, label: "Your lesson" });
+    await api.updatePlan("weekly_pro", { credits: 120 });
+    await api.updateCreditSettings({ signup_credits: 40 });
+
+    expect(calls.map((c) => [c.options?.method, c.path])).toEqual([
+      ["GET", "/console/credits"],
+      ["PATCH", "/console/credits/prices/lesson.full"],
+      ["PATCH", "/console/credits/plans/weekly_pro"],
+      ["PATCH", "/console/credits/settings"],
+    ]);
+    expect(calls[1].options?.body).toEqual({ credits: 12, label: "Your lesson" });
+  });
+
+  test("reads a wallet, gives credits with a reason and a token, and switches the exemption", async () => {
+    const { api, calls } = fakeClient();
+
+    await api.wallet("L1");
+    await api.adjustWallet("L1", { amount: 5, reason: "Goodwill", token: "t1" });
+    await api.setExempt("L1", true);
+
+    expect(calls.map((c) => [c.options?.method, c.path])).toEqual([
+      ["GET", "/console/learners/L1/wallet"],
+      ["POST", "/console/learners/L1/wallet/adjust"],
+      ["PATCH", "/console/learners/L1/wallet"],
+    ]);
+    expect(calls[1].options?.body).toEqual({ amount: 5, reason: "Goodwill", token: "t1" });
+    expect(calls[2].options?.body).toEqual({ credits_exempt: true });
+  });
+
+  test("lists payments with only the filters given and a trimmed search, then refunds and marks a refund failed", async () => {
+    const { api, calls } = fakeClient();
+
+    await api.payments();
+    await api.payments({ status: "fulfilled", gateway: "", q: " ada ", cursor: "c2", pageSize: 25 });
+    await api.shortfalls();
+    await api.refund("O1", { token: "t1", amount: "12.50" });
+    await api.markRefundFailed(7);
+
+    expect(calls.map((c) => [c.options?.method, c.path])).toEqual([
+      ["GET", "/console/payments"],
+      ["GET", "/console/payments?status=fulfilled&q=ada&cursor=c2&page_size=25"],
+      ["GET", "/console/payments/shortfalls"],
+      ["POST", "/console/payments/O1/refund"],
+      ["POST", "/console/refunds/7/mark-failed"],
+    ]);
+    expect(calls[3].options?.body).toEqual({ token: "t1", amount: "12.50" });
+  });
+
+  test("reads revenue for the usage range only, whatever other filters the page has", async () => {
+    const { api, calls } = fakeClient();
+
+    await api.revenue({ range: "30d", provider: "gemini", model: "x" });
+    await api.revenue({ range: "custom", start: "2026-03-01", end: "2026-03-10" });
+
+    expect(calls.map((c) => c.path)).toEqual(["/console/revenue?range=30d", "/console/revenue?range=custom&start=2026-03-01&end=2026-03-10"]);
   });
 });

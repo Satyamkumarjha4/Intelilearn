@@ -162,6 +162,10 @@ CONSOLE_PATHS = {
     "/api/console/models/{model_id}", "/api/console/models/{model_id}/probe", "/api/console/nodes",
     "/api/console/nodes/{key}", "/api/console/profiles", "/api/console/profiles/{name}/preview",
     "/api/console/flow-settings", "/api/console/learners", "/api/console/audit",
+    "/api/console/credits", "/api/console/credits/prices/{key}", "/api/console/credits/plans/{key}",
+    "/api/console/credits/settings", "/api/console/learners/{learner_id}/wallet",
+    "/api/console/learners/{learner_id}/wallet/adjust", "/api/console/payments", "/api/console/payments/shortfalls",
+    "/api/console/payments/{order_id}/refund", "/api/console/refunds/{attempt_id}/mark-failed", "/api/console/revenue",
 }  # fmt: skip
 
 

@@ -41,6 +41,57 @@ class RefundOutcome:
     FAILED = "failed"
 
 
+class RefundWords:
+    """What a staff member is told for each way a refund can end, as a level (`success`, `warning` or `error`) and the
+    words. One place, so the Django admin and the console say the same thing."""
+
+    @classmethod
+    def of(cls, outcome: "RefundOutcome") -> tuple[str, str]:
+        return getattr(cls, f"_{outcome.kind}")(outcome)
+
+    @staticmethod
+    def _not_fulfilled(outcome):
+        return "error", "only a payment that was fulfilled can be refunded."
+
+    @staticmethod
+    def _in_full(outcome):
+        return "warning", "it is refunded in full already."
+
+    @staticmethod
+    def _all_asked(outcome):
+        return (
+            "warning",
+            "there is nothing left to ask for: the rest has been asked for and is waiting for the provider.",
+        )
+
+    @staticmethod
+    def _too_much(outcome):
+        return "error", f"the amount is more than what remains to refund (₹{outcome.amount_paise / 100:.2f})."
+
+    @staticmethod
+    def _duplicate(outcome):
+        return "warning", "this refund was already asked for (the form was sent twice). Nothing more was asked."
+
+    @staticmethod
+    def _dashboard(outcome):
+        name = outcome.provider
+        return (
+            "warning",
+            f"refund it in {name}'s own dashboard. The credits are taken back when {name} says it was refunded.",
+        )
+
+    @staticmethod
+    def _failed(outcome):
+        return "error", f"the refund was not made ({outcome.error})."
+
+    @staticmethod
+    def _asked(outcome):
+        return "success", (
+            f"a refund of {outcome.amount_paise / 100:.2f} rupees was asked for. "
+            "The credits come back when the provider confirms it."
+        )
+
+
 class RefundNotMarkable(Exception):
     """A person may not mark this attempt failed: it is not waiting, or the provider can still be asked."""
 

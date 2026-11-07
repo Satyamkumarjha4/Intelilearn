@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/console/page-header";
 import { CardSkeleton, KpiRowSkeleton } from "@/components/console/skeletons";
 import { LatencyCard } from "@/components/console/usage/latency-card";
 import { OutcomeCard } from "@/components/console/usage/outcome-card";
+import { RevenueCard } from "@/components/console/usage/revenue-card";
 import { StepsCard } from "@/components/console/usage/steps-card";
 import { UsageFilterBar } from "@/components/console/usage/usage-filters";
 import { useConsoleQuery } from "@/components/console/use-console-query";
@@ -79,6 +80,10 @@ export function UsageView() {
         <OutcomeCard usage={data} />
       </div>
       <StepsCard byNode={data.by_node} />
+      <div className="mt-6">
+        <h2 className="mb-2 font-sans text-base font-extrabold">Revenue and model cost</h2>
+        <RevenueCard filters={filters} />
+      </div>
     </div>
   );
 }

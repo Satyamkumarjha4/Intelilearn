@@ -4,6 +4,8 @@ import {
   ActivityIcon,
   ArrowLeftIcon,
   CircleDollarSignIcon,
+  CoinsIcon,
+  CreditCardIcon,
   CpuIcon,
   LayoutDashboardIcon,
   type LucideIcon,
@@ -31,6 +33,8 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   models: CpuIcon,
   routing: RouteIcon,
   settings: SlidersHorizontalIcon,
+  credits: CoinsIcon,
+  payments: CreditCardIcon,
   learners: UsersIcon,
   audit: ScrollTextIcon,
 };

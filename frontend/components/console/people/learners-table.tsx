@@ -1,6 +1,7 @@
 "use client";
 
 import { ExternalLinkIcon } from "lucide-react";
+import Link from "next/link";
 
 import { type Column, DataTable } from "@/components/console/data-table";
 import { StatusPill } from "@/components/console/status-pill";
@@ -45,6 +46,19 @@ function columns(now: Date): Column<ConsoleLearner>[] {
         const { label, tone } = LearnerText.onboarding(row);
         return <StatusPill tone={tone}>{label}</StatusPill>;
       },
+    },
+    {
+      key: "wallet",
+      header: "Credits",
+      cell: (row) => (
+        <Link
+          href={`/console/learners/${row.id}`}
+          aria-label={`Open the wallet of ${LearnerText.displayName(row)}`}
+          className="rounded text-[12.5px] font-extrabold whitespace-nowrap text-primary-text outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          Wallet
+        </Link>
+      ),
     },
     {
       key: "admin",

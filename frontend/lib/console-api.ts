@@ -26,6 +26,20 @@ import type {
   UsageFilters,
 } from "@/lib/types";
 
+import type {
+  ConsoleCreditSettings,
+  ConsolePlan,
+  ConsolePrice,
+  CreditsConfig,
+  PaymentFilters,
+  PaymentPage,
+  RefundResult,
+  RefundRow,
+  Revenue,
+  Shortfall,
+  WalletPanel,
+} from "@/lib/console-credits/types";
+
 export type PageQuery = { cursor?: string | null; pageSize?: number };
 
 /**
@@ -149,6 +163,60 @@ export class ConsoleApi {
 
   audit(page: PageQuery = {}): Promise<Page<AuditEntry>> {
     return this.get(`/console/audit${ConsoleApi.query(ConsoleApi.page(page))}`);
+  }
+
+  // --- credits, wallets, payments, revenue
+
+  credits(): Promise<CreditsConfig> {
+    return this.get("/console/credits");
+  }
+
+  /** Makes `credits` the live price of `key` (an edit adds a row; the old price stays in the history). */
+  revisePrice(key: string, body: { credits: number; label?: string }): Promise<ConsolePrice> {
+    return this.send("PATCH", `/console/credits/prices/${encodeURIComponent(key)}`, body);
+  }
+
+  updatePlan(key: string, changes: Partial<Omit<ConsolePlan, "key">>): Promise<ConsolePlan> {
+    return this.send("PATCH", `/console/credits/plans/${encodeURIComponent(key)}`, changes);
+  }
+
+  updateCreditSettings(changes: Partial<ConsoleCreditSettings>): Promise<ConsoleCreditSettings> {
+    return this.send("PATCH", "/console/credits/settings", changes);
+  }
+
+  wallet(learnerId: string): Promise<WalletPanel> {
+    return this.get(`/console/learners/${learnerId}/wallet`);
+  }
+
+  /** The reason is required; `token` makes sending the same form twice move the credits once. */
+  adjustWallet(learnerId: string, body: { amount: number; reason: string; token: string }): Promise<WalletPanel> {
+    return this.send("POST", `/console/learners/${learnerId}/wallet/adjust`, body);
+  }
+
+  setExempt(learnerId: string, creditsExempt: boolean): Promise<WalletPanel> {
+    return this.send("PATCH", `/console/learners/${learnerId}/wallet`, { credits_exempt: creditsExempt });
+  }
+
+  payments(filters: PaymentFilters & PageQuery = {}): Promise<PaymentPage> {
+    const { status, gateway, q, ...page } = filters;
+    return this.get(`/console/payments${ConsoleApi.query({ status, gateway, q: q?.trim(), ...ConsoleApi.page(page) })}`);
+  }
+
+  shortfalls(): Promise<Shortfall[]> {
+    return this.get("/console/payments/shortfalls");
+  }
+
+  /** Refused with a 409 whose `code` says why (`too_much`, `all_asked`, `in_full`, `not_fulfilled`, `dashboard`, `failed`). */
+  refund(orderId: string, body: { token: string; amount?: string }): Promise<RefundResult> {
+    return this.send("POST", `/console/payments/${orderId}/refund`, body);
+  }
+
+  markRefundFailed(attemptId: number): Promise<RefundRow> {
+    return this.send("POST", `/console/refunds/${attemptId}/mark-failed`);
+  }
+
+  revenue(filters: UsageFilters = {}): Promise<Revenue> {
+    return this.get(`/console/revenue${ConsoleApi.query({ range: filters.range, start: filters.start, end: filters.end })}`);
   }
 
   /** The cursor inside a `next` link from a list reply (the link itself points at the backend's own host). */

@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import overview, people, registry, routing, runs, settings, usage
+from .views import credits, overview, payments, people, registry, routing, runs, settings, usage
 
 urlpatterns = [
     path("overview", overview.OverviewView.as_view(), name="console-overview"),
@@ -21,5 +21,16 @@ urlpatterns = [
     path("profiles/<str:name>/preview", routing.ProfilePreviewView.as_view(), name="console-profile-preview"),
     path("flow-settings", settings.FlowSettingsView.as_view(), name="console-flow-settings"),
     path("learners", people.LearnerListView.as_view(), name="console-learners"),
+    path("learners/<uuid:learner_id>/wallet", credits.WalletView.as_view(), name="console-wallet"),
+    path("learners/<uuid:learner_id>/wallet/adjust", credits.WalletAdjustView.as_view(), name="console-wallet-adjust"),
+    path("credits", credits.CreditsView.as_view(), name="console-credits"),
+    path("credits/prices/<str:key>", credits.PriceView.as_view(), name="console-credit-price"),
+    path("credits/plans/<str:key>", credits.PlanView.as_view(), name="console-credit-plan"),
+    path("credits/settings", credits.CreditSettingsView.as_view(), name="console-credit-settings"),
+    path("payments", payments.PaymentListView.as_view(), name="console-payments"),
+    path("payments/shortfalls", payments.ShortfallListView.as_view(), name="console-payment-shortfalls"),
+    path("payments/<uuid:order_id>/refund", payments.PaymentRefundView.as_view(), name="console-payment-refund"),
+    path("refunds/<int:attempt_id>/mark-failed", payments.RefundMarkFailedView.as_view(), name="console-refund-failed"),
+    path("revenue", payments.RevenueView.as_view(), name="console-revenue"),
     path("audit", people.AuditListView.as_view(), name="console-audit"),
 ]

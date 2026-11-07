@@ -8,7 +8,7 @@ from django.contrib import admin, messages
 from django.contrib.admin.helpers import ActionForm
 
 from .models import PaymentEventLog, PaymentOrder
-from .refunds import RefundDesk, RefundOutcome, RupeeAmount
+from .refunds import RefundDesk, RefundOutcome, RefundWords, RupeeAmount
 
 
 class ReadOnlyAdmin(admin.ModelAdmin):
@@ -37,52 +37,16 @@ class RefundActionForm(ActionForm):
 
 
 class RefundNotices:
-    """The administrator's words for each way a refund can end."""
+    """The administrator's words for each way a refund can end (`RefundWords`'s, shared with the console)."""
+
+    LEVELS = {"success": messages.SUCCESS, "warning": messages.WARNING, "error": messages.ERROR}
 
     def __init__(self, modeladmin, request, label: str):
         self.send = lambda text, level: modeladmin.message_user(request, f"{label}: {text}", level)
 
     def tell(self, outcome: RefundOutcome) -> None:
-        getattr(self, f"_{outcome.kind}")(outcome)
-
-    def _not_fulfilled(self, outcome):
-        self.send("only a payment that was fulfilled can be refunded.", messages.ERROR)
-
-    def _in_full(self, outcome):
-        self.send("it is refunded in full already.", messages.WARNING)
-
-    def _all_asked(self, outcome):
-        self.send(
-            "there is nothing left to ask for: the rest has been asked for and is waiting for the provider.",
-            messages.WARNING,
-        )
-
-    def _too_much(self, outcome):
-        self.send(
-            f"the amount is more than what remains to refund (₹{outcome.amount_paise / 100:.2f}).", messages.ERROR
-        )
-
-    def _duplicate(self, outcome):
-        self.send(
-            "this refund was already asked for (the form was sent twice). Nothing more was asked.", messages.WARNING
-        )
-
-    def _dashboard(self, outcome):
-        name = outcome.provider
-        self.send(
-            f"refund it in {name}'s own dashboard. The credits are taken back when {name} says it was refunded.",
-            messages.WARNING,
-        )
-
-    def _failed(self, outcome):
-        self.send(f"the refund was not made ({outcome.error}).", messages.ERROR)
-
-    def _asked(self, outcome):
-        self.send(
-            f"a refund of {outcome.amount_paise / 100:.2f} rupees was asked for. "
-            "The credits come back when the provider confirms it.",
-            messages.SUCCESS,
-        )
+        level, text = RefundWords.of(outcome)
+        self.send(text, self.LEVELS[level])
 
 
 @admin.action(description="Refund the selected payments (the rest of each, or the amount typed for one)")
