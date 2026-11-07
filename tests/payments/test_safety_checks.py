@@ -12,6 +12,8 @@ Use cases:
 - a live Stripe secret key, a live restricted key or a live publishable key is an error (`payments.E005`) unless
   `PAYMENTS_LIVE_MODE` is true; test keys and blank keys are fine
 - a live Razorpay key id is the same error and the same switch
+- with Razorpay switched on and the Razorpay adapter registered, a live key id still stops the app without the switch,
+  and starts with it; a test key id is fine (phase 10.8)
 - the error names the setting and never contains the key, and each live key is its own error
 - the checks are registered with Django, so `manage.py check` and the server's start-up run them
 """
@@ -122,6 +124,43 @@ class TestLiveKeysNeedTheLiveSwitch:
         settings.STRIPE_SECRET_KEY = LIVE_SECRET
 
         assert sorted(ids()) == ["payments.E004", "payments.E005"]
+
+
+class TestRazorpayInheritsTheCheck:
+    """The check was written in 10.7 with Razorpay's key id in its list; with the adapter now registered, these show it
+    holds for the gateway itself, not only for the setting."""
+
+    LIVE_ID = "rzp_live_" + "x" * 14  # not a real key
+
+    @pytest.fixture(autouse=True)
+    def razorpay_on(self, settings):
+        settings.PAYMENT_GATEWAYS_ENABLED = ["razorpay"]
+        settings.RAZORPAY_KEY_SECRET = settings.RAZORPAY_WEBHOOK_SECRET = "s" * 20
+
+    def test_the_adapter_is_registered_and_a_live_key_id_stops_the_app_without_the_switch(self, settings):
+        from payments.registry import PaymentGateways
+
+        settings.RAZORPAY_KEY_ID = self.LIVE_ID
+
+        errors = checks.run_checks(tags=[checks.Tags.security])
+
+        assert "razorpay" in PaymentGateways.REGISTERED
+        assert [e.id for e in errors if e.id.startswith("payments.")] == ["payments.E005"]
+        assert all(self.LIVE_ID not in f"{e.msg} {e.hint}" for e in errors)
+
+    def test_with_the_switch_it_starts(self, settings):
+        settings.RAZORPAY_KEY_ID, settings.PAYMENTS_LIVE_MODE = self.LIVE_ID, True
+
+        errors = checks.run_checks(tags=[checks.Tags.security])
+
+        assert [e.id for e in errors if e.id.startswith("payments.")] == []
+
+    def test_a_test_key_id_is_fine(self, settings):
+        settings.RAZORPAY_KEY_ID = "rzp_test_" + "x" * 14
+
+        errors = checks.run_checks(tags=[checks.Tags.security])
+
+        assert [e.id for e in errors if e.id.startswith("payments.")] == []
 
 
 class TestRegisteredWithDjango:

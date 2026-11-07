@@ -3042,7 +3042,7 @@ classDiagram
 
 #### Payments (Phase 10.6)
 
-Taking money and turning it into credits, with no provider in the way: everything below the port is provider-neutral, and a provider is one subclass, one registry line and its settings (Stripe arrived in 10.7, Razorpay arrives in 10.8). Code: `backend/payments/`. The pattern is the codebase's usual Strategy and registry (as for media sources and model providers) behind a **Facade** per use case (`CheckoutService`, `WebhookProcessor`, `OrderReconciler`).
+Taking money and turning it into credits, with no provider in the way: everything below the port is provider-neutral, and a provider is one subclass, one registry line and its settings (Stripe arrived in 10.7, Razorpay in 10.8). Code: `backend/payments/`. The pattern is the codebase's usual Strategy and registry (as for media sources and model providers) behind a **Facade** per use case (`CheckoutService`, `WebhookProcessor`, `OrderReconciler`).
 
 ```mermaid
 classDiagram
@@ -3125,7 +3125,7 @@ classDiagram
 - **Refunds by an administrator (D14).** The order admin is read-only with one action, *Refund*: it asks a gateway that declares the capability to refund what is left (and writes a change-log entry), or names the provider's dashboard otherwise. **In both cases the credits are taken back only when the provider's refund event arrives**, so what is refunded is always what the provider says.
 - **The fake gateway (T26).** Registered only where `PAYMENT_ALLOW_FAKE_GATEWAY` is true (the e2e stack). Its checkout is a redirect to the return page, and it verifies a hex HMAC-SHA256 in `X-Fake-Signature` made with `PAYMENT_FAKE_GATEWAY_SECRET`: a test "pays" by sending a signed callback, as a provider would. `tests/support/payments.py` has a second, separate `ScriptedGateway` that subclasses the real ABC, so the port is shown implementable by something other than the shipped fake.
 
-**The frontend (`lib/payments/`, `components/payments/`).** `PaymentsApi`; `CheckoutAdapters` (the registry the screen calls with whatever checkout the server returned, `RedirectCheckout` today and an `UnknownCheckout` error for an adapter nobody registered: components never branch on a provider); `GatewayChoices` (the picker only for two or more ways to pay); `OneTimeChoices` and `PlanQuantity` (the chips, the box, the stepper and the totals they show); `OrderWatch` (what the return page does while it waits: quick, then gentle, then "still confirming", then stops); `PaymentWords`; `BuyReturn` (where to send a learner back to after buying). `useBuy` makes one press one order (the idempotency key is reused for the same purchase), and the return page (`/buy/return`) asks the server for the order and decides nothing from its own address.
+**The frontend (`lib/payments/`, `components/payments/`).** `PaymentsApi`; `CheckoutAdapters` (the registry the screen calls with whatever checkout the server returned, `RedirectCheckout` and, since 10.8, `RazorpayCheckout` today and an `UnknownCheckout` error for an adapter nobody registered: components never branch on a provider); `GatewayChoices` (the picker only for two or more ways to pay); `OneTimeChoices` and `PlanQuantity` (the chips, the box, the stepper and the totals they show); `OrderWatch` (what the return page does while it waits: quick, then gentle, then "still confirming", then stops); `PaymentWords`; `BuyReturn` (where to send a learner back to after buying). `useBuy` makes one press one order (the idempotency key is reused for the same purchase), and the return page (`/buy/return`) asks the server for the order and decides nothing from its own address.
 
 #### Stripe (Phase 10.7)
 
@@ -3171,6 +3171,61 @@ classDiagram
 - **Finding the order by payment (`OrderEvents`).** A refund or a dispute names the payment intent, not the Checkout Session the order was stored under. An event with no checkout reference is therefore looked up by its payment reference (within the gateway), which the order kept when it was paid. An unknown one is an unknown order, as before.
 - **Refunds by an administrator (`RefundDesk`, `RefundAttempt`; phase 10.8 step 0).** The order list's action bar carries a hidden **token**, made each time the list is shown (`RefundActionForm`), and an optional **amount** in rupees for one payment. `RefundDesk.refund` works under the order's row lock: a token already used for that order asks nothing (`duplicate`), otherwise it asks the gateway for the amount (default all that remains) and writes a `RefundAttempt` (unique on token and order) with the change-log entry, in one transaction, so a refund the provider refused leaves no mark and the same form can be sent again. The token is also handed to the provider as its idempotency key through the port's `refund_with_key(payment_ref, amount, key)` (the key is `refund-<token>-<order id>`: legal for Stripe, up to 255 characters, and for Razorpay, 10 or more of letters, digits, hyphens and underscores). A gateway whose provider has no such key keeps the base class's default, which is plain `refund`, so the attempt row is then the only guard. Nothing is asked for beyond what remains: the amount refunded so far plus what was asked for and not yet confirmed by the provider's refund event (the sum of the attempts less `refunded_paise`, never negative). A submission with no token, or one that is not a token, still refunds, as before, and is not de-duplicated. A second, deliberate partial refund is a new form, so a new token.
 - **Start-up safety (`PaymentSafety`, `payments.E004`, `E005`).** The fake gateway allowed while `DJANGO_DEBUG` is false, and a live-mode key (`sk_live_`, `rk_live_`, `pk_live_`, `rzp_live_`) without `PAYMENTS_LIVE_MODE=true`, stop the app at start, and name the setting and never the value. The Razorpay key id is listed so 10.8 inherits the check. A webhook secret has no mode marker (`whsec_` either way), so it is not checked alone: the key beside it tells the modes apart.
+
+#### Razorpay (Phase 10.8)
+
+The second adapter, and the first with an on-page checkout. Adding it changed no wallet, order, webhook, fulfilment or component code: it is one `PaymentGateway` subclass and its registry line (`PaymentsConfig.ready`), one frontend adapter and its registry line. Code: `backend/payments/razorpay_gateway.py`, `razorpay_events.py`; `frontend/lib/payments/razorpay-checkout.ts`, `script-loader.ts`, `checkout-contract.ts`.
+
+```mermaid
+classDiagram
+    direction LR
+    class PaymentGateway {
+        <<abstract>>
+    }
+    class RazorpayGateway {
+        +create_checkout(order, urls) CheckoutSession
+        +verify_webhook(headers, raw_body) list~PaymentEvent~
+        +fetch_status(provider_ref) PaymentStatus
+        +refund_with_key(payment_ref, amount, key) RefundResult
+    }
+    class RazorpayApi {
+        +post(path, body, headers) dict
+        +get(path) dict
+    }
+    class RazorpaySignature {
+        +verify(header, raw_body, secret)
+    }
+    class RazorpayEventReader {
+        +read(event, event_id) list~PaymentEvent~
+    }
+    class CheckoutAdapter {
+        <<interface>>
+        +begin(checkout, returnTo)
+    }
+    class RazorpayCheckout
+    class ScriptLoader {
+        +load(src, loaded) Promise
+    }
+    class CheckoutAdapters {
+        +register(name, adapter)
+        +for(checkout) CheckoutAdapter
+    }
+    PaymentGateway <|-- RazorpayGateway
+    RazorpayGateway --> RazorpayApi
+    RazorpayGateway --> RazorpaySignature
+    RazorpayGateway --> RazorpayEventReader
+    CheckoutAdapter <|.. RazorpayCheckout
+    RazorpayCheckout --> ScriptLoader
+    CheckoutAdapters o-- CheckoutAdapter
+```
+
+- **`RazorpayApi`** talks to `https://api.razorpay.com/v1`: HTTP Basic with the key id and secret, JSON bodies, a 15 second timeout, no version header (Razorpay is versioned by path). Failures become the port's errors as in Stripe's: no connection, a timeout, a 5xx, a 429 and a 409 are `GatewayUnavailable`; any other 4xx is `GatewayRejected` (Razorpay answers a bad key with a 400, so a 401 is told by the settings to check and a 400 by Razorpay's own description). Neither key is ever in a message.
+- **`create_checkout`** makes an Order (the amount in paise, INR, our order id as the `receipt`, cut to Razorpay's 40 characters, and in `notes`) and returns a **client** checkout for the adapter `razorpay`. Its parameters are only the public ones: the key id, Razorpay's order id, the amount, the currency, the name "Socra", the plan as the description, the buyer's email as a prefill, and `retry: {enabled: false}`. **Retry is off on purpose**: Razorpay's order takes any number of attempts, so with retry on a failed attempt would not be the end and `payment.failed` ending our order would be wrong; with it off a failure is the end of that checkout and the learner presses Buy again (the same order, reopened). A payment that does succeed on an order we already ended still grants (a late payment wins).
+- **`fetch_status`** reads the order: `paid` when it is paid (then its payments say which one was captured, for the payment reference and the refund), else `pending`. It is never `failed` or `expired`: a failed attempt does not end an order, and the order's own 24 hour deadline is ours.
+- **The webhook (`RazorpaySignature`, `RazorpayEventReader`; T23).** `X-Razorpay-Signature` is the hex HMAC-SHA256 of the raw body with the webhook secret (not the API key secret), compared in constant time. **There is no timestamp**, so a captured request verifies for ever; replay is stopped by `X-Razorpay-Event-Id`, which becomes the event's id and so takes effect once (the unique (gateway, event id) row). A signed `order.paid`, `payment.failed` or dispute event with no event id is refused rather than guessed. `order.paid` (when the order is paid) is *succeeded*, from the amount paid; `payment.captured` and `payment.authorized` come beside it and are ignored, so a success is counted once. `payment.failed` is *failed* for the payment's order. A refund counts once it is `processed`, from `refund.created` or `refund.processed`, under the id `refund:<refund id>` (the two are one event, as Stripe's `refund.created` and `refund.updated` are), found by its payment. `payment.dispute.created` is *disputed*; the other dispute events say nothing.
+- **`refund_with_key`** sends the admin form's token as `X-Refund-Idempotency` (Razorpay wants 10 or more of letters, digits, hyphens and underscores; the key `refund-<token>-<order id>` is that). Razorpay has no idempotency header for orders: the receipt is its only guard there, and we never retry a create.
+- **`RazorpayCheckout` (frontend, §9.4).** `CheckoutAdapters.for` picks it for a `client` checkout naming `razorpay`, by the session and never by provider, and a redirect still goes to `RedirectCheckout`. `begin` loads `https://checkout.razorpay.com/v1/checkout.js` through `ScriptLoader` **when someone pays, once** (a second press shares the first load; a failure is forgotten so the next press tries again; the script is on no other page), opens the window with the server's parameters plus two callbacks, and returns a promise. **Paying only navigates to `/buy/return`**: the success callback is given a payment id and a signature and reads neither (T24), so nothing the browser says can grant anything. **Closing the window** resolves `closed` (`CheckoutEnd`), which `useBuy` turns into the buttons coming back on `/buy`; the order stays waiting and is let go later, and pressing Buy again for the same thing reopens the same order (the idempotency key is reused). Closing after paying is ignored, the page being on its way. A script that cannot load, or leaves no `Razorpay`, is `CheckoutUnavailable`, which `PaymentWords` turns into "We couldn't open the payment window. Nothing was charged."
+- **Content Security Policy.** The site sets none, so none changed. A site that sets one needs, for Razorpay's checkout, `https://checkout.razorpay.com` in `script-src` and `frame-src` and `https://api.razorpay.com` in `frame-src` and `connect-src`; Razorpay's own documentation does not list directives, so confirm them against the live checkout before adding any.
 
 #### Earning and closing an account (Phase 10.3)
 
@@ -3321,3 +3376,4 @@ Every row below is done: the registry, core, accounts and frontend code of phase
 | `graph/schemas/lesson.py`, `graph/schemas/interactive.py`, `graph/nodes/media_agent.py`, `graph/media/sources.py`, `lessons/services.py`, `lessons/views.py`, `lessons/events.py`, `console/services/attention.py`, `console/services/overview.py`, `onboarding/prompts.py` | module-level helper functions that hold logic: `public_question`, `component_name`, `sources_of`, `strip_html`, `has_active_run`, `parse_id`, `channel`, `plural`, `money`, `language_name` | a method on the class or value object that owns the data (the rules above allow only framework hooks at module level) | ☐ Open |
 | ~~`graph/grading.py`, `graph/schemas/lesson.py`, `graph/validators/questions.py`~~ | ~~`if kind ==` chains over question types~~ | `QuestionType` classes and `QuestionTypes` (`graph/questions/`, §4.8) | ✅ Done |
 | `lessons/events.py`, `lessons/reports.py` | `if kind ==` chains over event kinds and sheet kinds | one registered variant class per kind (Open/Closed) | ☐ Open |
+| `payments/stripe_gateway.py`, `payments/razorpay_gateway.py` | `StripeApi` and `RazorpayApi` each carry the same transport (an injected client or a per-call one, a timeout, try-again statuses and the failure translation) | a shared `ProviderApi` base with the provider's auth, headers and `_reason` as hooks | ☐ Open (left alone in 10.8 so that adding Razorpay changed nothing of Stripe's) |

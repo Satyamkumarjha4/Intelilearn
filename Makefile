@@ -69,14 +69,23 @@ fake-llm: ## Start the throwaway stack on a fake LLM (own database), with its re
 e2e: fake-llm ## Run the Playwright smoke tests against the fake-LLM stack (first run: cd e2e && bun install && bunx playwright install chromium)
 	cd e2e && E2E_COMPOSE="$(E2E_COMPOSE)" E2E_BASE_URL=http://localhost:$(E2E_FRONTEND_PORT) E2E_API_URL=http://localhost:$(E2E_BACKEND_PORT) E2E_STAFF_EMAIL=$(E2E_STAFF_EMAIL) E2E_STAFF_PASSWORD=$(E2E_STAFF_PASSWORD) bun run test
 
-payments-live: ## Check Stripe's real test mode (needs STRIPE_SECRET_KEY=sk_test_... in .env; no payment is made)
-	$(RUN_BACKEND) pytest -m payments_live ../tests/payments/test_stripe_live.py
+payments-live: ## Check each provider's real test mode that has keys in .env (no payment is made)
+	$(RUN_BACKEND) pytest -m payments_live ../tests/payments/test_stripe_live.py ../tests/payments/test_razorpay_live.py -rs
 
-e2e-payments: ## Pay through Stripe's real test mode in a browser (needs STRIPE_SECRET_KEY=sk_test_... in .env)
-	@grep -q '^STRIPE_SECRET_KEY=sk_test_' .env 2>/dev/null || { echo "needs STRIPE_SECRET_KEY=sk_test_... in .env (docs/getting-started/local-setup.md)"; exit 1; }
+e2e-payments: ## Pay through each provider's real test mode that has keys in .env (Stripe: sk_test_..., Razorpay: rzp_test_...)
+	@ran=0; \
+	if grep -q '^STRIPE_SECRET_KEY=sk_test_' .env 2>/dev/null; then $(MAKE) e2e-stripe && ran=1 || exit 1; fi; \
+	if grep -q '^RAZORPAY_KEY_ID=rzp_test_' .env 2>/dev/null && grep -q '^RAZORPAY_KEY_SECRET=.' .env; then $(MAKE) e2e-razorpay && ran=1 || exit 1; fi; \
+	[ $$ran = 1 ] || { echo "needs STRIPE_SECRET_KEY=sk_test_... or RAZORPAY_KEY_ID=rzp_test_... with RAZORPAY_KEY_SECRET in .env (docs/getting-started/local-setup.md)"; exit 1; }
+	@echo "The stack was left with that provider as its only way to pay: run \`make fake-llm\` (or \`make e2e\`) to put the fake gateway back."
+
+e2e-stripe:
 	E2E_PAYMENT_GATEWAYS=stripe E2E_PAYMENT_DEFAULT=stripe $(MAKE) fake-llm
 	cd e2e && E2E_STRIPE=1 E2E_COMPOSE="$(E2E_COMPOSE)" E2E_BASE_URL=http://localhost:$(E2E_FRONTEND_PORT) E2E_API_URL=http://localhost:$(E2E_BACKEND_PORT) bunx playwright test tests/payments-stripe.spec.ts
-	@echo "The stack still has Stripe as its only way to pay: run \`make fake-llm\` (or \`make e2e\`) to put the fake gateway back."
+
+e2e-razorpay:
+	E2E_PAYMENT_GATEWAYS=razorpay E2E_PAYMENT_DEFAULT=razorpay $(MAKE) fake-llm
+	cd e2e && E2E_RAZORPAY=1 E2E_COMPOSE="$(E2E_COMPOSE)" E2E_BASE_URL=http://localhost:$(E2E_FRONTEND_PORT) E2E_API_URL=http://localhost:$(E2E_BACKEND_PORT) bunx playwright test tests/payments-razorpay.spec.ts
 
 e2e-down: ## Stop the throwaway stack and delete its database
 	$(E2E_COMPOSE) down -v

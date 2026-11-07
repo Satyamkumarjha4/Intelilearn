@@ -26,8 +26,10 @@ export function useBuy() {
     setError(null);
     try {
       const order = await paymentsApi.createOrder(request, key);
-      await checkoutAdapters.begin(order.checkout, `/buy/return?order=${order.id}`);
-      // The browser is on its way to the provider; the buttons stay off until it leaves.
+      const end = await checkoutAdapters.begin(order.checkout, `/buy/return?order=${order.id}`);
+      // Otherwise the browser is on its way to the provider; the buttons stay off until it leaves. A learner who shut
+      // the provider's own window is back here with the order still waiting: the same press reopens the same order.
+      if (end === "closed") setBusy(null);
     } catch (err) {
       if (err instanceof ApiError && err.status < 500 && err.code !== "too_many_pending") keys.current.delete(same);
       setError(PaymentWords.refusal(err));

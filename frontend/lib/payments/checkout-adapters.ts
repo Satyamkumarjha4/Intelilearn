@@ -1,18 +1,8 @@
+import { UnknownCheckout, type CheckoutAdapter, type CheckoutEnd } from "./checkout-contract";
+import { RazorpayCheckout } from "./razorpay-checkout";
 import type { Checkout } from "./types";
 
-/** One way of taking a learner through a provider's checkout. It never says the payment was made: the server hears that
- *  from the provider, and the return page asks the server. */
-export interface CheckoutAdapter {
-  begin(checkout: Checkout, returnTo: string): void | Promise<void>;
-}
-
-/** The checkout names an adapter this build does not have. */
-export class UnknownCheckout extends Error {
-  constructor(readonly name: string) {
-    super(`There is no checkout for "${name}".`);
-    this.name = "UnknownCheckout";
-  }
-}
+export { CheckoutUnavailable, UnknownCheckout, type CheckoutAdapter, type CheckoutEnd } from "./checkout-contract";
 
 /** Sends the browser to the provider's own page. */
 export class RedirectCheckout implements CheckoutAdapter {
@@ -27,7 +17,7 @@ export class RedirectCheckout implements CheckoutAdapter {
 /**
  * Chooses how to take someone through a checkout by what the server returned, never by which provider it is: a redirect goes
  * to `RedirectCheckout`, and a `client` checkout goes to the adapter it names. A provider with a third style adds a class and
- * one `register` line (Razorpay's on-page checkout arrives with its adapter). Components call `begin` and never branch.
+ * one `register` line (Razorpay's on-page checkout is the first). Components call `begin` and never branch.
  */
 export class CheckoutAdapters {
   private readonly clients = new Map<string, CheckoutAdapter>();
@@ -47,9 +37,9 @@ export class CheckoutAdapters {
   }
 
   /** Take the learner to pay. `returnTo` is where the provider brings them back (the return page, which only asks). */
-  begin(checkout: Checkout, returnTo: string): void | Promise<void> {
+  begin(checkout: Checkout, returnTo: string): void | Promise<CheckoutEnd | void> {
     return this.for(checkout).begin(checkout, returnTo);
   }
 }
 
-export const checkoutAdapters = new CheckoutAdapters();
+export const checkoutAdapters = new CheckoutAdapters().register(RazorpayCheckout.NAME, new RazorpayCheckout());

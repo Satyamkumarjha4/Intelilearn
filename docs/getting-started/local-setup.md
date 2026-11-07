@@ -36,7 +36,7 @@ The root `.env` is the **single source of configuration**. Django reads it, `doc
 | Landing page | `LANDING_DEMO_THROTTLE_RATE`, `LANDING_DEMO_IDS_TTL_S` | 60/min, 600 (10 min) |
 | Onboarding | `TOPIC_SUGGESTIONS_THROTTLE_RATE`, `ONBOARDING_SUGGESTION_TTL_S` | 30/min, 30 days |
 | Lesson flow | `FLOW_RUN_LOCK_TTL_S`, `LESSON_CREATE_THROTTLE_RATE`, `SSE_HEARTBEAT_S`, `SANDBOX_DIR`, `NODE_BINARY`, `SANDBOX_CHECK_TIMEOUT_S`, `SANDBOX_RENDER_TIMEOUT_S`, `SANDBOX_PAGE_TIMEOUT_MS`, `GIPHY_API_KEY`, `MEDIA_URL_TTL_S` | 600, 30/hour, 30/hour, 15, `<repo>/sandbox`, node, 30, 180, 8000, empty, 21600 (6 h) |
-| Credits and payments (all read since phase 10.6, except the Razorpay keys, which its adapter reads in 10.8; names are in `.env.example`, all commented) | `ACTIVITY_SINK`, `PAYMENT_GATEWAYS_ENABLED`, `PAYMENT_DEFAULT_GATEWAY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `PAYMENT_RETURN_BASE_URL`, `PAYMENTS_LIVE_MODE`, `PAYMENT_ALLOW_FAKE_GATEWAY`, `PAYMENT_FAKE_GATEWAY_SECRET`, `USD_INR_RATE`, `CREDITS_QUOTE_THROTTLE_RATE`, `CREDITS_BALANCE_THROTTLE_RATE`, `PAYMENT_ORDER_THROTTLE_RATE`, `PAYMENT_STATUS_THROTTLE_RATE`, `PAYMENT_WEBHOOK_THROTTLE_RATE` | the do-nothing sink, none enabled, stripe, empty keys (the Stripe test keys go in your `.env`, which is not committed), `http://localhost:${FRONTEND_PORT}`, false, false, a development value (used only where the fake gateway is allowed), 85, 120/min, 240/min, 10/hour, 60/min, 600/min |
+| Credits and payments (names are in `.env.example`, all commented) | `ACTIVITY_SINK`, `PAYMENT_GATEWAYS_ENABLED`, `PAYMENT_DEFAULT_GATEWAY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `PAYMENT_RETURN_BASE_URL`, `PAYMENTS_LIVE_MODE`, `PAYMENT_ALLOW_FAKE_GATEWAY`, `PAYMENT_FAKE_GATEWAY_SECRET`, `USD_INR_RATE`, `CREDITS_QUOTE_THROTTLE_RATE`, `CREDITS_BALANCE_THROTTLE_RATE`, `PAYMENT_ORDER_THROTTLE_RATE`, `PAYMENT_STATUS_THROTTLE_RATE`, `PAYMENT_WEBHOOK_THROTTLE_RATE` | the do-nothing sink, none enabled, stripe, empty keys (the Stripe test keys go in your `.env`, which is not committed), `http://localhost:${FRONTEND_PORT}`, false, false, a development value (used only where the fake gateway is allowed), 85, 120/min, 240/min, 10/hour, 60/min, 600/min |
 | Offline walk-through | `FAKE_LLM_API_KEY` | empty (any value; not a secret) |
 
 - The `POSTGRES_HOST`, `POSTGRES_PORT`, `REDIS_HOST`, and `REDIS_PORT` values in `.env` describe how the **host** reaches the services. Inside docker, compose overrides them with the service names and internal ports (`db:5432`, `redis:6379`).
@@ -175,6 +175,26 @@ make e2e-payments    # a browser pays with the test card on a stack where Stripe
 ```
 
 `make e2e-payments` leaves that stack with Stripe as its only way to pay; `make fake-llm` or `make e2e` puts the fake gateway back. Both are skipped, or refuse to start, without a `sk_test_` key in `.env`.
+
+## Paying with Razorpay's test mode (optional)
+
+Razorpay's checkout opens on our own page, in a window of Razorpay's. It needs a key pair and a webhook secret from the Razorpay dashboard **in test mode** (the Test toggle; never live keys on a development machine). They go in `.env`:
+
+```bash
+RAZORPAY_KEY_ID=rzp_test_...        # Account & Settings > API keys. Public: it is handed to the browser.
+RAZORPAY_KEY_SECRET=...             # shown once when the key is made. Never leaves the server.
+RAZORPAY_WEBHOOK_SECRET=...         # any secret you choose when adding the webhook (not the key secret)
+PAYMENT_GATEWAYS_ENABLED=stripe,razorpay     # or just razorpay
+PAYMENT_DEFAULT_GATEWAY=razorpay
+```
+
+The app refuses to start (`payments.E002`) if `razorpay` is enabled without all three, and (`payments.E005`) if the key id is a live one (`rzp_live_...`) while `PAYMENTS_LIVE_MODE` is not `true`. With two gateways enabled the buy page asks how to pay; with one it does not. In the Razorpay dashboard leave **auto-capture** on (its default): `order.paid` is only sent once a payment is captured.
+
+Pay in Razorpay's window with the test UPI id `success@razorpay` (`failure@razorpay` fails), or a test card from Razorpay's test-card page with any future expiry and CVV and, on its bank page, the Success button. The window brings the learner to `/buy/return`, which asks our server, which asks Razorpay, so credits arrive **without any webhook**, after the order is about half a minute old. Closing the window leaves the learner on `/buy`; the order waits and is let go after a day.
+
+**Webhooks (optional, and what a real deployment relies on).** Razorpay has no CLI and calls only a public address, so on localhost you need a tunnel (Razorpay's documentation suggests `zrok`; it refuses `ngrok.io` and some other tunnel domains). Send it through the frontend's address, as for Stripe: in the dashboard, Accounts & Settings > Webhooks > Add New Webhook (a test-mode webhook is its own), with the URL `https://<your public address>/api/payments/webhooks/razorpay`, your `RAZORPAY_WEBHOOK_SECRET` as the secret, and these events: `order.paid`, `payment.failed`, `refund.created`, `refund.processed`, `payment.dispute.created`. Razorpay signs no timestamp, so a repeated callback is stopped by its event id, which we keep once. It retries for 24 hours and then disables a failing webhook (turn it back on in the dashboard). The admin's **Refund** action on a Razorpay order refunds through Razorpay, once for each form shown (the form's token is Razorpay's idempotency key), and the credits come back when `refund.processed` arrives.
+
+Razorpay's API is versioned by path (`/v1`), so there is no version to pin. Two checks that use your test keys and are never part of `make check`: `make payments-live` (creates a real test-mode order and asks about it; no payment) and `make e2e-payments` (a browser pays in Razorpay's window on a stack where Razorpay is the only way to pay). Both are skipped, or refuse to start, without the test keys.
 
 ## Tracing and usage (optional)
 

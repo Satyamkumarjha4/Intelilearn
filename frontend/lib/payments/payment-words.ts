@@ -1,14 +1,17 @@
 import { ApiError } from "@/lib/api";
 import { WalletWords } from "@/lib/credits/wallet-words";
 
+import { CheckoutUnavailable } from "./checkout-contract";
 import type { Order } from "./types";
 
 /** What a payment says to a learner. Never a state name, a gateway's word, or a status code. */
 export class PaymentWords {
+  static readonly WINDOW = "We couldn't open the payment window. Nothing was charged. Check your connection and try again.";
   static readonly TRY_AGAIN = "We couldn't start that payment. Nothing was charged. Please try again.";
 
   /** Why a payment could not start, in words, from the server's own message when it wrote one for a person. */
   static refusal(error: unknown): string {
+    if (error instanceof CheckoutUnavailable) return PaymentWords.WINDOW;
     if (!(error instanceof ApiError)) return PaymentWords.TRY_AGAIN;
     switch (error.code) {
       case "too_many_pending":
