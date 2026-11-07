@@ -93,7 +93,7 @@ def test_register_keeps_when_and_to_what_the_person_agreed(api_client):
 
     grace = User.objects.get(email="grace@example.com")
     assert before <= grace.terms_accepted_at <= timezone.now()
-    assert grace.terms_version == "2026-10-25"
+    assert grace.terms_version == User.TERMS_VERSION  # whatever the terms are today; bumped with them (docs/legal)
 
 
 @pytest.mark.parametrize("consent", [{}, {"accept_terms": False}, {"accept_terms": None}])

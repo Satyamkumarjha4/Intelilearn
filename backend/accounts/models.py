@@ -54,7 +54,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     deleted_at = models.DateTimeField(null=True, blank=True)
 
     #: The version of the Terms of Use and Privacy Policy a new account agrees to (the date they were last updated).
-    TERMS_VERSION = "2026-10-25"
+    TERMS_VERSION = "2026-11-07"
 
     objects = UserManager()
 

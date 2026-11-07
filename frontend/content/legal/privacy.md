@@ -1,4 +1,4 @@
-**Last updated: 25 October 2026**
+**Last updated: 7 November 2026**
 
 Socra is an AI tutor that asks a few questions to find out what you already know, then builds a lesson for what you
 don't. This policy explains what personal data Socra collects, why, who it is shared with, how long it is kept, and the
@@ -24,6 +24,11 @@ of study, how you like to learn, your goal, lesson language, and any note you ch
 **Learning activity.** Topics you ask about, the notes you add to a lesson, your quick check answers, your test answers
 (including written answers), your scores, the lessons and study sheets Socra makes for you, and their version history.
 
+**Credits and payments.** Your credits: when each credit was given, spent, ran out or taken back, and what it was for.
+If you buy credits: an order reference, the amount, the date, which payment provider took the payment (Stripe or
+Razorpay), the provider's payment reference, and any refund. **Your card, bank or UPI details go to the payment provider
+and are never seen or stored by us.**
+
 **Technical data.** Your IP address (used only to limit how often sign-in and lesson requests can be made, to protect
 the service), basic server logs, and error reports when a lesson fails to load.
 
@@ -35,7 +40,7 @@ the service), basic server logs, and error reports when a lesson fails to load.
 | `lc_refresh` | Renews your sign-in (secure, httpOnly) | 7 days, renewed while you use Socra |
 | `lc_session`, `lc_onboarded` | Tell the app whether to show sign-in or onboarding | Until you sign out |
 | `csrftoken` | Protects forms against cross-site attacks | Up to 1 year |
-| Browser storage | Remembers small things on your device, such as your theme, which lesson pages you've read, or a quiz in progress | Until you clear it |
+| Browser storage | Remembers small things on your device, such as your theme, which lesson pages you've read, a quiz in progress, or the page to bring you back to after you buy credits | Until you clear it |
 
 We do not use advertising, analytics or social-media tracking cookies.
 
@@ -46,6 +51,9 @@ We do not use advertising, analytics or social-media tracking cookies.
   starting point of each lesson.
 - **To keep Socra safe and working:** rate limiting, preventing abuse, fixing errors, and checking that generated lessons
   run safely.
+- **To run credits and payments:** take your payment, give you the credits you bought, take them back if a payment is
+  refunded, and stop double charges and fraud. We also keep these records because accounting and tax rules require us
+  to.
 - **To reply to you** when you contact us.
 
 We do not use your personal data for automated decisions with legal or similarly significant effects. Lesson routes
@@ -74,12 +82,20 @@ the time.
 If optional tracing tools are switched on to debug lesson quality (LangSmith or Langfuse), they receive the same lesson
 request data as the AI providers, never your name or email.
 
+**Payments.** When you buy credits, you pay through Stripe or Razorpay. We send the provider the amount, our order
+reference, what you are buying and, so that your receipt reaches you, your email address (never your name). They keep
+your card, bank or UPI details and handle the payment under their own privacy policies; they may process it outside
+India. We receive from them only the result of the payment, its reference and any refund.
+
 We share personal data with no one else, except where the law requires it.
 
 ### 5. How long we keep it
 - Account, profile, lessons and answers: for as long as you have an account.
 - When you delete a lesson, its data is deleted. When you ask us to delete your account, we delete your personal data
   within 30 days, except where the law requires us to keep something longer.
+- **Payment and credit records.** When an account is deleted we remove your name, email and profile and keep the record
+  of payments and credits, **without anything that identifies you** (an order reference, amounts and dates), for as long
+  as accounting and tax rules require. Credits left in a deleted account are lost.
 - Backups are overwritten on a rolling basis within 30 days of deletion.
 - Server logs and AI request logs: kept for up to 90 days. AI request logs store technical details (model, timing,
   tokens, errors), not your name or email.
@@ -100,7 +116,7 @@ Under the DPDP Act (and the GDPR, if you are in the EU or UK) you can:
 
 - ask what personal data we hold about you and who we have shared it with;
 - correct or update it (most of it you can edit on your profile page);
-- delete your account and data;
+- delete your account and data (payment and credit records are kept without your identity, as section 5 says);
 - withdraw consent at any time (this means closing your account);
 - nominate someone to exercise your rights if you die or cannot act yourself;
 - get a copy of your data in a common format;

@@ -93,7 +93,7 @@ describe("the real copy", () => {
   test.each([["privacy", 10], ["terms", 13]])("%s has its date and %i numbered sections in order, with unique anchors", (name, count) => {
     const doc = read(name);
 
-    expect(doc.updated).toBe("25 October 2026");
+    expect(doc.updated).toBe("7 November 2026");
     expect(doc.sections.map((s) => s.number)).toEqual(Array.from({ length: count }, (_, n) => n + 1));
     expect(new Set(doc.sections.map((s) => s.id)).size).toBe(count);
   });

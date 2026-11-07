@@ -18,6 +18,6 @@ The texts are a careful, plain-language draft written for an Indian personal pro
 
 ## When you change them
 
-- Change **Last updated** at the top of the file you edited.
+- Change **Last updated** at the top of the file you edited (and the date `frontend/lib/legal-document.test.ts` expects).
 - If the change matters to what people agreed to, change `User.TERMS_VERSION` (`backend/accounts/models.py`). New accounts record that version when they confirm the terms. Nothing asks existing accounts to confirm a newer version yet, and accounts made before the confirmation existed have none recorded.
 - Keep the policy true to the code. One promise is not fully kept today: the Privacy page says that when you delete a lesson, its data is deleted. The lesson rows go, but its LangGraph checkpoints and model-call rows stay (see [data-model.md](../architecture/data-model.md#deleting-a-lesson) and the open work in [roadmap.md](../process/roadmap.md)). Fix the code, or soften the sentence, before the app is offered to the public.

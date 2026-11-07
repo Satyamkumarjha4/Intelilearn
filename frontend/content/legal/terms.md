@@ -1,11 +1,12 @@
-**Last updated: 25 October 2026**
+**Last updated: 7 November 2026**
 
 These terms are an agreement between you and Satyam Jha, who runs Socra ("we", "us"). By creating an account or using
 Socra, you agree to them. If you don't agree, please don't use Socra.
 
 ### 1. What Socra is
 Socra is an AI tutor. It gives you a short quick check on a topic, works out your starting point, and builds an
-interactive lesson, a final test or study sheets. Socra is offered free of charge, currently as a personal project.
+interactive lesson, a test or study sheets. Socra runs on **credits**: every new account starts with 30 free credits,
+you can earn more by studying, and you can buy more. Section 6 says how credits work.
 
 ### 2. Who can use it
 You can use Socra if you are 18 or older. If you are under 18, you may use it only with the permission of a parent or
@@ -37,9 +38,38 @@ Lessons, quizzes, tests, feedback and study sheets are written by AI models.
 
 If you spot an error, please tell us (see Contact).
 
-### 6. Tests and quick checks
-Each lesson's quick check and final test can be taken **once**. Once you submit, your answers, score and suggestions are
-final and kept as a record. If grading fails because of a problem on our side, we will re-mark the same answers. You
+### 6. Credits, payments and tests
+**What credits pay for.** Lessons, quizzes, study sheets and new tries at a test cost credits. The price is shown on the
+button before you start, and a lesson that is built in two steps (a quick check, then the lesson) is charged step by
+step. If we fail to build something, or you press Stop before it is finished, the credits for that step go back to your
+wallet, so you never pay for our failures. A lesson's first quick check and first test are part of the lesson. You can
+take a test again with fresh questions, and each new try costs credits.
+
+**Half price.** If you answer a quick check perfectly and choose the cheat sheet and revision sheet instead of an
+Expert lesson, that lesson costs half as much (5 credits instead of 10).
+
+**Where credits come from, and when they run out.** Credits are spent in the order they run out, the soonest first.
+
+| Credits | When they run out |
+|---|---|
+| The 30 you start with | Never |
+| Your daily credit for studying, and streak bonuses | 90 days after you get them |
+| Credits you buy by the amount | One year after you buy them |
+| Credits from a plan (Weekly Pro, Monthly Pro, Pro Plus) | At the end of that week or month of the plan |
+| Credits an administrator gives you or puts back after a refund | As we say when we give them |
+
+We tell you in the app before credits run out. Credits that have run out cannot be brought back.
+
+**Paying.** Credits and plans are **prepaid**. A plan does not renew by itself: when it ends, nothing more is charged
+unless you buy again. Prices are in rupees and **include tax**. Payments are taken by a payment provider (Stripe or
+Razorpay), which sends you its own receipt. Credits are added only once the provider tells us the payment went through.
+
+**Refunds.** Credits are **non-refundable once used**. There is no refund button: a refund is made by an administrator
+through the payment provider, and when it goes through we take back the credits from that purchase that you have not yet
+used (in proportion to the amount refunded). Credits you have already used stay used. Write to us (see Contact) to ask.
+
+**Tests and quick checks.** Once you submit a quick check or a test, your answers, score and suggestions are final for
+that try and kept as a record. If grading fails because of a problem on our side, we will re-mark the same answers. You
 won't be asked to answer again.
 
 ### 7. Content and ownership
@@ -54,18 +84,21 @@ won't be asked to answer again.
 ### 8. Availability and changes
 We work to keep Socra running, but it is provided **"as is" and "as available"**, without guarantees that it will
 always be available, error-free or suitable for a particular purpose. Lessons can take time to build and can
-occasionally fail. We may change, pause or end features, or Socra itself. For major changes we'll give notice where we
-reasonably can.
+occasionally fail. We may change, pause or end features, or Socra itself. We may change what things cost: a change
+never alters a price you have already been shown, or credits already in your wallet. For major changes we'll give notice
+where we reasonably can.
 
 ### 9. Ending your account
 You can stop using Socra and ask us to delete your account at any time by emailing satyamjha4@gmail.com. We may
-suspend or close accounts that break these terms. Sections 5, 7, 10 and 11 continue to apply after your account ends.
+suspend or close accounts that break these terms. When an account is closed, the credits left in it are lost, and
+nothing is refunded for them unless the law says otherwise. Sections 5, 6 (refunds), 7, 10 and 11 continue to apply
+after your account ends.
 
 ### 10. Liability
 To the extent the law allows, we are not liable for indirect or consequential losses, or for loss of data, marks or
-opportunities that result from using Socra or relying on AI-generated content. Because Socra is free, our total
-liability to you for any claim is limited to ₹1,000. Nothing in these terms limits liability that cannot be limited by
-law.
+opportunities that result from using Socra or relying on AI-generated content. Our total liability to you for any
+claim is limited to ₹1,000, or to what you paid us in the 12 months before the claim if that is more. Nothing in these
+terms limits liability that cannot be limited by law.
 
 ### 11. Law and disputes
 These terms are governed by the laws of India. Before going to court, please contact us so we can try to resolve the
