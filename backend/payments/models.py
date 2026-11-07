@@ -93,17 +93,26 @@ class RefundAttempt(models.Model):
     """One refund an administrator asked a provider for, under the token of the form that asked. The token is what makes
     a double click, or a resend of the form, refund once: (token, order) is unique, and it is the provider's idempotency
     key where the provider has one. Together the rows say how much has been asked for but not yet confirmed by the
-    provider's refund event, so a second submission never asks for more than remains."""
+    provider's refund event, so a second submission never asks for more than remains. A refund the provider says
+    failed, or a person marks failed, no longer counts: its amount can be asked for again."""
+
+    class State(models.TextChoices):
+        PENDING = "pending", "Waiting for the provider"
+        CONFIRMED = "confirmed", "Done"
+        FAILED = "failed", "Failed"
 
     token = models.UUIDField()
     order = models.ForeignKey(PaymentOrder, on_delete=models.PROTECT, related_name="refund_attempts")
     amount_paise = models.PositiveIntegerField()
     refund_ref = models.CharField(max_length=200, blank=True, help_text="The provider's id for the refund.")
+    state = models.CharField(max_length=10, choices=State.choices, default=State.PENDING)
     created_at = models.DateTimeField()
+    resolved_at = models.DateTimeField(null=True, blank=True, help_text="When the provider (or a person) settled it.")
 
     class Meta:
         ordering = ["-id"]
         constraints = [models.UniqueConstraint(fields=["token", "order"], name="refund_attempt_once")]
+        indexes = [models.Index(fields=["state", "created_at"], name="refund_attempt_state_idx")]
 
     def __str__(self):
         return f"{self.order_id} {self.amount_paise}p ({self.token})"

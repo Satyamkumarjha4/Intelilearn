@@ -30,6 +30,7 @@ from .gateway import (
     PaymentGateway,
     PaymentStatus,
     RefundResult,
+    RefundStatus,
     ReturnUrls,
 )
 from .stripe_events import StripeEventReader, StripeSignature
@@ -106,7 +107,7 @@ class StripeGateway(PaymentGateway):
     key: ClassVar[str] = "stripe"
     display_name: ClassVar[str] = "Stripe"
     supported_currencies: ClassVar[tuple[str, ...]] = ("INR",)
-    capabilities: ClassVar[frozenset[str]] = frozenset({PaymentGateway.REFUND})
+    capabilities: ClassVar[frozenset[str]] = frozenset({PaymentGateway.REFUND, PaymentGateway.REFUND_STATUS})
     required_config: ClassVar[tuple[str, ...]] = ("secret_key", "webhook_secret")
 
     #: how long a Checkout Session stays open. Stripe allows 30 minutes to 24 hours; a little under the top, so the
@@ -205,6 +206,20 @@ class StripeGateway(PaymentGateway):
         if refund.get("status") in self.CANCELLED_REFUND or not isinstance(refund.get("id"), str):
             raise GatewayRejected("Stripe did not make the refund.")
         return RefundResult(refund_ref=refund["id"], amount_paise=int(refund.get("amount") or amount_paise))
+
+    #: Stripe's refund statuses, in ours. Anything it adds later is `pending`, never taken for done.
+    REFUND_STATES = {
+        "succeeded": RefundStatus.PROCESSED,
+        "failed": RefundStatus.FAILED,
+        "canceled": RefundStatus.FAILED,
+    }
+
+    def fetch_refund(self, refund_ref: str) -> RefundStatus:
+        refund = self.api.get(f"/v1/refunds/{quote(refund_ref, safe='')}")
+        if not isinstance(refund.get("status"), str):
+            raise GatewayUnavailable("Stripe's answer had no refund status in it.")
+        state = self.REFUND_STATES.get(refund["status"], RefundStatus.PENDING)
+        return RefundStatus(state=state, amount_paise=int(refund.get("amount") or 0))
 
     @staticmethod
     def _moment(seconds: object) -> datetime | None:

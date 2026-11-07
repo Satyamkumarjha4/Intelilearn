@@ -28,6 +28,7 @@ from .gateway import (
     PaymentGateway,
     PaymentStatus,
     RefundResult,
+    RefundStatus,
     ReturnUrls,
 )
 from .razorpay_events import RazorpayEventReader, RazorpaySignature
@@ -100,7 +101,7 @@ class RazorpayGateway(PaymentGateway):
     key: ClassVar[str] = "razorpay"
     display_name: ClassVar[str] = "Razorpay"
     supported_currencies: ClassVar[tuple[str, ...]] = ("INR",)
-    capabilities: ClassVar[frozenset[str]] = frozenset({PaymentGateway.REFUND})
+    capabilities: ClassVar[frozenset[str]] = frozenset({PaymentGateway.REFUND, PaymentGateway.REFUND_STATUS})
     required_config: ClassVar[tuple[str, ...]] = ("key_id", "key_secret", "webhook_secret")
 
     ADAPTER = "razorpay"  # the name the frontend picks its code by
@@ -134,9 +135,9 @@ class RazorpayGateway(PaymentGateway):
 
     def create_checkout(self, order: CheckoutOrder, urls: ReturnUrls) -> CheckoutSession:
         """An Order with our order id as its receipt and in its notes, and the public parameters to open Razorpay's
-        checkout with: the key id (public), Razorpay's order id, the amount and currency, and a name. Retry is on: a failed
-        attempt may be tried again in the same window, so `payment.failed` is only recorded (see `RazorpayEventReader`)
-        and our order ends on a success or at its own deadline. Nothing secret is returned."""
+        checkout with: the key id (public), Razorpay's order id, the amount and currency, and a name. Retry is on: a
+        failed attempt may be tried again in the same window, so `payment.failed` is only recorded (see
+        `RazorpayEventReader`) and our order ends on a success or at its own deadline. Nothing secret is returned."""
         body = {
             "amount": order.amount_paise,
             "currency": order.currency,
@@ -206,3 +207,13 @@ class RazorpayGateway(PaymentGateway):
         if refund.get("status") == "failed" or not isinstance(refund.get("id"), str):
             raise GatewayRejected("Razorpay did not make the refund.")
         return RefundResult(refund_ref=refund["id"], amount_paise=int(refund.get("amount") or amount_paise))
+
+    REFUND_STATES = {"processed": RefundStatus.PROCESSED, "failed": RefundStatus.FAILED}
+
+    def fetch_refund(self, refund_ref: str) -> RefundStatus:
+        """`pending`, `processed` or `failed`, as Razorpay says; anything it adds later is `pending`."""
+        refund = self.api.get(f"/v1/refunds/{quote(refund_ref, safe='')}")
+        if not isinstance(refund.get("status"), str):
+            raise GatewayUnavailable("Razorpay's answer had no refund status in it.")
+        state = self.REFUND_STATES.get(refund["status"], RefundStatus.PENDING)
+        return RefundStatus(state=state, amount_paise=int(refund.get("amount") or 0))

@@ -96,6 +96,18 @@ class RefundResult:
     amount_paise: int
 
 
+@dataclass(frozen=True)
+class RefundStatus:
+    """What the provider says about one refund when asked."""
+
+    state: str  # pending, processed or failed
+    amount_paise: int = 0
+
+    PENDING = "pending"
+    PROCESSED = "processed"
+    FAILED = "failed"
+
+
 class PaymentGateway(ABC):
     """One payment provider."""
 
@@ -107,6 +119,7 @@ class PaymentGateway(ABC):
     required_config: ClassVar[tuple[str, ...]] = ()
 
     REFUND = "refund"
+    REFUND_STATUS = "refund_status"
 
     def __init__(self, config: GatewayConfig | None = None):
         self.config = config or GatewayConfig()
@@ -144,6 +157,16 @@ class PaymentGateway(ABC):
         provider has no such key keeps this default: the caller's own record of the key (`RefundAttempt`) is then the
         only guard."""
         return self.refund(payment_ref, amount_paise)
+
+    def fetch_refund(self, refund_ref: str) -> RefundStatus:
+        """Ask the provider whether a refund is done, still pending or failed, for a refund event that never came.
+        Only a gateway that declares `REFUND_STATUS` can; the rest raise `NotSupported`, and a person settles an
+        attempt."""
+        raise NotSupported(f"{self.display_name} cannot say how a refund went from here.")
+
+    @property
+    def can_fetch_refund(self) -> bool:
+        return self.REFUND_STATUS in self.capabilities
 
     @property
     def can_refund(self) -> bool:

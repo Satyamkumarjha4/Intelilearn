@@ -5,7 +5,8 @@ of one form at the same moment are taken one after the other. The form's token m
 arrival finds its `RefundAttempt` and asks nothing. The token is also the provider's idempotency key where the provider
 has one, so a request that was sent and whose answer never came back cannot be doubled by sending it again. Money is
 never asked for beyond what remains: what was refunded, less what has been asked for and not yet confirmed by the
-provider's refund event. The credits themselves come back only when that event arrives, not here.
+provider's refund event (a refund that failed no longer counts). The credits themselves come back only when that
+event arrives, not here.
 """
 
 import uuid
@@ -38,6 +39,10 @@ class RefundOutcome:
     TOO_MUCH = "too_much"  # more than remains; `amount_paise` is what does
     DASHBOARD = "dashboard"  # the provider cannot refund from here
     FAILED = "failed"
+
+
+class RefundNotMarkable(Exception):
+    """A person may not mark this attempt failed: it is not waiting, or the provider can still be asked."""
 
 
 class RupeeAmount:
@@ -108,10 +113,37 @@ class RefundDesk:
         )  # fmt: skip
         return RefundOutcome(RefundOutcome.ASKED, amount_paise=amount)
 
+    def mark_failed(self, attempt_id, actor) -> RefundAttempt:
+        """A person says a refund failed, for an attempt whose provider cannot be asked (a gateway that cannot
+        answer, or one switched off for good). The amount it held is free to ask for again. Written to the change log.
+        Refused for an attempt that is not waiting, and for one a provider can still be asked about: the sweep settles
+        those."""
+        with transaction.atomic():
+            attempt = RefundAttempt.objects.select_related("order").get(pk=attempt_id)
+            PaymentOrder.objects.select_for_update().get(pk=attempt.order_id)
+            attempt.refresh_from_db()
+            if attempt.state != RefundAttempt.State.PENDING:
+                raise RefundNotMarkable("That refund is not waiting for an answer.")
+            gateway = self.gateways.lookup(attempt.order.gateway)
+            if gateway is not None and gateway.can_fetch_refund:
+                raise RefundNotMarkable("The provider can still be asked about this one, and the sweep will do it.")
+            before = attempt.state
+            attempt.state, attempt.resolved_at = RefundAttempt.State.FAILED, self.clock.now()
+            attempt.save(update_fields=["state", "resolved_at"])
+            AuditTrail(actor).record(
+                "payments.refund_failed", "refund_attempt", attempt.pk,
+                before={"state": before, "amount_paise": attempt.amount_paise},
+                after={"state": attempt.state, "amount_paise": attempt.amount_paise, "order": str(attempt.order_id)},
+            )  # fmt: skip
+        return attempt
+
     @staticmethod
     def _unconfirmed(order: PaymentOrder) -> int:
         """Refunds asked for that the provider has not yet confirmed: what was asked, less what has been confirmed. A
         refund made in the provider's own dashboard also counts as confirmed, so this can be too small, never too large;
         the provider itself refuses what is more than remains."""
-        asked = RefundAttempt.objects.filter(order=order).aggregate(total=Sum("amount_paise"))["total"] or 0
+        live = RefundAttempt.objects.filter(order=order).exclude(
+            state=RefundAttempt.State.FAILED
+        )  # a failed one is free
+        asked = live.aggregate(total=Sum("amount_paise"))["total"] or 0
         return max(0, asked - order.refunded_paise)
