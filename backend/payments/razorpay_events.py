@@ -9,8 +9,9 @@ Which events count, and why:
 
 - `order.paid` is the success. `payment.captured` and `payment.authorized` arrive beside it and say the same thing, so
   they are ignored: a success is counted once.
-- `payment.failed` ends the order. An order can take more attempts, so the checkout is opened with retry off (see
-  `RazorpayGateway`): a failed attempt is then the end of that checkout. A payment that does succeed later still grants.
+- `payment.failed` is one failed attempt, recorded and nothing more. A Razorpay order takes any number of attempts and
+  the checkout window offers a retry, so a failure is not the end: the order ends only on a success or at our own
+  deadline. A payment that does succeed on an order we had already let go of still grants.
 - A refund is counted once it is `processed`, from `refund.created` or `refund.processed` (whichever says so), under the
   id `refund:<refund id>`, so the two are one event, as Stripe's are. It is found by its payment, which the order kept.
 - `payment.dispute.created` takes the money back like a refund. The other dispute events say nothing: a lost dispute has
@@ -83,7 +84,7 @@ class RazorpayEventReader:
             return []
         return [
             PaymentEvent(
-                event_id=self._keyed(event_id), kind=PaymentEvent.FAILED, provider_ref=str(payment["order_id"]),
+                event_id=self._keyed(event_id), kind=PaymentEvent.ATTEMPT_FAILED, provider_ref=str(payment["order_id"]),
                 amount_paise=int(payment.get("amount") or 0), currency=str(payment.get("currency") or "INR").upper(),
                 occurred_at=when, payment_ref=str(payment["id"]),
             )

@@ -70,6 +70,9 @@ class PaymentEvent:
     REFUNDED = "refunded"
     DISPUTED = "disputed"
     KINDS = (SUCCEEDED, FAILED, REFUNDED, DISPUTED)
+    #: One failed try that does not end the order (Razorpay's order takes more attempts): recorded, nothing changes.
+    #: Not in `KINDS`, which is what a gateway may say the order *is*; this says only that a try failed.
+    ATTEMPT_FAILED = "attempt_failed"
 
 
 @dataclass(frozen=True)

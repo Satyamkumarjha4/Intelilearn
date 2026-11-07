@@ -14,7 +14,8 @@ Use cases:
   adapter; the order keeps Razorpay's order id and the browser is told no secret
 - a validly signed `order.paid` grants the credits and records the payment id; the same event id again (a replay, or a
   retry) grants nothing more; a callback signed with another secret is a `400`; one with no event id header is a `400`
-- `payment.failed` ends a waiting order; a success after it still grants (a late payment wins); an amount that is not
+- `payment.failed` is recorded as a failed attempt and the order stays open; a success after it grants once, and with
+  no success the order ends only at its own deadline and grants nothing; an amount that is not
   the order's grants nothing
 - asking Razorpay (the return page's path) settles a paid order with no webhook, and leaves an open one waiting
 - the admin's Refund asks Razorpay for what is left against the payment, with the token as `X-Refund-Idempotency` once
@@ -26,10 +27,12 @@ Use cases:
 
 import json
 import uuid
+from datetime import timedelta
 
 import pytest
 from django.test import Client
 from django.urls import reverse
+from django.utils import timezone
 from support.razorpay import envelope, sign
 from support.razorpay import order as rzp_order
 from support.razorpay import payment as rzp_payment
@@ -93,6 +96,10 @@ def paid_event(event_id="evt_paid", **order_fields) -> tuple[dict, str]:
     return envelope(
         "order.paid", order=rzp_order_paid(**order_fields), payment=rzp_payment(id=PAY_ID, order_id=RZP_ID)
     ), event_id
+
+
+def failed_attempt() -> dict:
+    return envelope("payment.failed", payment=rzp_payment(id=PAY_ID, order_id=RZP_ID, status="failed", captured=False))
 
 
 def deliver(body: dict, event_id: str | None = "evt_1", *, secret: str = SECRET, client: Client | None = None):
@@ -227,13 +234,41 @@ class TestTheSignedCallback:
 
         assert response.status_code == 400 and Ledger().balance(user) == 0
 
-    def test_a_failed_payment_ends_the_order_and_a_success_after_it_still_grants(self, order, user):
-        failed = envelope(
-            "payment.failed", payment=rzp_payment(id=PAY_ID, order_id=RZP_ID, status="failed", captured=False)
-        )
-        pay((failed, "evt_failed"))
+    def test_a_failed_attempt_is_recorded_and_the_order_stays_open_for_the_next_one(self, order, user):
+        pay((failed_attempt(), "evt_failed"))
+
         order.refresh_from_db()
-        assert order.status == "failed" and Ledger().balance(user) == 0
+        assert (order.status, order.failure_reason) == ("pending", "") and Ledger().balance(user) == 0
+        logged = PaymentEventLog.objects.get(event_id="evt_failed")
+        assert (logged.kind, logged.outcome, logged.order_id) == ("attempt_failed", "applied", order.pk)
+
+    def test_a_failed_attempt_then_a_success_in_the_same_order_grants_once(self, order, user):
+        pay((failed_attempt(), "evt_failed_1"))
+        pay((failed_attempt(), "evt_failed_2"))
+
+        pay(paid_event("evt_paid"))
+        pay(paid_event("evt_paid_again"))
+
+        order.refresh_from_db()
+        assert order.status == "fulfilled" and Ledger().balance(user) == 100
+        assert PaymentEventLog.objects.filter(kind="attempt_failed").count() == 2
+
+    def test_failed_attempts_only_then_the_deadline_grants_nothing(self, order, razorpay, user):
+        pay((failed_attempt(), "evt_failed"))
+        PaymentOrder.objects.filter(pk=order.pk).update(
+            created_at=timezone.now() - timedelta(hours=26), expires_at=timezone.now() - timedelta(hours=1)
+        )
+        razorpay.answers = [(200, {**CREATED_ORDER, "status": "attempted", "attempts": 1})]
+
+        report = OrderReconciler().run()
+
+        order.refresh_from_db()
+        assert (order.status, report.expired) == ("expired", 1) and Ledger().balance(user) == 0
+        assert order.purchase.status == "void"
+
+    def test_a_success_after_the_deadline_still_grants_because_the_money_was_taken(self, order, user):
+        pay((failed_attempt(), "evt_failed"))
+        PaymentOrder.objects.filter(pk=order.pk).update(status="expired")
 
         pay(paid_event("evt_late"))
 

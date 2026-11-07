@@ -134,8 +134,9 @@ class RazorpayGateway(PaymentGateway):
 
     def create_checkout(self, order: CheckoutOrder, urls: ReturnUrls) -> CheckoutSession:
         """An Order with our order id as its receipt and in its notes, and the public parameters to open Razorpay's
-        checkout with: the key id (public), Razorpay's order id, the amount and currency, and a name. Retry is off, so a
-        failed attempt ends the checkout (and `payment.failed` ends our order). Nothing secret is returned."""
+        checkout with: the key id (public), Razorpay's order id, the amount and currency, and a name. Retry is on: a failed
+        attempt may be tried again in the same window, so `payment.failed` is only recorded (see `RazorpayEventReader`)
+        and our order ends on a success or at its own deadline. Nothing secret is returned."""
         body = {
             "amount": order.amount_paise,
             "currency": order.currency,
@@ -152,7 +153,7 @@ class RazorpayGateway(PaymentGateway):
             "currency": order.currency,
             "name": self.CHECKOUT_NAME,
             "description": order.description,
-            "retry": {"enabled": False},
+            "retry": {"enabled": True},
         }
         if order.buyer_email:
             client["prefill"] = {"email": order.buyer_email}

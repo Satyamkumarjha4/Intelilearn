@@ -10,8 +10,8 @@ Use cases:
 - create_checkout: a JSON POST to /v1/orders with Basic auth (key id and secret), the order's paise and currency, our
   order id as the receipt (within Razorpay's 40 characters) and in the notes; the answer is a client checkout for the
   `razorpay` adapter carrying only the key id, the Razorpay order id, the amount, the currency, a display name, the
-  description, the buyer's email as a prefill and "no retry" (a failed attempt is final, so `payment.failed` can end our
-  order); the secret is nowhere in it
+  description, the buyer's email as a prefill and retry on (a failed attempt may be tried again in the same window, so
+  `payment.failed` does not end our order); the secret is nowhere in it
 - no API version header is sent (Razorpay is versioned by path)
 - create_checkout failures: no connection or a timeout, a 5xx, a 429 and a 409 are `GatewayUnavailable`; a 400 (which is
   also how a bad key is answered), a 401, a 403 and a 404 are `GatewayRejected` (also an unavailable); an answer without
@@ -129,7 +129,7 @@ class TestCreatingACheckout:
         )  # fmt: skip
         assert dict(session.client) == {
             "key": KEY_ID, "order_id": RZP_ORDER["id"], "amount": 49900, "currency": "INR", "name": "Socra",
-            "description": "Weekly Pro", "prefill": {"email": "learner@example.com"}, "retry": {"enabled": False},
+            "description": "Weekly Pro", "prefill": {"email": "learner@example.com"}, "retry": {"enabled": True},
         }  # fmt: skip
         assert KEY_SECRET not in str(session.as_json()) and HOOK_SECRET not in str(session.as_json())
 

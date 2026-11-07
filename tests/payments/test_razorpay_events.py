@@ -16,7 +16,8 @@ Use cases:
 - `order.paid` is a success (the amount paid, the currency, Razorpay's order as the reference, the payment's id as the
   payment reference), keyed by the event id header; an order that is not paid says nothing; `payment.captured` and
   `payment.authorized`, which come beside it, say nothing, so a success is not counted twice
-- `payment.failed` is a failure for the order the payment belongs to, keyed by the event id header
+- `payment.failed` is one failed attempt for the order the payment belongs to (not a failure of the order: the
+  learner may try again in the same window), keyed by the event id header
 - a refund (`refund.created` or `refund.processed`, once it is processed) is a refunded event for that refund's own
   amount, found by its payment, under the id `refund:<refund id>` whichever of the two arrives; one that is pending or
   failed says nothing
@@ -144,7 +145,7 @@ class TestPaymentsThatClearOrFail:
     def test_the_payment_events_beside_it_say_nothing_so_a_success_is_not_counted_twice(self, kind):
         assert deliver(envelope(kind, payment=payment())) == []
 
-    def test_a_failed_payment_is_a_failure_for_its_order(self):
+    def test_a_failed_payment_is_one_failed_attempt_for_its_order(self):
         failed = payment(
             status="failed", captured=False, error_code="BAD_REQUEST_ERROR", error_description="Payment failed"
         )
@@ -152,7 +153,7 @@ class TestPaymentsThatClearOrFail:
         (event,) = deliver(envelope("payment.failed", payment=failed), event_id="evt_failed")
 
         assert (event.event_id, event.kind, event.provider_ref, event.payment_ref) == (
-            "evt_failed", "failed", "order_DESlLckIVRkHWj", "pay_DESlfW9H8K9uqM",
+            "evt_failed", "attempt_failed", "order_DESlLckIVRkHWj", "pay_DESlfW9H8K9uqM",
         )  # fmt: skip
 
     def test_a_failed_payment_with_no_order_says_nothing(self):

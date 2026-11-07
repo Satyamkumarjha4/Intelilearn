@@ -97,7 +97,7 @@ class OrderEvents:
         currency has to match, and it may not be more than was paid); a failure carries no money."""
         if event.kind == PaymentEvent.SUCCEEDED:
             return True
-        if event.kind == PaymentEvent.FAILED:
+        if event.kind in (PaymentEvent.FAILED, PaymentEvent.ATTEMPT_FAILED):
             return False
         return event.currency != order.currency or event.amount_paise > order.amount_paise
 
@@ -109,6 +109,11 @@ class OrderEvents:
             order.payment_ref = event.payment_ref or order.payment_ref
             order.save(update_fields=["status", "paid_at", "payment_ref"])
         self.fulfilment.fulfil(order)
+        return Outcome.APPLIED, 0
+
+    def _attempt_failed(self, order: PaymentOrder, event: PaymentEvent) -> tuple[str, int]:
+        """A try that failed, in a provider whose order takes more tries: the event row is the record, the order stays
+        as it is (open for the next try, or ended only by a success or by its own deadline)."""
         return Outcome.APPLIED, 0
 
     def _failed(self, order: PaymentOrder, event: PaymentEvent) -> tuple[str, int]:
