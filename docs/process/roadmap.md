@@ -26,6 +26,18 @@ Items carried over from the phases below, plus gaps found since. Nothing here bl
 
 - [x] Run the live suite (`pytest -m live`) and record what it finds: done in phase 9.8, see [the results](#phase-98-live-suite-results). Tuning the registry for real models is still open, and the changes the run suggests are listed there for a decision.
 
+**Credits and payments (left after phase 10)**
+
+- [ ] **Phase 11, sign-in methods, blocks public launch** (D15): until accounts are verified, each unverified account gets 30 free credits.
+- [ ] Run the live checks with fresh test keys: `make payments-live` and `make e2e-payments` (Stripe's test key supplied for 10.7 was expired; Razorpay's were never supplied). The selectors in the two browser specs for the providers' own pages are unverified.
+- [ ] Re-check Stripe's India onboarding and the RBI card rules before launch (D20); Razorpay is a configuration change if Stripe is not available. Decide the default gateway at launch.
+- [ ] A first real webhook test on a public address (a tunnel or staging) for each provider; until then the return page and the five-minute sweep settle payments.
+- [ ] GST registration and invoicing (D17): prices are tax-inclusive and the provider's receipt is the invoice for now.
+- [ ] Have a lawyer review the Terms and Privacy Policy before the public sees them (the owner's note in [legal/README.md](../legal/README.md)), now that they cover payments and credits.
+- [ ] A shortfall (a refund of credits already spent) is only listed; it has no "resolved" state or action.
+- [ ] `StripeApi` and `RazorpayApi` repeat their transport code: extract a shared `ProviderApi` ([design.md refactor backlog](../architecture/design.md#refactor-backlog)).
+- [ ] The Next.js proxy and rate limits behind a real host: the webhook throttle is per client address (`PAYMENT_WEBHOOK_THROTTLE_RATE`), which is only as good as the address the proxy forwards (the open item under Privacy and security).
+
 **Features and cleanups**
 
 - [ ] Remove the iframe `test_submit` path (nothing sends it any more).
@@ -234,7 +246,7 @@ For a decision: the quick check still fails now and then even with three attempt
 
 ### Phase 10: Credits and payments
 
-Credits for the work that costs model calls, earned by studying, bought through Stripe or Razorpay. The design is [the spec](../to_be_developed/credits-system.md) and [the implementation plan](../to_be_developed/credits-implementation-plan.md) (phases 10.0 to 10.9, each shippable, each ending with `make check` and `make e2e` green). Until 10.9 the default gate is still the open one, so a learner sees nothing change except the time zone field. Sign-in methods (Google, Apple, Microsoft, email OTP) are Phase 11, a separate plan; public launch waits for 10.9 and 11.
+Credits for the work that costs model calls, earned by studying, bought through Stripe or Razorpay. The design is [the spec](../architecture/credits-system.md) and [the implementation plan](../archive/credits-implementation-plan.md) (phases 10.0 to 10.9, each shippable, each ending with `make check` and `make e2e` green). **Phase 10 is complete and switched on:** the credit gate and earning are the defaults, new accounts get 30 credits and existing ones were backfilled first. Sign-in methods (Google, Apple, Microsoft, email OTP) are Phase 11, a separate plan; **public launch is blocked on it** (see below).
 
 - [x] 10.0 Apps, environment, the beat service, `Profile.timezone`, `ActivitySink` and its three call sites, the `quiz.retake` hint, `account_ready`, the 402 handler
 - [x] 10.1 Ledger: wallet, buckets, transactions, holds, spend order, append-only, audit
@@ -245,8 +257,8 @@ Credits for the work that costs model calls, earned by studying, bought through 
 - [x] 10.6 Payments core: the gateway port and registry, orders, webhooks, reconciliation, clawback, the fake gateway, the buy flow
 - [x] 10.7 Stripe adapter (test mode): `StripeGateway` over `httpx` with a pinned API version, signature and event reading, status lookup and refund; start-up safety checks (`payments.E004`, `E005`); the live checks wait on a working test key
 - [x] 10.8 Razorpay adapter (test mode): `RazorpayGateway` over `httpx`, signature and event reading (replay stopped by the event id), status lookup and refund with the admin form's idempotency token; `RazorpayCheckout` (on-page window, script loaded on demand, completion only navigates to the return page); the live checks wait on Razorpay test keys
-- [ ] 10.9 Console, Terms and Privacy, retire `retakes_per_day`, backfill, switch the default gate, move the spec and plan into `docs/`
-- [ ] 11 Sign-in methods (its own plan); public launch waits for 10.9 and 11
+- [x] 10.9 Console (credits and prices, learner wallets, payments and refunds, revenue beside model cost), Terms and Privacy for credits and payments, `retakes_per_day` and `paise_per_credit` retired, the signup backfill, the credit gate and earning switched on by default, the spec moved to `architecture/` and the plan to `archive/`; Razorpay retry on, and the sweep that settles refunds
+- [ ] 11 Sign-in methods (Google, Apple, Microsoft, email OTP; its own plan): **public launch is blocked on this**, because with credits on every unverified account gets 30 free credits (signup farming, D15)
 
 ## Across phases
 

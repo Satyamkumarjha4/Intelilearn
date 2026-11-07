@@ -58,13 +58,14 @@ The flow pauses for the learner at up to two `interrupt()` points, and a learner
 
 ## Lifecycle
 
-1. **Create.** `POST /api/lessons {topic}` creates a `Lesson`, snapshots the model registry and `FlowSettings`, and enqueues `start_flow`. It returns `{lesson_id, run_id}`, and the UI subscribes to `/api/runs/{run_id}/events`.
+1. **Create.** `POST /api/lessons {topic}` first asks the **action gate** what the work costs: with credits on (the default since phase 10.9) the gate prices it, takes those credits out of the learner's wallet as a reserve, or answers `402 insufficient_credits` before anything exists. Then it creates a `Lesson`, snapshots the model registry and `FlowSettings`, and enqueues `start_flow`. It returns `{lesson_id, run_id}`, and the UI subscribes to `/api/runs/{run_id}/events`.
 2. **Diagnose.** The graph generates and validates the diagnostic bundle, saves the `Quiz`, emits `awaiting_input`, and pauses at `interrupt()`. The worker is now free.
 3. **Answer.** The learner submits. Django grades the answers with the shared pure function, stores a `QuizAttempt`, and returns the score immediately. It then enqueues `resume_flow(lesson_id, attempt_id)`, and the UI subscribes to the new run.
 4. **Route.** The graph resumes from the checkpoint and takes one of three branches: mastery (another pause, for the sheet choice), prerequisite quiz (another pause), or directly to assessment.
 5. **Author, build, and verify** (lesson path). Plan, write pages and test in parallel, plan interactives, run the media agent and widget code in parallel, alignment judge, compile pages in parallel, static and security checks, assemble, headless render check, targeted repairs, persist.
 6. **Show.** On `done`, the UI loads `/api/lessons/{id}/document` and renders it in the sandboxed iframe.
-7. **After.** The learner can take the test (attempt 1 is the set the lesson was built with; every try after it gets new questions from the `question_bank` graph), take a quick quiz on the lesson, request more study sheets, or trigger an automatic runtime repair if the browser hits an error.
+7. **Credits follow the work.** A reserve is kept (committed) when its action reaches its completion point (the Quick check served, the lesson ready) and given back if the work fails or the learner presses Stop; Retry asks again as a resume, so nobody is charged twice. New accounts start with 30 credits that never expire, studying earns a daily credit and streak bonuses, and more can be bought (Stripe or Razorpay). Credits are added only from a signature-verified provider event, never from the browser's return to the site.
+8. **After.** The learner can take the test (attempt 1 is the set the lesson was built with; every try after it gets new questions from the `question_bank` graph), take a quick quiz on the lesson, request more study sheets, or trigger an automatic runtime repair if the browser hits an error.
 
 ## Resilience layers
 
@@ -85,6 +86,7 @@ The flow pauses for the learner at up to two `interrupt()` points, and a learner
   4. a strict CSP inside the iframe.
 - **Media** is downloaded, sniffed, and size-checked, then served from our own server through signed URLs. Generated code cannot reference external URLs.
 - **Answers** to quizzes and tests never reach the browser before the learner submits, and an attempt that is over cannot change (`attempt_sealed`).
+- **Payments** are the one place money enters. The webhook is the only endpoint with no sign-in and no CSRF cookie: its signature is checked over the raw body before any database work, a replayed event takes effect once (a unique provider event id), the body is capped at 256 KB, and the amount and currency must match the order or nothing is granted. The browser's return from a provider grants nothing: the return page asks the server, which asks the provider. A live provider key without `PAYMENTS_LIVE_MODE=true`, or the fake gateway outside debug, stops the app at start. Card, bank and UPI details never reach Socra; refunds are made by staff through the provider and take back only unspent credits.
 - **The console** answers `404` to anyone who is not staff, signed in or not, as if it did not exist, and every change made there leaves an audit entry. Provider keys are never serialised.
 - **Cookies:** the session and the markers the route guard reads are httpOnly; the one cookie the page sets itself (`lc_setting_up`) is a hint with no authority.
 - **Supabase:** Django owns the tables. Row-level security with no policies (so the public Data API exposes nothing) is the intended lock-down, but the script for it was skipped while the app runs on the local Postgres, so it is **not in place**. Enable it, including on the checkpoint tables, before pointing a Supabase project at this app.

@@ -1,4 +1,4 @@
-"""The credit ledger's tables (docs/to_be_developed/credits-implementation-plan.md §7.2).
+"""The credit ledger's tables (docs/archive/credits-implementation-plan.md §7.2).
 
 Money is an integer here: credits as whole numbers, never a float or a Decimal (T3). Nothing in this module reads the
 clock: every timestamp is given by the caller (`Ledger` takes it from its `Clock`), so a test controls them all.
@@ -185,7 +185,7 @@ class CreditTransaction(models.Model):
 
 
 class Plan(models.Model):
-    """What can be bought (docs/to_be_developed/credits-implementation-plan.md §7.2, D1): one-time credits at a price
+    """What can be bought (docs/archive/credits-implementation-plan.md §7.2, D1): one-time credits at a price
     a credit,
     and three plans that give credits for a period. Edited in the admin. A purchase stores what it cost, and a period
     what it
@@ -341,7 +341,7 @@ class StreakState(models.Model):
 
 
 class ActionPrice(models.Model):
-    """What something costs, in credits (docs/to_be_developed/credits-implementation-plan.md T10, K8). Prices are
+    """What something costs, in credits (docs/archive/credits-implementation-plan.md T10, K8). Prices are
     versioned:
     changing one adds a row and switches the old row off (`PriceCatalog.revise`), so there is one live row for a key
     and the

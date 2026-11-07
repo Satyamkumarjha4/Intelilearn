@@ -6,7 +6,7 @@ the chunky buttons, `lucide-react` icons and the copy rules of [CLAUDE.md](../..
 have not had is a designer's eye. This is the one list for a mockup session: add each screen to the mockup, get it approved,
 then adjust the code. Nothing here blocks a release.
 
-Phase 10 (credits and payments, [the plan](../to_be_developed/credits-implementation-plan.md)) adds section 7. Its time zone
+Phase 10 (credits and payments, [the plan](../archive/credits-implementation-plan.md)) adds section 7. Its time zone
 field was built in phase 10.0 and the wallet, history, streak, notices, buy shell and cost labels in phase 10.5; the screens of
 the later phases are listed here ahead of being built, each with the phase that builds it, so the designer sees the whole set
 before the code does.
@@ -76,7 +76,7 @@ for each is named so a change is easy to find. How each screen behaves is in [fr
 
 The approved mockup has none of these. Each is built from existing components and tokens in the phase named, and learners never
 see the words hold, ledger, gateway, webhook, order state or settle ("credits" is fine). Copy for the cost labels is in
-[the plan, section 5.5](../to_be_developed/credits-implementation-plan.md#55-what-the-learner-sees-stages-and-totals).
+[the plan, section 5.5](../archive/credits-implementation-plan.md#55-what-the-learner-sees-stages-and-totals).
 
 | Screen | Where | What needs a look |
 |---|---|---|
@@ -91,7 +91,7 @@ see the words hold, ledger, gateway, webhook, order state or settle ("credits" i
 | Cost label | On every button that starts paid work (built in 10.5: `CostLabel`) | A marigold pill with a coin: "Costs 3 credits", or for a lesson from a Quick check "Costs 3 credits now, 7 after the Quick check · 10 credits in all" with the parts under it. On the new-lesson form, the mastery choice, the follow-up dialog and card, Try again on a test, Make a lesson on this, Create a lesson for this, the quiz wizard (live), quiz Try again, Add a sheet (one and both), and the Retry card. It turns red with a **Buy credits** link when there are too few; the button stays pressable. Where it sits beside each button, and whether the loading placeholder is needed |
 | Not enough credits | A toast on any screen, and a card on the Quick check (built in 10.5; on coming back from buying, the Quick check shows the saved answers with a large **Send my answers**, in 10.6) | The toast says "Not enough credits" with a **Buy credits** action; the Quick check keeps its answers and shows "You need 7 credits for that and have 3 … Your answers are saved on this page" with **Get more credits** and **Send my answers**. Each screen still writes its own sentence (a toast or an alert); a single card shape would be better |
 | Half-price message | The mastery choice (built in 10.5) | "You already know this. Here's half your credits back." sits under the cost of the two-sheets card, in success green. Tone and where it sits |
-| Console: prices, plans, settings, wallets, payments | `/console/credits` and a revenue block on `/console/usage` (10.9) | Staff screens in the console's existing style: the price table with its history, plan editor, the reward settings, a learner's wallet with grant and revoke (a reason is required), the payments list with refund |
+| Console: prices, plans, settings, wallets, payments (built in 10.9) | `/console/credits`, `/console/payments`, `/console/learners/{id}` and a revenue block on `/console/usage` | Staff screens in the console's existing style, built without a mockup: **Credits & prices** (the price table with a collapsed history per key, a card of fields per plan, the credit rules as a long list of number boxes, one save bar), **Payments** (tiles, filters, an order per row with its state pill and refunds, an inline refund form and a Mark-as-failed button, then the credits a refund could not take back), **a learner's wallet** (three tiles, live credits, the last ledger rows, a give-or-take form where the reason is required, the exempt switch) and the **revenue block** (paid, refunded, net and model cost in rupees with the dollar rate). They want a designer's eye on density, on how a long settings list is grouped, and on the refund form |
 
 ## 8. The staff console
 

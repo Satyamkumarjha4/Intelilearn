@@ -13,7 +13,7 @@ Start here. The docs are grouped by what you are trying to do. Status marks: ✅
 | Add or rebind an LLM model or step | [architecture/model-registry.md](architecture/model-registry.md) |
 | Add or change a table | [architecture/data-model.md](architecture/data-model.md) |
 | Call or change an API endpoint | [reference/api.md](reference/api.md) (Swagger at `/api/docs` is the source of truth for shapes) |
-| Change a screen | [reference/frontend.md](reference/frontend.md), then the mockups in [design/mockups/](design/mockups/) |
+| Change a screen | [reference/frontend.md](reference/frontend.md), then the mockups in [design/mockups/](design/mockups) |
 | Change the first-topic suggestions | [reference/onboarding.md](reference/onboarding.md) |
 | Write or run tests | [process/testing.md](process/testing.md) |
 | Understand CI and the auto-revert on `main` | [process/ci.md](process/ci.md) |
@@ -34,6 +34,7 @@ Start here. The docs are grouped by what you are trying to do. Status marks: ✅
 | [lesson-graph.md](architecture/lesson-graph.md) | The LangGraph flow: diagnose → author → build and verify, with every validation, retry and fallback | ✅ |
 | [model-registry.md](architecture/model-registry.md) | Providers, models, node specs, reasoning, structured output, the gateway, the admin | ✅ |
 | [data-model.md](architecture/data-model.md) | Tables and fields, stages, access rules, what a lesson delete removes | ✅ |
+| [credits-system.md](architecture/credits-system.md) | The feature spec of credits and payments (phase 10): what things cost, how credits are earned, bought, spent, refunded and expire, the console and the legal words. What the product does and why; the code is in design.md §4.26 and §4.27 | ✅ |
 | [modular-lessons.md](architecture/modular-lessons.md) | The feature spec of the modular lesson parts (phase 9): self-rating, retakes, follow-ups, sheets, quick quizzes, concept links. What the product does and why; the code is described in the docs above | ✅ |
 
 ### reference/ (what it exposes)
@@ -62,15 +63,11 @@ Start here. The docs are grouped by what you are trying to do. Status marks: ✅
 |---|---|---|
 | [README.md](legal/README.md) | Where the privacy, terms and contact words live (`frontend/content/legal/`), the owner's note, and what to update when they change | ✅ |
 
-### to_be_developed/ (designed, not built)
-| Doc | What it is | Status |
-|---|---|---|
-| [credits-system.md](to_be_developed/credits-system.md) | A credits and metering design; the `ActionGate` seam phase 9 built is where it would plug in | design only (not built) |
-
 ### archive/ (finished, kept for the record)
 | Item | What it is | Status |
 |---|---|---|
 | [ui-audit-2026-10-25.md](archive/ui-audit-2026-10-25.md) | The screen-by-screen UI audit and its fixes | 🗄️ |
+| [credits-implementation-plan.md](archive/credits-implementation-plan.md) | The plan phase 10 was built from: the decisions (D1 to D21 and T1 to T36), the places the spec was changed, the changelog of every phase (P1 to P16) and the risks | 🗄️ |
 | [modular-lessons-implementation-plan.md](archive/modular-lessons-implementation-plan.md) | The plan phase 9 was built from: the decisions (D1 to D24), the places the spec was changed, the changelog of every phase (C1 to C41 and on) and the risks. Read it to learn why something is the way it is | 🗄️ |
 | `ui-audit-screenshots/` | About 30 MB of audit screenshots. Gitignored, so it only exists on the machine that took them | 🗄️ |
 

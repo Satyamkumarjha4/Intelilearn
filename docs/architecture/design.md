@@ -278,7 +278,7 @@ classDiagram
 - `PublicAuthView` in the diagram is `_PublicAuthView` in code (module-private base).
 - `Profile` is created by a `post_save` receiver (Observer) that only calls `Profile.objects.get_or_create`.
 - `AuthCookies` (`cookies.py`) owns the cookie names, paths and flags; lifetimes and `Secure` come from settings unless injected. `CookieJWTAuthentication` and the OpenAPI scheme read `AuthCookies.ACCESS`.
-- **The learner's time zone (Phase 10.0, `timezones.py`).** The learner's day (the daily credit and the streak of [the credits plan](../to_be_developed/credits-implementation-plan.md), D9) is the day in `Profile.timezone`, an IANA name. `TimeZoneNames` says which names are real (the system's `zoneinfo`, so old spellings such as `Asia/Calcutta` pass) and what the default is (`Asia/Kolkata`, for a profile where it was never set). `ProfileTimezone` is the one rule for setting it: the first value is free (the browser's, at sign-up), the same value again is nothing, and any other change stamps `timezone_changed_at` and refuses the next change for 30 days with `409 timezone_locked`. Its clock is injected, so the tests never sleep. `apply` sets attributes and leaves saving to the caller; `ProfileSerializer.update` calls it before anything else is saved, so a refused change leaves the rest of the request unsaved. At registration a name the database does not know is dropped instead of refused: a sign-up must not fail over a field the person cannot see.
+- **The learner's time zone (Phase 10.0, `timezones.py`).** The learner's day (the daily credit and the streak of [the credits plan](../archive/credits-implementation-plan.md), D9) is the day in `Profile.timezone`, an IANA name. `TimeZoneNames` says which names are real (the system's `zoneinfo`, so old spellings such as `Asia/Calcutta` pass) and what the default is (`Asia/Kolkata`, for a profile where it was never set). `ProfileTimezone` is the one rule for setting it: the first value is free (the browser's, at sign-up), the same value again is nothing, and any other change stamps `timezone_changed_at` and refuses the next change for 30 days with `409 timezone_locked`. Its clock is injected, so the tests never sleep. `apply` sets attributes and leaves saving to the caller; `ProfileSerializer.update` calls it before anything else is saved, so a refused change leaves the rest of the request unsaved. At registration a name the database does not know is dropped instead of refused: a sign-up must not fail over a field the person cannot see.
 - **`account_ready`** (`signals.py`) is a Django `Signal` sent with `user` when an account is usable: at registration today, when the email is confirmed once sign-in is built (Phase 11). The signup credits hang from it (`credits.signals`, live since phase 10.3), and `User.deleted_at` marks an account erased and anonymised in place ([§4.26](#426-credits-ledger-gate-earning-and-plans-phases-101-to-104)). It is sent with `send_robust` and a failing receiver is logged, never undoing the account.
 
 ### 4.2 `core` and `config`
@@ -2628,7 +2628,7 @@ classDiagram
 
 ### 4.26 `credits`: ledger, gate, earning and plans (Phases 10.1 to 10.4)
 
-The first piece of the credits system ([plan](../to_be_developed/credits-implementation-plan.md), §6.1): wallets, buckets, an append-only ledger, holds, and the one class that moves credits between them. **Nothing in `lessons` or `quizzes` calls it directly.** They never import this app, and `ACTION_GATE` is still `OpenGate`, so no learner is charged yet (the switch is phase 10.9). Phase 10.2 adds the prices and the gate in front of the ledger, and phase 10.3 earning and closing an account (below); phase 10.4 plans and periods; payments (10.6) are built on top. Code: `backend/credits/`.
+The first piece of the credits system ([plan](../archive/credits-implementation-plan.md), §6.1): wallets, buckets, an append-only ledger, holds, and the one class that moves credits between them. **Nothing in `lessons` or `quizzes` calls it directly.** They never import this app, and `ACTION_GATE` is still `OpenGate`, so no learner is charged yet (the switch is phase 10.9). Phase 10.2 adds the prices and the gate in front of the ledger, and phase 10.3 earning and closing an account (below); phase 10.4 plans and periods; payments (10.6) are built on top. Code: `backend/credits/`.
 
 ```mermaid
 classDiagram
@@ -2743,7 +2743,7 @@ classDiagram
 
 #### The prices and the credit gate (Phase 10.2)
 
-`CreditGate` is the real `ActionGate` ([§4.18](#418-lessons-the-action-gate-phase-9-metering-seam)): chosen by `ACTION_GATE=credits.gate.CreditGate` (the default is still `OpenGate`), it prices an action, reserves that many credits with `Ledger.place_hold`, and settles the reserve when the work ends.
+`CreditGate` is the real `ActionGate` ([§4.18](#418-lessons-the-action-gate-phase-9-metering-seam)): chosen by `ACTION_GATE` (since phase 10.9 `credits.gate.CreditGate` is the default; `OpenGate` is for a stack where credits should be off, and what the tests run on), it prices an action, reserves that many credits with `Ledger.place_hold`, and settles the reserve when the work ends.
 
 ```mermaid
 classDiagram
@@ -2867,7 +2867,7 @@ classDiagram
 - **Settle.** `succeeded` commits (the credits stay spent); `failed` and `cancelled` release (each credit back to its bucket, or to a refund bucket if that bucket has lapsed). A second settle, a settle the other way and an authorization this gate never made are logged and ignored. The price is fixed when the reserve is made and stored on it, so an edit never changes work in flight or what a failure gives back.
 - **`HoldReconciler` (T13).** For every reserve still held it finds the latest run that carries it: failed or cancelled and unsettled → released (and the run marked settled, through `AuthorizationLedger.settle_once`); succeeded and unsettled → committed; queued, running or **paused → left alone however old**; no run at all → released once `orphan_deadline` (30 minutes from the ask, `CreditSettings.orphan_minutes`) has passed. Callable and safe to run twice; the hourly tick that calls it arrives in 10.3.
 - **The endpoints** (`credits/views.py`, plan §8.1): `GET /credits/wallet` (the balance, what is reserved, the spendable credits in spend order, the next expiry, the exempt flag; a read never makes a wallet), `POST /credits/quote` (throttle `credits_quote`; `JourneyQuote` adds what follows a Quick check), and `GET /credits/transactions` (cursor-paged, newest first, in the learner's words by `TransactionWords`, which never uses an internal term and sends none of the ledger's insides). All are owner-scoped.
-- **Tests.** `credits_on` (`tests/support/credits_fixtures.py`) switches the gate on and funds a learner; the autouse `_pin_the_open_gate` starts every other test on `OpenGate`, so changing the default in 10.9 changes no existing test. `tests/credits/test_gate_call_sites.py` runs the eight call sites and the Stop, failure and Retry walk through the real services and API.
+- **Tests.** `credits_on` (`tests/support/credits_fixtures.py`) switches the gate on and funds a learner; the autouse `_pin_the_open_gate` starts every other test on `OpenGate` and the do-nothing sink, so changing the defaults in 10.9 changed no existing test. `tests/credits/test_gate_call_sites.py` runs the eight call sites and the Stop, failure and Retry walk through the real services and API.
 
 #### Plans and periods (Phase 10.4)
 
@@ -3228,9 +3228,62 @@ classDiagram
 - **`RazorpayCheckout` (frontend, §9.4).** `CheckoutAdapters.for` picks it for a `client` checkout naming `razorpay`, by the session and never by provider, and a redirect still goes to `RedirectCheckout`. `begin` loads `https://checkout.razorpay.com/v1/checkout.js` through `ScriptLoader` **when someone pays, once** (a second press shares the first load; a failure is forgotten so the next press tries again; the script is on no other page), opens the window with the server's parameters plus two callbacks, and returns a promise. **Paying only navigates to `/buy/return`**: the success callback is given a payment id and a signature and reads neither (T24), so nothing the browser says can grant anything. **Closing the window** resolves `closed` (`CheckoutEnd`), which `useBuy` turns into the buttons coming back on `/buy`; the order stays waiting and is let go later, and pressing Buy again for the same thing reopens the same order (the idempotency key is reused). Closing after paying is ignored, the page being on its way. A script that cannot load, or leaves no `Razorpay`, is `CheckoutUnavailable`, which `PaymentWords` turns into "We couldn't open the payment window. Nothing was charged."
 - **Content Security Policy.** The site sets none, so none changed. A site that sets one needs, for Razorpay's checkout, `https://checkout.razorpay.com` in `script-src` and `frame-src` and `https://api.razorpay.com` in `frame-src` and `connect-src`; Razorpay's own documentation does not list directives, so confirm them against the live checkout before adding any.
 
+#### The console for credits, and the switch-on (Phase 10.9)
+
+The last phase of the credits work: staff screens for money and credits, the cleanup of two things that credits made redundant, and the day the gate turns on. Code: `backend/console/services/credit_config.py`, `wallets.py`, `payments.py`, `revenue.py`, `console/views/credits.py`, `payments.py`, `console/serializers_credits.py`; `frontend/lib/console-credits/`, `components/console/credits/`, `payments/`, `people/wallet-view.tsx`, `usage/revenue-card.tsx`.
+
+```mermaid
+classDiagram
+    direction LR
+    class CreditConfig {
+        +prices() list
+        +revise_price(key, credits, label) dict
+        +update_plan(key, serializer, data) dict
+        +update_settings(serializer, data) dict
+    }
+    class WalletPanel {
+        +of(user_id) dict
+        +adjust(user_id, amount, reason, token) dict
+        +set_exempt(user_id, exempt) dict
+    }
+    class PaymentsBoard {
+        +orders(status, gateway, search) QuerySet
+        +row(order) dict
+        +summary() dict
+        +shortfalls() list
+    }
+    class RevenueReport {
+        +build(period) dict
+    }
+    class RefundDesk {
+        +refund(order_id, actor, token, amount) RefundOutcome
+        +mark_failed(attempt_id, actor) RefundAttempt
+    }
+    class RefundWords {
+        +of(outcome) tuple
+    }
+    CreditConfig --> PriceCatalog
+    WalletPanel --> Ledger
+    PaymentsBoard ..> PaymentOrder
+    RevenueReport ..> PaymentOrder
+    RevenueReport ..> ModelCall
+    CreditConfig --> AuditTrail
+    WalletPanel --> AuditTrail
+    RefundDesk --> AuditTrail
+    RefundDesk ..> RefundWords
+```
+
+- **Every change is audited, before and after, in the transaction that makes it** (`credits.price`, `credits.plan`, `credits.settings`, `credits.adjust`, `credits.exempt`, `payments.refund`, `payments.refund_failed`), and a change that changes nothing writes nothing. Staff only, the `console` throttle, a `404` for anyone else (the access tests list each new route).
+- **Prices, plans and settings (`/console/credits`).** One read gives every price with its history, the plans and the credit settings; the writes are `PATCH` per price (a new row through `PriceCatalog.revise`; the next hold uses it, a hold in flight keeps its lines), per plan and for the settings (both through serializers built from the models, so a value is accepted exactly when the model's validators accept it). A plan edit changes what is bought next, never a purchase already made. The page has the same save bar as Lesson settings; a price key that has never had a price is a `404`, so the screen cannot invent a key.
+- **A learner's wallet (`/console/learners/{id}/wallet`).** The balance, what is reserved, the live credits (soonest to run out first), the last 50 ledger rows with the reason of a hand-made one, and the exempt switch. Giving or taking credits needs a **reason** (it is kept on the ledger row and in the change log) and a token (a double click moves the credits once). Being staff exempts no one.
+- **Payments (`/console/payments`).** Orders with state, gateway, amount, what was refunded and every refund asked for with its state; the refund action is `RefundDesk` (the same token, optional rupee amount and never-more-than-remains rule as the Django admin, whose words it shares through `RefundWords`); a refund whose provider cannot be asked can be marked failed by hand; and a list of the refunds and disputes whose credits were already spent (the shortfall support deals with).
+- **Revenue beside model cost (`/console/revenue`, shown on Usage & cost).** Paid, refunded and net in rupees for the range, beside model cost, which is recorded in dollars and shown in rupees at `USD_INR_RATE`; the rate is in the answer and on the page (T31).
+- **Retired.** `retakes_per_day` (T33: `RetakeLimitReached`, the two daily checks, the column and its console field; the hourly throttle and the one open attempt remain) and `CreditSettings.paise_per_credit` (unused: the plan table prices one-time credits).
+- **The switch-on.** `ACTION_GATE` defaults to `credits.gate.CreditGate` and `ACTIVITY_SINK` to `CreditsActivitySink`. The order matters: `grant_signup_credits` first, so no account that existed before is refused at its first action. A lesson or quiz already running at the switch carries no authorization (the open gate gave none), so finishing, stopping or retrying it neither charges nor gives back. The root test fixture pins the open gate and the do-nothing sink, so a test that wants credits asks for them.
+
 #### Earning and closing an account (Phase 10.3)
 
-Studying becomes credits. **Nothing here is switched on yet**: `ACTIVITY_SINK` keeps defaulting to the do-nothing sink, so no learner earns a daily credit until the gate is switched on with it in phase 10.9. The one thing that is live is the signup grant, given on `account_ready` (and backfilled for older accounts). The `earning_on` test fixture switches the gate and the sink on together.
+Studying becomes credits. **Switched on in phase 10.9**: `ACTIVITY_SINK` defaults to `CreditsActivitySink`, so studying earns the daily credit and the streak, and the signup grant is given on `account_ready` (and backfilled for older accounts by `grant_signup_credits`, which is run before the gate is switched on). The `earning_on` test fixture switches the gate and the sink on together for a test, because the tests run on the open gate and the do-nothing sink.
 
 ```mermaid
 classDiagram

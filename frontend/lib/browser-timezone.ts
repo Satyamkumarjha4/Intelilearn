@@ -1,5 +1,5 @@
 /**
- * Everything the sign-up form and the profile page know about a time zone (docs/to_be_developed/credits-implementation-plan.md,
+ * Everything the sign-up form and the profile page know about a time zone (docs/archive/credits-implementation-plan.md,
  * D9). The learner's day, for the daily credit and the streak, is the day in their zone: sign-up sends the browser's,
  * and the profile lets them correct it once every 30 days. The server decides all of it; this saves a refused request.
  */

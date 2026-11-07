@@ -1,9 +1,9 @@
 # Feature Spec: Credits System
 
 **Product:** Socra
-**Status:** Finalized design, planned in [credits-implementation-plan.md](credits-implementation-plan.md) (open items in §12)
-**Last updated:** 2026-11-03
-**Related:** [modular-lessons.md](../architecture/modular-lessons.md), [the Phase 9 plan](../archive/modular-lessons-implementation-plan.md) (§5.5 and §6.7 are the `ActionGate` this feature plugs into; D19 is Stop, failure and Retry)
+**Status:** **Built and switched on** (phases 10.0 to 10.9). Built from [credits-implementation-plan.md](../archive/credits-implementation-plan.md), which wins where they differ; the object model is in [design.md](design.md) §4.26 and §4.27. What is left (sign-in, live provider checks, GST) is in [roadmap.md](../process/roadmap.md)
+**Last updated:** 2026-11-07 (moved from `to_be_developed/` in phase 10.9)
+**Related:** [modular-lessons.md](modular-lessons.md), [the Phase 9 plan](../archive/modular-lessons-implementation-plan.md) (§5.5 and §6.7 are the `ActionGate` this feature plugs into; D19 is Stop, failure and Retry)
 
 ---
 
@@ -375,7 +375,7 @@ Notices are shown **in the app** only, until email exists.
 
 ## 11. Proposed Data Model (sketch)
 
-> This is a sketch. Where it differs from [the implementation plan](credits-implementation-plan.md), the plan wins.
+> This is a sketch. Where it differs from [the implementation plan](../archive/credits-implementation-plan.md), the plan wins.
 
 ```
 Wallet              (one per user: the row every money movement locks, and the exempt flag)

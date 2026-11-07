@@ -1,4 +1,4 @@
-"""The plan's prices (docs/to_be_developed/credits-implementation-plan.md §5.4) as data, and how they get into the
+"""The plan's prices (docs/archive/credits-implementation-plan.md §5.4) as data, and how they get into the
 table.
 
 Migration `0004_price_seed` seeds them once. `PriceSeed` is the same list for the code that needs it again: the test

@@ -226,7 +226,7 @@ LLM_TRACING = env("LLM_TRACING", default="none")
 # date against it; nothing is cut off when it is passed.
 CONSOLE_MONTHLY_BUDGET_USD = env("CONSOLE_MONTHLY_BUDGET_USD", default="25")
 
-# --- Payments (docs/to_be_developed/credits-implementation-plan.md; nothing reads these before phase 10.6) ---
+# --- Payments (docs/archive/credits-implementation-plan.md; nothing reads these before phase 10.6) ---
 # Which payment providers a learner can pay through, in the order they are offered. Empty: buying is closed.
 # The adapters are `stripe`, `razorpay` and, only when PAYMENT_ALLOW_FAKE_GATEWAY is true, `fake`.
 PAYMENT_GATEWAYS_ENABLED = [
@@ -277,7 +277,7 @@ REST_FRAMEWORK = {
             "TOPIC_SUGGESTIONS_THROTTLE_RATE", default="30/min"
         ),  # per user; may cost a model call
         "console": env("CONSOLE_THROTTLE_RATE", default="120/min"),  # staff-only console API, per user
-        # credits and payments (docs/to_be_developed/credits-implementation-plan.md §8.5)
+        # credits and payments (docs/archive/credits-implementation-plan.md §8.5)
         "credits_quote": env("CREDITS_QUOTE_THROTTLE_RATE", default="120/min"),  # a price before a click, per user
         "credits_balance": env("CREDITS_BALANCE_THROTTLE_RATE", default="240/min"),  # the header chip, per user
         "payment_order": env("PAYMENT_ORDER_THROTTLE_RATE", default="10/hour"),  # starting a checkout, per user

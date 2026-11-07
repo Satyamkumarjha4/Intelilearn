@@ -1,4 +1,4 @@
-"""Seeds the price table with the plan's prices (docs/to_be_developed/credits-implementation-plan.md §5.4, as corrected by
+"""Seeds the price table with the plan's prices (docs/archive/credits-implementation-plan.md §5.4, as corrected by
 changelog P2: study sheets are priced by the number of sheets, whatever the score).
 
 The list is written out here, not imported, so this migration means the same thing whatever the code later says. It adds a

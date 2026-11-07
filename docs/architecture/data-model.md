@@ -40,7 +40,7 @@ Conventions that hold for every table:
 | learning_preference | enum `visual` \| `reading` \| `hands_on` \| `mixed` | How many interactives, and which kinds |
 | goal | enum `exam_prep` \| `deep_understanding` \| `quick_overview` \| `interview_prep` | Tone and test style |
 | notes | text, at most 2000 characters | Anything else the learner wants the tutor to know |
-| timezone | char(64), blank | The learner's IANA time zone, which sets their day (the daily credit and the streak, [credits plan D9](../to_be_developed/credits-implementation-plan.md)). Blank until the browser's zone is taken at sign-up or the learner chooses one; the zone in force is then `Asia/Kolkata` (`Profile.effective_timezone`). Validated against the system's zone database, never against a list of ours |
+| timezone | char(64), blank | The learner's IANA time zone, which sets their day (the daily credit and the streak, [credits plan D9](../archive/credits-implementation-plan.md)). Blank until the browser's zone is taken at sign-up or the learner chooses one; the zone in force is then `Asia/Kolkata` (`Profile.effective_timezone`). Validated against the system's zone database, never against a list of ours |
 | timezone_changed_at | datetime, null | Null until the zone is **changed**: the first value set (from the browser) leaves it null and starts no lock. A later change stamps it, and another change is refused for 30 days (`ProfileTimezone`, `409 timezone_locked`) |
 | updated_at | datetime | |
 
@@ -326,14 +326,14 @@ Written by `console.audit.AuditTrail` in the same transaction as the change.
 
 ## `credits` (phase 10.1)
 
-The ledger of the credits system ([plan §7.2](../to_be_developed/credits-implementation-plan.md), design in [design.md §4.26](design.md#426-credits-ledger-gate-earning-and-plans-phases-101-to-104)). Money is a whole number: credits are integers, never a float or a Decimal. **Nothing writes these tables yet** (the gate, earning and plans arrive in 10.2 to 10.4), and no table here has a default timestamp: every `created_at` is given by the ledger's `Clock`. Exempt from the "ids are UUIDs" convention: `Wallet` is keyed by its learner and `CreditTransaction` has a big auto id, because it is ordered.
+The ledger of the credits system ([plan §7.2](../archive/credits-implementation-plan.md), design in [design.md §4.26](design.md#426-credits-ledger-gate-earning-and-plans-phases-101-to-104)). Money is a whole number: credits are integers, never a float or a Decimal. **Nothing writes these tables yet** (the gate, earning and plans arrive in 10.2 to 10.4), and no table here has a default timestamp: every `created_at` is given by the ledger's `Clock`. Exempt from the "ids are UUIDs" convention: `Wallet` is keyed by its learner and `CreditTransaction` has a big auto id, because it is ordered.
 
 ### `Wallet` (one per learner, made by their first movement)
 
 | Field | Type | Notes |
 |---|---|---|
 | user | one-to-one User, primary key, `PROTECT` | The row every movement of the learner's credits locks first (`SELECT … FOR UPDATE`), so two movements never interleave and a learner with no credits yet still has something to lock |
-| credits_exempt | bool, default false | Work costs this learner nothing; every action is still recorded at 0 credits. Switched in the admin only |
+| credits_exempt | bool, default false | Work costs this learner nothing; every action is still recorded at 0 credits. Switched in the admin or the console, with an entry in the change log |
 | created_at | datetime | |
 
 ### `CreditBucket` (a parcel of credits with one source and one expiry)
@@ -444,9 +444,46 @@ The days are the truth about a streak. `StreakState` (one row per learner: `curr
 
 An edit never changes a row in place: `PriceCatalog.revise` adds a row and switches the old one off, so what a price *was* is kept, and a reserve stores the lines it charged and does not read this table again. Rows cannot be deleted in the admin. Migration `0004_price_seed` seeds the 18 prices of the plan (§5.4); read through the Django cache, cleared on every save.
 
-### `CreditSettings` (singleton, edited in the admin)
+### `CreditSettings` (singleton, edited in the admin and the console)
 
 Every amount and window of the credits rules (plan T18), with the spec's defaults: signup 30, daily 1, weekly streak bonus 10, monthly streak bonus 10, bonus credits valid 90 days, purchased 365, refund bucket 30, repair cost 1 within 48 hours and at most 1 per week and 3 per 28 days, the expiry-notice windows (2 / 7 / 7 / 30 for 3 days / 7), one-time purchases 10 to 5,000 credits at 100 paise a credit, at most 12 queued plan periods and 3 pending orders, and 30 minutes before an unclaimed hold is released. The ledger reads only the refund period and the orphan deadline today.
+
+## `payments` (phases 10.6 to 10.9)
+
+Money coming in. Amounts are integer paise and the currency is INR. The design is in [design.md §4.27](design.md#payments-phase-106); the console that shows them is in [design.md](design.md#the-console-for-credits-and-the-switch-on-phase-109).
+
+### `PaymentOrder` (one attempt to pay for one `PlanPurchase`)
+
+| Field | Type | Notes |
+|---|---|---|
+| id | UUID | Our order id: it is what a provider is given (`client_reference_id`, the receipt, notes) and what it sends back |
+| user | FK User, `PROTECT` | |
+| purchase | one-to-one `PlanPurchase`, `PROTECT` | What is being bought; a purchase has exactly one order |
+| gateway | char(20) | `stripe`, `razorpay` (or `fake`, only on the test stack) |
+| amount_paise, currency | positive int, char(3) | The server's price from the plan table; a provider's event is compared with it |
+| status | enum `created` \| `pending` \| `paid` \| `fulfilled` \| `failed` \| `expired` | A refund never changes it |
+| provider_ref | char(200), blank | The provider's id for the checkout (Stripe's Checkout Session, Razorpay's order). Unique per gateway when set |
+| payment_ref | char(200), blank | The provider's id for the payment itself (Stripe's payment intent, Razorpay's payment). A refund or dispute finds its order by it |
+| checkout | JSON | What the browser needs to pay; never a secret |
+| refunded_paise | positive int | Confirmed refunds so far; a database check keeps it within `amount_paise` |
+| failure_reason, expires_at, created_at, paid_at, fulfilled_at | | |
+
+### `PaymentEventLog` (what a provider said, once each)
+
+Unique on (gateway, event id), which is what makes an event take effect once. Only normalised fields are kept, never the raw body: `gateway`, `event_id`, `kind` (`succeeded`, `failed`, `attempt_failed`, `refunded`, `disputed`), `order` (null when it names none we know), `provider_ref`, `amount_paise`, `currency`, `outcome` (`applied`, `duplicate`, `unknown_order`, `amount_mismatch`, `ignored`), `shortfall` (credits of a refund that were already spent) and `received_at`.
+
+### `RefundAttempt` (a refund an administrator asked for)
+
+| Field | Type | Notes |
+|---|---|---|
+| token | UUID | The admin form's per-submission token; with `order` it is unique, so a form sent twice refunds once. It is also the provider's idempotency key where it has one |
+| order | FK `PaymentOrder`, `PROTECT` | |
+| amount_paise | positive int | What was asked for |
+| refund_ref | char(200) | The provider's id for the refund |
+| state | enum `pending` \| `confirmed` \| `failed` | `pending` until the provider's refund event, or the five-minute sweep, or a person says otherwise. A `failed` attempt no longer counts toward what has been asked for |
+| created_at, resolved_at | datetime | |
+
+What may still be asked for is the amount left on the order less the attempts that are not failed and not yet confirmed by a refund event.
 
 ## LangGraph checkpoint tables
 
@@ -499,6 +536,6 @@ There is no self-service account deletion: the Privacy page tells people to ask 
 
 - Every lessons endpoint filters by `owner=request.user`. Another user's lesson ID returns `404`, not `403`.
 - Every `/api/console` endpoint requires `User.is_staff`; anyone else, signed in or not, gets a `404`.
-- A learner's wallet, buckets, holds and ledger are reachable only through `Ledger` and the Django admin (read-only apart from the exempt flag and the credit settings). No API route exposes them before phase 10.2, and a learner with a wallet cannot be deleted until the ledger's fate is decided (the user foreign keys are `PROTECT`).
+- A learner's wallet, buckets, holds and ledger are reachable through `Ledger`, the Django admin (read-only apart from the exempt flag and the credit settings) and the staff console's wallet panel (read, give or take credits with a required reason, the exempt switch; every change in the change log). Orders and refunds are read in the console and refunded through `RefundDesk`, which the Django admin and the console share. A learner sees only their own balance and history, through `/credits/*`. The user foreign keys are `PROTECT`, so an account is erased by anonymising the row in place (`AccountErasure`); the ledger and the payment records stay, without anything that identifies the learner.
 - Quiz answers and final-test answers stay server-side until the learner submits.
 - `MediaAsset` files are served through **signed, expiring URLs** (`/api/media/{asset_id}?exp=…&sig=…`, HMAC with `DJANGO_SECRET_KEY`). The URLs are generated when the lesson detail is fetched and passed into the sandbox as `LESSON.media`. Cookies can't be used here: the sandboxed iframe has an opaque origin, so the browser does not send the session cookie on its image requests.

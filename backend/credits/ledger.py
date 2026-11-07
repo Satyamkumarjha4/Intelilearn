@@ -1,4 +1,4 @@
-"""The ledger: the one place credits move (docs/to_be_developed/credits-implementation-plan.md §6.1, T2 to T9).
+"""The ledger: the one place credits move (docs/archive/credits-implementation-plan.md §6.1, T2 to T9).
 
 Every movement runs in one transaction that first locks the learner's `Wallet` row, so a learner's movements never
 interleave (lock order: the caller's lesson, if it holds one, then the wallet, then the buckets, in id order). Under the

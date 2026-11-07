@@ -36,7 +36,7 @@ The root `.env` is the **single source of configuration**. Django reads it, `doc
 | Landing page | `LANDING_DEMO_THROTTLE_RATE`, `LANDING_DEMO_IDS_TTL_S` | 60/min, 600 (10 min) |
 | Onboarding | `TOPIC_SUGGESTIONS_THROTTLE_RATE`, `ONBOARDING_SUGGESTION_TTL_S` | 30/min, 30 days |
 | Lesson flow | `FLOW_RUN_LOCK_TTL_S`, `LESSON_CREATE_THROTTLE_RATE`, `SSE_HEARTBEAT_S`, `SANDBOX_DIR`, `NODE_BINARY`, `SANDBOX_CHECK_TIMEOUT_S`, `SANDBOX_RENDER_TIMEOUT_S`, `SANDBOX_PAGE_TIMEOUT_MS`, `GIPHY_API_KEY`, `MEDIA_URL_TTL_S` | 600, 30/hour, 30/hour, 15, `<repo>/sandbox`, node, 30, 180, 8000, empty, 21600 (6 h) |
-| Credits and payments (names are in `.env.example`, all commented) | `ACTIVITY_SINK`, `PAYMENT_GATEWAYS_ENABLED`, `PAYMENT_DEFAULT_GATEWAY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `PAYMENT_RETURN_BASE_URL`, `PAYMENTS_LIVE_MODE`, `PAYMENT_ALLOW_FAKE_GATEWAY`, `PAYMENT_FAKE_GATEWAY_SECRET`, `USD_INR_RATE`, `CREDITS_QUOTE_THROTTLE_RATE`, `CREDITS_BALANCE_THROTTLE_RATE`, `PAYMENT_ORDER_THROTTLE_RATE`, `PAYMENT_STATUS_THROTTLE_RATE`, `PAYMENT_WEBHOOK_THROTTLE_RATE` | the do-nothing sink, none enabled, stripe, empty keys (the Stripe test keys go in your `.env`, which is not committed), `http://localhost:${FRONTEND_PORT}`, false, false, a development value (used only where the fake gateway is allowed), 85, 120/min, 240/min, 10/hour, 60/min, 600/min |
+| Credits and payments (names are in `.env.example`, all commented) | `ACTION_GATE`, `ACTIVITY_SINK`, `PAYMENT_GATEWAYS_ENABLED`, `PAYMENT_DEFAULT_GATEWAY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `PAYMENT_RETURN_BASE_URL`, `PAYMENTS_LIVE_MODE`, `PAYMENT_ALLOW_FAKE_GATEWAY`, `PAYMENT_FAKE_GATEWAY_SECRET`, `USD_INR_RATE`, `CREDITS_QUOTE_THROTTLE_RATE`, `CREDITS_BALANCE_THROTTLE_RATE`, `PAYMENT_ORDER_THROTTLE_RATE`, `PAYMENT_STATUS_THROTTLE_RATE`, `PAYMENT_WEBHOOK_THROTTLE_RATE` | the credit gate, the credits sink, none enabled, stripe, empty keys (the Stripe test keys go in your `.env`, which is not committed), `http://localhost:${FRONTEND_PORT}`, false, false, a development value (used only where the fake gateway is allowed), 85, 120/min, 240/min, 10/hour, 60/min, 600/min |
 | Offline walk-through | `FAKE_LLM_API_KEY` | empty (any value; not a secret) |
 
 - The `POSTGRES_HOST`, `POSTGRES_PORT`, `REDIS_HOST`, and `REDIS_PORT` values in `.env` describe how the **host** reaches the services. Inside docker, compose overrides them with the service names and internal ports (`db:5432`, `redis:6379`).
@@ -196,6 +196,19 @@ Pay in Razorpay's window with the test UPI id `success@razorpay` (`failure@razor
 
 Razorpay's API is versioned by path (`/v1`), so there is no version to pin. Two checks that use your test keys and are never part of `make check`: `make payments-live` (creates a real test-mode order and asks about it; no payment) and `make e2e-payments` (a browser pays in Razorpay's window on a stack where Razorpay is the only way to pay). Both are skipped, or refuse to start, without the test keys.
 
+## Switching credits on (and the day it goes live)
+
+Credits are **on by default** since phase 10.9 (`ACTION_GATE=credits.gate.CreditGate`, `ACTIVITY_SINK=credits.activity.CreditsActivitySink`). To start a stack, in this order:
+
+1. **Migrate** (`make migrate`, or let the backend start do it).
+2. **Backfill the signup credits**: `docker compose run --rm backend python manage.py grant_signup_credits --dry-run` says how many accounts would get their 30 credits (which never expire); run it again without `--dry-run`. It is safe to repeat. Accounts made before credits existed are otherwise refused at their first paid action.
+3. **Start the stack** (`make up`), with `beat` running exactly once: it expires credits, starts plan periods, releases reserves nothing will settle, and every five minutes asks the payment providers about payments and refunds whose callback never came.
+4. A lesson or quiz that was already running when you restarted finishes free: it was never charged.
+
+To keep credits off on a stack (a classroom, a demo), set `ACTION_GATE=lessons.metering.OpenGate` and `ACTIVITY_SINK=lessons.activity.NullActivity`.
+
+**On a real host** (not covered by the test keys above): live provider keys need `PAYMENTS_LIVE_MODE=true`, which is refused anywhere else; the fake gateway is refused outside `DJANGO_DEBUG`; each provider needs a public HTTPS address to call, `https://<your address>/api/payments/webhooks/stripe` and `/razorpay` (through the frontend, which passes the raw body on untouched), with the webhook secret set in the environment and the events listed in the Stripe and Razorpay sections above; and `PAYMENT_RETURN_BASE_URL` set to the site's own address. Until a webhook is reachable, the return page and the five-minute sweep still settle payments by asking the provider, so a missing tunnel delays credits and never loses them. On a laptop, a tunnel (Razorpay suggests `zrok`) or the Stripe CLI is how a real callback arrives.
+
 ## Tracing and usage (optional)
 
 - **Usage:** the staff console's *Usage & cost* page (`/console/usage`) shows calls, success rate, fallbacks, median and p95 latency, tokens and spend per model and per step over today, 7 days, 30 days or a custom range, and exports the calls as CSV. Spend stays at 0 until a model has a price (`input_cost_per_mtok` and `output_cost_per_mtok`) in the registry. The Django admin keeps its own *Model calls* pages with the same figures.
@@ -248,7 +261,10 @@ docker compose exec backend python manage.py backfill_concept_index           # 
 - `grant_signup_credits` (phase 10.3) gives the 30 signup credits, which never expire, to every active account that was
   made before credits existed. New accounts get them when they register. Run it with `--dry-run` first (it prints how many
   accounts it would give them to and writes nothing), then for real, **once before the credit gate is switched on**. It is
-  safe to run again: an account that has them is left alone, and a closed account is skipped.
+  safe to run again: an account that has them is left alone, and a closed account is skipped. Since phase 10.9 the credit gate
+  and the earning sink are the defaults, so this is a **deploy step before the first start with credits on**: migrate, run
+  it with `--dry-run`, run it, then start the stack. A lesson or quiz that was already running when the stack restarts
+  finishes free (it carries no charge).
 - Migration `0021` (phase 9.8) refuses to run while any lesson still waits at the old three-sheet choice. If it stops,
   let those learners choose with the previous release, then migrate again. Migration `0019` moved every lesson's test
   onto the record of questions; it can be undone, and it does not touch attempts.

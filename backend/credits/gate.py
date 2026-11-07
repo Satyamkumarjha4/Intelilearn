@@ -1,4 +1,4 @@
-"""The credit gate: the real `ActionGate` (docs/to_be_developed/credits-implementation-plan.md §5.2, §6.2).
+"""The credit gate: the real `ActionGate` (docs/archive/credits-implementation-plan.md §5.2, §6.2).
 
 `authorize` prices the action with the same `PriceQuoter` the quote endpoint uses, reserves that many credits (`Ledger`
 `place_hold`) and answers with an `Authorization` whose id is the reserve's id, so the run it travels with can find the
