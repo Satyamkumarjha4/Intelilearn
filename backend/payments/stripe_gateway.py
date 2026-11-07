@@ -189,12 +189,19 @@ class StripeGateway(PaymentGateway):
         return PaymentStatus(state=PaymentStatus.PENDING)
 
     def refund(self, payment_ref: str, amount_paise: int) -> RefundResult:
-        """Refund `amount_paise` of the payment (a payment intent id). No idempotency key on purpose: the key would have
-        to be the same for a repeated click and different for a second, deliberate, partial refund, and Stripe already
-        refuses a refund that is more than what is left."""
+        """Refund `amount_paise` of a payment (a payment intent id), with no idempotency key (`refund_with_key`)."""
+        return self._refund(payment_ref, amount_paise, None)
+
+    def refund_with_key(self, payment_ref: str, amount_paise: int, idempotency_key: str) -> RefundResult:
+        """The admin's form sends one key per submission, so a double click, or a request whose answer was lost, is one
+        refund at Stripe; a second, deliberate refund is another submission and has another key."""
+        return self._refund(payment_ref, amount_paise, idempotency_key)
+
+    def _refund(self, payment_ref: str, amount_paise: int, idempotency_key: str | None) -> RefundResult:
         if not payment_ref:
             raise GatewayRejected("There is no payment to refund.")
-        refund = self.api.post("/v1/refunds", {"payment_intent": payment_ref, "amount": str(amount_paise)})
+        form = {"payment_intent": payment_ref, "amount": str(amount_paise)}
+        refund = self.api.post("/v1/refunds", form, idempotency_key=idempotency_key)
         if refund.get("status") in self.CANCELLED_REFUND or not isinstance(refund.get("id"), str):
             raise GatewayRejected("Stripe did not make the refund.")
         return RefundResult(refund_ref=refund["id"], amount_paise=int(refund.get("amount") or amount_paise))

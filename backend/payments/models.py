@@ -87,3 +87,23 @@ class PaymentEventLog(models.Model):
 
     def __str__(self):
         return f"{self.gateway}:{self.event_id} {self.kind} ({self.outcome})"
+
+
+class RefundAttempt(models.Model):
+    """One refund an administrator asked a provider for, under the token of the form that asked. The token is what makes
+    a double click, or a resend of the form, refund once: (token, order) is unique, and it is the provider's idempotency
+    key where the provider has one. Together the rows say how much has been asked for but not yet confirmed by the
+    provider's refund event, so a second submission never asks for more than remains."""
+
+    token = models.UUIDField()
+    order = models.ForeignKey(PaymentOrder, on_delete=models.PROTECT, related_name="refund_attempts")
+    amount_paise = models.PositiveIntegerField()
+    refund_ref = models.CharField(max_length=200, blank=True, help_text="The provider's id for the refund.")
+    created_at = models.DateTimeField()
+
+    class Meta:
+        ordering = ["-id"]
+        constraints = [models.UniqueConstraint(fields=["token", "order"], name="refund_attempt_once")]
+
+    def __str__(self):
+        return f"{self.order_id} {self.amount_paise}p ({self.token})"

@@ -7,7 +7,8 @@ behind is the configuration the later phases read; if a name is missing or misty
 in production instead of in a test.
 
 Use cases:
-- the `credits` and `payments` apps are installed; `payments` holds its two models (orders and their events, phase 10.6)
+- the `credits` and `payments` apps are installed; `payments` holds its three models (orders and their events, phase
+  10.6; the refunds an administrator asked for, phase 10.8)
 - the action gate is still the open one, and the activity sink does nothing
 - the payment settings exist with the right types: gateways enabled (a list, none by default), the default gateway, the
   keys of each provider (text), the return base URL, the fake-gateway switch (off) and the dollar-rupee rate (positive)
@@ -25,10 +26,14 @@ from config.celery import app as celery_app
 
 
 @pytest.mark.parametrize("label", ["payments"])
-def test_the_payments_app_is_installed_and_holds_its_two_models(label):
+def test_the_payments_app_is_installed_and_holds_its_three_models(label):
     config = apps.get_app_config(label)
 
-    assert sorted(model.__name__ for model in config.get_models()) == ["PaymentEventLog", "PaymentOrder"]
+    assert sorted(model.__name__ for model in config.get_models()) == [
+        "PaymentEventLog",
+        "PaymentOrder",
+        "RefundAttempt",
+    ]
     assert label in [name.split(".")[0] for name in settings.INSTALLED_APPS]
 
 

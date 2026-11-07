@@ -1,13 +1,14 @@
 """The payments screens of the Django admin. Orders and their events are read-only: money is taken and credits are
 given by the payment path, never by a form. What an administrator may do is ask for a refund (credits plan D14)."""
 
+import uuid
+
+from django import forms
 from django.contrib import admin, messages
+from django.contrib.admin.helpers import ActionForm
 
-from console.audit import AuditTrail
-
-from .errors import NotSupported, PaymentError
 from .models import PaymentEventLog, PaymentOrder
-from .registry import PaymentGateways
+from .refunds import RefundDesk, RefundOutcome, RupeeAmount
 
 
 class ReadOnlyAdmin(admin.ModelAdmin):
@@ -21,46 +22,87 @@ class ReadOnlyAdmin(admin.ModelAdmin):
         return False
 
 
-@admin.action(description="Refund the rest of the selected payments")
+class RefundActionForm(ActionForm):
+    """The action bar of the order list, with two more fields. The token is made when the list is shown (the callable
+    is evaluated at each render), travels with the submit, and is what lets the server refund a submission once. The
+    amount is rupees for one payment, blank for all that remains. Both are read leniently: a bad one is a message, not
+    a form that silently does nothing."""
+
+    refund_token = forms.CharField(required=False, widget=forms.HiddenInput, initial=lambda: str(uuid.uuid4()))
+    refund_amount = forms.CharField(
+        required=False,
+        label="Refund (₹):",
+        widget=forms.TextInput(attrs={"size": 8, "placeholder": "the rest"}),
+    )
+
+
+class RefundNotices:
+    """The administrator's words for each way a refund can end."""
+
+    def __init__(self, modeladmin, request, label: str):
+        self.send = lambda text, level: modeladmin.message_user(request, f"{label}: {text}", level)
+
+    def tell(self, outcome: RefundOutcome) -> None:
+        getattr(self, f"_{outcome.kind}")(outcome)
+
+    def _not_fulfilled(self, outcome):
+        self.send("only a payment that was fulfilled can be refunded.", messages.ERROR)
+
+    def _in_full(self, outcome):
+        self.send("it is refunded in full already.", messages.WARNING)
+
+    def _all_asked(self, outcome):
+        self.send(
+            "there is nothing left to ask for: the rest has been asked for and is waiting for the provider.",
+            messages.WARNING,
+        )
+
+    def _too_much(self, outcome):
+        self.send(
+            f"the amount is more than what remains to refund (₹{outcome.amount_paise / 100:.2f}).", messages.ERROR
+        )
+
+    def _duplicate(self, outcome):
+        self.send(
+            "this refund was already asked for (the form was sent twice). Nothing more was asked.", messages.WARNING
+        )
+
+    def _dashboard(self, outcome):
+        name = outcome.provider
+        self.send(
+            f"refund it in {name}'s own dashboard. The credits are taken back when {name} says it was refunded.",
+            messages.WARNING,
+        )
+
+    def _failed(self, outcome):
+        self.send(f"the refund was not made ({outcome.error}).", messages.ERROR)
+
+    def _asked(self, outcome):
+        self.send(
+            f"a refund of {outcome.amount_paise / 100:.2f} rupees was asked for. "
+            "The credits come back when the provider confirms it.",
+            messages.SUCCESS,
+        )
+
+
+@admin.action(description="Refund the selected payments (the rest of each, or the amount typed for one)")
 def refund(modeladmin, request, queryset):
-    """Refund through the provider when the gateway can, else say where to do it. Either way the credits are taken back
+    """Ask the provider to refund each selected payment, through `RefundDesk`. Either way the credits are taken back
     when the provider's refund event arrives (D14), not here, so what is refunded is always what the provider says."""
-    gateways = PaymentGateways()
-    for order in queryset.select_related("user"):
-        label = f"{order.user} ({order.pk})"
-        if order.status != PaymentOrder.Status.FULFILLED:
-            modeladmin.message_user(
-                request, f"{label}: only a payment that was fulfilled can be refunded.", messages.ERROR
-            )
-            continue
-        left = order.amount_paise - order.refunded_paise
-        gateway = gateways.lookup(order.gateway)
-        if left <= 0:
-            modeladmin.message_user(request, f"{label}: it is refunded in full already.", messages.WARNING)
-        elif gateway is None or not gateway.can_refund or not order.payment_ref:
-            name = gateway.display_name if gateway else order.gateway
-            modeladmin.message_user(
-                request,
-                f"{label}: refund it in {name}'s own dashboard. "
-                f"The credits are taken back when {name} says it was refunded.",
-                messages.WARNING,
-            )
-        else:
-            try:
-                result = gateway.refund(order.payment_ref, left)
-            except (NotSupported, PaymentError) as error:
-                modeladmin.message_user(request, f"{label}: the refund was not made ({error}).", messages.ERROR)
-                continue
-            AuditTrail(request.user).record(
-                "payments.refund", "payment_order", order.pk,
-                after={"amount_paise": result.amount_paise, "refund_ref": result.refund_ref, "gateway": order.gateway},
-            )  # fmt: skip
-            modeladmin.message_user(
-                request,
-                f"{label}: a refund of {result.amount_paise / 100:.2f} rupees was asked for. "
-                "The credits come back when the provider confirms it.",
-                messages.SUCCESS,
-            )  # fmt: skip
+    desk = RefundDesk()
+    token = RefundToken.read(request.POST.get("refund_token", ""))
+    orders = list(queryset.select_related("user"))
+    try:
+        amount = RupeeAmount.to_paise(request.POST.get("refund_amount", ""))
+    except ValueError:
+        modeladmin.message_user(request, "Enter the amount in rupees, like 12.50.", messages.ERROR)
+        return
+    if amount is not None and len(orders) != 1:
+        modeladmin.message_user(request, "An amount can only be given for one payment at a time.", messages.ERROR)
+        return
+    for order in orders:
+        outcome = desk.refund(order.pk, request.user, token, amount)
+        RefundNotices(modeladmin, request, f"{order.user} ({order.pk})").tell(outcome)
 
 
 @admin.register(PaymentOrder)
@@ -71,6 +113,7 @@ class PaymentOrderAdmin(ReadOnlyAdmin):
     date_hierarchy = "created_at"
     list_select_related = ["user"]
     actions = [refund]
+    action_form = RefundActionForm
 
 
 @admin.register(PaymentEventLog)
@@ -79,3 +122,13 @@ class PaymentEventLogAdmin(ReadOnlyAdmin):
     list_filter = ["gateway", "kind", "outcome"]
     search_fields = ["event_id", "provider_ref"]
     date_hierarchy = "received_at"
+
+
+class RefundToken:
+    @staticmethod
+    def read(text: str) -> uuid.UUID | None:
+        """The form's token, or `None` for none or a bad one (the submission is then not de-duplicated)."""
+        try:
+            return uuid.UUID(text.strip())
+        except ValueError:
+            return None

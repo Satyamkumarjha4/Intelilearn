@@ -136,6 +136,12 @@ class PaymentGateway(ABC):
         """Refund through the provider. Only a gateway that declares the capability does."""
         raise NotSupported(f"{self.display_name} cannot refund from here.")
 
+    def refund_with_key(self, payment_ref: str, amount_paise: int, idempotency_key: str) -> RefundResult:
+        """`refund` that the provider will not do twice for the same `idempotency_key`, where it can. A gateway whose
+        provider has no such key keeps this default: the caller's own record of the key (`RefundAttempt`) is then the
+        only guard."""
+        return self.refund(payment_ref, amount_paise)
+
     @property
     def can_refund(self) -> bool:
         return self.REFUND in self.capabilities
