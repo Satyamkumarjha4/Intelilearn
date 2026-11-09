@@ -13,6 +13,7 @@
  * - lists and changes providers; lists, adds, changes, deletes and tests models
  * - reads the routing, saves a step with PUT, lists the profiles and previews one with POST
  * - reads and changes the lesson settings, lists learners (searched, paged) and the change log
+ * - previews and performs the erasure of a learner (DELETE with the confirming email)
  * - reads the credits and changes a price, a plan and the settings; reads a wallet, gives credits and switches the exemption;
  *   lists payments, refunds and marks a refund failed; reads revenue for the usage range
  * - a 404 renews the session and is tried once more; at most one renewal a minute; any other failure is passed on
@@ -314,5 +315,18 @@ describe("ConsoleApi.cursorOf", () => {
     await api.revenue({ range: "custom", start: "2026-03-01", end: "2026-03-10" });
 
     expect(calls.map((c) => c.path)).toEqual(["/console/revenue?range=30d", "/console/revenue?range=custom&start=2026-03-01&end=2026-03-10"]);
+  });
+
+  test("previews an erasure with GET and erases with DELETE carrying the typed email", async () => {
+    const { api, calls } = fakeClient();
+
+    await api.erasurePreview("L1");
+    await api.eraseLearner("L1", "ada@example.com");
+
+    expect(calls.map((c) => [c.options?.method, c.path])).toEqual([
+      ["GET", "/console/learners/L1/erasure"],
+      ["DELETE", "/console/learners/L1/erasure"],
+    ]);
+    expect(calls[1].options?.body).toEqual({ confirm_email: "ada@example.com" });
   });
 });

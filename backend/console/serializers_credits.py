@@ -205,3 +205,39 @@ class RevenueSerializer(serializers.Serializer):
     model_cost = serializers.CharField(help_text="The same in rupees, at `usd_inr_rate`.")
     after_model_cost = serializers.CharField(help_text="Net revenue less model cost, in rupees.")
     usd_inr_rate = serializers.CharField(help_text="Rupees per dollar (`USD_INR_RATE`) used for `model_cost`.")
+
+
+class ErasureInputSerializer(serializers.Serializer):
+    confirm_email = serializers.CharField(
+        allow_blank=True, required=False, default="", help_text="The account's own email, typed to confirm."
+    )
+
+
+class ErasurePreviewSerializer(serializers.Serializer):
+    learner = WalletLearnerSerializer()
+    erased = serializers.BooleanField()
+    blocked = serializers.CharField(
+        allow_blank=True, help_text="Empty when allowed, else cannot_erase_self, staff_account or already_erased."
+    )
+    lessons = serializers.IntegerField(help_text="Lessons that would be deleted, with everything on them.")
+    quizzes = serializers.IntegerField()
+    open_reserves = serializers.IntegerField(help_text="Reserves for unfinished work, released first.")
+    credits_to_forfeit = serializers.IntegerField(help_text="Credits that would be written off.")
+    refresh_tokens = serializers.IntegerField()
+    sessions = serializers.IntegerField()
+    ledger_rows_kept = serializers.IntegerField()
+    purchases_kept = serializers.IntegerField()
+    orders_kept = serializers.IntegerField()
+
+
+class ErasureResultSerializer(serializers.Serializer):
+    learner = serializers.UUIDField()
+    erased = serializers.BooleanField()
+    lessons = serializers.IntegerField()
+    quizzes = serializers.IntegerField()
+    open_reserves_released = serializers.IntegerField()
+    credits_forfeited = serializers.IntegerField()
+    refresh_tokens = serializers.IntegerField()
+    sessions = serializers.IntegerField()
+    admin_log_rows = serializers.IntegerField()
+    change_log_entries_cleaned = serializers.IntegerField()

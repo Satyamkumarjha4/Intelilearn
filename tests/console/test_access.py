@@ -166,6 +166,7 @@ CONSOLE_PATHS = {
     "/api/console/credits/settings", "/api/console/learners/{learner_id}/wallet",
     "/api/console/learners/{learner_id}/wallet/adjust", "/api/console/payments", "/api/console/payments/shortfalls",
     "/api/console/payments/{order_id}/refund", "/api/console/refunds/{attempt_id}/mark-failed", "/api/console/revenue",
+    "/api/console/learners/{learner_id}/erasure",
 }  # fmt: skip
 
 

@@ -155,7 +155,7 @@ class Chat:
 
 
 @pytest.fixture
-def changes(registry, make_lesson, queue, monkeypatch, user, payments):
+def changes(registry, make_lesson, queue, monkeypatch, user, other_user, payments):
     """Each endpoint that changes something: (url name, method) → (action it must log, a call that makes the change)."""
     monkeypatch.setattr("llm_registry.providers.CHAT_MODEL_FACTORY", lambda model, timeout: Chat())
     failed_lesson = make_lesson(stage=Stage.FAILED, error="boom")
@@ -167,6 +167,7 @@ def changes(registry, make_lesson, queue, monkeypatch, user, payments):
                  "bindings": [{"model": registry.models["lite"].id}]}  # fmt: skip
     new_model = {"provider": "groq", "name": "openai/gpt-oss-20b", "supports_structured_output": True,
                  "context_window": 131_072, "max_output_tokens": 65_536}  # fmt: skip
+    erased = other_user  # the learner the erasure endpoint is asked to erase
     PriceSeed().apply()
     order = payments.buy("one_time", credits=100)
     payments.send("succeeded", order)
@@ -226,6 +227,10 @@ def changes(registry, make_lesson, queue, monkeypatch, user, payments):
         ("console-refund-failed", "post"): (
             "payments.refund_failed",
             do("post", f"/api/console/refunds/{attempt.pk}/mark-failed"),
+        ),
+        ("console-learner-erasure", "delete"): (
+            "learner.erase",
+            do("delete", f"/api/console/learners/{erased.pk}/erasure", {"confirm_email": erased.email}),
         ),
     }
 

@@ -271,7 +271,7 @@ docker compose exec backend python manage.py backfill_concept_index           # 
 
 ### Erasing an account
 
-A person can ask us to delete their account (the Privacy page says to write by email). The account cannot be deleted, because
+A person can ask us to delete their account (the Privacy page says to write by email). In the staff console, open the learner (Learners → Wallet) and use **Delete this learner's data**: it shows what will go, and needs the account's email typed. From a terminal, use the command below; both do the same. The account cannot be deleted, because
 the credit ledger is append-only and refers to it, so it is **erased in place**: run it with `--dry-run` first.
 
 ```bash
@@ -279,7 +279,7 @@ docker compose exec backend python manage.py erase_account someone@example.com -
 docker compose exec backend python manage.py erase_account someone@example.com            # do it (the id works too)
 ```
 
-It releases any credits reserved for work under way, erases the learner's lessons and quizzes with their checkpoints and model
+It also ends every sign-in (refresh tokens and admin sessions), deletes the admin's log rows about the account and takes the free text out of the change log entries about it. It releases any credits reserved for work under way, erases the learner's lessons and quizzes with their checkpoints and model
 calls, writes off the credits they had left on the ledger, deletes their streak, empties their profile, and anonymises the user
 (the email becomes `deleted-<id>@erased.invalid`, the name is blank, the password unusable, the account inactive). It cannot be
 undone. It is safe to run again: an erased account is reported as such, and an attempt that stopped half way is finished.

@@ -43,3 +43,33 @@ export class RefundForm {
     return rupees ? { token, amount: rupees } : { token };
   }
 }
+
+/** Deleting a learner's data cannot be undone, so the person at the keyboard types the account's email first. */
+export class EraseForm {
+  /** Whether what was typed is the account's email: any case, spaces around it ignored, nothing else. */
+  static matches(typed: string, email: string): boolean {
+    return email.trim() !== "" && typed.trim().toLowerCase() === email.trim().toLowerCase();
+  }
+
+  /** The words for why an account cannot be erased from here, by the API's code ("" when it can). */
+  static blocked(code: string): string {
+    switch (code) {
+      case "cannot_erase_self":
+        return "This is your own account. It cannot be erased from the console.";
+      case "staff_account":
+        return "This is a staff account. Remove its staff access in the Django admin first, then erase it here.";
+      case "already_erased":
+        return "This account has already been erased. Nothing is left to delete.";
+      default:
+        return "";
+    }
+  }
+
+  /** One line for what the delete took away, from the API's counts. */
+  static done(result: { lessons: number; quizzes: number; credits_forfeited: number; refresh_tokens: number }): string {
+    const lessons = `${result.lessons} ${result.lessons === 1 ? "lesson" : "lessons"}`;
+    const quizzes = `${result.quizzes} ${result.quizzes === 1 ? "quiz" : "quizzes"}`;
+    const credits = `${result.credits_forfeited} ${result.credits_forfeited === 1 ? "credit" : "credits"}`;
+    return `Erased: ${lessons}, ${quizzes}, ${credits} written off, sign-ins ended.`;
+  }
+}

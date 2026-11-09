@@ -3,7 +3,7 @@ import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 import { ConsoleApi, consoleApi } from "@/lib/console-api";
 import type { UsageFilters } from "@/lib/types";
 
-import type { CreditsConfig, PaymentFilters, PaymentPage, Revenue, Shortfall, WalletPanel } from "./types";
+import type { CreditsConfig, ErasurePreview, PaymentFilters, PaymentPage, Revenue, Shortfall, WalletPanel } from "./types";
 
 /** The cache entries of the credit, wallet, payment and revenue screens. Their keys start with "console" like every other. */
 export class CreditQueries {
@@ -24,6 +24,13 @@ export class CreditQueries {
     return queryOptions({
       queryKey: ["console", "wallet", learnerId] as const,
       queryFn: (): Promise<WalletPanel> => this.api.wallet(learnerId),
+    });
+  }
+
+  erasure(learnerId: string) {
+    return queryOptions({
+      queryKey: ["console", "erasure", learnerId] as const,
+      queryFn: (): Promise<ErasurePreview> => this.api.erasurePreview(learnerId),
     });
   }
 

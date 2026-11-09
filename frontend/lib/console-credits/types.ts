@@ -97,3 +97,31 @@ export type Revenue = {
   after_model_cost: string;
   usd_inr_rate: string;
 };
+
+export type ErasureBlock = "" | "cannot_erase_self" | "staff_account" | "already_erased";
+export type ErasurePreview = {
+  learner: { id: string; name: string; email: string };
+  erased: boolean;
+  blocked: ErasureBlock;
+  lessons: number;
+  quizzes: number;
+  open_reserves: number;
+  credits_to_forfeit: number;
+  refresh_tokens: number;
+  sessions: number;
+  ledger_rows_kept: number;
+  purchases_kept: number;
+  orders_kept: number;
+};
+export type ErasureResult = {
+  learner: string;
+  erased: boolean;
+  lessons: number;
+  quizzes: number;
+  open_reserves_released: number;
+  credits_forfeited: number;
+  refresh_tokens: number;
+  sessions: number;
+  admin_log_rows: number;
+  change_log_entries_cleaned: number;
+};

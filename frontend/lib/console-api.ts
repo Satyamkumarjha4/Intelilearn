@@ -31,6 +31,8 @@ import type {
   ConsolePlan,
   ConsolePrice,
   CreditsConfig,
+  ErasurePreview,
+  ErasureResult,
   PaymentFilters,
   PaymentPage,
   RefundResult,
@@ -195,6 +197,17 @@ export class ConsoleApi {
 
   setExempt(learnerId: string, creditsExempt: boolean): Promise<WalletPanel> {
     return this.send("PATCH", `/console/learners/${learnerId}/wallet`, { credits_exempt: creditsExempt });
+  }
+
+  /** What erasing the learner would delete and keep, and whether it is allowed. Writes nothing. */
+  erasurePreview(learnerId: string): Promise<ErasurePreview> {
+    return this.get(`/console/learners/${learnerId}/erasure`);
+  }
+
+  /** Deletes the learner's data for good. `confirmEmail` must be the account's own email. A 409 `code` says why not
+   *  (`cannot_erase_self`, `staff_account`, `already_erased`); a 400 names `confirm_email`. */
+  eraseLearner(learnerId: string, confirmEmail: string): Promise<ErasureResult> {
+    return this.send("DELETE", `/console/learners/${learnerId}/erasure`, { confirm_email: confirmEmail });
   }
 
   payments(filters: PaymentFilters & PageQuery = {}): Promise<PaymentPage> {

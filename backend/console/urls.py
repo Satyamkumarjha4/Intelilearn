@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import credits, overview, payments, people, registry, routing, runs, settings, usage
+from .views import credits, erasure, overview, payments, people, registry, routing, runs, settings, usage
 
 urlpatterns = [
     path("overview", overview.OverviewView.as_view(), name="console-overview"),
@@ -23,6 +23,7 @@ urlpatterns = [
     path("learners", people.LearnerListView.as_view(), name="console-learners"),
     path("learners/<uuid:learner_id>/wallet", credits.WalletView.as_view(), name="console-wallet"),
     path("learners/<uuid:learner_id>/wallet/adjust", credits.WalletAdjustView.as_view(), name="console-wallet-adjust"),
+    path("learners/<uuid:learner_id>/erasure", erasure.LearnerErasureView.as_view(), name="console-learner-erasure"),
     path("credits", credits.CreditsView.as_view(), name="console-credits"),
     path("credits/prices/<str:key>", credits.PriceView.as_view(), name="console-credit-price"),
     path("credits/plans/<str:key>", credits.PlanView.as_view(), name="console-credit-plan"),

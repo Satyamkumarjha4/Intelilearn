@@ -530,7 +530,29 @@ If erasing fails, the lesson stays and the delete can be repeated. A step that w
 
 The credit ledger is not touched: it names a lesson by a plain id, so its rows outlive the lesson (design.md §4.26).
 
-There is no self-service account deletion: the Privacy page tells people to ask by email, and an operator then runs `manage.py erase_account` (phase 10.3). That does not delete the user: it **anonymises the row in place** and erases everything the learner made, through the same erasure code as above, so lessons, quizzes, checkpoints and model calls all go; see `User.deleted_at` and [design.md §4.26](design.md#426-credits-ledger-gate-earning-and-plans-phases-101-to-104). A user removed by hand with `DELETE` is refused once they have a wallet (the credit tables hold a protected key), so there is no longer a way to leave those rows behind.
+There is no self-service account deletion: the Privacy page tells people to ask by email, and staff then use the learner's page in the console (`DELETE /console/learners/{id}/erasure`) or an operator runs `manage.py erase_account` (phase 10.3). Both do the same thing, listed table by table in [Erasing an account](#erasing-an-account). That does not delete the user: it **anonymises the row in place** and erases everything the learner made, through the same erasure code as above, so lessons, quizzes, checkpoints and model calls all go; see `User.deleted_at` and [design.md §4.26](design.md#426-credits-ledger-gate-earning-and-plans-phases-101-to-104). A user removed by hand with `DELETE` is refused once they have a wallet (the credit tables hold a protected key), so there is no longer a way to leave those rows behind.
+
+## Erasing an account
+
+The user row is **anonymised in place, not deleted**: the credit ledger is append-only, the payment records are protected keys and accounts and tax rules ask for them. Everything else of the person's goes. This is `UserDataMap` (`credits/erasure.py`), which a test checks against the models:
+
+| Table | Becomes of it |
+|---|---|
+| `lessons.Lesson` (owner) | **Erased**, through `LessonService`: pages, attempts, answers, versions, runs, study sheets, media, questions, checkpoints and model calls |
+| `quizzes.QuickQuiz` (owner) | **Erased**, through `QuickQuizService`: attempts, checkpoints, model calls |
+| `credits.StreakDay`, `StreakState` | **Erased** |
+| `token_blacklist.OutstandingToken` (with its blacklist rows) | **Erased**: every refresh token |
+| `sessions.Session` | **Erased**: the admin sessions of the account |
+| `admin.LogEntry` about the account or its wallet | **Erased** (they quote the name and email); rows where the account was the actor stay |
+| `console.AuditEntry` about the learner | **Scrubbed**: `reason`, `email` and `name` removed from before/after; the action and the amounts stay |
+| `accounts.Profile` | **Scrubbed**: the row stays, every answer emptied |
+| `accounts.User` groups and permissions | **Links cleared**; staff powers removed |
+| `accounts.User` | **Anonymised**: email `deleted-<id>@erased.invalid`, no name, unusable password, inactive, `deleted_at` set |
+| `credits.Wallet`, `CreditBucket`, `CreditHold`, `CreditTransaction` | **Kept, without identity**: open reserves are released and the balance written off in one `forfeit` row; nothing is edited |
+| `credits.PlanPurchase`, `PlanPeriod`, `payments.PaymentOrder` (and so its events and refunds) | **Kept, without identity**: a record of what was bought and paid |
+| Redis caches (idempotency answers, suggestion caches) | Expire by themselves within hours |
+
+What cannot be reached from here: the payment provider's own copy (Stripe or Razorpay keep the card, bank and UPI details and the receipt), and the free text of an old ledger row, which is append-only (staff reasons are kept off the change log, not the ledger).
 
 ## Access rules
 

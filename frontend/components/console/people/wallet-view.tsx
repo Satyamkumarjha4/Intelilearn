@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { type Column, DataTable } from "@/components/console/data-table";
 import { ErrorState } from "@/components/console/error-state";
 import { FieldRow, StackedField, TextBox } from "@/components/console/field-row";
+import { ErasePanel } from "@/components/console/people/erase-panel";
 import { KpiTile } from "@/components/console/kpi-tile";
 import { PageHeader } from "@/components/console/page-header";
 import { CardSkeleton, KpiRowSkeleton } from "@/components/console/skeletons";
@@ -152,6 +153,7 @@ export function WalletView({ learnerId }: { learnerId: string }) {
               <Switch aria-labelledby="exempt-label" checked={data.credits_exempt} disabled={busy} onCheckedChange={(next) => void exempt(next)} />
             </FieldRow>
           </section>
+          <ErasePanel learnerId={learnerId} />
         </div>
       </div>
     </div>

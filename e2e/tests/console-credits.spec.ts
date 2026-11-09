@@ -12,6 +12,8 @@
  *   one; the price is put back at the end so the other specs' costs are unchanged
  * - staff open a learner's wallet from the learner's address: giving credits without a reason is refused in the page and
  *   moves nothing; with a reason it adds them, and the learner's own wallet shows the new balance
+ * - staff delete a learner's data from the learner's page: the button waits for the account's email to be typed, the
+ *   learner's sign-in stops working, and the page then says the account is erased
  * - /console/payments opens with its three tiles and /console/usage shows revenue beside model cost with the dollar rate
  * - a learner who opens the credit console pages, or the wallet endpoint, gets the page that does not exist
  */
@@ -95,4 +97,28 @@ test("a learner meets the page that does not exist, and the endpoints answer 404
   for (const path of ["/console/credits", "/console/payments", "/console/revenue"]) {
     expect((await api.call("GET", path)).status).toBe(404);
   }
+});
+
+test("deleting a learner needs their email, ends their sign-in, and the page then says so", async ({ browser }) => {
+  const learner = await (await browser.newContext()).newPage();
+  const learnerApi = new Api(learner);
+  const email = E2E.email("erase-me");
+  await learnerApi.signUp(email, E2E.PASSWORD);
+  const me = (await learnerApi.call("GET", "/auth/me")).body;
+  expect((await learnerApi.call("GET", "/auth/me")).status).toBe(200);
+
+  const { page } = await staffPage(browser);
+  await page.goto(`/console/learners/${me.id}`);
+  const button = page.getByRole("button", { name: "Delete this learner's data" });
+  await expect(button).toBeDisabled();
+  await page.getByLabel("Type the account's email to confirm").fill("someone-else@example.com");
+  await expect(button).toBeDisabled();
+
+  await page.getByLabel("Type the account's email to confirm").fill(email.toUpperCase());
+  await expect(button).toBeEnabled();
+  await button.click();
+
+  await expect(page.getByText(/^Erased: /)).toBeVisible();
+  await expect(page.getByText(/already been erased/)).toBeVisible();
+  expect((await learnerApi.call("GET", "/auth/me")).status).toBe(401);
 });
