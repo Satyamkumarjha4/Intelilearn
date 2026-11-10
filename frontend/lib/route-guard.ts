@@ -6,7 +6,8 @@ export type Visitor = { signedIn: boolean; onboarded: boolean; settingUp?: boole
 
 /**
  * Where a visitor may be, from the marker cookies the API sets (backend/accounts/cookies.py). `proxy.ts` asks it and
- * redirects; the API still authorises every request. "/" is the landing page for signed-out visitors only.
+ * redirects; the API still authorises every request. "/" is the landing page for everyone: a signed-in visitor sees it too,
+ * with "Go to my lessons" in its header.
  */
 export class RouteGuard {
   /** The app pages that need a session (and a finished setup); everything under each is covered too. */
@@ -15,7 +16,8 @@ export class RouteGuard {
   /** The path to redirect to, or `null` to let the request through. */
   static redirectFor(pathname: string, search: string, visitor: Visitor): string | null {
     const next = RedirectPolicy.safeNext(new URLSearchParams(search).get("next"), "");
-    if (pathname === "/" || pathname === "/auth") return visitor.signedIn ? RouteGuard.arrival(visitor, pathname === "/auth" ? next : "") : null;
+    if (pathname === "/") return null;
+    if (pathname === "/auth") return visitor.signedIn ? RouteGuard.arrival(visitor, next) : null;
     // Nothing left to set up, unless this is a refresh on the last step: the profile saves at step 4, which is "onboarded".
     if (pathname === "/onboarding" && visitor.signedIn && visitor.onboarded && !visitor.settingUp) return next || "/lessons";
     if (RouteGuard.isConsole(pathname)) return visitor.signedIn ? null : `/auth?next=${encodeURIComponent(pathname + search)}`;

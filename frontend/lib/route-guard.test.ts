@@ -6,9 +6,10 @@
  * learner to a page that is not theirs or traps them in a redirect loop.
  *
  * Use cases:
- * - "/" is the landing page for a signed-out visitor
- * - a signed-in visitor to "/" goes to their lessons, or to onboarding if they have not finished it
- * - "/auth" is open to a signed-out visitor; a signed-in one is sent on like "/" does, to `next` when it is a safe path on
+ * - "/" is the landing page for everyone: a signed-out visitor sees it, and so does a signed-in one (its header offers
+ *   them "Go to my lessons"), whether or not they have finished onboarding
+ * - "/auth" is open to a signed-out visitor; a signed-in one is sent to their lessons, or to onboarding if they have not
+ *   finished it, to `next` when it is a safe path on
  *   this site (an address that could leave the site is ignored, however it is encoded)
  * - the app pages ("/lessons", "/quizzes", "/profile", "/onboarding" and what is under them) send a signed-out visitor to
  *   "/auth" with `next` set to where they were going, query string included
@@ -35,11 +36,8 @@ describe("RouteGuard", () => {
     expect(RouteGuard.redirectFor("/", "", out)).toBeNull();
   });
 
-  test.each([
-    [full, "/lessons"],
-    [half, "/onboarding"],
-  ])("a signed-in visitor to / is sent on (%p)", (visitor, target) => {
-    expect(RouteGuard.redirectFor("/", "", visitor)).toBe(target);
+  test.each([full, half, finishing])("a signed-in visitor sees the landing page at / too (%p)", (visitor) => {
+    expect(RouteGuard.redirectFor("/", "", visitor)).toBeNull();
   });
 
   test("a signed-out visitor may open /auth, a signed-in one is sent on", () => {
