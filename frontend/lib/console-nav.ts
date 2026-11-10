@@ -1,4 +1,4 @@
-export type NavIcon = "overview" | "usage" | "runs" | "payments" | "models" | "routing" | "settings" | "credits" | "learners" | "audit";
+export type NavIcon = "overview" | "usage" | "runs" | "payments" | "models" | "routing" | "settings" | "credits" | "testimonials" | "learners" | "audit";
 export type NavItem = { key: NavIcon; label: string; href: string };
 export type NavSection = { label: string; items: NavItem[] };
 
@@ -21,6 +21,7 @@ export class ConsoleNav {
         { key: "routing", label: "Model routing", href: "/console/routing" },
         { key: "settings", label: "Lesson settings", href: "/console/settings" },
         { key: "credits", label: "Credits & prices", href: "/console/credits" },
+        { key: "testimonials", label: "Testimonials", href: "/console/testimonials" },
       ],
     },
     {

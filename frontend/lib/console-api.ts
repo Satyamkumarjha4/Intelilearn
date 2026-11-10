@@ -41,6 +41,7 @@ import type {
   Shortfall,
   WalletPanel,
 } from "@/lib/console-credits/types";
+import type { ConsoleTestimonial, TestimonialInput, TestimonialList } from "@/lib/console-testimonials/types";
 
 export type PageQuery = { cursor?: string | null; pageSize?: number };
 
@@ -165,6 +166,30 @@ export class ConsoleApi {
 
   audit(page: PageQuery = {}): Promise<Page<AuditEntry>> {
     return this.get(`/console/audit${ConsoleApi.query(ConsoleApi.page(page))}`);
+  }
+
+  // --- testimonials
+
+  testimonials(): Promise<TestimonialList> {
+    return this.get("/console/testimonials");
+  }
+
+  addTestimonial(body: TestimonialInput): Promise<ConsoleTestimonial> {
+    return this.send("POST", "/console/testimonials", body);
+  }
+
+  /** Any subset of the fields; publishing is `is_published`. A 400 names the field and says why (no consent, a sample). */
+  updateTestimonial(id: number, changes: Partial<TestimonialInput>): Promise<ConsoleTestimonial> {
+    return this.send("PATCH", `/console/testimonials/${id}`, changes);
+  }
+
+  deleteTestimonial(id: number): Promise<void> {
+    return this.send("DELETE", `/console/testimonials/${id}`);
+  }
+
+  /** `ids` must be every testimonial's id exactly once, in the new order. */
+  reorderTestimonials(ids: number[]): Promise<TestimonialList> {
+    return this.send("POST", "/console/testimonials/reorder", { ids });
   }
 
   // --- credits, wallets, payments, revenue

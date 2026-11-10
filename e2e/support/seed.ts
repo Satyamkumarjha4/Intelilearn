@@ -38,6 +38,12 @@ if extra > 0:
 `, email, "from credits.ledger import Ledger");
   }
 
+  /** Three placeholder testimonials (samples: unpublished, never shown), made by the command a developer runs. */
+  static sampleTestimonials(): void {
+    const compose = process.env.E2E_COMPOSE || Seed.FALLBACK;
+    execSync(`${compose} exec -T backend python manage.py seed_sample_testimonials`, { cwd: Seed.REPO, stdio: ["pipe", "pipe", "pipe"] });
+  }
+
   private static run(code: string, email: string, imports = ""): void {
     const script = `
 import uuid

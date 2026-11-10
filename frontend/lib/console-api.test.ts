@@ -14,6 +14,7 @@
  * - reads the routing, saves a step with PUT, lists the profiles and previews one with POST
  * - reads and changes the lesson settings, lists learners (searched, paged) and the change log
  * - previews and performs the erasure of a learner (DELETE with the confirming email)
+ * - reads the testimonials, adds one, changes one (PATCH, only what is sent), deletes one and reorders with every id
  * - reads the credits and changes a price, a plan and the settings; reads a wallet, gives credits and switches the exemption;
  *   lists payments, refunds and marks a refund failed; reads revenue for the usage range
  * - a 404 renews the session and is tried once more; at most one renewal a minute; any other failure is passed on
@@ -328,5 +329,27 @@ describe("ConsoleApi.cursorOf", () => {
       ["DELETE", "/console/learners/L1/erasure"],
     ]);
     expect(calls[1].options?.body).toEqual({ confirm_email: "ada@example.com" });
+  });
+
+  test("reads, adds, changes, deletes and reorders testimonials", async () => {
+    const { api, calls } = fakeClient();
+    const input = { name: "Asha", context: "Class 12", quote: "Good.", rating: null, consent_confirmed: true, is_published: false };
+
+    await api.testimonials();
+    await api.addTestimonial(input);
+    await api.updateTestimonial(4, { is_published: true });
+    await api.deleteTestimonial(4);
+    await api.reorderTestimonials([3, 1, 2]);
+
+    expect(calls.map((c) => [c.options?.method, c.path])).toEqual([
+      ["GET", "/console/testimonials"],
+      ["POST", "/console/testimonials"],
+      ["PATCH", "/console/testimonials/4"],
+      ["DELETE", "/console/testimonials/4"],
+      ["POST", "/console/testimonials/reorder"],
+    ]);
+    expect(calls[1].options?.body).toEqual(input);
+    expect(calls[2].options?.body).toEqual({ is_published: true });
+    expect(calls[4].options?.body).toEqual({ ids: [3, 1, 2] });
   });
 });
