@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 type Props = { quickCheckQuestions: number | null };
 
 const Chip = ({ n, tone }: { n: number; tone: "primary" | "marigold" | "insight" }) => (
-  <span aria-hidden="true" className={cn("flex size-11 items-center justify-center rounded-[13px] font-heading text-[22px] font-semibold", tone === "primary" && "bg-primary text-primary-foreground", tone === "marigold" && "bg-marigold text-marigold-foreground", tone === "insight" && "bg-insight text-primary-foreground")}>
+  <span aria-hidden="true" className={cn("flex size-11 items-center justify-center rounded-[13px] font-heading text-[22px] font-semibold", tone === "primary" && "bg-primary-action text-primary-foreground", tone === "marigold" && "bg-marigold text-marigold-foreground", tone === "insight" && "bg-insight-text text-primary-foreground")}>
     {n}
   </span>
 );
@@ -49,7 +49,7 @@ export function HowItWorks({ quickCheckQuestions }: Props) {
             <div className="text-sm font-extrabold text-muted-foreground">Building your lesson</div>
             {["Page 1 · Introduction", "Page 2 · Core"].map((page) => (
               <div key={page} className="flex items-center gap-2.5 text-base font-bold">
-                <span className="flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                <span className="flex size-6 items-center justify-center rounded-full bg-primary-action text-primary-foreground">
                   <CheckIcon className="size-3.5" strokeWidth={3.5} />
                 </span>
                 {page}

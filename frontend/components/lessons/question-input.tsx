@@ -34,7 +34,7 @@ function optionClasses(picked: boolean, shown: boolean | undefined, right: boole
 
 function Letter({ index, on, square }: { index: number; on: boolean; square?: boolean }) {
   return (
-    <span className={cn("grid size-6 shrink-0 place-items-center font-mono text-xs font-bold", square ? "rounded-md" : "rounded-full", on ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>
+    <span className={cn("grid size-6 shrink-0 place-items-center font-mono text-xs font-bold", square ? "rounded-md" : "rounded-full", on ? "bg-primary-action text-primary-foreground" : "bg-muted text-muted-foreground")}>
       {on && square ? <CheckIcon className="size-3.5" aria-hidden="true" /> : LETTERS[index]}
     </span>
   );

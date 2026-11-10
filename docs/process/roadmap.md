@@ -293,6 +293,7 @@ Credits for the work that costs model calls, earned by studying, bought through 
 
 - [x] Removed the dead hero question bank: `marketing.DemoQuestion` (model, admin, picker, serializers, view, `GET /api/landing/demo-question`, the `landing_demo` throttle and its two settings), a migration (`marketing.0004`) that drops the table, the frontend `DemoQuestion` type and the unused `lib/autoplay` and `lib/reveal-policy`, with their tests.
 - [x] Solid primary buttons are readable: a new `--primary-action` token family (fill, hover, pressed, edge) gives the label at least 4.5:1 in light and dark; `Button`'s default variant and the study follow-up's chosen chip use it, the general `--primary` teal is unchanged; `lib/primary-button-contrast.test.ts` fails if a pair drops under 4.5:1.
+- [x] Every other label on a teal fill (avatar initial, step numbers, badges, streak days, answer-letter chips, choice tiles, the sign-in side panel, the landing page's step chips) uses the same family, with the pairs and a source guard in that test; the unused `lib/walkthrough` and `lib/slide-cycle` are removed.
 
 ### Onboarding topic suggestions (backend) ✅
 

@@ -64,7 +64,7 @@ export function SiteHeader() {
                 className={buttonVariants({ variant: "ghost", className: "gap-2" })}
                 aria-label="Account menu"
               >
-                <span className="flex size-7 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
+                <span className="flex size-7 items-center justify-center rounded-full bg-primary-action text-xs font-medium text-primary-foreground">
                   {Initials.of(user)}
                 </span>
                 <span className="hidden max-w-40 truncate sm:inline">{user.name}</span>

@@ -213,7 +213,7 @@ export function AuthForm({ initialMode, next }: { initialMode: Mode; next: strin
 /** The brand side: a strip on a phone, a full panel (headline, the three steps, tilted cards) from 900px. */
 function BrandPanel({ mode }: { mode: Mode }) {
   return (
-    <aside className="relative flex flex-col gap-6 overflow-hidden bg-primary p-6 text-primary-foreground sm:p-9 min-[900px]:justify-between">
+    <aside className="relative flex flex-col gap-6 overflow-hidden bg-primary-action p-6 text-primary-foreground sm:p-9 min-[900px]:justify-between">
       <Link href="/" aria-label="Socra home" className="w-fit rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-primary-foreground/60">
         <Logo tone="marigold" size="md" />
       </Link>
@@ -223,7 +223,7 @@ function BrandPanel({ mode }: { mode: Mode }) {
         <ol className="flex flex-col gap-3 font-bold max-[899px]:hidden">
           {AuthRules.STEPS.map((step, index) => (
             <li key={step} className="flex items-center gap-3">
-              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-primary-foreground/25 font-mono text-sm">{index + 1}</span>
+              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-primary-action-pressed font-mono text-sm">{index + 1}</span>
               {step}
             </li>
           ))}

@@ -49,7 +49,7 @@ function Item({ id, index, binding, model, node, onChange }: { id: string; index
       >
         <GripVerticalIcon className="size-4" aria-hidden="true" />
       </button>
-      <span className={cn("grid size-[26px] place-items-center rounded-lg bg-muted text-xs font-extrabold", index === 0 && "bg-primary text-primary-foreground")} aria-hidden="true">
+      <span className={cn("grid size-[26px] place-items-center rounded-lg bg-muted text-xs font-extrabold", index === 0 && "bg-primary-action text-primary-foreground")} aria-hidden="true">
         {index + 1}
       </span>
       <div className="min-w-0">

@@ -113,7 +113,7 @@ export function QuizWizard() {
             <span
               className={cn(
                 "grid size-7 place-items-center rounded-full border-2 text-xs font-extrabold",
-                index < at ? "border-primary bg-primary text-primary-foreground" : one === step ? "border-primary bg-primary-soft text-primary-text" : "border-border text-muted-foreground",
+                index < at ? "border-primary-action bg-primary-action text-primary-foreground" : one === step ? "border-primary bg-primary-soft text-primary-text" : "border-border text-muted-foreground",
               )}
             >
               {index < at ? <CheckIcon className="size-4" aria-hidden="true" /> : index + 1}

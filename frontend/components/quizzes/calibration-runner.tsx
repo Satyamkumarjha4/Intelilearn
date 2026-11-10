@@ -93,7 +93,7 @@ export function CalibrationRunner({ quizId, onFinished }: Props) {
                   picked === index ? "border-primary bg-primary-soft" : "border-border",
                 )}
               >
-                <span className={cn("grid size-6 shrink-0 place-items-center rounded-full font-mono text-xs font-bold", picked === index ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>
+                <span className={cn("grid size-6 shrink-0 place-items-center rounded-full font-mono text-xs font-bold", picked === index ? "bg-primary-action text-primary-foreground" : "bg-muted text-muted-foreground")}>
                   {LETTERS[index]}
                 </span>
                 {option}

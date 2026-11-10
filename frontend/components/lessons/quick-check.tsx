@@ -167,7 +167,7 @@ function Card({ question, answer, locked, onAnswer, allowDontKnow }: {
               answer === index ? "border-primary bg-primary-soft" : "border-border",
             )}
           >
-            <span className={cn("grid size-6 shrink-0 place-items-center rounded-md font-mono text-xs font-bold", answer === index ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>
+            <span className={cn("grid size-6 shrink-0 place-items-center rounded-md font-mono text-xs font-bold", answer === index ? "bg-primary-action text-primary-foreground" : "bg-muted text-muted-foreground")}>
               {index + 1}
             </span>
             {option}

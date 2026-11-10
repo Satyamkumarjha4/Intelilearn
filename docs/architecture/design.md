@@ -1384,20 +1384,6 @@ classDiagram
     class PlainVersion {
         +of(reason)$ str
     }
-    class Walkthrough {
-        +int index
-        +bool autoplay
-        +start(count, autoplay)$ Walkthrough
-        +advance() Walkthrough
-        +choose(index) Walkthrough
-        +step(direction) Walkthrough
-    }
-    class SlideCycle {
-        +next(index, count)$ int
-        +previous(index, count)$ int
-        +byKey(key, index, count)$ int
-        +fromScroll(left, width, gap, count)$ int
-    }
     class PendingTopic {
         +save(raw)
         +peek() str

@@ -3,7 +3,7 @@ import type { Streak, StreakDayState } from "@/lib/credits/types";
 import { cn } from "@/lib/utils";
 
 const LOOK: Record<StreakDayState, string> = {
-  active: "bg-primary text-primary-foreground",
+  active: "bg-primary-action text-primary-foreground",
   repaired: "bg-marigold-soft text-marigold-text",
   missed: "bg-muted text-muted-foreground",
   pending: "border-2 border-dashed border-primary text-primary-text",

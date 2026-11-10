@@ -56,7 +56,7 @@ function ChoiceCard({ name, value, selected, onSelect, icon: Icon, title, text, 
     >
       <input type="radio" name={name} value={value} checked={selected} onChange={onSelect} className="sr-only" />
       <span className="flex items-center gap-3">
-        <span className={cn("grid size-11 shrink-0 place-items-center rounded-2xl", selected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>
+        <span className={cn("grid size-11 shrink-0 place-items-center rounded-2xl", selected ? "bg-primary-action text-primary-foreground" : "bg-muted text-muted-foreground")}>
           <Icon className="size-6" aria-hidden="true" />
         </span>
         <span className="font-heading text-lg leading-tight font-semibold">{title}</span>

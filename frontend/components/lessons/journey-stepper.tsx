@@ -21,7 +21,7 @@ export function JourneyStepper({ steps }: { steps: JourneyStep[] }) {
             className={cn(
               "grid size-7 shrink-0 place-items-center rounded-full border-2 font-mono text-xs font-bold",
               step.state === "done" && "border-primary-soft bg-primary-soft text-primary-text",
-              step.state === "now" && !step.failed && "border-primary bg-primary text-primary-foreground",
+              step.state === "now" && !step.failed && "border-primary-action bg-primary-action text-primary-foreground",
               step.state === "now" && step.failed && "border-destructive bg-destructive-soft text-destructive-text",
               step.state === "todo" && "border-border bg-card text-muted-foreground",
             )}

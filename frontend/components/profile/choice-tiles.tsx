@@ -39,7 +39,7 @@ export function ChoiceTiles({ label, choices, value, onChange, icons = true, lan
               )}
             >
               {icons && (
-                <span className={cn("grid size-10 shrink-0 place-items-center rounded-xl", chosen ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>
+                <span className={cn("grid size-10 shrink-0 place-items-center rounded-xl", chosen ? "bg-primary-action text-primary-foreground" : "bg-muted text-muted-foreground")}>
                   <Icon className="size-5" aria-hidden="true" />
                 </span>
               )}
