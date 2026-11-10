@@ -36,22 +36,6 @@ export type ProfileInput = Omit<Profile, "email" | "profile_complete" | "updated
 
 // --- The landing page (docs/reference/api.md) ---
 
-export type DemoOutcome = { level: number; level_label: string; lesson_start: string };
-
-/** A question of the landing page's try-it card (`GET /landing/demo-question`). */
-export type DemoQuestion = {
-  id: number;
-  subject: string;
-  level_label: string;
-  /** Difficulty, 1 (Basics) to 5 (Expert). */
-  band: number;
-  question: string;
-  options: string[];
-  correct_index: number;
-  outcome_right: DemoOutcome;
-  outcome_wrong: DemoOutcome;
-};
-
 // --- Lessons (docs/reference/api.md) ---
 
 export type Stage =

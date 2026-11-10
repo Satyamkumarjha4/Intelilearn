@@ -16,7 +16,7 @@
  *   changes "about N full lessons" on the page (and is put back)
  * - at 360, 390, 430 and 1440 px wide nothing scrolls sideways, and the plans are one column on a phone and two on a desktop
  * - someone who is signed in sees "Go to my lessons" in the header instead of Sign in and Start free
- * - the page carries nothing for the team (API docs, the admin, a system status), and the landing demo endpoint is not cached
+ * - the page carries nothing for the team (API docs, the admin, a system status)
  */
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
@@ -173,11 +173,9 @@ test("someone signed in sees Go to my lessons instead of Sign in and Start free"
   await expect(page.getByRole("article", { name: "Monthly Pro" }).getByRole("link", { name: "Choose Monthly Pro" })).toHaveAttribute("href", "/buy");
 });
 
-test("the page carries nothing for the team and the demo endpoint is never cached", async ({ page, request }) => {
+test("the page carries nothing for the team", async ({ page, request }) => {
   const html = await (await request.get("/")).text();
   expect(html).not.toMatch(/api\/docs|\/admin|System status/i);
-  const demo = await request.get("/api/landing/demo-question");
-  expect(demo.headers()["cache-control"]).toMatch(/no-store/);
   await page.goto("/lessons");
   await expect(page).toHaveURL(/\/auth\?next=%2Flessons/); // signed out: asked to sign in, and told where to go after
 });

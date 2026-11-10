@@ -48,22 +48,6 @@ The graph turns this into `LearnerProfile` in `load_context`; it does not read t
 
 ## `marketing`
 
-### `DemoQuestion` (the landing page's try-it question bank; curated in the Django admin)
-
-| Field | Type | Used for |
-|---|---|---|
-| subject | char | "Physics", "Personal finance"...; shown in the card's label and a filter in the admin |
-| level_label | char | Who it is pitched at: "Class 8", "College", "Working" |
-| band | smallint 1–5 | Difficulty: 1 Basics, 2 Easy, 3 Medium, 4 Hard, 5 Expert |
-| question | char | Short: two lines in the card |
-| options | JSON list of exactly 3 different texts | |
-| correct_index | smallint 0–2 | The right option |
-| outcome_right, outcome_wrong | JSON `{level 1–5, level_label, lesson_start}` | The "Your starting point" card after a right answer, and after a wrong one or "I don't know"; a right answer never leaves the learner lower |
-| is_active | bool | Only active questions are served |
-| created_at | datetime | |
-
-`clean()` enforces all of this, so the admin refuses a broken question. Migration `marketing.0002` seeds 25 questions across 13 subjects, Class 6 to working, all five bands. The picker caches the active ids for 10 minutes (`LANDING_DEMO_IDS_TTL_S`) and clears them when a question is saved or deleted.
-
 ### `Testimonial` (a quote of the landing page's "What learners say"; managed in the console)
 
 | Field | Type | Used for |

@@ -193,10 +193,6 @@ ONBOARDING_SUGGESTION_TTL_S = env.int("ONBOARDING_SUGGESTION_TTL_S", default=30 
 # How long a judged topic (numerical? programming?) is remembered, so the quiz wizard asks a model once per topic.
 TOPIC_TRAITS_TTL_S = env.int("TOPIC_TRAITS_TTL_S", default=30 * 24 * 3600)
 
-# --- Landing page ---
-# How long the hero card's list of active question ids is cached (it is also cleared when a question is saved).
-LANDING_DEMO_IDS_TTL_S = env.int("LANDING_DEMO_IDS_TTL_S", default=600)
-
 # --- Lesson flow ---
 # The sandbox/ package (Node): check.mjs and render-check.mjs run in a subprocess (see graph/sandbox.py).
 SANDBOX_DIR = env.path("SANDBOX_DIR", default=BASE_DIR.parent / "sandbox")
@@ -270,7 +266,6 @@ REST_FRAMEWORK = {
         "test_attempt": env(
             "TEST_ATTEMPT_THROTTLE_RATE", default="30/hour"
         ),  # starting an attempt; a retake costs calls
-        "landing_demo": env("LANDING_DEMO_THROTTLE_RATE", default="60/min"),  # public, per client address
         "public_pages": env(
             "PUBLIC_PAGES_THROTTLE_RATE", default="60/min"
         ),  # landing testimonials, prices: per address
