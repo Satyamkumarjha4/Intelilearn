@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import credits, erasure, overview, payments, people, registry, routing, runs, settings, usage
+from .views import credits, erasure, overview, payments, people, registry, routing, runs, settings, testimonials, usage
 
 urlpatterns = [
     path("overview", overview.OverviewView.as_view(), name="console-overview"),
@@ -33,5 +33,8 @@ urlpatterns = [
     path("payments/<uuid:order_id>/refund", payments.PaymentRefundView.as_view(), name="console-payment-refund"),
     path("refunds/<int:attempt_id>/mark-failed", payments.RefundMarkFailedView.as_view(), name="console-refund-failed"),
     path("revenue", payments.RevenueView.as_view(), name="console-revenue"),
+    path("testimonials", testimonials.TestimonialListView.as_view(), name="console-testimonials"),
+    path("testimonials/reorder", testimonials.TestimonialReorderView.as_view(), name="console-testimonials-reorder"),
+    path("testimonials/<int:testimonial_id>", testimonials.TestimonialDetailView.as_view(), name="console-testimonial"),
     path("audit", people.AuditListView.as_view(), name="console-audit"),
 ]

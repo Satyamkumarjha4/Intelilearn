@@ -9,8 +9,8 @@ Use cases:
 - an entry keeps who, what, the target and the target before and after, as plain JSON (ids, decimals and dates as text)
 - the log lists newest first in pages, names the fields that changed, and keeps the actor's email after the account goes
 - it can only be read: nothing writes, edits or deletes entries through the API, and a learner cannot read it
-- every endpoint that changes something writes exactly one entry, with the action named for it (the credit, wallet and
-  payment endpoints of phase 10.9 included); reading, previewing a profile and refused requests write none
+- every endpoint that changes something writes exactly one entry, with the action named for it (the credit, wallet,
+  payment and testimonial endpoints included); reading, previewing a profile and refused requests write none
 - a new endpoint that changes something cannot be added without being listed here (a guard over the URL configuration)
 - the log is read in a fixed number of queries
 """
@@ -28,6 +28,7 @@ from console.models import AuditEntry
 from credits.pricing.seed import PriceSeed
 from lessons.models import GraphRun
 from lessons.stages import Stage
+from marketing.models import Testimonial
 from payments.models import RefundAttempt
 
 pytestmark = pytest.mark.django_db
@@ -175,6 +176,11 @@ def changes(registry, make_lesson, queue, monkeypatch, user, other_user, payment
         token=uuid4(), order=order, amount_paise=100, refund_ref="r1", created_at=order.created_at
     )
 
+    first, second, third = (
+        Testimonial.objects.create(name=n, context="Class 12 student", quote="q", position=i)
+        for i, n in enumerate("ABC")
+    )  # the reorder runs first, so its list is every one that exists
+
     def do(method, path, body=None):
         return lambda client: (
             getattr(client, method)(path, body, format="json") if body else getattr(client, method)(path)
@@ -231,6 +237,22 @@ def changes(registry, make_lesson, queue, monkeypatch, user, other_user, payment
         ("console-learner-erasure", "delete"): (
             "learner.erase",
             do("delete", f"/api/console/learners/{erased.pk}/erasure", {"confirm_email": erased.email}),
+        ),
+        ("console-testimonials-reorder", "post"): (
+            "testimonial.reorder",
+            do("post", "/api/console/testimonials/reorder", {"ids": [third.pk, second.pk, first.pk]}),
+        ),
+        ("console-testimonials", "post"): (
+            "testimonial.create",
+            do("post", "/api/console/testimonials", {"name": "D", "context": "Class 10 student", "quote": "q"}),
+        ),
+        ("console-testimonial", "patch"): (
+            "testimonial.update",
+            do("patch", f"/api/console/testimonials/{first.pk}", {"quote": "A new quote"}),
+        ),
+        ("console-testimonial", "delete"): (
+            "testimonial.delete",
+            do("delete", f"/api/console/testimonials/{second.pk}"),
         ),
     }
 

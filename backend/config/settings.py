@@ -271,6 +271,9 @@ REST_FRAMEWORK = {
             "TEST_ATTEMPT_THROTTLE_RATE", default="30/hour"
         ),  # starting an attempt; a retake costs calls
         "landing_demo": env("LANDING_DEMO_THROTTLE_RATE", default="60/min"),  # public, per client address
+        "public_pages": env(
+            "PUBLIC_PAGES_THROTTLE_RATE", default="60/min"
+        ),  # landing testimonials, prices: per address
         "quiz_create": env("QUIZ_CREATE_THROTTLE_RATE", default="30/hour"),  # a quiz or a retake costs model calls
         "topic_traits": env("TOPIC_TRAITS_THROTTLE_RATE", default="60/min"),  # per user; may cost a cheap model call
         "topic_suggestions": env(
