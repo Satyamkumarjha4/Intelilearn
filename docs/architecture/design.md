@@ -31,7 +31,7 @@ Legend for status columns: ✅ in code · ◐ partly (functions still to wrap in
   - [4.12 Stage C and runtime repair (Phase 6)](#412-stage-c-and-runtime-repair-phase-6)
   - [4.13 Test grading, tracing and usage (Phase 7)](#413-test-grading-tracing-and-usage-phase-7)
   - [4.14 `onboarding`: first-topic suggestions](#414-onboarding-first-topic-suggestions)
-  - [4.15 `marketing`: the landing page's question bank](#415-marketing-the-landing-pages-question-bank)
+  - [4.15 `marketing`: the landing page's data](#415-marketing-the-landing-pages-data)
   - [4.16 `console`: the staff API](#416-console-the-staff-api)
   - [4.17 `graph`: levels, difficulties and score bands (Phase 9, modular lessons)](#417-graph-levels-difficulties-and-score-bands-phase-9-modular-lessons)
   - [4.18 `lessons`: the action gate (Phase 9, metering seam)](#418-lessons-the-action-gate-phase-9-metering-seam)
@@ -1436,7 +1436,7 @@ classDiagram
 
 - **Stop, Retry and the session.** `StopPoint` (`lessons/stop_point.py`) is what `LessonService.cancel` leaves for `retry`: the answer the stopped run was about to give, and the stage the lesson waits in when the thread is at a question (see §4.22). `SessionProbe` asks the site's own `/api/session` whether the (httpOnly) session marker is there, so a signed-out page makes no `/auth/me` call to fail; `SetupMarker` is the one cookie the page itself sets, for the last onboarding step. `StopControl` keeps the stop dialog tied to the learner's action, not to the run. `ChartPalette` keeps provider and status colours in separate charts, enforced by `lib/console-charts.test.ts`.
 - Components call the shared `apiClient` instance (`apiClient.request<T>(path, options)`), so concurrent 401s share one refresh. `fetch` and the cookie reader are constructor parameters, so `lib/api.test.ts` drives the client with a scripted fake `fetch`.
-- The landing page (see [frontend.md](../reference/frontend.md#the-landing-page)) keeps every rule in a static class: `RouteGuard` is what the thin `proxy.ts` hook calls; `HeroDemo`, `Walkthrough` (an immutable value: each move returns the next state), `ScorePaths`, `SlideCycle`, `PendingTopic` (storage is a constructor parameter) and `RevealPolicy` are used by thin components in `components/landing/`. `DeckMotion` holds the fly-off and rise constants that `FlashcardDeck` and the try-it card share.
+- The landing page (see [frontend.md](../reference/frontend.md#the-landing-page)) keeps every rule in a static class: `RouteGuard` is what the thin `proxy.ts` hook calls (`/` is open to everyone; the header reads the session marker on the server); `SampleQuiz` (an immutable value: each move returns the next state, no network), `PricingWords`, `FaqContent`, `TestimonialView`, `ProgressExample`, `PublicLanding` (the server's reader of the two public endpoints, which never throws) and `PendingTopic` (storage is a constructor parameter) are used by thin components in `components/landing/`. Every number on the page comes from `GET /api/public/pricing` through `PricingWords` and `FaqContent`; none is written in a component. The console's Testimonials screen keeps its rules in `TestimonialForm` (`lib/console-testimonials/`).
 - The console's Lesson runs page (`components/console/runs/`) follows the same split. `RunFilters` is the address (`?status=&job=&q=&run=`) as a value, and the only way a run id from the address reaches an API path (it must be a whole UUID). `RunText` writes every time, cost, status and stage; `RunTimeline.layout` turns timeline steps into phase groups, lanes and bar percentages (minimum width, waiting steps open-ended); `RunActions` runs Retry and Stop and explains each refusal. `RunFollower` keeps the open run current: events say *when* something changed and the console's detail says *what*, so it reloads on events and on a slow beat, falls back to polling when the stream is refused (the stream is open only to the learner who owns the run), spaces its loads for the console's throttle, and stops once the run is over. Its timers, stream and loader are constructor parameters, so `run-follower.test.ts` drives it with a fake clock.
 - The console's shell, Overview and Usage pages (`components/console/`, `components/console/overview/`, `components/console/usage/`) keep every decision in static classes, and the components only draw. `ConsoleGate` (not the backend's `ConsoleAccess`) decides what the layout does with a session (wait, sign in, not-found, show); `ConsoleQueryClient` and `ConsoleQueries` are the only TanStack Query setup (a factory for the client and a set of `queryOptions` with an injectable `ConsoleApi` and clock); `ConsoleUrl` is the address as a value (forgiving reads, defaults left out when writing); `ConsoleNav` is the sidebar as data; `ConsoleFormat` is the one place that writes numbers. `lib/console-charts.ts` has one class per chart (`SpendChart`, `LatencyChart`, `OutcomeChart`, `FunnelChart`, `SlowestSteps`, `StepTable`) with the same three methods where they apply: shape the reply into rows, say what a hover shows (`tooltip`, a `TooltipData` value), and give the table form (`table`); `ProviderSeries` is the only mapping from a provider to a colour, so a series never changes colour with its rank. `UsageFilterOptions` builds the drop-down choices and keeps a chosen model consistent with its provider. Variants are added to a class, not branched in a component (a new chart is a new class and a thin card).
 - The Learners and Change log pages (`components/console/people/`) are thin views over `lib/console-people.ts` and `lib/console-audit.ts`. `LearnerText`, `LearnerStats`, `PeopleUrl` and `AdminLinks` (the only place a link out of the console is built, from an allow-listed scheme) are static classes; `AuditText` turns an `AuditEntry` into `Segment`s (a variant is a new `case` in one `switch` over the API's own action names, with a generic sentence as the fallback, so an action the frontend has not heard of still reads), `AuditAreas` maps a target to its area, and `AuditDiff` formats the changed fields. `PeopleQueries` holds the paged `infiniteQueryOptions` with an injectable `ConsoleApi`; it sits beside `ConsoleQueries` rather than in it so that each page's queries and shaping stay together. `useDebouncedText` (search to address) and `notFoundIfRefused` (the 404 rule for a paged list) are the only hooks.
@@ -1701,7 +1701,7 @@ classDiagram
 - **Cache-aside**: `SuggestionCache` keeps pages, a model's list and translations, never fails a request, and builds normalised, short, plain keys.
 - Results are frozen dataclasses (`SuggestionRequest`, `Topic`, `Suggestions`); the model's output is the Pydantic `TopicSuggestions`. [onboarding.md](../reference/onboarding.md) has the behaviour.
 
-### 4.15 `marketing`: the landing page's question bank
+### 4.15 `marketing`: the landing page's data
 
 ```mermaid
 classDiagram
@@ -1722,14 +1722,45 @@ classDiagram
         +invalidate()
     }
     class DemoQuestionView
+    class Testimonial {
+        +name +context +quote +rating +position
+        +is_published +consent_confirmed +is_sample
+        +clean()
+    }
+    class PublicTestimonials {
+        +listing() list
+        +clear()
+    }
+    class PublicPricing {
+        +payload() dict
+        +clear()
+    }
+    class PublicView
+    class PublicTestimonialsView
+    class PublicPricingView
+    class TestimonialDesk {
+        +listing() +create() +update() +delete() +reorder()
+    }
     DemoQuestion ..> Outcome : validates its outcomes with
     DemoQuestionPicker ..> DemoQuestion : chooses
     DemoQuestionView o-- DemoQuestionPicker : picker_factory
+    PublicView <|-- PublicTestimonialsView
+    PublicView <|-- PublicPricingView
+    PublicTestimonialsView ..> PublicTestimonials : lists
+    PublicTestimonials ..> Testimonial : published, consented, real
+    PublicPricingView ..> PublicPricing : reads
+    PublicPricing ..> PriceRules : prices a lesson, a retake, a sheet, a quiz
+    PublicPricing ..> Plan : plans
+    PublicPricing ..> CreditSettings : earning amounts
+    TestimonialDesk ..> Testimonial : changes, audited
 ```
 
-- `DemoQuestionPicker` is the only logic: random among the active ids, never the excluded one (unless it is all there is), ids cached with the cache injected, and a cached id that has gone is skipped for a fresh list. A signal receiver (`signals.py`, a thin hook) clears the cache when a question is saved or deleted. The view validates `exclude`, throttles per client address (scope `landing_demo`) and formats; an empty bank is a `NotFound`.
+- `DemoQuestionPicker` is the only logic: random among the active ids, never the excluded one (unless it is all there is), ids cached with the cache injected, and a cached id that has gone is skipped for a fresh list. A signal receiver (`signals.py`, a thin hook) clears the cache when a question is saved or deleted. The view validates `exclude`, throttles per client address (scope `landing_demo`) and formats; an empty bank is a `NotFound`. The landing page no longer uses it (its sample Quick check is fixed and makes no request); the endpoint and the bank stay until someone decides to remove them.
 - `DemoQuestion.clean()` is the contract of a row (three different options, an answer among them, a band, outcomes validated by the Pydantic `Outcome`), so what the admin saves is what the card can show.
-- The frontend side is in [frontend.md](../reference/frontend.md#the-landing-page): `DemoQuestions`, `DemoQuestionFetcher`, `HeroDemo` and `Autoplay`, all `lib/` classes with `bun test`.
+- **`Testimonial`** keeps two rules twice, in `clean()` and in database check constraints: it is published only with the learner's consent confirmed, and a sample (`is_sample`, made by the DEBUG-only `seed_sample_testimonials` command) is never published. `PublicTestimonials` is the only thing that decides what a visitor sees: published, consented and not a sample, in position order, in the query itself and never by `DEBUG`; cached for a minute, cleared by a signal on every save and delete.
+- **`PublicPricing`** holds no price of its own. It reads `Plan`, `CreditSettings`, `FlowSettings` (for the Quick check's length) and the live `ActionPrice` rows through the gate's own `PriceRules` (a full lesson, a retake, a sheet from one on its own to one built from a lesson, a quick quiz from the smallest to the largest), so a quote and the page cannot differ. "About N lessons" is plan credits over the lesson price rounded down, worked out here. A price with no live row is `None` (never free) and does not stop the rest. Cached for a minute; `credits/signals.py` clears it on every save of a price, plan or setting. `PublicView` (Template Method) is the base of both public views: no authentication, scope `public_pages`, and `Cache-Control: public, max-age=30` on a `200`.
+- **`TestimonialDesk`** (`console/services/testimonials.py`) is the console's only way to change a testimonial: validates with `full_clean` (so the message says why a publish is refused), writes the `AuditEntry` (`testimonial.create`, `.update`, `.delete`, `.reorder`) in the same transaction, writes nothing for a change that changes nothing, and never makes or flags a sample.
+- The frontend side is in [frontend.md](../reference/frontend.md#the-landing-page): `SampleQuiz`, `PricingWords`, `FaqContent`, `TestimonialView`, `PublicLanding` and `TestimonialForm`, all `lib/` classes with `bun test`.
 
 ### 4.16 `console`: the staff API
 

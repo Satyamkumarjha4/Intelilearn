@@ -100,6 +100,7 @@ see the words hold, ledger, gateway, webhook, order state or settle ("credits" i
 | Lesson settings, Quick quizzes section | `/console/settings` | Lessons in one quiz, the source token budget, the warm-up length, and the throttles. A section added to the existing page without a mockup, in the same style |
 | Runs for quizzes | `/console/runs` | A run now belongs to a lesson or to a quiz: the lesson column, the "Open quiz" button and the filter. Quiz runs share the lesson layout |
 | Usage by quiz | `/console/usage` | Model calls logged to a quiz show in the same table |
+| Testimonials (built with the landing page refresh) | `/console/testimonials` (`components/console/testimonials/`) | Add form, then a card for each testimonial with state badges (Published, Not published, Sample: never shown, No permission confirmed), move up and down, Edit in place, Publish or Unpublish (off with the reason while permission is missing and for a sample), and delete. Built from the console's existing boxes and cards, without a mockup |
 
 ## 9. The mockup itself
 
@@ -110,3 +111,24 @@ The approved mockups still carry words the product retired. When the screens abo
 - `socra-admin-mockup.html`: the "Final test questions" row of Lesson settings (the minimum and maximum were retired: the
   test is a fixed ten questions).
 - Neither mockup has the names "Quick quiz" or "Basics check", or the lesson tabs.
+
+## 10. The public landing page (done)
+
+The landing page was rebuilt from [landing-page-mockup.html](mockups/landing-page-mockup.html) (a design reference, not code to copy)
+with the app's own components, tokens and conventions: header, hero with a sample Quick check, how it works, what learners say (or
+the maker's note), adapts to your level, progress, revise, pricing, FAQ, the final band and the footer. See
+[frontend.md](../reference/frontend.md#the-landing-page). Where it differs from the mockup, and why:
+
+- **Colours.** The app's palette (cooler backgrounds, a lighter teal) instead of the mockup's cream and darker teal. The inset
+  progress panel is `primary-deep` in light mode and `primary-soft` in dark so its text keeps its contrast.
+- **No invented numbers.** Every price, credit amount, "about N lessons", bonus and cost range, and the length of the Quick check, is read
+  from the API. The mockup's "5 quick questions", "Ten questions" in the test, "5 to 30 questions" and "2-minute" are not stated, and
+  "half the credits" is "fewer credits" (the numbers do not make it half).
+- **The browser frame** of the sample Quick check shows "Quick check" in its address bar, not an address (the mockup's `socra.app/...`
+  is a domain the product does not have).
+- **The final band keeps its Topic box** (the topic survives sign-up and is offered in onboarding); the mockup has only a button.
+- **Contact** in the footer is a `mailto:` to the one address, as asked, although a Contact page exists. There is no About link,
+  because there is no About page.
+- **"Study this"** in the progress example is a picture of the button, not a link: the chart is example data.
+- Still open for a designer: a photo for the maker's note (an "S" avatar stands in), and the sample quiz's other topics.
+

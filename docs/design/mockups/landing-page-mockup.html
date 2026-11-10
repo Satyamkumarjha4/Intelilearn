@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Socra landing page</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&amp;family=Nunito:wght@400;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FFFAF1}
+a{color:#0B6E77}a:hover{color:#08525A}
+summary{cursor:pointer;list-style:none}
+summary::-webkit-details-marker{display:none}
+.plans{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+@media (max-width: 680px){.plans{grid-template-columns:minmax(0,1fr)}}
+.lift{transition:transform .15s ease}
+.lift:hover{transform:translateY(-4px)}
+@media (prefers-reduced-motion: reduce){.lift{transition:none}.lift:hover{transform:none}}
+</style>
+</helmet>
+<div style="font-family: Nunito, system-ui, sans-serif; color: #1C2A33; background: #FFFAF1; line-height: 1.6; font-size: 17px">
+
+<!-- NAV -->
+<header style="border-bottom: 1px solid #EADFCB; background: #FFFAF1">
+<nav style="max-width: 1200px; margin: 0 auto; padding: 16px 24px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px">
+<a href="#top" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: #1C2A33">
+<span style="width: 38px; height: 38px; border-radius: 11px; background: #0B6E77; display: flex; align-items: center; justify-content: center">
+<svg aria-hidden="true" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#FFFAF1" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h7a3 3 0 0 1 3 3v11a2 2 0 0 0-2-2H4z"></path><path d="M20 5h-4a3 3 0 0 0-3 3"></path><path d="M20 5v12h-6"></path></svg>
+</span>
+<span style="font-family: Fredoka, sans-serif; font-weight: 600; font-size: 27px">Socra</span>
+</a>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 26px; font-weight: 700; font-size: 16px">
+<a href="#how" style="color: #1C2A33; text-decoration: none">How it works</a>
+<a href="#features" style="color: #1C2A33; text-decoration: none">Features</a>
+<a href="#pricing" style="color: #1C2A33; text-decoration: none">Pricing</a>
+<a href="#faq" style="color: #1C2A33; text-decoration: none">FAQ</a>
+<a href="#signin" style="color: #0B6E77; text-decoration: none">Sign in</a>
+<a href="#start" style="background: #0B6E77; color: #FFFFFF; text-decoration: none; padding: 13px 22px; border-radius: 14px; box-shadow: 0 4px 0 #064349; font-weight: 800">Start free</a>
+</div>
+</nav>
+</header>
+
+<!-- HERO -->
+<section id="top" style="max-width: 1240px; margin: 0 auto; padding: 72px 24px 96px; display: flex; flex-wrap: wrap; align-items: center; gap: 56px">
+<div style="flex: 1 1 440px; min-width: 0; display: flex; flex-direction: column; gap: 24px">
+<span style="align-self: flex-start; background: #FFF0D1; color: #7A4A00; font-weight: 800; font-size: 15px; padding: 7px 15px; border-radius: 999px">For school and college students, and anyone learning something new</span>
+<h1 style="margin: 0; font-family: Fredoka, sans-serif; font-weight: 600; font-size: 62px; line-height: 1.04; letter-spacing: -0.8px">Learn anything, starting from what you already know.</h1>
+<p style="margin: 0; font-size: 21px; color: #3E4E58; max-width: 540px">A 2-minute Quick check finds your gaps. Socra teaches only those, then tests you.</p>
+<div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: center">
+<a href="#start" style="background: #0B6E77; color: #FFFFFF; font-weight: 800; font-size: 19px; text-decoration: none; padding: 17px 30px; border-radius: 16px; box-shadow: 0 5px 0 #064349">Start with 30 free credits</a>
+<a href="#how" style="font-weight: 800; font-size: 18px; color: #0B6E77; text-decoration: none; padding: 15px 22px; border: 2px solid #0B6E77; border-radius: 16px">See how it works</a>
+</div>
+<p style="margin: 0; font-size: 15px; color: #4E5D66">Sign up, pick a topic, take the Quick check. No card needed, and your free credits never expire.</p>
+</div>
+
+<!-- hero: interactive sample Quick check that turns into a lesson preview -->
+<div style="flex: 1 1 600px; min-width: 0; display: flex; flex-direction: column; gap: 14px">
+<span style="align-self: center; font-size: 15px; font-weight: 800; color: #08525A; background: #DDF1F0; padding: 6px 14px; border-radius: 999px">Try it now: 3 questions, no sign-up</span>
+<div style="background: #FFFFFF; border: 1px solid #EADFCB; border-radius: 20px; box-shadow: 0 24px 56px rgba(28, 42, 51, 0.14); overflow: hidden">
+<div aria-hidden="true" style="display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: #F6EFE2; border-bottom: 1px solid #EADFCB">
+<span style="width: 12px; height: 12px; border-radius: 50%; background: #E8A598"></span>
+<span style="width: 12px; height: 12px; border-radius: 50%; background: #F2CF7A"></span>
+<span style="width: 12px; height: 12px; border-radius: 50%; background: #9FD3B6"></span>
+<span style="margin-left: 12px; flex: 1; background: #FFFFFF; border-radius: 8px; padding: 4px 12px; font-size: 13px; color: #4E5D66">{{url}}</span>
+</div>
+<div style="padding: 32px 34px 36px; display: flex; flex-direction: column; gap: 16px; min-height: 440px; box-sizing: border-box">
+<sc-if value="{{playing}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap"><span style="font-family: Fredoka, sans-serif; font-weight: 600; font-size: 24px">Quick check · Trigonometry</span><span style="font-size: 15px; font-weight: 800; color: #4E5D66">{{num}} of 3</span></div>
+<div style="height: 10px; background: #F1EADB; border-radius: 6px; overflow: hidden"><div style="{{barStyle}}"></div></div>
+<span style="font-size: 22px; font-weight: 800; line-height: 1.35">{{question}}</span>
+<sc-for list="{{options}}" as="o" hint-placeholder-count="3">
+<button type="button" onClick="{{o.pick}}" style="{{o.style}}">{{o.text}}</button>
+</sc-for>
+<sc-if value="{{answered}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; background: #FFFAF1; border-radius: 14px; padding: 14px 18px">
+<span style="font-size: 17px; flex: 1 1 260px">{{feedback}}</span>
+<button type="button" onClick="{{next}}" style="font: inherit; font-weight: 800; border: 0; background: #0B6E77; color: #FFFFFF; padding: 12px 22px; border-radius: 14px; box-shadow: 0 4px 0 #064349; cursor: pointer">{{nextLabel}}</button>
+</div>
+</sc-if>
+</div>
+</sc-if>
+<sc-if value="{{done}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px"><span style="font-size: 16px; font-weight: 800; color: #4E5D66">You got {{score}} of 3</span><span style="font-size: 14px; font-weight: 800; background: #EEE9FC; color: #4B2FB0; padding: 5px 12px; border-radius: 999px">Your level: {{levelName}}</span></div>
+<span style="font-family: Fredoka, sans-serif; font-weight: 600; font-size: 30px; line-height: 1.15">Here's where your lesson would start.</span>
+<div style="display: flex; gap: 8px; flex-wrap: wrap">
+<sc-for list="{{pages}}" as="p" hint-placeholder-count="3"><span style="{{p.style}}">{{p.label}}</span></sc-for>
+</div>
+<div style="background: #FFF8E8; border: 1px dashed #E8C887; border-radius: 16px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 14px; font-weight: 800; color: #4E5D66">Page 1 of 3 · {{page1}}</span><span style="font-size: 18px">{{snippet}}</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center">
+<a href="#start" style="background: #0B6E77; color: #FFFFFF; font-weight: 800; text-decoration: none; padding: 14px 24px; border-radius: 14px; box-shadow: 0 4px 0 #064349">Get my real lesson</a>
+<button type="button" onClick="{{restart}}" style="font: inherit; font-weight: 800; border: 2px solid #EADFCB; background: #FFFFFF; color: #1C2A33; padding: 12px 20px; border-radius: 14px; cursor: pointer">Try again</button>
+</div>
+</div>
+</sc-if>
+</div>
+</div>
+<p style="margin: 8px 0 0; text-align: center; font-size: 14px; color: #4E5D66">Sample questions. Your real Quick check is written for the topic you pick.</p>
+</div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section id="how" style="background: #FFFFFF; border-top: 1px solid #EADFCB; border-bottom: 1px solid #EADFCB">
+<div style="max-width: 1200px; margin: 0 auto; padding: 96px 24px; display: flex; flex-direction: column; gap: 44px">
+<div style="display: flex; flex-direction: column; gap: 10px; max-width: 680px">
+<span style="font-weight: 800; color: #0B6E77; font-size: 16px">How it works</span>
+<h2 style="margin: 0; font-family: Fredoka, sans-serif; font-weight: 600; font-size: 44px; line-height: 1.1">Three steps, and no time spent on what you already know.</h2>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 28px">
+
+<div class="lift" style="flex: 1 1 320px; min-width: 0; background: #FFFAF1; border: 2px solid #EADFCB; border-radius: 22px; padding: 28px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; align-items: center; gap: 12px"><span style="width: 44px; height: 44px; border-radius: 13px; background: #0B6E77; color: #FFFAF1; font-family: Fredoka, sans-serif; font-weight: 600; font-size: 22px; display: flex; align-items: center; justify-content: center">1</span><span style="font-size: 15px; font-weight: 800; color: #4E5D66">Quick check or star rating</span></div>
+<h3 style="margin: 0; font-family: Fredoka, sans-serif; font-weight: 600; font-size: 26px">Discover what you already know</h3>
+<p style="margin: 0; color: #3E4E58; font-size: 18px">Answer 5 quick questions, or rate yourself from half a star to five if you'd rather skip the quiz.</p>
+<div style="background: #FFFFFF; border: 1px solid #EADFCB; border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 10px; margin-top: auto">
+<div style="display: flex; justify-content: space-between; font-size: 14px; font-weight: 800; color: #4E5D66"><span>Quick check</span><span>2 of 5</span></div>
+<div style="font-weight: 800; font-size: 17px">Which ratio is opposite over hypotenuse?</div>
+<div style="border: 2px solid #0B6E77; background: #DDF1F0; border-radius: 12px; padding: 10px 14px; font-weight: 800; font-size: 16px">Sine</div>
+<div style="border: 2px solid #EADFCB; border-radius: 12px; padding: 10px 14px; font-weight: 700; font-size: 16px">Cosine</div>
+<div style="border: 2px solid #EADFCB; border-radius: 12px; padding: 10px 14px; font-weight: 700; font-size: 16px">I don't know yet</div>
+</div>
+</div>
+
+<div class="lift" style="flex: 1 1 320px; min-width: 0; background: #FFFAF1; border: 2px solid #EADFCB; border-radius: 22px; padding: 28px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; align-items: center; gap: 12px"><span style="width: 44px; height: 44px; border-radius: 13px; background: #F5A623; color: #1C2A33; font-family: Fredoka, sans-serif; font-weight: 600; font-size: 22px; display: flex; align-items: center; justify-content: center">2</span><span style="font-size: 15px; font-weight: 800; color: #4E5D66">Your 3-page lesson</span></div>
+<h3 style="margin: 0; font-family: Fredoka, sans-serif; font-weight: 600; font-size: 26px">Learn exactly what you're missing</h3>
+<p style="margin: 0; color: #3E4E58; font-size: 18px">Three pages written for your level, like a notebook you can come back to any time.</p>
+<div style="background: #FFFFFF; border: 1px solid #EADFCB; border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 12px; margin-top: auto">
+<div style="font-size: 14px; font-weight: 800; color: #4E5D66">Building your lesson</div>
+<div style="display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 700"><span style="width: 24px; height: 24px; border-radius: 50%; background: #0B6E77; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round"><path d="M5 12l5 5 9-10"></path></svg></span>Page 1 · Introduction</div>
+<div style="display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 700"><span style="width: 24px; height: 24px; border-radius: 50%; background: #0B6E77; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round"><path d="M5 12l5 5 9-10"></path></svg></span>Page 2 · Core</div>
+<div style="display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 700; color: #4E5D66"><span style="width: 24px; height: 24px; border-radius: 50%; border: 3px solid #F5A623; box-sizing: border-box"></span>Page 3 · Going further</div>
+<div style="height: 12px; background: #F1EADB; border-radius: 6px; overflow: hidden"><div style="height: 12px; width: 70%; background: #F5A623"></div></div>
+</div>
+</div>
+
+<div class="lift" style="flex: 1 1 320px; min-width: 0; background: #FFFAF1; border: 2px solid #EADFCB; border-radius: 22px; padding: 28px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; align-items: center; gap: 12px"><span style="width: 44px; height: 44px; border-radius: 13px; background: #6B4BD8; color: #FFFFFF; font-family: Fredoka, sans-serif; font-weight: 600; font-size: 22px; display: flex; align-items: center; justify-content: center">3</span><span style="font-size: 15px; font-weight: 800; color: #4E5D66">The Test</span></div>
+<h3 style="margin: 0; font-family: Fredoka, sans-serif; font-weight: 600; font-size: 26px">See how much you've improved</h3>
+<p style="margin: 0; color: #3E4E58; font-size: 18px">Ten questions, marked the moment you hand in, with a clear list of what to look at again.</p>
+<div style="background: #FFFFFF; border: 1px solid #EADFCB; border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 10px; margin-top: auto">
+<div style="display: flex; align-items: baseline; gap: 10px"><span style="font-family: Fredoka, sans-serif; font-weight: 600; font-size: 44px; color: #0B6E77">80%</span><span style="font-size: 16px; font-weight: 700; color: #4E5D66">16 of 20 marks</span></div>
+<div style="font-size: 14px; font-weight: 800; color: #4E5D66">Worth another look</div>
+<div style="display: flex; justify-content: space-between; align-items: center; font-size: 16px; font-weight: 700; border-top: 1px solid #F1EADB; padding-top: 10px"><span>The sine rule</span><a href="#progress" style="text-decoration: none; font-weight: 800">Study this</a></div>
+<div style="display: flex; justify-content: space-between; align-items: center; font-size: 16px; font-weight: 700; border-top: 1px solid #F1EADB; padding-top: 10px"><span>Radians</span><a href="#progress" style="text-decoration: none; font-weight: 800">Study this</a></div>
+</div>
+</div>
+
+</div>
+</div>
+</section>
+
+<!-- TRUST: testimonials managed in the console; the maker note shows when none are published -->
+<section id="voices" style="max-width: 1200px; margin: 0 auto; padding: 104px 24px 0">
+<sc-if value="{{hasTestimonials}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-direction: column; gap: 32px">
+<div style="display: flex; flex-direction: column; gap: 10px; max-width: 680px">
+<span style="font-weight: 800; color: #0B6E77; font-size: 16px">From learners</span>
+<h2 style="margin: 0; font-family: Fredoka, sans-serif; font-weight: 600; font-size: 44px; line-height: 1.1">What learners say</h2>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 24px">
+<sc-for list="{{testimonials}}" as="t" hint-placeholder-count="3">
+<figure style="flex: 1 1 320px; min-width: 0; margin: 0; background: #FFFFFF; border: 1px solid #EADFCB; border-radius: 22px; padding: 28px; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 16px 40px rgba(28, 42, 51, 0.08)">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 24px">
+<sc-if value="{{t.hasRating}}" hint-placeholder-val="{{ true }}">
+<span role="img" aria-label="{{t.ratingLabel}}" style="display: flex; gap: 3px">
+<sc-for list="{{t.stars}}" as="s" hint-placeholder-count="5"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z" fill="{{s.fill}}" stroke="#C9821A" stroke-width="1.2" stroke-linejoin="round"></path></svg></sc-for>
+</span>
+</sc-if>
+<sc-if value="{{t.sample}}" hint-placeholder-val="{{ true }}"><span style="font-size: 12px; font-weight: 800; background: #FBE6DD; color: #8A2E12; padding: 4px 10px; border-radius: 999px">Sample: replace before launch</span></sc-if>
+</div>
+<blockquote style="margin: 0; font-size: 19px; line-height: 1.5">"{{t.quote}}"</blockquote>
+<figcaption style="display: flex; align-items: center; gap: 12px; margin-top: auto">
+<span aria-hidden="true" style="{{t.avatarStyle}}">{{t.initials}}</span>
+<span style="display: flex; flex-direction: column"><strong>{{t.name}}</strong><span style="font-size: 15px; color: #4E5D66">{{t.context}}</span></span>
+</figcaption>
+</figure>
+</sc-for>
+</div>
+</div>
+</sc-if>
+<sc-if value="{{noTestimonials}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-wrap: wrap; gap: 36px; align-items: center; background: #FFFFFF; border: 1px solid #EADFCB; border-radius: 26px; padding: 36px; box-shadow: 0 16px 40px rgba(28, 42, 51, 0.08)">
+<div role="img" aria-label="Photo of the maker of Socra (placeholder)" style="flex: 0 0 140px; height: 140px; border-radius: 50%; background: #DDF1F0; border: 3px dashed #0B6E77; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 14px; font-weight: 800; color: #08525A">[YOUR PHOTO]</div>
+<div style="flex: 1 1 380px; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+<span style="font-weight: 800; color: #0B6E77; font-size: 16px">Why Socra exists</span>
+<p style="margin: 0; font-family: Fredoka, sans-serif; font-weight: 500; font-size: 26px; line-height: 1.3">"Most lessons start from zero. I kept spending evenings on things I already knew, so I built a tutor that checks first and teaches only what's missing."</p>
+<span style="font-weight: 800">Satyam <span style="font-weight: 600; color: #4E5D66">· maker of Socra, computer science student</span></span>
+</div>
+</div>
+</sc-if>
+</section>
+
+<!-- ADAPTS TO YOUR LEVEL -->
+<section id="features" style="max-width: 1200px; margin: 0 auto; padding: 104px 24px; display: flex; flex-wrap: wrap; gap: 56px; align-items: center">
+<div style="flex: 1 1 400px; min-width: 0; display: flex; flex-direction: column; gap: 22px">
+<span style="font-weight: 800; color: #0B6E77; font-size: 16px">Adapts to your level</span>
+<h2 style="margin: 0; font-family: Fredoka, sans-serif; font-weight: 600; font-size: 44px; line-height: 1.1">Already know the basics? Skip them.</h2>
+<p style="margin: 0; font-size: 19px; color: #3E4E58">New to it? Your lesson starts with the basics you need first. Already strong? It skips ahead to the deep end.</p>
+<div style="display: flex; flex-direction: column; gap: 16px; margin-top: 6px">
+<div style="display: flex; gap: 14px; align-items: flex-start"><span style="flex: 0 0 36px; height: 36px; border-radius: 10px; background: #FFF0D1; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#B36A00" stroke-width="2.5" stroke-linecap="round"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></span><span><strong>Aced the Test?</strong> Socra offers an Advanced lesson to go further.</span></div>
+<div style="display: flex; gap: 14px; align-items: flex-start"><span style="flex: 0 0 36px; height: 36px; border-radius: 10px; background: #DDF1F0; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#08525A" stroke-width="2.5" stroke-linecap="round"><path d="M4 20h16M6 16h12M8 12h8"></path></svg></span><span><strong>Found it tough?</strong> Socra offers a Foundations lesson to build up the basics.</span></div>
+<div style="display: flex; gap: 14px; align-items: flex-start"><span style="flex: 0 0 36px; height: 36px; border-radius: 10px; background: #EEE9FC; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4B2FB0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l3 3v15H6z"></path><path d="M9 12h6M9 16h4"></path></svg></span><span><strong>Perfect Quick check?</strong> Choose an Expert lesson, or just the cheat sheet and revision sheet for half the credits.</span></div>
+</div>
+</div>
+
+<!-- one large preview: star rating + lesson shape -->
+<div style="flex: 1 1 520px; min-width: 0; background: #FFFFFF; border: 2px solid #EADFCB; border-radius: 26px; padding: 34px; display: flex; flex-direction: column; gap: 20px; box-shadow: 0 20px 48px rgba(28, 42, 51, 0.10)">
+<div style="font-size: 15px; font-weight: 800; color: #4E5D66">Rather skip the quiz? Rate yourself.</div>
+<div style="font-weight: 800; font-size: 22px">How well do you know Trigonometry?</div>
+<div role="img" aria-label="3.5 out of 5 stars" style="display: flex; gap: 8px">
+<svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z" fill="#F5A623" stroke="#C9821A" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+<svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z" fill="#F5A623" stroke="#C9821A" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+<svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z" fill="#F5A623" stroke="#C9821A" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+<svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24"><defs><linearGradient id="half"><stop offset="50%" stop-color="#F5A623"></stop><stop offset="50%" stop-color="#F1EADB"></stop></linearGradient></defs><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z" fill="url(#half)" stroke="#C9821A" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+<svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z" fill="#F1EADB" stroke="#D9CBB0" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+</div>
+<div style="background: #FFF8E8; border-radius: 14px; padding: 14px 18px; font-weight: 700; font-size: 18px">"I can solve most simple problems and I am starting on harder ones."</div>
+<div style="display: flex; flex-direction: column; border: 1px solid #EADFCB; border-radius: 16px; overflow: hidden; font-size: 16px">
+<div style="display: flex; gap: 12px; padding: 12px 16px; background: #FFFAF1; font-weight: 800; color: #4E5D66; font-size: 14px"><span style="flex: 0 0 120px">Your level</span><span>Your three pages</span></div>
+<div style="display: flex; gap: 12px; padding: 12px 16px; border-top: 1px solid #EADFCB"><span style="flex: 0 0 120px; font-weight: 800">Beginner</span><span>Basics first, Introduction, Core</span></div>
+<div style="display: flex; gap: 12px; padding: 12px 16px; border-top: 1px solid #EADFCB; background: #DDF1F0"><span style="flex: 0 0 120px; font-weight: 800">Foundation</span><span>Introduction, Core, a taste of advanced</span></div>
+<div style="display: flex; gap: 12px; padding: 12px 16px; border-top: 1px solid #EADFCB"><span style="flex: 0 0 120px; font-weight: 800">Proficient</span><span>Quick recap, Core, Advanced</span></div>
+<div style="display: flex; gap: 12px; padding: 12px 16px; border-top: 1px solid #EADFCB"><span style="flex: 0 0 120px; font-weight: 800">Expert</span><span>Core, Advanced, Expert depth</span></div>
+</div>
+</div>
+</section>
+
+<!-- PROGRESS -->
+<section id="progress" style="padding: 0 16px; color: #FFFAF1">
+<div style="max-width: 1240px; margin: 0 auto; background: #0B6E77; border-radius: 40px; padding: 88px 40px; box-sizing: border-box; display: flex; flex-wrap: wrap; gap: 56px; align-items: center">
+<div style="flex: 1 1 400px; min-width: 0; display: flex; flex-direction: column; gap: 22px">
+<span style="font-weight: 800; color: #FFD58A; font-size: 16px">Retakes that show your progress</span>
+<h2 style="margin: 0; font-family: Fredoka, sans-serif; font-weight: 600; font-size: 44px; line-height: 1.1">Every attempt makes you better. Now you can see it.</h2>
+<div style="display: flex; flex-direction: column; gap: 18px; font-size: 18px">
+<div style="display: flex; gap: 14px"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#F5A623" stroke-width="2.5" stroke-linecap="round" style="flex: 0 0 24px; margin-top: 2px"><path d="M4 12a8 8 0 0 1 14-5l2 2M20 4v5h-5M20 12a8 8 0 0 1-14 5l-2-2M4 20v-5h5"></path></svg><span>Every retake has fresh questions, so you're never just memorising answers.</span></div>
+<div style="display: flex; gap: 14px"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#F5A623" stroke-width="2.5" stroke-linecap="round" style="flex: 0 0 24px; margin-top: 2px"><path d="M4 19l6-6 4 4 6-8"></path><path d="M15 9h5v5"></path></svg><span>See your score against last time and against your best.</span></div>
+<div style="display: flex; gap: 14px"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#F5A623" stroke-width="2.5" stroke-linecap="round" style="flex: 0 0 24px; margin-top: 2px"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"></path></svg><span>Missed something? "Study this" opens the exact page that teaches it.</span></div>
+</div>
+</div>
+<div style="flex: 1 1 520px; min-width: 0; background: #FFFFFF; color: #1C2A33; border-radius: 26px; padding: 34px; display: flex; flex-direction: column; gap: 22px; box-shadow: 0 24px 48px rgba(0, 0, 0, 0.20)">
+<div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px">
+<span style="font-family: Fredoka, sans-serif; font-weight: 600; font-size: 26px">Your tries</span>
+<span style="background: #DDF1F0; color: #08525A; font-weight: 800; font-size: 15px; padding: 7px 14px; border-radius: 999px">Up 23 points on last time</span>
+</div>
+<div role="img" aria-label="Example scores: attempt 1, 45 percent; attempt 2, 62 percent; attempt 3, 85 percent" style="display: flex; align-items: flex-end; gap: 28px; height: 230px; padding: 0 8px; border-bottom: 2px solid #EADFCB">
+<div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px"><span style="font-weight: 800; font-size: 17px">45%</span><div style="width: 100%; height: 92px; background: #F1EADB; border-radius: 12px 12px 0 0"></div></div>
+<div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px"><span style="font-weight: 800; font-size: 17px">62%</span><div style="width: 100%; height: 128px; background: #A9DAD6; border-radius: 12px 12px 0 0"></div></div>
+<div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px"><span style="font-weight: 800; font-size: 17px">85%</span><div style="width: 100%; height: 176px; background: #0B6E77; border-radius: 12px 12px 0 0"></div></div>
+</div>
+<div style="display: flex; gap: 28px; padding: 0 8px; font-size: 15px; font-weight: 700; color: #4E5D66; margin-top: -10px">
+<span style="flex: 1; text-align: center">Try 1</span><span style="flex: 1; text-align: center">Try 2</span><span style="flex: 1; text-align: center">Try 3 · best</span>
+</div>
+<div style="background: #FFFAF1; border: 1px solid #EADFCB; border-radius: 16px; padding: 16px 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap">
+<div style="display: flex; flex-direction: column"><span style="font-weight: 800; font-size: 17px">Radians</span><span style="font-size: 15px; color: #4E5D66">Taught on Page 2 · Core</span></div>
+<a href="#how" style="background: #F5A623; color: #1C2A33; font-weight: 800; text-decoration: none; padding: 12px 18px; border-radius: 12px; box-shadow: 0 4px 0 #C9821A">Study this</a>
+</div>
+<p style="margin: 0; font-size: 14px; color: #4E5D66; text-align: center">Example data, to show how progress is displayed</p>
+</div>
+</div>
+</section>
+
+<!-- SUPPORTING TOOLS: split layout with stacked sheets -->
+<section style="max-width: 1200px; margin: 0 auto; padding: 104px 24px; display: flex; flex-wrap: wrap; gap: 56px; align-items: center">
+<div style="flex: 1 1 380px; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+<span style="font-weight: 800; color: #0B6E77; font-size: 16px">Revise what you learn</span>
+<h2 style="margin: 0; font-family: Fredoka, sans-serif; font-weight: 600; font-size: 44px; line-height: 1.1">Everything you need to make it stick.</h2>
+<p style="margin: 0; font-size: 19px; color: #3E4E58">Turn any lesson, or any topic, into a one-page sheet for the night before.</p>
+<div style="display: flex; flex-direction: column; gap: 14px; font-size: 18px">
+<span><strong>Cheat sheet:</strong> <span style="color: #3E4E58">everything important on one page: key terms, formulas and rules.</span></span>
+<span><strong>Revision sheet:</strong> <span style="color: #3E4E58">key points, quick self-checks and common mistakes.</span></span>
+<span><strong>Quick quizzes:</strong> <span style="color: #3E4E58">practise any topic, or your own lessons, in 5 to 30 questions.</span></span>
+</div>
+</div>
+<div style="flex: 1 1 520px; min-width: 0; padding: 8px 8px 24px">
+<div style="background: #FFFFFF; border: 1px solid #EADFCB; border-radius: 22px; padding: 28px; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 16px 40px rgba(28, 42, 51, 0.10); transform: rotate(-2deg); width: 82%; box-sizing: border-box">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap"><span style="font-family: Fredoka, sans-serif; font-weight: 600; font-size: 22px">Cheat sheet · Trigonometry</span><span style="font-size: 14px; font-weight: 800; background: #DDF1F0; color: #08525A; padding: 5px 12px; border-radius: 999px">1 page</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 12px">
+<div style="flex: 1 1 140px; background: #FFFAF1; border-radius: 14px; padding: 14px; font-size: 16px"><div style="font-weight: 800; margin-bottom: 4px">Formulas</div>sin = O/H, cos = A/H, tan = O/A</div>
+<div style="flex: 1 1 140px; background: #FFFAF1; border-radius: 14px; padding: 14px; font-size: 16px"><div style="font-weight: 800; margin-bottom: 4px">Rule</div>sin²θ + cos²θ = 1</div>
+</div>
+</div>
+<div style="background: #FFFFFF; border: 1px solid #EADFCB; border-radius: 22px; padding: 28px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 20px 48px rgba(28, 42, 51, 0.14); transform: rotate(1.5deg); width: 82%; margin: -36px 0 0 18%; box-sizing: border-box; position: relative">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap"><span style="font-family: Fredoka, sans-serif; font-weight: 600; font-size: 22px">Revision sheet · Trigonometry</span><span style="font-size: 14px; font-weight: 800; background: #EEE9FC; color: #4B2FB0; padding: 5px 12px; border-radius: 999px">Self-check</span></div>
+<div style="font-size: 16px; display: flex; gap: 12px; align-items: center"><span style="width: 20px; height: 20px; border: 2px solid #6B4BD8; border-radius: 5px; flex: 0 0 20px"></span>When is tan θ undefined?</div>
+<div style="font-size: 16px; background: #FFF0D1; border-radius: 14px; padding: 12px 14px"><strong>Common mistake:</strong> leaving the calculator in degrees when the question uses radians.</div>
+</div>
+</div>
+</section>
+
+<!-- PRICING -->
+<section id="pricing" style="background: #FFFFFF; border-top: 1px solid #EADFCB; border-bottom: 1px solid #EADFCB">
+<div style="max-width: 1200px; margin: 0 auto; padding: 104px 24px; display: flex; flex-direction: column; gap: 40px">
+<div style="display: flex; flex-direction: column; gap: 10px; max-width: 680px">
+<span style="font-weight: 800; color: #0B6E77; font-size: 16px">Pricing</span>
+<h2 style="margin: 0; font-family: Fredoka, sans-serif; font-weight: 600; font-size: 44px; line-height: 1.1">Start free. Pay only for what you learn.</h2>
+<p style="margin: 0; font-size: 19px; color: #3E4E58">Every plan includes every feature. Plans only change how many credits you get.</p>
+</div>
+
+<!-- plans: strict 2x2 grid, one column on phones -->
+<div class="plans">
+<div style="min-width: 0; border: 2px solid #EADFCB; border-radius: 22px; padding: 30px; display: flex; flex-direction: column; gap: 12px; background: #FFFAF1">
+<span style="font-weight: 800; font-size: 20px">Free</span>
+<div><span style="font-family: Fredoka, sans-serif; font-weight: 600; font-size: 44px">₹0</span></div>
+<span style="font-size: 16px; color: #3E4E58">Try Socra on your first topics.</span>
+<div style="display: flex; flex-direction: column; gap: 6px; font-size: 16px"><span><strong>30 credits</strong> that never expire</span><span>About 3 full lessons</span><span>+1 credit a day you study, +10 every 7-day streak</span></div>
+<a href="#start" style="margin-top: auto; text-align: center; border: 2px solid #0B6E77; color: #0B6E77; font-weight: 800; text-decoration: none; padding: 13px; border-radius: 14px">Start free</a>
+</div>
+<div style="min-width: 0; border: 2px solid #EADFCB; border-radius: 22px; padding: 30px; display: flex; flex-direction: column; gap: 12px">
+<span style="font-weight: 800; font-size: 20px">Weekly Pro</span>
+<div><span style="font-family: Fredoka, sans-serif; font-weight: 600; font-size: 44px">₹49</span><span style="color: #4E5D66; font-weight: 700"> / week</span></div>
+<span style="font-size: 16px; color: #3E4E58">For a week of exam prep.</span>
+<div style="display: flex; flex-direction: column; gap: 6px; font-size: 16px"><span><strong>100 credits</strong> a week</span><span>About 10 full lessons a week</span><span>Buy several weeks; they arrive one at a time</span></div>
+<a href="#start" style="margin-top: auto; text-align: center; border: 2px solid #0B6E77; color: #0B6E77; font-weight: 800; text-decoration: none; padding: 13px; border-radius: 14px">Choose Weekly Pro</a>
+</div>
+<div style="min-width: 0; border: 3px solid #0B6E77; border-radius: 22px; padding: 30px; display: flex; flex-direction: column; gap: 12px; background: #F2FAF9; position: relative; box-shadow: 0 20px 44px rgba(11, 110, 119, 0.18)">
+<span style="position: absolute; top: -15px; left: 24px; background: #F5A623; color: #1C2A33; font-weight: 800; font-size: 14px; padding: 5px 13px; border-radius: 999px">Best value for regular study</span>
+<span style="font-weight: 800; font-size: 20px">Monthly Pro</span>
+<div><span style="font-family: Fredoka, sans-serif; font-weight: 600; font-size: 44px">₹199</span><span style="color: #4E5D66; font-weight: 700"> / 28 days</span></div>
+<span style="font-size: 16px; color: #3E4E58">For learning a little every day.</span>
+<div style="display: flex; flex-direction: column; gap: 6px; font-size: 16px"><span><strong>500 credits</strong> for 28 days</span><span>About 50 full lessons</span><span>Less than half the price per credit of a top-up</span></div>
+<a href="#start" style="margin-top: auto; text-align: center; background: #0B6E77; color: #FFFAF1; font-weight: 800; text-decoration: none; padding: 14px; border-radius: 14px; box-shadow: 0 4px 0 #08525A">Choose Monthly Pro</a>
+</div>
+<div style="min-width: 0; border: 2px solid #EADFCB; border-radius: 22px; padding: 30px; display: flex; flex-direction: column; gap: 12px">
+<span style="font-weight: 800; font-size: 20px">Pro Plus</span>
+<div><span style="font-family: Fredoka, sans-serif; font-weight: 600; font-size: 44px">₹279</span><span style="color: #4E5D66; font-weight: 700"> / 28 days</span></div>
+<span style="font-size: 16px; color: #3E4E58">For heavy study and exam season.</span>
+<div style="display: flex; flex-direction: column; gap: 6px; font-size: 16px"><span><strong>750 credits</strong> for 28 days</span><span>About 75 full lessons</span><span>The lowest price per credit</span></div>
+<a href="#start" style="margin-top: auto; text-align: center; border: 2px solid #0B6E77; color: #0B6E77; font-weight: 800; text-decoration: none; padding: 13px; border-radius: 14px">Choose Pro Plus</a>
+</div>
+</div>
+
+<!-- top up bar -->
+<div style="border: 2px dashed #EADFCB; border-radius: 18px; padding: 18px 24px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between">
+<span style="font-size: 17px"><strong>Need just a few more?</strong> Top up at ₹1 a credit, 10 or more at a time, valid for a year, on top of any plan.</span>
+<a href="#start" style="font-weight: 800; text-decoration: none">Top up</a>
+</div>
+
+<!-- what credits buy (after the plans) -->
+<div style="background: #FFF8E8; border: 2px solid #F0D49A; border-radius: 22px; padding: 26px 30px; display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: baseline">
+<span style="font-weight: 800; font-size: 20px">What credits buy</span>
+<span style="font-size: 15px; color: #4E5D66">Every button shows its cost before you click</span>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 12px">
+<div style="flex: 1 1 200px; background: #FFFFFF; border-radius: 14px; padding: 12px 16px; display: flex; justify-content: space-between; gap: 12px; font-size: 16px"><span>Full lesson with its Test</span><strong>10</strong></div>
+<div style="flex: 1 1 200px; background: #FFFFFF; border-radius: 14px; padding: 12px 16px; display: flex; justify-content: space-between; gap: 12px; font-size: 16px"><span>Retake, new questions</span><strong>2</strong></div>
+<div style="flex: 1 1 200px; background: #FFFFFF; border-radius: 14px; padding: 12px 16px; display: flex; justify-content: space-between; gap: 12px; font-size: 16px"><span>Cheat or revision sheet</span><strong>2–3</strong></div>
+<div style="flex: 1 1 200px; background: #FFFFFF; border-radius: 14px; padding: 12px 16px; display: flex; justify-content: space-between; gap: 12px; font-size: 16px"><span>Quick quiz</span><strong>1–4</strong></div>
+</div>
+</div>
+
+<!-- fair by design -->
+<div style="display: flex; flex-wrap: wrap; gap: 16px">
+<div style="flex: 1 1 240px; min-width: 0; display: flex; gap: 12px; align-items: flex-start"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0B6E77" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 24px"><path d="M4 12a8 8 0 1 0 3-6.2L4 8M4 3v5h5"></path></svg><span style="font-size: 16px"><strong>Credits back</strong> if anything fails to build</span></div>
+<div style="flex: 1 1 240px; min-width: 0; display: flex; gap: 12px; align-items: flex-start"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0B6E77" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 24px"><rect x="4" y="5" width="16" height="15" rx="3"></rect><path d="M4 10h16M9 3v4M15 3v4"></path></svg><span style="font-size: 16px"><strong>Prepaid.</strong> Nothing renews automatically</span></div>
+<div style="flex: 1 1 240px; min-width: 0; display: flex; gap: 12px; align-items: flex-start"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0B6E77" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 24px"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"></path></svg><span style="font-size: 16px"><strong>Secure checkout.</strong> Payment details stay with the provider</span></div>
+<div style="flex: 1 1 240px; min-width: 0; display: flex; gap: 12px; align-items: flex-start"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0B6E77" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 24px"><path d="M7 7h10M7 12h10M7 17h6"></path><rect x="3" y="3" width="18" height="18" rx="3"></rect></svg><span style="font-size: 16px"><strong>Prices include tax</strong></span></div>
+</div>
+</div>
+</section>
+
+<!-- FAQ (accordion) -->
+<section id="faq" style="max-width: 880px; margin: 0 auto; padding: 104px 24px; display: flex; flex-direction: column; gap: 28px">
+<h2 style="margin: 0; font-family: Fredoka, sans-serif; font-weight: 600; font-size: 44px">Questions</h2>
+<div style="display: flex; flex-direction: column; gap: 12px">
+<details open style="background: #FFFFFF; border: 2px solid #EADFCB; border-radius: 18px; padding: 20px 24px"><summary style="font-size: 19px; font-weight: 800">How does Socra know my level?</summary><p style="margin: 12px 0 0; color: #3E4E58">You answer a 5-question Quick check, or rate yourself with stars. Socra uses that to decide where your lesson starts and how deep it goes. Your Test score later tells it whether to suggest an easier or a more advanced lesson.</p></details>
+<details style="background: #FFFFFF; border: 2px solid #EADFCB; border-radius: 18px; padding: 20px 24px"><summary style="font-size: 19px; font-weight: 800">How do credits work?</summary><p style="margin: 12px 0 0; color: #3E4E58">Credits pay for what Socra makes for you. A full lesson with its Test is 10, a retake is 2, a sheet is 2 to 3 and a quick quiz is 1 to 4. Every button shows its cost before you click.</p></details>
+<details style="background: #FFFFFF; border: 2px solid #EADFCB; border-radius: 18px; padding: 20px 24px"><summary style="font-size: 19px; font-weight: 800">Is it free to start?</summary><p style="margin: 12px 0 0; color: #3E4E58">Yes. You get 30 credits when you sign up, enough for about 3 full lessons, with no card needed.</p></details>
+<details style="background: #FFFFFF; border: 2px solid #EADFCB; border-radius: 18px; padding: 20px 24px"><summary style="font-size: 19px; font-weight: 800">Do credits expire?</summary><p style="margin: 12px 0 0; color: #3E4E58">Your 30 sign-up credits never do. Credits you earn last 90 days, credits you buy last a year, and plan credits last for their plan's period. We remind you before any run out.</p></details>
+<details style="background: #FFFFFF; border: 2px solid #EADFCB; border-radius: 18px; padding: 20px 24px"><summary style="font-size: 19px; font-weight: 800">Will I be charged automatically?</summary><p style="margin: 12px 0 0; color: #3E4E58">Never. Every plan is prepaid and nothing renews on its own.</p></details>
+<details style="background: #FFFFFF; border: 2px solid #EADFCB; border-radius: 18px; padding: 20px 24px"><summary style="font-size: 19px; font-weight: 800">What if a lesson fails to build?</summary><p style="margin: 12px 0 0; color: #3E4E58">You get your credits back automatically.</p></details>
+<details style="background: #FFFFFF; border: 2px solid #EADFCB; border-radius: 18px; padding: 20px 24px"><summary style="font-size: 19px; font-weight: 800">Who is Socra for?</summary><p style="margin: 12px 0 0; color: #3E4E58">School and college students, and anyone early in their career learning something new.</p></details>
+<details style="background: #FFFFFF; border: 2px solid #EADFCB; border-radius: 18px; padding: 20px 24px"><summary style="font-size: 19px; font-weight: 800">Is my data private?</summary><p style="margin: 12px 0 0; color: #3E4E58">Your lessons are yours. Card and UPI details stay with the payment provider and never reach us. Read the <a href="#privacy">Privacy Policy</a>.</p></details>
+</div>
+</section>
+
+<!-- FINAL CTA -->
+<section id="start" style="max-width: 1200px; margin: 0 auto 104px; padding: 0 24px">
+<div style="background: #F5A623; border-radius: 28px; padding: 60px 44px; display: flex; flex-wrap: wrap; gap: 24px; align-items: center; justify-content: space-between; box-shadow: 0 10px 0 #C9821A">
+<div style="flex: 1 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 8px">
+<h2 style="margin: 0; font-family: Fredoka, sans-serif; font-weight: 600; font-size: 46px; line-height: 1.1">Your first lessons are on us.</h2>
+<p style="margin: 0; font-size: 19px; font-weight: 700">Pick a topic and see where you stand in two minutes.</p>
+</div>
+<a href="#signup" style="background: #1C2A33; color: #FFFAF1; font-weight: 800; font-size: 19px; text-decoration: none; padding: 18px 32px; border-radius: 16px; box-shadow: 0 5px 0 #000000">Start with 30 free credits</a>
+</div>
+</section>
+
+<!-- FOOTER -->
+<footer style="border-top: 1px solid #EADFCB; background: #FFFFFF">
+<div style="max-width: 1200px; margin: 0 auto; padding: 48px 24px; display: flex; flex-wrap: wrap; gap: 40px; justify-content: space-between">
+<div style="flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+<span style="font-family: Fredoka, sans-serif; font-weight: 600; font-size: 24px">Socra</span>
+<span style="color: #4E5D66; font-size: 16px">Lessons that start from what you already know.</span>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 56px; font-size: 16px">
+<div style="display: flex; flex-direction: column; gap: 10px"><span style="font-weight: 800">Product</span><a href="#how" style="color: #3E4E58; text-decoration: none">How it works</a><a href="#pricing" style="color: #3E4E58; text-decoration: none">Pricing</a><a href="#faq" style="color: #3E4E58; text-decoration: none">FAQ</a></div>
+<div style="display: flex; flex-direction: column; gap: 10px"><span style="font-weight: 800">Company</span><a href="#about" style="color: #3E4E58; text-decoration: none">About</a><a href="mailto:satyamjha4@gmail.com" style="color: #3E4E58; text-decoration: none">Contact</a></div>
+<div style="display: flex; flex-direction: column; gap: 10px"><span style="font-weight: 800">Legal</span><a href="#terms" style="color: #3E4E58; text-decoration: none">Terms</a><a href="#privacy" style="color: #3E4E58; text-decoration: none">Privacy</a><a href="#refunds" style="color: #3E4E58; text-decoration: none">Refunds and credits</a></div>
+</div>
+</div>
+<div style="max-width: 1200px; margin: 0 auto; padding: 0 24px 32px; font-size: 15px; color: #4E5D66">Support: <a href="mailto:satyamjha4@gmail.com">satyamjha4@gmail.com</a></div>
+</footer>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"trust":{"editor":"enum","options":["samples","none published"],"default":"samples","section":"Preview states"},"$preview":{"width":1440,"height":9400}}'>
+const SAMPLE = [
+  { q: 'In a right triangle, which side is across from the right angle?', options: ['Hypotenuse', 'Adjacent', 'Opposite'], answer: 0,
+    why: 'The hypotenuse sits across from the right angle and is always the longest side.' },
+  { q: 'What is sin 30°?', options: ['1/2', '√3/2', '1'], answer: 0,
+    why: 'sin 30° = 1/2. It is one of the values worth knowing by heart.' },
+  { q: 'Which ratio is opposite ÷ adjacent?', options: ['Sine', 'Cosine', 'Tangent'], answer: 2,
+    why: 'Tangent is opposite over adjacent: tan = O/A.' }
+];
+const LEVELS = [
+  { name: 'Beginner', pages: ['Basics first', 'Introduction', 'Core'], snippet: 'What an angle is, and how the three sides of a right triangle get their names.' },
+  { name: 'Foundation', pages: ['Introduction', 'Core', 'A taste of advanced'], snippet: 'Name the sides of a right triangle from the angle you care about, then meet sin, cos and tan.' },
+  { name: 'Proficient', pages: ['Quick recap', 'Core', 'Advanced'], snippet: 'A two-minute recap of sin, cos and tan, then straight into the rules you use in problems.' },
+  { name: 'Expert', pages: ['Core', 'Advanced', 'Expert depth'], snippet: 'The sine and cosine rules for any triangle, not just right-angled ones.' }
+];
+const TESTIMONIALS = [
+  { quote: 'I skipped the chapter I already knew and spent the evening on the part I kept getting wrong.', name: '[Learner name]', context: '[Class 12 student]', rating: 5, sample: true, tint: '#DDF1F0', ink: '#08525A' },
+  { quote: 'The retake had completely new questions, so I could tell I had actually learned it.', name: '[Learner name]', context: '[B.Tech, 2nd year]', rating: 5, sample: true, tint: '#FFF0D1', ink: '#7A4A00' },
+  { quote: 'The revision sheet was the one page I read on the bus before my exam.', name: '[Learner name]', context: '[Class 10 student]', rating: null, sample: true, tint: '#EEE9FC', ink: '#4B2FB0' }
+];
+const BASE = { font: 'inherit', fontSize: '18px', fontWeight: 700, textAlign: 'left', padding: '14px 18px', borderRadius: '14px', border: '2px solid #EADFCB', background: '#FFFFFF', color: '#1C2A33', cursor: 'pointer' };
+const CHIP = { fontSize: '15px', fontWeight: 800, padding: '8px 14px', borderRadius: '12px', border: '2px solid #EADFCB', background: '#FFFAF1', color: '#1C2A33' };
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { i: 0, picked: null, score: 0, done: false };
+  }
+  renderVals() {
+    const { i, picked, score, done } = this.state;
+    const item = SAMPLE[i];
+    const answered = picked !== null;
+    const options = item.options.map((text, k) => {
+      let style = BASE;
+      if (answered && k === item.answer) style = { ...BASE, border: '2px solid #0B6E77', background: '#DDF1F0', cursor: 'default' };
+      else if (answered && k === picked) style = { ...BASE, border: '2px solid #C2502A', background: '#FBE6DD', cursor: 'default' };
+      else if (answered) style = { ...BASE, cursor: 'default', color: '#4E5D66' };
+      return { text, style, pick: () => { if (this.state.picked === null) this.setState({ picked: k, score: this.state.score + (k === item.answer ? 1 : 0) }); } };
+    });
+    const right = answered && picked === item.answer;
+    const last = i === SAMPLE.length - 1;
+    const level = LEVELS[score];
+    const pages = level.pages.map((label, k) => ({
+      label: (k + 1) + '. ' + label,
+      style: k === 0 ? { ...CHIP, border: '2px solid #0B6E77', background: '#DDF1F0', color: '#08525A' } : CHIP
+    }));
+    const shown = (this.props.trust ?? 'samples') === 'samples' ? TESTIMONIALS : [];
+    const testimonials = shown.map((t) => ({
+      ...t,
+      hasRating: !!t.rating,
+      ratingLabel: t.rating ? t.rating + ' out of 5 stars' : '',
+      stars: [1, 2, 3, 4, 5].map((n) => ({ fill: t.rating && n <= t.rating ? '#F5A623' : '#F1EADB' })),
+      initials: t.name.replace(/[^A-Za-z ]/g, '').split(' ').filter(Boolean).map((w) => w[0]).join('').slice(0, 2).toUpperCase(),
+      avatarStyle: { width: '44px', height: '44px', borderRadius: '50%', background: t.tint, color: t.ink, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, flex: '0 0 44px' }
+    }));
+    return {
+      playing: !done, done, answered, options, score,
+      url: done ? 'socra.app/lessons/trigonometry' : 'socra.app/quick-check',
+      num: i + 1, question: item.q,
+      barStyle: { height: '10px', width: (((i + (answered ? 1 : 0)) / SAMPLE.length) * 100) + '%', background: '#F5A623' },
+      feedback: (right ? 'Right. ' : 'Not quite. ') + item.why,
+      nextLabel: last ? 'See my lesson' : 'Next question',
+      next: () => last ? this.setState({ done: true }) : this.setState({ i: i + 1, picked: null }),
+      restart: () => this.setState({ i: 0, picked: null, score: 0, done: false }),
+      levelName: level.name, pages, page1: level.pages[0], snippet: level.snippet,
+      testimonials, hasTestimonials: testimonials.length > 0, noTestimonials: testimonials.length === 0
+    };
+  }
+}
+</script>
+</body>
+</html>

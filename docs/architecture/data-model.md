@@ -64,6 +64,22 @@ The graph turns this into `LearnerProfile` in `load_context`; it does not read t
 
 `clean()` enforces all of this, so the admin refuses a broken question. Migration `marketing.0002` seeds 25 questions across 13 subjects, Class 6 to working, all five bands. The picker caches the active ids for 10 minutes (`LANDING_DEMO_IDS_TTL_S`) and clears them when a question is saved or deleted.
 
+### `Testimonial` (a quote of the landing page's "What learners say"; managed in the console)
+
+| Field | Type | Used for |
+|---|---|---|
+| name | char(80) | As the learner agreed to be shown, for example a first name |
+| context | char(80) | Who they are: "Class 12 student" |
+| quote | char(300) | What they said |
+| rating | smallint, null | Stars 1–5; none means no stars are shown |
+| position | int | The order on the page, lowest first (ties by id) |
+| is_published | bool | Shown on the landing page |
+| consent_confirmed | bool | The learner agreed to be quoted. Needed to publish |
+| is_sample | bool | Made by `seed_sample_testimonials` for a developer's machine. Never published |
+| created_at, updated_at | datetime | |
+
+Two rules are kept twice, in `clean()` (a message the console can show) and in database check constraints (so no admin form, script or code path can get round them): `testimonial_published_needs_consent_and_real` (published means consent confirmed and not a sample) and `testimonial_rating_one_to_five`. The public endpoint filters on all three flags in its query as well, so a sample never reaches a public page whatever `DEBUG` is. There is no photo: the page draws the initials. Migration `marketing.0003`. No relation to `User`: a testimonial is text the console holds, not a learner's data (so it is not in `UserDataMap`).
+
 ## `lessons`
 
 ### `Lesson`

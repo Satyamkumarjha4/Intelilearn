@@ -281,6 +281,14 @@ Credits for the work that costs model calls, earned by studying, bought through 
 - [x] "How it works": the stage is as tall as the step list, caption top-left, preview under it.
 - [x] "Your score decides" carousel autoplays every 6 s with a progress bar, pausing on hover, keyboard focus, touch and off screen (`Autoplay`).
 
+### Landing page refresh and console testimonials ✅
+
+- [x] The landing page rebuilt from `docs/design/mockups/landing-page-mockup.html`: sample Quick check (client-side, no network), how it works, what learners say, adapts, progress, revise, pricing, FAQ, final band, footer; light and dark; no horizontal scroll from 360px.
+- [x] Every number on it from `GET /api/public/pricing` (a console price edit changes the page); `GET /api/public/testimonials` returns only published, consented, non-sample ones; with none, the maker's note.
+- [x] `marketing.Testimonial` (published only with consent, never a sample: model validation and a database constraint), the console's **Testimonials** screen (list, add, edit, reorder, publish, delete, all audited), and `manage.py seed_sample_testimonials` (DEBUG only).
+- [x] A signed-in visitor can open `/` and sees "Go to my lessons".
+- [ ] A photo for the maker's note; the legal and tax review of the prices shown (see Phase 10's open items).
+
 ### Onboarding topic suggestions (backend) ✅
 
 - [x] `GET /api/profile/options` (every choice list with its label); `Profile.preferred_language` has choices and `notes` a 2000-character limit, with a migration that fits existing rows (unknown language becomes English, long notes are cut).

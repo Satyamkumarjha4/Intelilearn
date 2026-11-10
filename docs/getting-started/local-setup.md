@@ -33,7 +33,7 @@ The root `.env` is the **single source of configuration**. Django reads it, `doc
 | Reasoning budgets | `LLM_REASONING_BUDGET_LOW/MEDIUM/HIGH` | 2048 / 8192 / 24576 |
 | Media sources | `WIKIMEDIA_API_URL`, `OPENVERSE_API_URL`, `GIPHY_API_URL`, `MEDIA_ALLOW_PRIVATE_HOSTS` | the public services, false |
 | Console (staff API) | `CONSOLE_MONTHLY_BUDGET_USD`, `CONSOLE_THROTTLE_RATE` | 25, 120/min |
-| Landing page | `LANDING_DEMO_THROTTLE_RATE`, `LANDING_DEMO_IDS_TTL_S` | 60/min, 600 (10 min) |
+| Landing page | `LANDING_DEMO_THROTTLE_RATE`, `LANDING_DEMO_IDS_TTL_S`, `PUBLIC_PAGES_THROTTLE_RATE` (testimonials and prices, per address) | 60/min, 600 (10 min), 60/min |
 | Onboarding | `TOPIC_SUGGESTIONS_THROTTLE_RATE`, `ONBOARDING_SUGGESTION_TTL_S` | 30/min, 30 days |
 | Lesson flow | `FLOW_RUN_LOCK_TTL_S`, `LESSON_CREATE_THROTTLE_RATE`, `SSE_HEARTBEAT_S`, `SANDBOX_DIR`, `NODE_BINARY`, `SANDBOX_CHECK_TIMEOUT_S`, `SANDBOX_RENDER_TIMEOUT_S`, `SANDBOX_PAGE_TIMEOUT_MS`, `GIPHY_API_KEY`, `MEDIA_URL_TTL_S` | 600, 30/hour, 30/hour, 15, `<repo>/sandbox`, node, 30, 180, 8000, empty, 21600 (6 h) |
 | Credits and payments (names are in `.env.example`, all commented) | `ACTION_GATE`, `ACTIVITY_SINK`, `PAYMENT_GATEWAYS_ENABLED`, `PAYMENT_DEFAULT_GATEWAY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `PAYMENT_RETURN_BASE_URL`, `PAYMENTS_LIVE_MODE`, `PAYMENT_ALLOW_FAKE_GATEWAY`, `PAYMENT_FAKE_GATEWAY_SECRET`, `USD_INR_RATE`, `CREDITS_QUOTE_THROTTLE_RATE`, `CREDITS_BALANCE_THROTTLE_RATE`, `PAYMENT_ORDER_THROTTLE_RATE`, `PAYMENT_STATUS_THROTTLE_RATE`, `PAYMENT_WEBHOOK_THROTTLE_RATE` | the credit gate, the credits sink, none enabled, stripe, empty keys (the Stripe test keys go in your `.env`, which is not committed), `http://localhost:${FRONTEND_PORT}`, false, false, a development value (used only where the fake gateway is allowed), 85, 120/min, 240/min, 10/hour, 60/min, 600/min |
@@ -102,6 +102,14 @@ docker compose exec backend python manage.py probe_models --node learner.assess 
 ```
 
 `probe_models` exits non-zero when a check fails, and API keys never appear in its output.
+
+To design the landing page against a full "What learners say" section, make three placeholder testimonials on your own machine (it refuses unless `DEBUG` is on, and what it makes are samples: unpublished, with no consent, and never shown on the public page, whatever `DEBUG` is; running it again adds nothing):
+
+```bash
+docker compose exec backend python manage.py seed_sample_testimonials
+```
+
+Real testimonials are added, published and ordered in the console (**Testimonials**); with none published, the landing page shows the maker's note.
 
 Tune models, fallbacks, and parameters in the admin under **LLM model registry**. Share a tuned setup with `manage.py export_registry --output registry.json` and `seed_registry --file registry.json`. See [model-registry.md](../architecture/model-registry.md).
 
