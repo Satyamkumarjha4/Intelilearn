@@ -277,9 +277,9 @@ Credits for the work that costs model calls, earned by studying, bought through 
 
 - [x] `/` for signed-out visitors, built from the mockup's screen 11: hero with a try-it question, "How it works" walkthrough, "Three ways forward" carousel, proof strip, call to action and footer; scroll reveal and reduced-motion handling; `RouteGuard` sends signed-in visitors on; the system-status widget and the Swagger/admin links are gone from public UI.
 - [x] Read `socra.pendingTopic` back on the screens after sign-up (it stays until the setup ends, so a refresh on the last step keeps it), and write `/privacy` and `/terms`.
-- [x] Hero question bank: `marketing.DemoQuestion` (admin with subject, band and active filters), 25 seeded questions, `GET /api/landing/demo-question` (public, 60 a minute, never cached); a different question on every load, "Try again" flips to another, the built-in question when the API fails.
+- [x] Hero question bank (`marketing.DemoQuestion`, `GET /api/landing/demo-question`): superseded by the sample Quick check, and removed (see "Follow-up on the landing page" below).
 - [x] "How it works": the stage is as tall as the step list, caption top-left, preview under it.
-- [x] "Your score decides" carousel autoplays every 6 s with a progress bar, pausing on hover, keyboard focus, touch and off screen (`Autoplay`).
+- [x] "Your score decides" carousel (replaced by the rebuilt page; `Autoplay` removed with it).
 
 ### Landing page refresh and console testimonials ✅
 
@@ -288,6 +288,11 @@ Credits for the work that costs model calls, earned by studying, bought through 
 - [x] `marketing.Testimonial` (published only with consent, never a sample: model validation and a database constraint), the console's **Testimonials** screen (list, add, edit, reorder, publish, delete, all audited), and `manage.py seed_sample_testimonials` (DEBUG only).
 - [x] A signed-in visitor can open `/` and sees "Go to my lessons".
 - [ ] A photo for the maker's note; the legal and tax review of the prices shown (see Phase 10's open items).
+
+### Follow-up on the landing page ✅
+
+- [x] Removed the dead hero question bank: `marketing.DemoQuestion` (model, admin, picker, serializers, view, `GET /api/landing/demo-question`, the `landing_demo` throttle and its two settings), a migration (`marketing.0004`) that drops the table, the frontend `DemoQuestion` type and the unused `lib/autoplay` and `lib/reveal-policy`, with their tests.
+- [x] Solid primary buttons are readable: a new `--primary-action` token family (fill, hover, pressed, edge) gives the label at least 4.5:1 in light and dark; `Button`'s default variant and the study follow-up's chosen chip use it, the general `--primary` teal is unchanged; `lib/primary-button-contrast.test.ts` fails if a pair drops under 4.5:1.
 
 ### Onboarding topic suggestions (backend) ✅
 
