@@ -11,7 +11,7 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: `bg-primary text-primary-foreground shadow-[0_4px_0_var(--primary-deep)] hover:bg-primary/90 active:shadow-[0_1px_0_var(--primary-deep)] disabled:shadow-[0_4px_0_var(--border)] ${PRESS}`,
+        default: `bg-primary-action text-primary-foreground shadow-[0_4px_0_var(--primary-action-edge)] hover:bg-primary-action-hover active:bg-primary-action-pressed active:shadow-[0_1px_0_var(--primary-action-edge)] disabled:shadow-[0_4px_0_var(--border)] ${PRESS}`,
         marigold: `bg-marigold text-marigold-foreground shadow-[0_4px_0_var(--marigold-deep)] hover:bg-marigold/90 active:shadow-[0_1px_0_var(--marigold-deep)] disabled:shadow-[0_4px_0_var(--border)] ${PRESS}`,
         outline: `border-2 border-border bg-card text-foreground shadow-[0_3px_0_var(--border)] hover:bg-muted active:shadow-[0_1px_0_var(--border)] aria-expanded:bg-muted disabled:border-border disabled:shadow-[0_3px_0_var(--border)] ${PRESS}`,
         secondary:

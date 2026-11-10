@@ -43,6 +43,10 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
   --color-primary-deep: var(--primary-deep);
+  --color-primary-action: var(--primary-action);
+  --color-primary-action-hover: var(--primary-action-hover);
+  --color-primary-action-pressed: var(--primary-action-pressed);
+  --color-primary-action-edge: var(--primary-action-edge);
   --color-primary-soft: var(--primary-soft);
   --color-primary-text: var(--primary-text);
   --color-marigold: var(--marigold);
@@ -88,6 +92,12 @@
   --primary: oklch(0.64 0.12 190);
   --primary-foreground: oklch(0.99 0.01 190);
   --primary-deep: oklch(0.52 0.11 190);
+  /* The fill of a solid primary button, with its hover, pressed and edge (the flat shadow under it). Darker than
+     --primary, which is too light to carry --primary-foreground text (3.1:1); these give 5:1 and more. */
+  --primary-action: oklch(0.52 0.09 195);
+  --primary-action-hover: oklch(0.47 0.085 195);
+  --primary-action-pressed: oklch(0.43 0.08 195);
+  --primary-action-edge: oklch(0.37 0.07 195);
   --primary-soft: oklch(0.95 0.035 190);
   --primary-text: oklch(0.48 0.1 190);
   --secondary: oklch(0.965 0.013 190);
@@ -150,6 +160,10 @@
   --primary: oklch(0.76 0.12 190);
   --primary-foreground: oklch(0.2 0.03 190);
   --primary-deep: oklch(0.58 0.1 190);
+  --primary-action: oklch(0.76 0.12 190);
+  --primary-action-hover: oklch(0.8 0.12 190);
+  --primary-action-pressed: oklch(0.72 0.11 190);
+  --primary-action-edge: oklch(0.58 0.1 190);
   --primary-soft: oklch(0.33 0.05 190);
   --primary-text: oklch(0.82 0.11 190);
   --secondary: oklch(0.29 0.032 295);

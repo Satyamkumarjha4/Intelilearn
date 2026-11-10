@@ -33,7 +33,7 @@ export function StudyFollowUp({ level, grade, field, onGrade, onField, errors }:
                 onClick={() => onGrade(option)}
                 className={cn(
                   "rounded-full border-2 px-3.5 py-1 text-sm font-extrabold outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-                  grade === option ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card hover:bg-muted",
+                  grade === option ? "border-primary-action bg-primary-action text-primary-foreground" : "border-border bg-card hover:bg-muted",
                 )}
               >
                 {option}
