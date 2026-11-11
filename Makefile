@@ -69,9 +69,11 @@ test-for: ## Run the tests of one file: make test-for FILE=backend/credits/ledge
 	echo "running $$paths"; \
 	$(RUN_BACKEND) pytest -c pyproject.toml $$paths
 
-lint: ## Lint backend (ruff, OpenAPI schema) and frontend (eslint, tsc, bun test)
+lint: ## Lint backend (ruff, OpenAPI schema) and frontend (eslint, tsc, bun test); unit-test the e2e spec map (host bun)
 	$(COMPOSE) run --rm --no-deps backend sh -c "ruff check $(RUFF_PATHS) && ruff format --check $(RUFF_PATHS) && python manage.py spectacular --validate --fail-on-warn --file /dev/null"
 	$(COMPOSE) run --rm --no-deps frontend sh -c "bun run lint && bunx next typegen && bunx tsc --noEmit && bun test"
+	@# The e2e spec map and its guard (no browser, no stack): a new spec or source folder nobody mapped fails here. Host bun: e2e/ is not in a container.
+	cd e2e && bun test .test.ts
 
 check: lint test ## Lint + tests (without the one-time migration tests): run at the end of a phase and before handing work back
 
@@ -83,6 +85,10 @@ E2E_FRONTEND_PORT ?= 7100
 E2E_BACKEND_PORT ?= 7110
 E2E_STAFF_EMAIL ?= staff@example.com
 E2E_STAFF_PASSWORD ?= E2e-staff-pass-1
+# Workers for the specs that make their own learner (the others run first, alone); see e2e/support/phases.ts.
+E2E_WORKERS ?= 4
+# What `make e2e-affected` compares the working tree against.
+BASE ?= main
 E2E_COMPOSE := FRONTEND_PORT=$(E2E_FRONTEND_PORT) BACKEND_PORT=$(E2E_BACKEND_PORT) E2E_FRONTEND_PORT=$(E2E_FRONTEND_PORT) E2E_BACKEND_PORT=$(E2E_BACKEND_PORT) docker compose -p socra-e2e -f docker-compose.yml -f docker-compose.e2e.yml --profile e2e
 
 fake-llm: ## Start the throwaway stack on a fake LLM (own database), with its registry and a staff user
@@ -101,7 +107,10 @@ fake-llm: ## Start the throwaway stack on a fake LLM (own database), with its re
 	@echo "up: http://localhost:$(E2E_FRONTEND_PORT)  (staff: $(E2E_STAFF_EMAIL))"
 
 e2e: fake-llm ## Run the Playwright smoke tests against the fake-LLM stack (first run: cd e2e && bun install && bunx playwright install chromium)
-	cd e2e && E2E_COMPOSE="$(E2E_COMPOSE)" E2E_BASE_URL=http://localhost:$(E2E_FRONTEND_PORT) E2E_API_URL=http://localhost:$(E2E_BACKEND_PORT) E2E_STAFF_EMAIL=$(E2E_STAFF_EMAIL) E2E_STAFF_PASSWORD=$(E2E_STAFF_PASSWORD) bun run test
+	cd e2e && E2E_COMPOSE="$(E2E_COMPOSE)" E2E_BASE_URL=http://localhost:$(E2E_FRONTEND_PORT) E2E_API_URL=http://localhost:$(E2E_BACKEND_PORT) E2E_STAFF_EMAIL=$(E2E_STAFF_EMAIL) E2E_STAFF_PASSWORD=$(E2E_STAFF_PASSWORD) E2E_WORKERS=$(E2E_WORKERS) bun run test
+
+e2e-affected: ## Run only the e2e specs the change can touch, against BASE (default main), and say which and why (PLAN=1: print only)
+	cd e2e && BASE="$(BASE)" E2E_COMPOSE="$(E2E_COMPOSE)" E2E_BASE_URL=http://localhost:$(E2E_FRONTEND_PORT) E2E_API_URL=http://localhost:$(E2E_BACKEND_PORT) E2E_STAFF_EMAIL=$(E2E_STAFF_EMAIL) E2E_STAFF_PASSWORD=$(E2E_STAFF_PASSWORD) E2E_WORKERS=$(E2E_WORKERS) bun affected.ts $(if $(PLAN),--plan)
 
 payments-live: ## Check each provider's real test mode that has keys in .env (no payment is made)
 	$(RUN_BACKEND) pytest -m payments_live ../tests/payments/test_stripe_live.py ../tests/payments/test_razorpay_live.py -rs
@@ -146,4 +155,4 @@ reload: #rebuilds backend and frontend
 	$(COMPOSE) build backend frontend
 	$(COMPOSE) restart backend frontend
 
-.PHONY: help env up down logs migrate makemigrations superuser shell sync-supabase db-test test test-full test-serial test-for lint check check-full beat-log
+.PHONY: help env up down logs migrate makemigrations superuser shell sync-supabase db-test test test-full test-serial test-for lint check check-full e2e e2e-affected beat-log

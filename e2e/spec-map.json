@@ -1,0 +1,259 @@
+{
+  "groups": {
+    "build": [
+      "journey.spec.ts",
+      "followups.spec.ts",
+      "quizzes.spec.ts",
+      "self-rating.spec.ts",
+      "sheets.spec.ts",
+      "stop-and-retry.spec.ts"
+    ],
+    "money": [
+      "credits.spec.ts",
+      "console-credits.spec.ts",
+      "payments.spec.ts"
+    ],
+    "console": [
+      "console.spec.ts",
+      "console-credits.spec.ts",
+      "landing.spec.ts"
+    ]
+  },
+  "manual": [
+    "payments-stripe.spec.ts",
+    "payments-razorpay.spec.ts"
+  ],
+  "triggers": [
+    {
+      "globs": [
+        "frontend/proxy.ts",
+        "frontend/lib/route-guard.ts",
+        "frontend/lib/setup-marker.ts",
+        "frontend/lib/safe-redirect.ts",
+        "frontend/lib/session-probe.ts",
+        "frontend/lib/auth-form.ts",
+        "frontend/app/auth/**",
+        "frontend/components/auth-provider.tsx"
+      ],
+      "why": "sign-in, the session cookie and the route guard sit in front of every spec"
+    },
+    {
+      "globs": [
+        "frontend/app/layout.tsx",
+        "frontend/app/error.tsx",
+        "frontend/app/global-error.tsx",
+        "frontend/app/loading.tsx",
+        "frontend/app/not-found.tsx",
+        "frontend/components/site-header.tsx",
+        "frontend/components/status-card.tsx",
+        "frontend/components/ui/**",
+        "frontend/lib/utils.ts",
+        "frontend/lib/initials.ts"
+      ],
+      "why": "the shell and primitives every page is drawn with"
+    },
+    {
+      "globs": [
+        "frontend/app/api/**",
+        "frontend/lib/api.ts",
+        "frontend/next.config.ts"
+      ],
+      "why": "the API client and the /api proxy (cookies, CSRF, raw webhook bodies) carry every call"
+    },
+    {
+      "globs": [
+        "frontend/package.json",
+        "frontend/bun.lock",
+        "frontend/Dockerfile",
+        "frontend/tsconfig.json",
+        "frontend/postcss.config.mjs",
+        "frontend/.dockerignore",
+        "backend/pyproject.toml",
+        "backend/uv.lock",
+        "backend/Dockerfile",
+        "backend/.dockerignore",
+        "backend/.python-version",
+        "sandbox/package.json"
+      ],
+      "why": "dependencies and images change what runs in the stack"
+    },
+    {
+      "globs": [
+        "docker-compose.yml",
+        "docker-compose.e2e.yml",
+        ".env.example",
+        "Makefile",
+        "e2e/**",
+        "tests/e2e/**"
+      ],
+      "why": "the stack, its environment, the fake model and the e2e harness"
+    },
+    {
+      "globs": [
+        "backend/config/**",
+        "backend/core/**",
+        "backend/accounts/**",
+        "backend/manage.py"
+      ],
+      "why": "settings, URLs, auth, throttles, error format, start-up"
+    },
+    {
+      "globs": [
+        "backend/accounts/migrations/**",
+        "backend/lessons/migrations/**",
+        "backend/quizzes/migrations/**",
+        "backend/credits/migrations/**",
+        "backend/payments/migrations/**",
+        "backend/llm_registry/migrations/**",
+        "backend/console/migrations/**"
+      ],
+      "why": "migrations of the shared tables (user, lesson, run, ledger, order, registry, audit)"
+    }
+  ],
+  "map": [
+    {
+      "globs": [
+        "frontend/app/page.tsx",
+        "frontend/app/landing.css",
+        "frontend/app/globals.css",
+        "frontend/components/landing/**",
+        "frontend/lib/landing/**",
+        "frontend/lib/landing-content.ts",
+        "frontend/components/brand/**",
+        "frontend/components/theme-toggle.tsx",
+        "backend/marketing/**"
+      ],
+      "specs": [
+        "landing.spec.ts",
+        "journey.spec.ts"
+      ]
+    },
+    {
+      "globs": [
+        "frontend/app/onboarding/**",
+        "frontend/components/onboarding/**",
+        "frontend/components/profile/**",
+        "frontend/components/use-profile*.ts",
+        "frontend/lib/onboarding-flow.ts",
+        "frontend/lib/topic-suggestions.ts",
+        "frontend/lib/pending-topic.ts",
+        "frontend/lib/starting-point.ts",
+        "frontend/lib/browser-timezone.ts",
+        "backend/onboarding/**"
+      ],
+      "specs": [
+        "journey.spec.ts",
+        "onboarding-refresh.spec.ts",
+        "timezone.spec.ts"
+      ]
+    },
+    {
+      "globs": [
+        "frontend/app/profile/**"
+      ],
+      "specs": [
+        "timezone.spec.ts"
+      ]
+    },
+    {
+      "globs": [
+        "frontend/app/lessons/**",
+        "frontend/components/lessons/**",
+        "frontend/components/markdown.tsx",
+        "frontend/components/confirm-dialog.tsx",
+        "frontend/components/form-field.tsx",
+        "frontend/lib/lesson*.ts",
+        "frontend/lib/{journey,pipeline,stage-view,new-lesson,mastery-options,level-choice,study-sheets,star-scale,stop-control,practice-session,sandbox-bridge,code-languages,cheat-groups,plain-notes,plain-text,unsaved-guard,clipboard,answers-view,page-links,question-*,attempt-*,deck-*,test-*,calibration-walk,followup-*,run-events,run-follower,chips,format}.ts",
+        "frontend/lib/pdf/**",
+        "backend/lessons/**",
+        "backend/graph/**",
+        "backend/llm_registry/**",
+        "sandbox/**"
+      ],
+      "specs": [
+        "@build",
+        "credits.spec.ts"
+      ]
+    },
+    {
+      "globs": [
+        "frontend/app/quizzes/**",
+        "frontend/components/quizzes/**",
+        "frontend/lib/quiz*.ts",
+        "backend/quizzes/**"
+      ],
+      "specs": [
+        "quizzes.spec.ts",
+        "journey.spec.ts",
+        "followups.spec.ts"
+      ]
+    },
+    {
+      "globs": [
+        "frontend/app/console/**",
+        "frontend/components/console/**",
+        "frontend/lib/console-*.ts",
+        "frontend/lib/console-testimonials/**",
+        "frontend/lib/{model-*,routing-*,flow-*,run-filters,run-timeline,run-actions,run-text,table-sort,probe-queue,chart-shapes}.ts",
+        "backend/console/**"
+      ],
+      "specs": [
+        "@console"
+      ]
+    },
+    {
+      "globs": [
+        "frontend/app/{buy,wallet,streak}/**",
+        "frontend/components/credits/**",
+        "frontend/components/payments/**",
+        "frontend/lib/credits/**",
+        "frontend/lib/payments/**",
+        "frontend/lib/action-refused.ts",
+        "frontend/lib/console-credits/**",
+        "backend/credits/**",
+        "backend/payments/**"
+      ],
+      "specs": [
+        "@money",
+        "landing.spec.ts",
+        "journey.spec.ts"
+      ]
+    }
+  ],
+  "no_spec": [
+    {
+      "globs": [
+        "docs/**",
+        "**/*.md",
+        "tests/**/*.py",
+        "frontend/**/*.test.ts",
+        "frontend/lib/types.ts",
+        "frontend/lib/contrast.ts",
+        "frontend/lib/mailto.ts"
+      ],
+      "why": "docs, unit tests, and files that only type-check or are pure helpers with no screen of their own"
+    },
+    {
+      "globs": [
+        "frontend/app/{privacy,terms,contact}/**",
+        "frontend/components/legal/**",
+        "frontend/components/contact/**",
+        "frontend/lib/legal-*.ts",
+        "frontend/content/**"
+      ],
+      "why": "static legal and contact pages: no browser flow, covered by the legal-document unit tests"
+    },
+    {
+      "globs": [
+        "frontend/app/icon.svg",
+        "frontend/app/apple-icon.png",
+        "frontend/components.json",
+        "frontend/eslint.config.mjs",
+        "frontend/.gitignore",
+        ".github/**",
+        ".gitignore"
+      ],
+      "why": "icons, lint and repository plumbing: nothing a browser flow reads"
+    }
+  ]
+}
