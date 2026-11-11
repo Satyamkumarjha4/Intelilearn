@@ -17,6 +17,9 @@ import pytest
 from django.db import IntegrityError, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
 
+# One-time data migration: skipped by the everyday local run; CI and `make check-full` run it (docs/process/testing.md).
+pytestmark = pytest.mark.migration
+
 BEFORE = [("lessons", "0014_lesson_followup_link")]
 AFTER = [("lessons", "0016_graphrun_quick_quiz")]
 

@@ -120,6 +120,7 @@ class TestTransitions:
         assert not StageTransitions().allowed(source, target)
 
 
+@pytest.mark.migration
 @pytest.mark.django_db(transaction=True)
 class TestMigrations:
     def teardown_method(self):

@@ -18,6 +18,9 @@ import pytest
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 
+# One-time data migration: skipped by the everyday local run; CI and `make check-full` run it (docs/process/testing.md).
+pytestmark = pytest.mark.migration
+
 BEFORE = [("lessons", "0005_graphrun_node_timings")]
 AFTER = [("lessons", "0006_level_and_difficulty_names")]
 

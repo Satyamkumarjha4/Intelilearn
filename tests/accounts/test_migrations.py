@@ -18,6 +18,9 @@ import pytest
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 
+# One-time data migration: skipped by the everyday local run; CI and `make check-full` run it (docs/process/testing.md).
+pytestmark = pytest.mark.migration
+
 BEFORE = [("accounts", "0001_initial")]
 BEFORE_CONSENT = [("accounts", "0002_profile_choices_and_note_limit")]
 CONSENT = [("accounts", "0003_terms_consent")]

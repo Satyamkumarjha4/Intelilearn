@@ -76,7 +76,7 @@ jobs:
         run: |
           set -o pipefail
           docker compose up -d --wait db-test
-          docker compose run --rm -e POSTGRES_HOST=db-test backend pytest -p no:cacheprovider -n auto --dist worksteal 2>&1 | tee test.log
+          docker compose run --rm -e POSTGRES_HOST=db-test backend pytest -p no:cacheprovider -n auto --dist worksteal -m 'not live and not payments_live' 2>&1 | tee test.log
 
       - name: Stop services
         if: always()

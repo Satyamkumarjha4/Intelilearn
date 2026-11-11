@@ -109,8 +109,8 @@ SYNC_LOCAL_TO_SUPABASE = env.bool("SYNC_LOCAL_TO_SUPABASE", default=True)
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Django's default hasher (PBKDF2, 1,000,000 rounds) takes 0.15 s a hash and a check, and was two thirds of the suite's
-# run time. Under pytest only, passwords use MD5, which Django documents for tests; outside it the setting is left alone,
-# so a real deployment keeps Django's default (tests/config/test_password_hashers.py proves both).
+# run time. Under pytest only, passwords use MD5, which Django documents for tests; outside it the setting is left
+# alone, so a real deployment keeps Django's default (tests/config/test_password_hashers.py proves both).
 if TESTING:
     PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 

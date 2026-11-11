@@ -21,7 +21,8 @@ from django.db.migrations.executor import MigrationExecutor
 BEFORE = [("lessons", "0020_contract_final_test")]
 AFTER = [("lessons", "0021_retire_three_sheets")]
 
-pytestmark = pytest.mark.django_db(transaction=True)
+# One-time data migration: skipped by the everyday local run; CI and `make check-full` run it (docs/process/testing.md).
+pytestmark = [pytest.mark.migration, pytest.mark.django_db(transaction=True)]
 
 
 def latest():

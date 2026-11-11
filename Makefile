@@ -51,6 +51,9 @@ db-test: ## Start the in-memory Postgres the tests run on
 test: db-test ## Run the test suite in parallel on the throwaway Postgres (PYTEST_WORKERS=8)
 	$(RUN_TEST_DB) pytest $(PYTEST_PARALLEL)
 
+test-full: db-test ## Run every test, including the one-time migration tests that `make test` skips (what CI runs)
+	$(RUN_TEST_DB) pytest $(PYTEST_PARALLEL) -m 'not live and not payments_live'
+
 test-serial: ## Run the test suite in one process on the dev Postgres: for debugging a failure the parallel run shows
 	$(RUN_BACKEND) pytest
 
@@ -70,7 +73,9 @@ lint: ## Lint backend (ruff, OpenAPI schema) and frontend (eslint, tsc, bun test
 	$(COMPOSE) run --rm --no-deps backend sh -c "ruff check $(RUFF_PATHS) && ruff format --check $(RUFF_PATHS) && python manage.py spectacular --validate --fail-on-warn --file /dev/null"
 	$(COMPOSE) run --rm --no-deps frontend sh -c "bun run lint && bunx next typegen && bunx tsc --noEmit && bun test"
 
-check: lint test ## Lint + tests: run before finishing any change
+check: lint test ## Lint + tests (without the one-time migration tests): run at the end of a phase and before handing work back
+
+check-full: lint test-full ## Lint + every test, as CI runs it
 
 # --- Browser tests against the fake LLM (docs/process/testing.md) ---------------------------------------------------------
 # Its own compose project, ports and database: no Supabase, no provider key, nothing shared with `make up`.
@@ -137,4 +142,4 @@ reload: #rebuilds backend and frontend
 	$(COMPOSE) build backend frontend
 	$(COMPOSE) restart backend frontend
 
-.PHONY: help env up down logs migrate makemigrations superuser shell sync-supabase db-test test test-serial test-for lint check beat-log
+.PHONY: help env up down logs migrate makemigrations superuser shell sync-supabase db-test test test-full test-serial test-for lint check check-full beat-log

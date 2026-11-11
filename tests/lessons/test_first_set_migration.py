@@ -64,7 +64,8 @@ def before():
     migrate(latest())  # leave the database at the latest state, whatever migration has been added since
 
 
-pytestmark = pytest.mark.django_db(transaction=True)
+# One-time data migration: skipped by the everyday local run; CI and `make check-full` run it (docs/process/testing.md).
+pytestmark = [pytest.mark.migration, pytest.mark.django_db(transaction=True)]
 
 
 def row(Question, lesson, number, *, retired, text=None, batch=None):

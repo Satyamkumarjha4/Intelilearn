@@ -108,6 +108,7 @@ class TestColumns:
             child.full_clean()
 
 
+@pytest.mark.migration
 @pytest.mark.django_db(transaction=True)
 class TestMigration:
     def teardown_method(self):
