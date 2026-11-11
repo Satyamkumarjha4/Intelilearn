@@ -17,5 +17,9 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    // Opens every page once so `next dev` has compiled them all (tests/warm-up.setup.ts); the specs wait for it.
+    { name: "warm-up", testMatch: /.*\.setup\.ts/, use: { ...devices["Desktop Chrome"] } },
+    { name: "chromium", dependencies: ["warm-up"], use: { ...devices["Desktop Chrome"] } },
+  ],
 });
