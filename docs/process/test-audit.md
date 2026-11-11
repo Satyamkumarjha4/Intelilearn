@@ -25,7 +25,7 @@ Done: B1, B2 with G9, B3, B4, B5, B6; E3, E1, E2, E5, E6; the spec map, `make e2
 Findings on the way, each fixed or recorded:
 
 - **An order dependency the parallel run exposed.** Two migration tests ("leave the database at the latest state") stopped at migrations 0020 and 0021 while 0022 exists; whichever test ran next on that worker met the dropped `retakes_per_day` column. Serial order always put a restoring test in between. Fixed, and a guard in `tests/conftest.py` fails any `migration` test that leaves the schema behind the latest.
-- **G5 found a real defect** (`PriceCatalog.revise` under two simultaneous revisions raises `IntegrityError`; the database constraint keeps the data right). Left as a strict `xfail` with the reason; a per-key advisory lock was shown to make it pass. On the roadmap.
+- **G5 found a real defect** (`PriceCatalog.revise` under two simultaneous revisions raises `IntegrityError`; the database constraint keeps the data right). Fixed in a follow-up commit with a per-key advisory lock (`pg_advisory_xact_lock`) in `PriceCatalog.revise` and `deactivate`; the test is a normal passing test.
 - **G2's final state does not depend on the lock.** The ledger's unique key and the rollback also stop a double grant, so the test also asserts that neither tick logs a failure; it fails with both locks removed and passes with only the wallet's removed (the period row's own lock is a second guard).
 - **The parallel e2e run lost clicks before hydration** and raced the card's fly-out animation; both are handled in the helpers (`Choose.option`, reduced motion, `Deck.advance`). One more in `next dev` only: the warm-up quiz starts twice under React strict mode.
 - `CLAUDE.md`: "Commit only when `make check` passes" became "push and merge only when it passes", because the approved rule (each commit: the tests for the files touched) contradicts it. Flagged for your decision.
@@ -38,7 +38,7 @@ The gap tests, each shown failing with its lock or check removed (`scratchpad/mu
 | G2 | `test_plan_tick.py::test_two_ticks_at_the_same_moment_start_the_period_once` | the wallet lock and the period lock | fails; with only the wallet lock removed it passes |
 | G3 | `tests/core/test_every_route_needs_sign_in.py` (3 tests) | `MeView.permission_classes = []` | fails (open but not listed) |
 | G4 | `test_throttling.py::test_registering_is_limited_per_client_address` | `RegisterView.throttle_classes = []` | fails (201 instead of 429) |
-| G5 | `test_price_book.py::…two_staff_revising_one_key_at_once…` | none needed: it fails on the code as it is; with a per-key advisory lock it passes | strict xfail |
+| G5 | `test_price_book.py::…two_staff_revising_one_key_at_once…` | none needed: it failed on the code as it was (6 of 6 runs, the lock holder paused inside its transaction); fixed afterwards with a per-key advisory lock in `PriceCatalog` | passes |
 | G6 | `test_views.py::test_a_deactivated_account_cannot_sign_in_…` | `AllowAllUsersModelBackend` | fails |
 | G7 | `test_streak.py::…next_weekly_bonus…`, `test_plan_pricing.py::TestTermsOfAPlanRow`, `test_period_activator.py::TestStartDueItself` | `next_after` off by a week; two `terms_of` fields swapped; `start_due` never ends a period | each fails |
 

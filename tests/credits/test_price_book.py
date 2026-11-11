@@ -21,11 +21,13 @@ Use cases:
 
 import importlib
 import threading
+import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from django.core.cache import cache
 from django.db import IntegrityError, connection, transaction
+from django.db.models.signals import pre_save
 from django.test.utils import CaptureQueriesContext
 
 from credits.models import ActionPrice
@@ -119,16 +121,14 @@ class TestOneActiveRow:
 
 class TestRevising:
     @pytest.mark.django_db(transaction=True)
-    @pytest.mark.xfail(
-        strict=True,
-        reason="FOUND BY THIS TEST: the select_for_update in PriceCatalog.revise does not see the row the other "
-        "revision has just made live, so the second revision raises IntegrityError (action_price_one_live_per_key) "
-        "instead of waiting its turn. The constraint keeps one live row, so nothing is corrupted, but the second "
-        "editor gets a 500. Fix: serialise per key (pg_advisory_xact_lock) or retry, then remove this mark.",
-    )
     def test_two_staff_revising_one_key_at_once_leave_one_live_row_and_keep_the_history(self):
         gate = threading.Barrier(2)
         failures = []
+
+        def pause(**_):
+            time.sleep(0.3)  # whoever holds the lock stays inside its transaction, so the other is always waiting on it
+
+        pre_save.connect(pause, sender=ActionPrice)
 
         def revise(credits):
             try:
@@ -142,6 +142,7 @@ class TestRevising:
         threads = [threading.Thread(target=revise, args=(credits,)) for credits in (8, 9)]
         [t.start() for t in threads]
         [t.join(30) for t in threads]
+        pre_save.disconnect(pause, sender=ActionPrice)
 
         rows = list(ActionPrice.objects.filter(key="lesson.rest").order_by("id").values_list("credits", "active"))
         assert failures == []
