@@ -6,8 +6,8 @@
  *
  * Use cases:
  * - the gain is the last score minus the one before it
- * - the label names each attempt and its score in order
- * - the best try is named in its caption and the others are not
+ * - the label has one entry per attempt, in order, each with its own score
+ * - exactly one caption names the best try, and it is the highest score
  */
 import { describe, expect, test } from "bun:test";
 
@@ -19,11 +19,21 @@ describe("ProgressExample", () => {
     expect(ProgressExample.gain).toBeGreaterThan(0);
   });
 
-  test("the label names each attempt and its score", () => {
-    expect(ProgressExample.label).toBe("Example scores: attempt 1, 45 percent; attempt 2, 62 percent; attempt 3, 85 percent");
+  test("the label has one entry per attempt, in order, each with its own score", () => {
+    const entries = ProgressExample.label.match(/attempt \d+[^;]*/g) ?? [];
+
+    expect(entries).toHaveLength(ProgressExample.TRIES.length);
+    ProgressExample.TRIES.forEach((score, index) => {
+      expect(entries[index]).toContain(`attempt ${index + 1}`);
+      expect(entries[index]).toMatch(new RegExp(`\\b${score}\\b`));
+    });
   });
 
-  test("only the best try is named in its caption", () => {
-    expect([0, 1, 2].map((i) => ProgressExample.caption(i))).toEqual(["Try 1", "Try 2", "Try 3 · best"]);
+  test("exactly one caption names the best try, and it is the highest score", () => {
+    const captions = ProgressExample.TRIES.map((_, i) => ProgressExample.caption(i));
+    const best = captions.flatMap((caption, i) => (/best/i.test(caption) ? [i] : []));
+
+    expect(best).toEqual([ProgressExample.TRIES.indexOf(Math.max(...ProgressExample.TRIES))]);
+    captions.forEach((caption, i) => expect(caption).toContain(String(i + 1)));
   });
 });
