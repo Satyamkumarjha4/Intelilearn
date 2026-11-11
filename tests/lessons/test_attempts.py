@@ -442,9 +442,12 @@ class TestOnlySealWritesAnAttemptsAnswers:
             "graph/nodes/bank.py",  # the retake graph fills a generating attempt once and starts it
         }
         for path in backend.rglob("*.py"):
-            if "migrations" in path.parts or str(path.relative_to(backend)) in allowed:
+            if {"migrations", ".venv", "node_modules"} & set(path.parts) or str(path.relative_to(backend)) in allowed:
                 continue
-            for node in ast.walk(ast.parse(path.read_text())):
+            source = path.read_text()
+            if "TestSubmission" not in source:  # cheap text test first: parsing every file of the backend took 13 s
+                continue
+            for node in ast.walk(ast.parse(source)):
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "update":
                     names = {kw.arg for kw in node.keywords}
                     if "TestSubmission" in ast.unparse(node.func) and names & {"answers", "questions"}:

@@ -148,13 +148,17 @@ class TestCacheIdempotencyStore:
         assert store.claim("b") is True
 
     @override_settings(IDEMPOTENCY_TTL_S=1)
-    def test_remembered_answers_expire_after_the_configured_time(self):
+    def test_remembered_answers_expire_after_the_configured_time(self, monkeypatch):
         import time
 
         store = CacheIdempotencyStore()
         store.remember("c", StoredResponse(202, {}))
         assert store.replay("c") is not None
 
-        time.sleep(1.2)
+        now = time.time()  # the in-memory cache ages entries by this clock: move it, rather than sleep for real
+        with monkeypatch.context() as later:
+            later.setattr(time, "time", lambda: now + 0.5)
+            assert store.replay("c") is not None  # inside the 1 s, still remembered
+            later.setattr(time, "time", lambda: now + 1.5)
 
-        assert store.replay("c") is None
+            assert store.replay("c") is None
