@@ -6,8 +6,8 @@ The workflow is `.github/workflows/ci.yml`, and it runs on **every push to every
 
 | Job | What it runs | Same as locally |
 |---|---|---|
-| `lint` | `ruff check`, `ruff format --check` over `backend/` and `tests/`, OpenAPI schema validation (uv); `eslint`, `next typegen`, `tsc --noEmit`, `bun test` (bun) | `make lint` |
-| `test` | `docker compose run --rm backend pytest`, using the docker Postgres and Redis | `make test` |
+| `lint` | `ruff check`, `ruff format --check` over `backend/` and `tests/`, OpenAPI schema validation (uv); `eslint`, `next typegen`, `tsc --noEmit`, `bun test` (bun); the unit tests of the e2e spec map, `cd e2e && bun test .test.ts` (no browser: they keep `e2e/spec-map.json` complete) | `make lint` |
+| `test` | `docker compose up -d --wait db-test`, then `pytest -n auto --dist worksteal` (one worker per core of the runner) on that in-memory Postgres and Redis, **including** the `migration` tests that `make test` skips | `make test-full` |
 
 CI has **no `.env`**. Every setting falls back to the defaults in `.env.example`, which is why every new variable must have a default (see `CLAUDE.md`).
 

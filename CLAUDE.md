@@ -52,13 +52,15 @@ An AI tutor that diagnoses what a learner knows, then generates a lesson or stud
 - **Every test file starts with a header**: the unit under test, *why* it matters, and a bulleted list of the use cases it covers. Each use case has a test and each test belongs to a use case; update the list whenever tests change. Test names state the behaviour and outcome.
 - Every change to behaviour comes with tests in the matching path; every new public method and every branch is exercised.
 - Use injected fakes (fake chat models, `FakeGateway`, `httpx.MockTransport`) over `mock.patch`. Never call external services (LLMs, media APIs); only `pytest -m live` may.
-- **Before finishing any task, run `make check` (lint + tests) and report the actual result.** If something fails, say so and show the output. Never describe work as done while checks fail.
+- **What to run, and when** (the full rules are in `docs/process/testing.md` 6.2): while working, only the tests for the files you touched (`make test-for FILE=backend/x/y.py`, `bun test <file>`), never the whole suite and never `make e2e` per commit. At the end of a phase, or before handing work back, `make check` and `make e2e-affected` **once**. Before merging to `main`, `make check` and then the full `make e2e` **once**. CI runs lint and the whole suite on every push.
+- **Report the actual results.** Every report states which e2e specs ran and why (from `make e2e-affected`'s printout), or says that e2e was not run. If something fails, say so and show the output. Never describe work as done while checks fail.
+- A new e2e spec is added to `e2e/spec-map.json` in the same change (a guard test fails otherwise); a new source folder is mapped or named in `e2e/spec-map.test.ts`. Never delete a test that protects money, payments, auth, the ledger or security without naming the test that covers the same rule.
 
 ## Git
 
 - Never commit directly to `main`. Branch per piece of work: `phase-<n>/<topic>` (for example `phase-1/auth`), `fix/<topic>`, or `refactor/<topic>`.
 - Use Conventional Commits: `feat(accounts): cookie JWT login`, `fix(sync): reset sequences`, `refactor(gateway): extract RetryPolicy`, `docs: …`, `test: …`, `chore: …`. Keep each commit to one logical change; a `refactor` commit changes no behaviour.
-- Commit only when `make check` passes. CI (`docs/process/ci.md`) runs the same checks on every push: a failing push to `main` is **reverted automatically**, and a failing branch gets a `ci-failure` issue that closes when it goes green. So never push to `main` without a green `make check`.
+- Commit when the tests for the files you touched pass. CI (`docs/process/ci.md`) runs the same checks as `make check` on every push: a failing push to `main` is **reverted automatically**, and a failing branch gets a `ci-failure` issue that closes when it goes green. So never push, and never merge to `main`, without a green `make check` (and, before a merge, the full `make e2e`).
 - Never commit `.env`, `token`, keys, or generated media.
 - Commit, push, or open PRs only when asked. Never force-push, rewrite pushed history, or skip hooks (`--no-verify`).
 
