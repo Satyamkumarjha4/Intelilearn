@@ -3,6 +3,9 @@
  *
  * Why: stopping is cooperative, so the stop can land between two steps of the build. Retry used to read such a thread as
  * "finished" and do nothing in a fraction of a second, leaving the lesson failed for good.
+ *
+ * Two stops are tried, at once and a second and a half in: the first lands before a step, the second inside one. More
+ * delays (there were four) only repeated those two cases at the cost of a full build each.
  */
 import { expect, test } from "@playwright/test";
 
@@ -14,7 +17,7 @@ test("a stopped build is picked up by Retry, wherever the stop landed", async ({
   const api = new Api(page);
   await api.signUp(E2E.email("stop"), E2E.PASSWORD);
 
-  for (const delayMs of [0, 600, 1800, 3200]) {
+  for (const delayMs of [0, 1800]) {
     const lessonId = (await api.call("POST", "/lessons", { topic: `Stopping ${delayMs}` })).body.lesson_id as string;
     await api.until(lessonId, (lesson) => lesson.stage === "awaiting_diagnostic");
     await page.goto(`/lessons/${lessonId}`);

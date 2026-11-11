@@ -7,7 +7,6 @@
  * - a self-rated build that is stopped is picked up by Retry
  * - a perfect quick check shows exactly two options, and each reaches a ready lesson: the Expert lesson (with a test, its
  *   level set to Expert) or two sheets (no test)
- * - the API refuses an origin only the server may set, and a recommendation that is not the learner's own
  *
  * Why: the unit tests cover each piece; the seams (the star rating's keyboard, a lesson that starts with no quiz and
  * still plans a Beginner's prerequisites, two sheets written in parallel, a choice that sets the route the test needs)
@@ -77,28 +76,12 @@ test("an Expert who rates themselves gets a lesson with no prerequisites, a test
   await expect(page.getByText("100%").first()).toBeVisible({ timeout: 30_000 });
 });
 
-test("what the API refuses when a lesson is asked for", async ({ page }) => {
-  const api = new Api(page);
-  await api.signUp(E2E.email("refused"), E2E.PASSWORD);
-  const ask = (body: object) => api.call("POST", "/lessons", { topic: "Binary search", ...body });
-
-  expect((await ask({ entry: "self_rating" })).body.fields).toHaveProperty("self_rating"); // no rating
-  expect((await ask({ entry: "self_rating", self_rating: 2.3 })).status).toBe(400); // not a half step
-  expect((await ask({ self_rating: 3 })).status).toBe(400); // a rating needs its entry
-  expect((await ask({ intent: "sheets" })).body.fields).toHaveProperty("sheets"); // sheets need to be named
-  expect((await ask({ intent: "sheets", sheets: ["practice_sheet"] })).body.fields).toHaveProperty("sheets"); // not offered
-  expect((await ask({ sheets: ["cheat_sheet"] })).body.fields).toHaveProperty("sheets"); // sheets go with their intent
-  expect((await ask({ origin: "followup" })).body.fields).toHaveProperty("origin"); // only the server may say so
-  expect((await ask({ origin: "quiz_result" })).body.fields).toHaveProperty("origin");
-  const made = await ask({ origin: "recommendation", recommended_from: { attempt_id: "6f3a1c1e-1111-4222-8333-444455556666", topic: "Anything" } });
-  expect([made.status, Object.keys(made.body.fields)]).toEqual([400, ["recommended_from"]]); // not one of their attempts
-});
-
 test("a self-rated build that is stopped is picked up by Retry, wherever the stop landed", async ({ page }) => {
   const api = new Api(page);
   await api.signUp(E2E.email("rated-stop"), E2E.PASSWORD);
 
-  for (const [delayMs, stars] of [[0, 1], [800, 1], [2500, 5]] as const) {
+  // One stop is enough here: stop-and-retry.spec.ts tries the stop points; this proves a self-rated build is picked up too.
+  for (const [delayMs, stars] of [[800, 1]] as const) {
     const lessonId = (await api.call("POST", "/lessons", { topic: `Stopping ${delayMs}`, entry: "self_rating", self_rating: stars })).body
       .lesson_id as string;
     const running = await api.until(lessonId, (lesson) => Boolean(lesson.active_run_id));

@@ -4,8 +4,7 @@
  * - a quiz on a topic found by the five-question warm-up: the learner answers the warm-up, the quiz is written at the level
  *   it found, they take it, and taking it again gives different questions and a history of the two tries
  * - a quiz from two lessons, its level set by their test scores: each lesson keeps its own level and share
- * - a five-question quiz cannot ask for short or written answers (the choice is not there, and the server refuses it when
- *   asked by hand), and ten questions can
+ * - a five-question quiz cannot ask for short or written answers (the choice is not there), and ten questions can
  * - a quiz on a topic can become a lesson, whose level comes from the result
  * - a quiz from a lesson, answered wrong: each weak concept's "Study this" link opens the page of the lesson that teaches
  *   it (the Introduction for one concept, the Core page for another), because the questions named the lesson's own
@@ -19,20 +18,14 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { Api } from "../support/api";
 import { AttemptPage } from "../support/attempt";
+import { Choose } from "../support/choose";
 import { E2E } from "../support/config";
 
 const READY = (lesson: any) => lesson.stage === "ready" && !lesson.active_run_id;
 
 /** Polls the quiz until `done`, with what it last saw if the time runs out. */
-async function untilQuiz(api: Api, page: Page, id: string, done: (quiz: any) => boolean, ms = 180_000): Promise<any> {
-  const deadline = Date.now() + ms;
-  let last: any = null;
-  while (Date.now() < deadline) {
-    last = (await api.call("GET", `/quick-quizzes/${id}`)).body;
-    if (done(last)) return last;
-    await page.waitForTimeout(1000);
-  }
-  throw new Error(`the quiz did not get there in ${ms} ms; last seen: ${JSON.stringify(last && { stage: last.stage, open: last.open_attempt, run: last.run_id })}`);
+async function untilQuiz(api: Api, _page: Page, id: string, done: (quiz: any) => boolean, ms = 180_000): Promise<any> {
+  return Api.poll(() => api.call("GET", `/quick-quizzes/${id}`).then((reply) => reply.body), done, ms, "the quiz");
 }
 
 async function next(page: Page) {
@@ -63,8 +56,13 @@ test("a topic quiz found by the warm-up, taken, then taken again with new questi
   await expect(page.getByRole("heading", { name: "Question 1 of 5" })).toBeVisible({ timeout: 120_000 });
   for (let step = 1; step <= 5; step++) {
     await expect(page.getByRole("heading", { name: `Question ${step} of 5` })).toBeVisible();
-    await page.getByRole("radiogroup", { name: "Answers" }).getByRole("radio", { name: /true statement/ }).click();
-    await page.getByRole("button", { name: step === 5 ? "Finish" : "Continue" }).click();
+    await Choose.option(page.getByRole("radiogroup", { name: "Answers" }).getByRole("radio", { name: /true statement/ }));
+    // `next dev` starts the warm-up twice (React's strict mode), and an answer sent in the moment between is ignored: the
+    // button then stays as it was. So press it again until the next question is there (production starts it once).
+    await expect(async () => {
+      await page.getByRole("button", { name: step === 5 ? "Finish" : "Continue" }).click({ timeout: 2_000 });
+      if (step < 5) await expect(page.getByRole("heading", { name: `Question ${step + 1} of 5` })).toBeVisible({ timeout: 5_000 });
+    }).toPass({ timeout: 60_000 });
   }
 
   // Five right answers is an Expert; the quiz is written for that level and waits to be taken.
@@ -148,15 +146,7 @@ test("a five-question quiz cannot ask for short or written answers; ten can", as
   await next(page);
   await expect(page.getByText("Short answers", { exact: true })).toBeVisible();
   await expect(page.getByText("Written answers", { exact: true })).toBeVisible();
-
-  // The server says the same when asked by hand.
-  const by_hand = await api.call("POST", "/quick-quizzes", {
-    source: { type: "topic", topic: "Solving equations" }, num_questions: 5, types: ["mcq", "short_answer"],
-    level: { mode: "self_rating", rating: 3 },
-  });
-  expect(by_hand.status).toBe(400);
-  expect(by_hand.body.fields.types[0]).toContain("10");
-  expect((await api.call("GET", "/quick-quizzes")).body.results).toEqual([]); // nothing was made
+  // The server's refusal of the same by hand is proved by tests/quizzes/test_views.py and tests/graph/test_quiz_config.py.
 });
 
 test("a quiz on a topic becomes a lesson whose level comes from the result", async ({ page }) => {

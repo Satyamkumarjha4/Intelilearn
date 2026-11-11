@@ -1,5 +1,6 @@
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 
+import { Choose } from "./choose";
 import { Deck } from "./deck";
 
 /** Takes an attempt at the lesson test the way a learner does. The fake model writes every question the same way, so a
@@ -17,10 +18,8 @@ export class AttemptPage {
     await this.deck.next.waitFor({ timeout: 120_000 });
     let cards = 0;
     for (let guard = 0; guard < 40; guard++) {
-      await this.page.waitForTimeout(450); // the card flies out
       await this.answerCard(mode);
-      const label = await this.deck.next.innerText();
-      await this.deck.next.click();
+      const label = await this.deck.advance();
       cards++;
       if (/hand in/i.test(label)) break;
     }
@@ -45,14 +44,19 @@ export class AttemptPage {
     const boxes = this.page.getByRole("group", { name: "Answers" }).getByRole("checkbox");
     const right = mode === "right";
     if (await radios.count()) {
-      await (right ? radios.filter({ hasText: /Right/ }) : radios.filter({ hasText: /Wrong/ })).first().click();
+      await Choose.option((right ? radios.filter({ hasText: /Right/ }) : radios.filter({ hasText: /Wrong/ })).first());
     } else if (await boxes.count()) {
       const picks = right ? boxes.filter({ hasText: /Right/ }) : boxes.filter({ hasText: /Wrong/ });
-      for (let n = 0; n < (await picks.count()); n++) await picks.nth(n).click();
-      if (!right && (await picks.count()) > 1) await picks.nth(1).click(); // one wrong option is enough
+      for (let n = 0; n < (await picks.count()); n++) await Choose.option(picks.nth(n));
+      if (!right && (await picks.count()) > 1) await Choose.option(picks.nth(1)); // one wrong option is enough
     } else {
       const text = await this.page.getByText(/question number \d+ in set/).first().innerText();
-      await this.page.getByRole("textbox").first().fill(right ? (text.match(/question number (\d+)/)?.[1] ?? "0") : "9999");
+      const box = this.page.getByRole("textbox").first();
+      const value = right ? (text.match(/question number (\d+)/)?.[1] ?? "0") : "9999";
+      await expect(async () => {
+        await box.fill(value);
+        await expect(box).toHaveValue(value, { timeout: 2_000 });
+      }).toPass({ timeout: 30_000 });
     }
   }
 }

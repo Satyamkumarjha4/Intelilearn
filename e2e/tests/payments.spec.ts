@@ -4,15 +4,15 @@
  *
  * Why: the unit tests prove each rule, but only a browser shows the seams: that the proxy keeps the raw body and the
  * signature header so a callback verifies, that the page a learner comes back to waits for the server and grants nothing
- * itself, that a forged or mismatched callback changes nothing, and that someone too poor for the rest of a lesson can buy,
+ * itself, and that someone too poor for the rest of a lesson can buy,
  * come back and send their saved answers.
  *
  * Use cases:
  * - one-time credits: pick an amount, pay (the fake provider's page is the return page), and the balance rises only after a
  *   signed callback; the same callback again changes nothing; the history says so
  * - a plan by the week: the first week's credits arrive at once and the rest are lined up
- * - the return page alone grants nothing, however its address is dressed up; a callback with a wrong signature or the wrong
- *   amount is refused or ignored and grants nothing
+ * - the return page alone grants nothing, however its address is dressed up (a wrong signature, a wrong amount and a refund
+ *   are proved by tests/payments/test_webhook_view.py and test_order_events.py)
  * - with one way to pay there is no picker
  * - a learner too poor for the rest of a lesson buys, comes back to the lesson, and sends the answers that were kept
  */
@@ -86,40 +86,19 @@ test("a plan by the week gives its first week at once and lines up the rest", as
   await expect(page.getByTestId("buy-periods")).toContainText("Waiting");
 });
 
-test("the return page alone, a wrong signature and a wrong amount grant nothing", async ({ page }) => {
+// A wrong signature and a wrong amount are refused by tests/payments/test_webhook_view.py (a 400 with no query; answered ok and
+// granting nothing), and a refund's credits by test_order_events.py. What only the browser shows is the return page: a learner
+// who comes back from the provider with a success in the address is not credited by that.
+test("the return page alone grants nothing", async ({ page }) => {
   const api = new Api(page);
   await api.signUp(E2E.email("buy-forged"), E2E.PASSWORD);
-  const provider = new Provider(page);
-  const created = await api.call("POST", "/payments/orders", { plan: "one_time", credits: 100 });
-  const order = created.body;
+  const order = (await api.call("POST", "/payments/orders", { plan: "one_time", credits: 100 })).body;
 
   await page.goto(`/buy/return?order=${order.id}&paid=true&status=fulfilled&session_id=cs_forged`);
+
   await expect(page.getByTestId("return-headline")).toHaveText("Confirming your payment");
   expect(await balance(api)).toBe(30);
-
-  const forged = await provider.say("succeeded", order, { secret: "not-the-secret" });
-  expect(forged.status).toBe(400);
-  const wrongAmount = await provider.say("succeeded", order, { amount: 1 });
-  expect(wrongAmount.status).toBe(200); // answered, so the provider does not retry; recorded, and nothing is granted
-  expect(await balance(api)).toBe(30);
   expect((await api.call("GET", `/payments/orders/${order.id}`)).body.status).toBe("pending");
-
-  expect((await provider.say("succeeded", order)).status).toBe(200);
-  expect(await balance(api)).toBe(130);
-});
-
-test("a refund takes back only what is unspent", async ({ page }) => {
-  const api = new Api(page);
-  await api.signUp(E2E.email("buy-refund"), E2E.PASSWORD);
-  const order = (await api.call("POST", "/payments/orders", { plan: "one_time", credits: 100 })).body;
-  const provider = new Provider(page);
-  await provider.say("succeeded", order);
-  expect(await balance(api)).toBe(130);
-
-  await provider.say("refunded", order, { amount: 5000 }); // half: 50 credits
-
-  expect(await balance(api)).toBe(80);
-  expect((await api.call("GET", `/payments/orders/${order.id}`)).body.refunded_paise).toBe(5000);
 });
 
 test("a learner too poor for the rest of a lesson buys, comes back, and sends the answers that were kept", async ({ page }) => {

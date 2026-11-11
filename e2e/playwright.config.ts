@@ -19,6 +19,8 @@ export default defineConfig({
     baseURL: process.env.E2E_BASE_URL ?? "http://localhost:7100",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
+    // The app respects it: a card does not fly out and nothing fades in, so a test waits for the next card, not for a timer.
+    contextOptions: { reducedMotion: "reduce" },
   },
   projects: [
     // Opens every page once so `next dev` has compiled them all (tests/warm-up.setup.ts); the specs wait for it.

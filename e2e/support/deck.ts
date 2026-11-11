@@ -1,6 +1,11 @@
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 
-/** Answers a card deck (the quick check, or the test) one card at a time, the way a learner does. */
+import { Choose } from "./choose";
+
+/** Answers a card deck (the quick check, or the test) one card at a time, the way a learner does.
+ *
+ *  The browser runs with reduced motion (`playwright.config.ts`), which the app respects: a card does not fly out, so there is
+ *  nothing to wait for but the next card itself, which is the progress count changing. */
 export class Deck {
   constructor(private readonly page: Page) {}
 
@@ -8,20 +13,32 @@ export class Deck {
     return this.page.locator("[data-deck-continue]");
   }
 
+  /** "3 / 10": which card the deck is on. It changes when the learner continues. */
+  get progress() {
+    return this.page.getByText(/^\d+ \/ \d+$/).first();
+  }
+
+  /** Presses Continue (or the last card's Finish) and waits for the deck to show the next card. Returns the button's label. */
+  async advance(): Promise<string> {
+    await expect(this.next).toBeEnabled();
+    const label = await this.next.innerText();
+    const before = await this.progress.innerText();
+    await this.next.click();
+    if (!/finish|hand in/i.test(label)) await expect(this.progress).not.toHaveText(before);
+    return label;
+  }
+
   /** `pick(position, optionTexts)` is an option index, or "dont_know". Returns how many cards were answered. */
   async answerAll(pick: (position: number, options: string[]) => number | "dont_know"): Promise<number> {
     await this.next.waitFor({ timeout: 120_000 });
     let answered = 0;
     for (;;) {
-      await this.page.waitForTimeout(450); // the card flies out
       const group = this.page.getByRole("radiogroup", { name: "Answers" });
       if (!(await group.count())) break;
       const radios = group.first().getByRole("radio");
       const choice = pick(answered, await radios.allInnerTexts());
-      if (choice === "dont_know") await this.page.getByRole("radio", { name: /don.t know/i }).click();
-      else await radios.nth(choice).click();
-      const label = await this.next.innerText();
-      await this.next.click();
+      await Choose.option(choice === "dont_know" ? this.page.getByRole("radio", { name: /don.t know/i }) : radios.nth(choice));
+      const label = await this.advance();
       answered++;
       if (/finish/i.test(label)) break;
     }

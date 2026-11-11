@@ -4,8 +4,8 @@
  *
  * Why: the unit and API tests prove each rule, but only a browser shows that the screens fit them: that a price edited in
  * the page is the one the API then holds (with its old value kept as history), that the give-or-take form will not move
- * credits without a reason, that a learner's balance changes where the learner sees it, and that the screens a stranger
- * must not reach stay a 404.
+ * credits without a reason, and that a learner's balance changes where the learner sees it. (That a stranger gets a 404
+ * is proved by tests/console/test_credits_access.py, and for /console in a browser by console.spec.ts.)
  *
  * Use cases:
  * - staff change a price on /console/credits and save it: the API's live price is the new one and the history has the old
@@ -15,7 +15,6 @@
  * - staff delete a learner's data from the learner's page: the button waits for the account's email to be typed, the
  *   learner's sign-in stops working, and the page then says the account is erased
  * - /console/payments opens with its three tiles and /console/usage shows revenue beside model cost with the dollar rate
- * - a learner who opens the credit console pages, or the wallet endpoint, gets the page that does not exist
  */
 import { expect, test, type Page } from "@playwright/test";
 
@@ -83,20 +82,6 @@ test("payments opens, and usage shows revenue beside model cost with its rate", 
   await page.goto("/console/usage?range=30d");
   await expect(page.getByRole("heading", { name: "Revenue and model cost" })).toBeVisible();
   await expect(page.getByText(/to the dollar/)).toBeVisible();
-});
-
-test("a learner meets the page that does not exist, and the endpoints answer 404", async ({ browser }) => {
-  const learner = await (await browser.newContext()).newPage();
-  const api = new Api(learner);
-  await api.signUp(E2E.email("not-staff"), E2E.PASSWORD);
-
-  for (const path of ["/console/credits", "/console/payments"]) {
-    await learner.goto(path);
-    await expect(learner.getByText(/couldn.t find that page/i)).toBeVisible();
-  }
-  for (const path of ["/console/credits", "/console/payments", "/console/revenue"]) {
-    expect((await api.call("GET", path)).status).toBe(404);
-  }
 });
 
 test("deleting a learner needs their email, ends their sign-in, and the page then says so", async ({ browser }) => {

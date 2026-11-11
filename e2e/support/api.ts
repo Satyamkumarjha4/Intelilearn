@@ -1,4 +1,4 @@
-import type { BrowserContext, Page } from "@playwright/test";
+import { expect, type BrowserContext, type Page } from "@playwright/test";
 
 type Reply<T = any> = { status: number; body: T };
 
@@ -44,13 +44,16 @@ export class Api {
 
   /** Polls until `done` is true for the lesson (or the time is up, which fails the test with what it last saw). */
   async until(lessonId: string, done: (lesson: any) => boolean, ms = 120_000): Promise<any> {
-    const deadline = Date.now() + ms;
-    let last: any = null;
-    while (Date.now() < deadline) {
-      last = (await this.call("GET", `/lessons/${lessonId}`)).body;
-      if (done(last)) return last;
-      await this.page.waitForTimeout(1000);
-    }
-    throw new Error(`the lesson did not get there in ${ms} ms; last seen: ${last?.stage}`);
+    return Api.poll(() => this.call("GET", `/lessons/${lessonId}`).then((reply) => reply.body), done, ms, "the lesson");
+  }
+
+  /** Reads until `done` is true, quickly at first (a state change is usually a second or two away) and then every second. The
+   *  failure says what was last seen. Used by every wait for a build, so none of them sleeps for a fixed time. */
+  static async poll<T>(read: () => Promise<T>, done: (seen: T) => boolean, ms: number, what: string): Promise<T> {
+    let last: T | null = null;
+    await expect
+      .poll(async () => done((last = await read())), { timeout: ms, intervals: [250, 250, 500, 1000], message: `${what} did not get there in ${ms} ms` })
+      .toBe(true);
+    return last as T;
   }
 }

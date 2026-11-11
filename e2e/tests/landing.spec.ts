@@ -149,17 +149,17 @@ test("the page's numbers are the API's, and a price edited in the console change
   }
 });
 
-for (const width of [360, 390, 430, 1440]) {
-  test(`at ${width}px nothing scrolls sideways and the plans are laid out as designed`, async ({ page }) => {
-    await page.setViewportSize({ width, height: 900 });
-    await page.goto("/");
+test("at 360, 390, 430 and 1440px nothing scrolls sideways and the plans are laid out as designed", async ({ page }) => {
+  await page.goto("/");
 
+  for (const width of [360, 390, 430, 1440]) {
+    await page.setViewportSize({ width, height: 900 }); // one page resized, not a browser started for each width
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-    expect(overflow).toBeLessThanOrEqual(0);
+    expect(overflow, `at ${width}px`).toBeLessThanOrEqual(0);
     const columns = await page.locator("#pricing ul.grid").first().evaluate((grid) => getComputedStyle(grid).gridTemplateColumns.split(" ").length);
-    expect(columns).toBe(width <= 680 ? 1 : 2);
-  });
-}
+    expect(columns, `at ${width}px`).toBe(width <= 680 ? 1 : 2);
+  }
+});
 
 test("someone signed in sees Go to my lessons instead of Sign in and Start free", async ({ page }) => {
   await new Api(page).signUp(E2E.email("landing"), E2E.PASSWORD);
