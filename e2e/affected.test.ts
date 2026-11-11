@@ -67,6 +67,21 @@ describe("AffectedReport", () => {
   });
 });
 
+describe("trigger files", () => {
+  test("are one line per reason however many there are, naming the first few", () => {
+    const files = Array.from({ length: 8 }, (_, n) => `backend/core/file-${n}.py`);
+
+    const lines = report([...files, "backend/credits/ledger.py"]);
+    const line = lines.find((l) => l.startsWith("runs everything"))!;
+
+    expect(lines.filter((l) => l.startsWith("runs everything"))).toHaveLength(1);
+    expect(line).toContain("(8 files, settings, URLs, auth, errors)");
+    expect(line).toContain("backend/core/file-0.py");
+    expect(line).toContain("and 3 more");
+    expect(line).not.toContain("file-7");
+  });
+});
+
 describe("the files that need no spec", () => {
   test("are one line however many there are, naming the first few", () => {
     const files = Array.from({ length: 9 }, (_, n) => `docs/page-${n}.md`);

@@ -17,16 +17,17 @@ export class AffectedReport {
     const { selection, total } = this;
     const out: string[] = [];
     const quiet = selection.verdicts.filter((v) => v.kind === "no_spec");
-    const loud = selection.verdicts.filter((v) => v.kind !== "no_spec");
+    const loud = selection.verdicts.filter((v) => v.kind === "map" || v.kind === "unmapped");
     const width = Math.min(60, Math.max(0, ...loud.map((v) => v.file.length)));
     for (const verdict of loud) {
-      const what =
-        verdict.kind === "map"
-          ? verdict.specs.map(short).join(", ") || "(manual specs only: none run)"
-          : verdict.kind === "trigger"
-            ? `runs everything: ${verdict.why}`
-            : "runs everything: not in spec-map.json";
+      const what = verdict.kind === "map" ? verdict.specs.map(short).join(", ") || "(manual specs only: none run)" : "runs everything: not in spec-map.json";
       out.push(`${verdict.file.padEnd(width)}  ${what}`);
+    }
+    const byReason = new Map<string, string[]>();
+    for (const v of selection.verdicts.filter((v) => v.kind === "trigger")) byReason.set(v.why, [...(byReason.get(v.why) ?? []), v.file]);
+    for (const [why, files] of byReason) {
+      const more = files.length > 5 ? ` and ${files.length - 5} more` : "";
+      out.push(`runs everything (${files.length} file${files.length === 1 ? "" : "s"}, ${why}): ${files.slice(0, 5).join(", ")}${more}`);
     }
     if (quiet.length) {
       const reasons = [...new Set(quiet.map((v) => v.why.split(":")[0]!.split(",")[0]!.trim()))].join("; ");
