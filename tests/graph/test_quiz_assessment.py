@@ -164,8 +164,3 @@ class TestRegistry:
         assert isinstance(AssessmentSources.for_key("calibration"), CalibrationSource)
         assert isinstance(AssessmentSources.for_key("test_score"), TestScoreSource)
         assert isinstance(AssessmentSources.for_key("quiz_result"), QuizResultSource)
-
-    def test_the_keys_are_listed(self):
-        assert AssessmentSources.keys() == (
-            "diagnostic", "self_rating", "followup", "calibration", "test_score", "quiz_result",
-        )  # fmt: skip

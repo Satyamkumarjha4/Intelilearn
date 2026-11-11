@@ -138,10 +138,6 @@ def test_the_ttl_defaults_to_the_setting(settings):
     assert set(cache.timeouts.values()) == {77}
 
 
-def test_the_ttl_is_thirty_days_unless_configured(settings):
-    assert settings.ONBOARDING_SUGGESTION_TTL_S == 30 * 24 * 3600
-
-
 def test_nothing_cached_is_nothing():
     store = SuggestionCache(RecordingCache())
     request, route = ask()

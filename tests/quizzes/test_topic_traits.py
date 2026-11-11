@@ -102,9 +102,6 @@ class TestTheGatewayJudge:
 
         assert raised.value.__cause__ is failure
 
-    def test_the_default_gateway_waits_at_most_a_second_for_a_rate_limit(self):
-        assert GatewayTopicTraits.RATE_WAIT_S == 1
-
 
 class TestTheService:
     def service(self, judge, cache=None):

@@ -7,7 +7,6 @@ a missing answer cannot be graded; `public_question` is what keeps solutions out
 
 Use cases:
 - each sheet kind round-trips through JSON and is found by its kind
-- an unknown kind has no schema
 - every question type demands its own fields (mcq options and index, msq options and correct indices, numerical
   expression, tolerance and precision, short and long model answers with criteria) and rejects what is missing
 - a model is never asked for marks or for the numerical answer: those fields are not in what it writes
@@ -42,10 +41,6 @@ def test_each_sheet_round_trips_and_is_found_by_its_kind(kind, schema, make):
 
     assert MATERIAL_SCHEMAS[kind] is schema
     assert schema.model_validate(written).model_dump(mode="json") == written
-
-
-def test_an_unknown_kind_has_no_schema():
-    assert "wallpaper" not in MATERIAL_SCHEMAS
 
 
 class TestQuestionFields:

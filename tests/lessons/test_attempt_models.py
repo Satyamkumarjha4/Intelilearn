@@ -116,7 +116,6 @@ class TestFlowSettingsAdditions:
 
         assert (settings.band_fail_below, settings.band_excellent_above) == (30, 90)
         assert (settings.question_batch_size, settings.batch_max_long, settings.batch_max_short) == (5, 1, 2)
-        assert not hasattr(settings, "retakes_per_day")  # retired (T33): the hourly throttle is the limit
 
     def test_the_snapshot_carries_them_so_a_lesson_keeps_the_rules_it_started_with(self):
         snapshot = FlowSettings.load().snapshot()

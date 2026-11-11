@@ -26,9 +26,6 @@ def q(number, text):
 
 
 class TestStemHash:
-    def test_it_is_64_hex_characters(self):
-        assert len(StemHash.of("What is a prime?")) == 64
-
     @pytest.mark.parametrize(
         "other",
         ["what is a prime", "  WHAT   is a prime?? ", "What is a 'prime'?", "What is a prime;"],

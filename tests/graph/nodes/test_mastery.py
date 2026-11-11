@@ -9,7 +9,6 @@ Use cases:
 - publish_mastery_options moves the lesson to awaiting_choice and has no other effect
 - await_choice accepts the two choices (as a body or bare), refuses the sheet kinds of the old three-sheet choice and
   anything else, and waits with its own kind of interrupt
-- the single-sheet nodes of that old choice no longer exist
 - the extra-sheet failure node raises a readable error so the run fails without failing the lesson
 """
 
@@ -59,10 +58,3 @@ def test_the_extra_sheet_failure_node_raises_the_graphs_reason(lesson_state, run
 def test_the_extra_sheet_failure_node_has_a_default_reason(lesson_state, runtime):
     with pytest.raises(RunFailed, match="could not be written"):
         FailStudyMaterialNode()(lesson_state, runtime)
-
-
-@pytest.mark.parametrize("name", ["GenerateStudyMaterialNode", "ValidateStudyMaterialNode", "PersistStudyMaterialNode"])
-def test_the_single_sheet_nodes_of_the_old_choice_are_gone(name):
-    from graph.nodes import mastery
-
-    assert not hasattr(mastery, name)

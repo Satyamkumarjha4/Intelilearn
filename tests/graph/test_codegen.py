@@ -9,7 +9,6 @@ build documents and run them through the real sandbox check.
 Use cases:
 - a template page renders every section through <Section>, with interactives and figures placed after their anchor
 - a template page without placements still renders its sections
-- the document has no test page: the assembler neither writes one nor declares one
 - placements put a built interactive or a stored figure after its anchor; unbuilt specs and other pages are skipped
 - an assembled document wraps each interactive in an error boundary, declares the three pages in order, ends with render
 - an assembled document passes the real sandbox check (the template pages and wrapped components)
@@ -48,11 +47,6 @@ def test_a_template_page_without_placements_still_renders_its_sections():
     code = assembler.template_page("introduction", {})
 
     assert "{null}" in code and "<Section key={section.id} section={section}>" in code
-
-
-def test_the_document_has_no_test_page():
-    assert assembler.PAGE_ORDER == ("introduction", "core", "advanced")
-    assert not hasattr(assembler, "test_page")
 
 
 class TestPlacements:

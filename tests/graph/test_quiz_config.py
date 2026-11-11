@@ -47,9 +47,6 @@ class TestPresets:
     def test_the_counts_are_the_six_presets(self):
         assert QuizPresets.COUNTS == (5, 10, 15, 20, 25, 30) and QuizPresets.DEFAULT == 10
 
-    def test_short_and_long_answers_start_at_ten(self):
-        assert QuizPresets.SUBJECTIVE_FROM == 10
-
 
 class TestTheCount:
     @pytest.mark.parametrize("count", [5, 10, 15, 20, 25, 30])

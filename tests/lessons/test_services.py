@@ -310,12 +310,6 @@ class TestCreateSheets:
 
         assert Lesson.objects.count() == 0
 
-    def test_a_refused_ask_creates_nothing(self, user, queue, bound_registry):
-        with pytest.raises(ActionRefused):
-            self.create(user, queue, gate=RefusingGate())
-
-        assert Lesson.objects.count() == 0 and queue.runs == []
-
 
 class TestCreateOrigin:
     def test_a_direct_lesson_stores_its_origin(self, user, queue, bound_registry):

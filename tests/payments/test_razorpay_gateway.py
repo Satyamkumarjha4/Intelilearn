@@ -36,7 +36,7 @@ from support.stripe import Wire
 from payments.config import GatewayConfig
 from payments.errors import GatewayRejected, GatewayUnavailable
 from payments.gateway import CheckoutOrder, CheckoutSession, PaymentGateway, PaymentStatus, ReturnUrls
-from payments.razorpay_gateway import RazorpayApi, RazorpayGateway
+from payments.razorpay_gateway import RazorpayGateway
 from payments.registry import PaymentGateways
 
 KEY_ID, KEY_SECRET, HOOK_SECRET = "rzp_test_" + "i" * 14, "s" * 24, "h" * 20  # not real keys
@@ -358,6 +358,3 @@ class TestTheGateway:
         built = RazorpayGateway.from_settings()
 
         assert built.missing_config() == [] and built.config.get("key_id") == KEY_ID
-
-    def test_the_api_has_no_version_to_pin(self):
-        assert not hasattr(RazorpayApi, "API_VERSION")

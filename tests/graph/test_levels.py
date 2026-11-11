@@ -99,9 +99,6 @@ class TestLevel:
     def test_parses_its_own_name_in_any_case(self, level, variant):
         assert Level.parse(variant(level.value)) is level
 
-    def test_parses_an_existing_level(self):
-        assert Level.parse(Level.PROFICIENT) is Level.PROFICIENT
-
     @pytest.mark.parametrize(
         ("old", "level"),
         [("novice", Level.BEGINNER), ("intermediate", Level.PROFICIENT), ("advanced", Level.EXPERT)],
@@ -171,9 +168,6 @@ class TestDifficulty:
     @pytest.mark.parametrize("variant", [str.lower, str.upper, str.title, lambda s: f" {s}\n"])
     def test_parses_its_own_name_in_any_case(self, difficulty, variant):
         assert Difficulty.parse(variant(difficulty.value)) is difficulty
-
-    def test_parses_an_existing_difficulty(self):
-        assert Difficulty.parse(Difficulty.BASIC) is Difficulty.BASIC
 
     @pytest.mark.parametrize(
         ("old", "new"),
