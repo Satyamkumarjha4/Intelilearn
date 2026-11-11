@@ -17,8 +17,8 @@ up: ## Build and start the stack (db, redis, backend, worker, beat, frontend)
 	$(COMPOSE) rm --force --stop --volumes frontend
 	$(COMPOSE) up --build
 
-down: ## Stop the stack (data volumes are kept)
-	$(COMPOSE) down
+down: ## Stop the stack and the test database (data volumes are kept)
+	$(COMPOSE) --profile test down
 
 logs: ## Follow logs of all services
 	$(COMPOSE) logs -f
@@ -38,8 +38,33 @@ shell: ## Django shell
 sync-supabase: ## Copy local Postgres rows that Supabase lacks (needs SUPABASE_DATABASE_URL)
 	$(RUN_BACKEND) python manage.py sync_to_supabase
 
-test: ## Run the test suite (always against the local docker Postgres, never Supabase)
+# The suite runs in parallel (pytest-xdist) against a throwaway Postgres in memory (the `db-test` service), never Supabase and
+# never the dev database. 8 workers is the best on a 12-core machine (12 was slower: the sandbox tests start browsers); CI
+# uses `-n auto`. Override with `make test PYTEST_WORKERS=4`. `--dist worksteal` lets an idle worker take from a busy one.
+PYTEST_WORKERS ?= 8
+PYTEST_PARALLEL := -n $(PYTEST_WORKERS) --dist worksteal
+RUN_TEST_DB := $(COMPOSE) run --rm -e POSTGRES_HOST=db-test backend
+
+db-test: ## Start the in-memory Postgres the tests run on
+	$(COMPOSE) up -d --wait db-test
+
+test: db-test ## Run the test suite in parallel on the throwaway Postgres (PYTEST_WORKERS=8)
+	$(RUN_TEST_DB) pytest $(PYTEST_PARALLEL)
+
+test-serial: ## Run the test suite in one process on the dev Postgres: for debugging a failure the parallel run shows
 	$(RUN_BACKEND) pytest
+
+test-for: ## Run the tests of one file: make test-for FILE=backend/credits/ledger.py (or a tests/ path); frontend: bun test <file>
+	@test -n "$(FILE)" || { echo "usage: make test-for FILE=backend/credits/ledger.py"; exit 1; }
+	@f="$(FILE)"; \
+	case "$$f" in \
+	  tests/*) paths="/$${f}" ;; \
+	  backend/*) rel=$${f#backend/}; paths=$$(ls tests/$$(dirname $$rel)/test_$$(basename $$rel .py)*.py 2>/dev/null | sed 's|^|/|' | tr '\n' ' ') ;; \
+	  *) echo "FILE must be a backend/ or tests/ path (frontend files: cd frontend && bun test <file>)"; exit 1 ;; \
+	esac; \
+	[ -n "$$paths" ] || { echo "no test file mirrors $$f (looked for tests/<same path>/test_<name>*.py)"; exit 1; }; \
+	echo "running $$paths"; \
+	$(RUN_BACKEND) pytest -c pyproject.toml $$paths
 
 lint: ## Lint backend (ruff, OpenAPI schema) and frontend (eslint, tsc, bun test)
 	$(COMPOSE) run --rm --no-deps backend sh -c "ruff check $(RUFF_PATHS) && ruff format --check $(RUFF_PATHS) && python manage.py spectacular --validate --fail-on-warn --file /dev/null"
@@ -112,4 +137,4 @@ reload: #rebuilds backend and frontend
 	$(COMPOSE) build backend frontend
 	$(COMPOSE) restart backend frontend
 
-.PHONY: help env up down logs migrate makemigrations superuser shell sync-supabase test lint check beat-log
+.PHONY: help env up down logs migrate makemigrations superuser shell sync-supabase db-test test test-serial test-for lint check beat-log

@@ -70,14 +70,17 @@ jobs:
       - name: Build backend image
         run: docker compose build backend
 
-      - name: Run tests (docker Postgres + Redis)
+      # In parallel (one worker per core of the runner), on the throwaway in-memory Postgres (`db-test`), as `make test` does.
+      # The one-time migration tests run here too: they are only skipped by the everyday local run (docs/process/testing.md).
+      - name: Run tests (in-memory Postgres + Redis, one worker per core)
         run: |
           set -o pipefail
-          docker compose run --rm backend pytest -p no:cacheprovider 2>&1 | tee test.log
+          docker compose up -d --wait db-test
+          docker compose run --rm -e POSTGRES_HOST=db-test backend pytest -p no:cacheprovider -n auto --dist worksteal 2>&1 | tee test.log
 
       - name: Stop services
         if: always()
-        run: docker compose down -v
+        run: docker compose --profile test down -v
 
       - name: Keep the log for the failure report
         if: failure()

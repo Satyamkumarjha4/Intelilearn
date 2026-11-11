@@ -72,6 +72,27 @@ services:
       timeout: 3s
       retries: 20
 
+  # The database the test suite runs on (`make test`, CI): the same Postgres as `db`, with its files in memory and fsync off.
+  # A test's own work is small, but every transaction=True test truncates every table on teardown and every parallel worker
+  # does the same, which made the dev database's disk the bottleneck (about a minute of three at 8 workers). Nothing here is
+  # worth keeping and nothing is published: the backend reaches it by name with POSTGRES_HOST=db-test. Profile `test`, so
+  # `make up` does not start it. The dev `db` is never written by the suite.
+  db-test:
+    profiles: ["test"]
+    image: postgres:17-alpine
+    command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off", "-c", "max_connections=300"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-lessoncrafter}
+      POSTGRES_USER: ${POSTGRES_USER:-lessoncrafter}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lessoncrafter}
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
   redis:
     image: redis:7-alpine
     environment:
