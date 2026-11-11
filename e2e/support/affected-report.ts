@@ -16,19 +16,23 @@ export class AffectedReport {
   lines(): string[] {
     const { selection, total } = this;
     const out: string[] = [];
-    if (selection.verdicts.length) {
-      const width = Math.min(60, Math.max(...selection.verdicts.map((v) => v.file.length)));
-      for (const verdict of selection.verdicts) {
-        const what =
-          verdict.kind === "map"
-            ? verdict.specs.map(short).join(", ") || "(manual specs only: none run)"
-            : verdict.kind === "no_spec"
-              ? `no spec needed: ${verdict.why}`
-              : verdict.kind === "trigger"
-                ? `runs everything: ${verdict.why}`
-                : "runs everything: not in spec-map.json";
-        out.push(`${verdict.file.padEnd(width)}  ${what}`);
-      }
+    const quiet = selection.verdicts.filter((v) => v.kind === "no_spec");
+    const loud = selection.verdicts.filter((v) => v.kind !== "no_spec");
+    const width = Math.min(60, Math.max(0, ...loud.map((v) => v.file.length)));
+    for (const verdict of loud) {
+      const what =
+        verdict.kind === "map"
+          ? verdict.specs.map(short).join(", ") || "(manual specs only: none run)"
+          : verdict.kind === "trigger"
+            ? `runs everything: ${verdict.why}`
+            : "runs everything: not in spec-map.json";
+      out.push(`${verdict.file.padEnd(width)}  ${what}`);
+    }
+    if (quiet.length) {
+      const reasons = [...new Set(quiet.map((v) => v.why.split(":")[0]!.split(",")[0]!.trim()))].join("; ");
+      const shown = quiet.slice(0, 5).map((v) => v.file).join(", ");
+      const more = quiet.length > 5 ? ` and ${quiet.length - 5} more` : "";
+      out.push(`no spec needed (${quiet.length} file${quiet.length === 1 ? "" : "s"}, ${reasons}): ${shown}${more}`);
     }
     if (selection.full) out.push(`FULL RUN because ${selection.fullBecause}`);
     const names = selection.specs.map(short).join(", ");

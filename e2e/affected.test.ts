@@ -7,7 +7,7 @@
  * of every piece of work ("which e2e specs ran and why").
  *
  * Use cases:
- * - each changed file is listed with the reason it was classified as it was and the specs it brings
+ * - each file that brings specs is listed with them; the files that need none are one line, with the reason once
  * - a full run says so in one line, with the file and the reason
  * - the closing line says how many of the specs run, and names them
  * - a change that needs no spec says so and runs nothing
@@ -33,7 +33,7 @@ describe("AffectedReport", () => {
     const lines = report(["backend/credits/ledger.py", "docs/process/testing.md"]);
 
     expect(lines.some((line) => line.includes("backend/credits/ledger.py") && line.includes("credits, journey"))).toBe(true);
-    expect(lines.some((line) => line.includes("docs/process/testing.md") && line.includes("no spec needed: documents"))).toBe(true);
+    expect(lines).toContain("no spec needed (1 file, documents): docs/process/testing.md");
   });
 
   test("the closing line says how many specs run and names them", () => {
@@ -64,6 +64,19 @@ describe("AffectedReport", () => {
 
   test("no changed file at all is nothing to run", () => {
     expect(report([]).at(-1)).toBe("running 0 of 4 specs: nothing to run (no file changed against the base)");
+  });
+});
+
+describe("the files that need no spec", () => {
+  test("are one line however many there are, naming the first few", () => {
+    const files = Array.from({ length: 9 }, (_, n) => `docs/page-${n}.md`);
+
+    const line = report(files).find((l) => l.startsWith("no spec needed"))!;
+
+    expect(line).toContain("(9 files, documents)");
+    expect(line).toContain("docs/page-0.md");
+    expect(line).toContain("and 4 more");
+    expect(line).not.toContain("docs/page-8.md");
   });
 });
 
