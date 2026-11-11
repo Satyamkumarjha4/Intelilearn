@@ -17,10 +17,13 @@ Use cases:
 - a recurring plan takes no credit amount and a one-time purchase takes no quantity other than 1
 - the numbers are whole: paise and credits, never a float
 - the answer says how many periods the purchase makes (none for one-time credits)
+- a plan row is read into its terms as it is, one-time credits included (`PurchaseDesk.terms_of`)
 """
 
 import pytest
 
+from credits.models import Plan
+from credits.plans.desk import PurchaseDesk
 from credits.plans.errors import InvalidPlanRequest
 from credits.plans.pricing import PlanPricing, PlanTerms
 
@@ -109,3 +112,16 @@ class TestRecurringPlans:
 
 def test_the_terms_are_made_from_a_plan_row_and_know_whether_they_are_one_time():
     assert ONE_TIME.one_time and not WEEKLY.one_time
+
+
+@pytest.mark.django_db
+class TestTermsOfAPlanRow:
+    def test_a_plan_row_is_read_into_its_terms_as_it_is(self):
+        from credits.plans.seed import PlanSeed
+
+        PlanSeed().apply()
+
+        assert PurchaseDesk.terms_of(Plan.objects.get(key="weekly_pro")) == WEEKLY
+        assert PurchaseDesk.terms_of(Plan.objects.get(key="monthly_pro")) == MONTHLY
+        assert PurchaseDesk.terms_of(Plan.objects.get(key="pro_plus")) == PLUS
+        assert PurchaseDesk.terms_of(Plan.objects.get(key="one_time")) == ONE_TIME

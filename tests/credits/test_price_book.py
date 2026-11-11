@@ -12,6 +12,7 @@ Use cases:
 - only one row of a key can be active, the database insists; inactive rows can be many
 - revising a price adds a row, deactivates the old one, keeps the history, records who and when, clears the cache, and
   changes nothing when the price and label are the same
+- two staff revising one key at the same moment leave one live row, the history kept, and the winner's price live
 - revising a key that has no price makes the first one; a negative price is refused
 - the seed adds the plan's prices and only the missing ones, never changing one an administrator edited, and is
   repeatable
@@ -19,6 +20,7 @@ Use cases:
 """
 
 import importlib
+import threading
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -116,6 +118,37 @@ class TestOneActiveRow:
 
 
 class TestRevising:
+    @pytest.mark.django_db(transaction=True)
+    @pytest.mark.xfail(
+        strict=True,
+        reason="FOUND BY THIS TEST: the select_for_update in PriceCatalog.revise does not see the row the other "
+        "revision has just made live, so the second revision raises IntegrityError (action_price_one_live_per_key) "
+        "instead of waiting its turn. The constraint keeps one live row, so nothing is corrupted, but the second "
+        "editor gets a 500. Fix: serialise per key (pg_advisory_xact_lock) or retry, then remove this mark.",
+    )
+    def test_two_staff_revising_one_key_at_once_leave_one_live_row_and_keep_the_history(self):
+        gate = threading.Barrier(2)
+        failures = []
+
+        def revise(credits):
+            try:
+                gate.wait(5)
+                PriceCatalog().revise("lesson.rest", credits, by=f"staff{credits}@example.com", now=NOW)
+            except Exception as error:  # the test reports it below, with what was left in the table
+                failures.append(error)
+            finally:
+                connection.close()
+
+        threads = [threading.Thread(target=revise, args=(credits,)) for credits in (8, 9)]
+        [t.start() for t in threads]
+        [t.join(30) for t in threads]
+
+        rows = list(ActionPrice.objects.filter(key="lesson.rest").order_by("id").values_list("credits", "active"))
+        assert failures == []
+        assert [active for _, active in rows].count(True) == 1  # one live price, never two and never none
+        assert sorted(credits for credits, _ in rows) == [7, 8, 9]  # the seeded 7 and both revisions are kept
+        assert PriceBook().credits("lesson.rest") in (8, 9)
+
     def test_it_adds_a_row_deactivates_the_old_one_and_keeps_the_history(self):
         old = ActionPrice.objects.get(key="lesson.rest", active=True)
 

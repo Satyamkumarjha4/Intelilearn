@@ -19,10 +19,13 @@ Use cases:
   payments selected, is refused with nothing asked
 - a submission with no token, or one that is not a token, still refunds (as before) and is not de-duplicated
 - the idempotency is the server's own: the second send at the same moment (two threads) asks once
+- two administrators refunding the whole of one order at the same moment, each with a token of their own, refund it
+  once between them: the order's lock makes the second find nothing left, so the total never passes what was paid
 """
 
 import re
 import threading
+import time
 import uuid
 
 import pytest
@@ -148,6 +151,40 @@ class TestOneSubmissionRefundsOnce:
         [t.join(30) for t in threads]
 
         assert payments.script.refunds == [("pay_1", order.amount_paise)]
+
+    @pytest.mark.django_db(transaction=True)
+    def test_two_administrators_with_their_own_tokens_never_refund_more_than_was_paid(
+        self, payments, staff, monkeypatch
+    ):
+        order = paid(payments)
+
+        class SlowGateway(list):
+            def append(self, item):
+                time.sleep(0.4)  # the provider takes a moment to answer, long enough for the other request to arrive
+                super().append(item)
+
+        monkeypatch.setattr(payments.script, "refunds", SlowGateway())
+        clients = [Client(), Client()]
+        for each in clients:
+            each.force_login(staff)
+        gate = threading.Barrier(2)
+
+        def go(each):
+            try:
+                gate.wait(5)
+                submit(
+                    each, order, token=str(uuid.uuid4())
+                )  # different tokens: only the order's lock stands between them
+            finally:
+                connection.close()
+
+        threads = [threading.Thread(target=go, args=(each,)) for each in clients]
+        [t.start() for t in threads]
+        [t.join(30) for t in threads]
+
+        asked = [amount for _, amount in payments.script.refunds]
+        assert sum(asked) == order.amount_paise and len(asked) == 1
+        assert RefundAttempt.objects.filter(order=order).count() == 1
 
 
 class TestTwoSubmissionsAreTwoRefunds:

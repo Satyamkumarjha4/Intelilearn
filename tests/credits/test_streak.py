@@ -14,6 +14,7 @@ Use cases:
 - weekly bonuses are reached at every multiple of 7 and a monthly one at every multiple of 28: day 7 pays 10, day 14
   pays 10,
   day 28 pays 20, day 35 pays 10, day 56 pays 20; a run of 29 days has reached 4 weekly and 1 monthly
+- the next weekly bonus is the next multiple of 7 above the run: 7 for a run of 0 to 6, 14 for 7 to 13, 28 for 27
 - a continuous 28 days can earn at most 78 credits (28 daily, 40 weekly, 10 monthly)
 - a repair is possible only for yesterday, only if it was missed and the day before was a streak day, and only while
   fewer than
@@ -112,6 +113,12 @@ class TestMilestones:
 
         assert [m.n for m in reached if m.kind == "weekly"] == weekly
         assert [m.n for m in reached if m.kind == "monthly"] == monthly
+
+    @pytest.mark.parametrize(
+        ("run", "next_day"), [(0, 7), (1, 7), (6, 7), (7, 14), (13, 14), (14, 21), (27, 28), (28, 35), (55, 56)]
+    )
+    def test_the_next_weekly_bonus_is_the_next_multiple_of_seven_above_the_run(self, run, next_day):
+        assert StreakMilestones().next_after(run) == next_day
 
     @pytest.mark.parametrize(
         ("day", "pays"), [(7, 10), (14, 10), (21, 10), (28, 20), (35, 10), (42, 10), (56, 20), (6, 0)]

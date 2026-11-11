@@ -5,6 +5,7 @@ Why: without a per-account limit a password can be guessed from many addresses; 
 every visitor shares one bucket behind the Next.js proxy; and routine refreshes must not use up the login budget.
 
 Use cases:
+- registering is limited per client address, and another address is not affected
 - login is limited per account, across client addresses
 - other accounts are not affected by one account's limit
 - the per-address limit keys on the X-Forwarded-For client address
@@ -13,6 +14,8 @@ Use cases:
 
 import pytest
 from rest_framework.throttling import SimpleRateThrottle
+
+from accounts.models import User
 
 pytestmark = pytest.mark.django_db
 
@@ -34,6 +37,27 @@ def login(client, email, password="wrong", ip="10.0.0.1"):
     return client.post(
         "/api/auth/login", {"email": email, "password": password}, format="json", HTTP_X_FORWARDED_FOR=ip
     )
+
+
+def register(client, n, ip="10.0.0.1"):
+    return client.post(
+        "/api/auth/register",
+        {"email": f"new{n}@example.com", "password": PASSWORD, "name": "New", "accept_terms": True},
+        format="json",
+        HTTP_X_FORWARDED_FOR=ip,
+    )
+
+
+def test_registering_is_limited_per_client_address(api_client, rates):
+    rates(auth="2/min", auth_account="100/min")
+    assert register(api_client, 1).status_code == 201
+    assert register(api_client, 2).status_code == 201
+
+    blocked = register(api_client, 3)
+
+    assert blocked.status_code == 429 and blocked.json()["code"] == "throttled"
+    assert not User.objects.filter(email="new3@example.com").exists()
+    assert register(api_client, 4, ip="10.0.0.2").status_code == 201  # another visitor behind the same proxy
 
 
 def test_login_is_limited_per_account_across_addresses(api_client, user, rates):

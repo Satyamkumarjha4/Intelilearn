@@ -9,6 +9,7 @@ Use cases:
 - register refuses a person who has not confirmed the terms (a field error, nothing created)
 - register rejects a duplicate email (any case) and reports a weak password on the password field
 - login accepts any email case and rejects a wrong password
+- login refuses a deactivated account with the same answer as a wrong password, and sets no cookie
 - /auth/me requires authentication and returns the signed-in user, with whether they are staff (the console's guard)
 - a Bearer header works without CSRF; the auth endpoints and cookie-authenticated writes require it
 - refresh rotates and blacklists the old token, and fails without a cookie or for a deactivated user
@@ -224,6 +225,17 @@ def test_refresh_rotates_and_blacklists_the_old_token(signed_in_client):
     assert replayed.status_code == 401
     assert replayed.json()["code"] == "session_expired"
     assert is_cleared(replayed, "lc_session")
+
+
+def test_a_deactivated_account_cannot_sign_in_and_is_told_what_a_wrong_password_is_told(api_client, user):
+    wrong = api_client.post("/api/auth/login", {"email": user.email, "password": "wrong"}, format="json")
+    User.objects.filter(pk=user.pk).update(is_active=False)
+
+    refused = api_client.post("/api/auth/login", {"email": user.email, "password": PASSWORD}, format="json")
+
+    assert refused.status_code == 401
+    assert refused.json() == wrong.json()  # nothing says the account exists, or that it was switched off
+    assert not any(name in refused.cookies for name in ("lc_access", "lc_refresh", "lc_session"))
 
 
 def test_refresh_without_cookie_is_unauthorised(api_client):

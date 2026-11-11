@@ -23,13 +23,17 @@ Use cases:
   and skips
   those with nothing
 - a period's bucket is linked to the period, carries the purchase's id and the period's id on its ledger row
+- `start_due` itself, given the books and the bucket maker the ledger passes it: it starts the queued period that is
+  due, ends the one that is over, counts both on the books, grants a period once, and does nothing when asked again
 """
 
 from datetime import timedelta
 
 import pytest
+from django.db import transaction
 
 from credits.audit import LedgerAudit
+from credits.ledger import Ledger, _Books
 from credits.models import CreditBucket, CreditTransaction, PlanPeriod, Wallet
 from credits.plans.activator import PeriodActivator
 from credits.plans.desk import PurchaseDesk
@@ -95,6 +99,40 @@ class TestStartingAndEnding:
 
         assert row.meta["source"] == "subscription" and row.meta["period"] == str(period.pk)
         assert row.idempotency_key == f"period:{period.pk}"
+
+
+class TestStartDueItself:
+    def test_it_starts_what_is_due_ends_what_is_over_counts_both_and_does_nothing_the_second_time(
+        self, buy, ledger, user, clock
+    ):
+        buy(user, "weekly_pro", quantity=2)
+        clock.advance(days=7)
+        rows = CreditTransaction.objects.count()
+
+        with transaction.atomic():
+            books = _Books(user.pk, clock.now(), ledger.balance(user), None)
+            PeriodActivator().start_due(books, Ledger._new_bucket)
+            again = _Books(user.pk, clock.now(), books.balance, None)
+            PeriodActivator().start_due(again, Ledger._new_bucket)
+
+        assert (books.periods_started, books.periods_ended) == (1, 1)
+        assert (again.periods_started, again.periods_ended) == (0, 0)
+        assert statuses(user) == ["ended", "active"]
+        second = PlanPeriod.objects.get(user=user, position=2)
+        assert second.bucket is not None and second.bucket.amount_granted == 100
+        assert CreditTransaction.objects.count() == rows + 1  # one grant, for the second period, under its own key
+        assert CreditTransaction.objects.filter(idempotency_key=f"period:{second.pk}").count() == 1
+
+    def test_it_leaves_alone_a_period_whose_time_has_not_come(self, buy, ledger, user, clock):
+        buy(user, "weekly_pro", quantity=2)
+        rows = CreditTransaction.objects.count()
+
+        with transaction.atomic():
+            books = _Books(user.pk, clock.now(), ledger.balance(user), None)
+            PeriodActivator().start_due(books, Ledger._new_bucket)
+
+        assert (books.periods_started, books.periods_ended) == (0, 0)
+        assert statuses(user) == ["active", "queued"] and CreditTransaction.objects.count() == rows
 
 
 class TestEveryMovementStartsWhatIsDue:

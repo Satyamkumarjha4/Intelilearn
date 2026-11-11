@@ -13,14 +13,19 @@ requests.
 Use cases:
 - a tick starts a period that is due and ends one that is over, for a learner nobody touched, and reports how many
 - a second tick changes nothing
+- two ticks at the same moment start the period once: one grant, one active period, and neither tick fails (the
+  second waits for the wallet's lock; without it the ledger's unique key would still stop a second grant, but as a
+  failure in the job's log)
 - a learner who touched their wallet first has nothing left for the tick
 - the tick reports a failing plan part by name and still runs the others
 - the report the task returns keeps its shape (the plan counts are in the report object, not in the task's answer)
 """
 
+import threading
 from datetime import timedelta
 
 import pytest
+from django.db import connection
 
 from credits.models import CreditTransaction, PlanPeriod
 from credits.plans.desk import PurchaseDesk
@@ -55,6 +60,37 @@ def test_a_tick_starts_what_is_due_and_ends_what_is_over_and_counts_them(buy, le
     assert (report.periods_started, report.periods_ended) == (1, 1)
     assert [p.status for p in PlanPeriod.objects.filter(user=user).order_by("starts_at")] == ["ended", "active"]
     assert ledger.balance(user) == 100
+
+
+@pytest.mark.django_db(transaction=True)
+def test_two_ticks_at_the_same_moment_start_the_period_once(buy, ledger, user, clock, caplog):
+    buy(user, "weekly_pro", quantity=2)
+    clock.advance(days=7)
+    gate = threading.Barrier(2)
+    reports, failures = [], []
+
+    def tick():
+        try:
+            gate.wait(5)
+            reports.append(HourlyTick(ledger=ledger).run())
+        except Exception as error:  # reported below, with what the books hold
+            failures.append(error)
+        finally:
+            connection.close()
+
+    threads = [threading.Thread(target=tick) for _ in range(2)]
+    [t.start() for t in threads]
+    [t.join(30) for t in threads]
+
+    second = PlanPeriod.objects.get(user=user, position=2)
+    stepping_failed = [r.getMessage() for r in caplog.records if "Could not step the plan periods" in r.getMessage()]
+    assert (
+        failures == [] and stepping_failed == []
+    )  # the second tick waits for the wallet, it does not collide on the key
+    assert sum(r.periods_started for r in reports) == 1 and sum(r.periods_ended for r in reports) == 1
+    assert [p.status for p in PlanPeriod.objects.filter(user=user).order_by("starts_at")] == ["ended", "active"]
+    assert CreditTransaction.objects.filter(idempotency_key=f"period:{second.pk}").count() == 1
+    assert ledger.balance(user) == 100  # the week's credits once, not twice
 
 
 def test_a_second_tick_changes_nothing(buy, ledger, user, clock):
