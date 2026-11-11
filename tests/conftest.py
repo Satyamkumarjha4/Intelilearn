@@ -10,9 +10,9 @@
   `_pin_the_open_gate` (autouse, same module) starts every test on `OpenGate` whatever the default becomes.
 - `payments` (`support/payments.py`): a scripted payment gateway switched on, to buy, to send signed events and to read
   what happened.
-- `_a_migration_test_leaves_the_schema_at_the_latest` (autouse, for `migration`-marked tests): fails a test that migrates
-  the database back and does not bring it forward again. The next test on that worker (tests run in parallel, in any
-  order) would otherwise meet an old schema.
+- `_a_migration_test_leaves_the_schema_at_the_latest` (autouse, for `migration`-marked tests): fails a test that
+  migrates the database back and does not bring it forward again. The next test on that worker (tests run in parallel,
+  in any order) would otherwise meet an old schema.
 - `make_lesson(**fields)`: creates lessons, by default owned by `user`; `lesson` is one at the first stage.
 """
 
