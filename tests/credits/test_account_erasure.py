@@ -9,6 +9,8 @@ unspent credits are written off on the ledger, held credits are released first, 
 Use cases:
 - erasing anonymises the user in place: email and name scrubbed, password unusable, inactive, not staff, marked deleted,
   and the profile emptied (education, notes, zone and all)
+- a reserve that is settled while the account is being erased (a run finishing at that moment) is not released twice,
+  and the erasure goes on to forfeit what is left
 - the learner's lessons and quizzes are gone, with their checkpoints and model calls; other learners' are not
 - streak days and the cached streak are gone
 - open holds are released first, then the balance is forfeited in one row equal to what was left; the ledger still
@@ -201,6 +203,40 @@ class TestTheMoney:
         assert forfeit.balance_after == 0 and forfeit.idempotency_key == f"forfeit:{user.pk}"
         assert report.forfeited == balance_before + 5 and report.released_holds == 1
         assert ledger.balance(user) == 0 and ledger.reserved(user) == 0
+
+    def test_a_reserve_settled_while_the_account_is_being_erased_is_not_released_and_the_erasure_goes_on(
+        self, lived, ledger, threads
+    ):
+        user, _, _ = lived
+
+        class FinishesFirst:
+            """The ledger, but a run finishes and settles its reserve in the moment between the erasure listing the
+            open reserves and releasing them."""
+
+            def __init__(self, real):
+                self.real = real
+
+            def __getattr__(self, name):
+                return getattr(self.real, name)
+
+            def release(self, hold_id, key=None):
+                self.real.commit(hold_id)
+                return self.real.release(hold_id, key)
+
+        erasure = AccountErasure(
+            ledger=FinishesFirst(ledger),
+            lessons=LessonService(events=Silent(), erasure=LessonErasure(threads)),
+            quizzes=QuickQuizService(erasure=QuizErasure(threads)),
+        )
+
+        report = erasure.erase(user)
+
+        assert report.released_holds == 0  # it was settled, not released
+        assert ledger.balance(user) == 0 and ledger.reserved(user) == 0
+        types = list(CreditTransaction.objects.filter(user=user).order_by("id").values_list("type", flat=True))
+        assert "release" not in types[-3:] and types[-1] == "forfeit"
+        user.refresh_from_db()
+        assert user.deleted_at is not None
 
     def test_the_ledger_still_equals_the_buckets_and_no_row_was_edited(self, erasure, lived):
         user, *_ = lived

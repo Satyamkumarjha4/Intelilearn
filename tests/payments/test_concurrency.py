@@ -9,16 +9,20 @@ together by a barrier, and check what must hold in every interleaving.
 Use cases:
 - the same event sent by several threads at once is applied once and the rest are duplicates (or ignored): the credits
   are granted once
+- the same event for an order nobody knows, at once (nothing to lock, so both reach the unique event row): one is
+  recorded and the other is a duplicate, and neither fails
 - a webhook and the reconciler's answer for the same payment, at once, grant once
 - a success and a refund at once leave the books balanced
 """
 
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from django.db import connections
+from django.db.models.signals import pre_save
 from django.utils import timezone
 
 from credits.audit import LedgerAudit
@@ -58,6 +62,25 @@ def event_for(order, kind="succeeded", event_id="evt_1", amount=None):
         datetime.now(UTC),
         "pay_1",
     )
+
+
+def test_the_same_event_for_an_unknown_order_at_once_is_recorded_once_and_neither_fails(payments, user):
+    order = payments.buy("one_time", credits=100)
+    order.provider_ref = "ref_nobody"  # there is no order to lock, so only the unique event row separates the two
+    event = event_for(order, event_id="evt_unknown")
+
+    def pause(**_):
+        time.sleep(0.3)  # both have looked for the event and found none before either writes it
+
+    pre_save.connect(pause, sender=PaymentEventLog)
+    try:
+        results = together([lambda: OrderEvents().apply("scripted", event) for _ in range(2)])
+    finally:
+        pre_save.disconnect(pause, sender=PaymentEventLog)
+
+    assert not [r for r in results if isinstance(r, Exception)], results
+    assert sorted(r.outcome for r in results) == ["duplicate", "unknown_order"]
+    assert PaymentEventLog.objects.filter(event_id="evt_unknown").count() == 1
 
 
 def test_the_same_event_at_once_is_applied_once(payments, user):

@@ -14,6 +14,8 @@ Use cases:
 - an amount or a currency that does not match the order is recorded as `amount_mismatch`, grants nothing, and is logged
 - a success that arrives after the order expired or failed still grants (the money was taken), and revives its void
   purchase
+- fulfilling an order that is already fulfilled changes nothing and grants nothing more, and fulfilling one that was
+  never paid is refused and grants nothing
 - a failure event ends a waiting order and voids its purchase; after a payment it changes nothing
 - a plan order grants its first week at once and queues the rest
 - a full refund takes back every unspent credit of the purchase and revokes its emptied bucket; a partial refund takes
@@ -36,6 +38,7 @@ from support.clock import FakeClock
 from credits.audit import LedgerAudit
 from credits.ledger import Ledger
 from credits.models import CreditBucket, CreditTransaction, PlanPeriod, PlanPurchase
+from payments.fulfilment import FulfilmentService
 from payments.models import PaymentEventLog, PaymentOrder
 
 pytestmark = pytest.mark.django_db
@@ -101,6 +104,30 @@ class TestAPayment:
 
         assert applied.outcome == "unknown_order" and Ledger().balance(user) == 0
         assert PaymentEventLog.objects.get().order is None
+
+
+class TestFulfilmentItself:
+    def test_an_order_already_fulfilled_is_returned_as_it_is_and_grants_nothing_more(self, payments, user):
+        order = payments.buy("one_time", credits=100)
+        payments.send("succeeded", order)
+        order.refresh_from_db()
+        assert order.status == "fulfilled" and Ledger().balance(user) == 100
+        rows = CreditTransaction.objects.count()
+
+        again = FulfilmentService().fulfil(order)
+
+        assert again.status == "fulfilled" and Ledger().balance(user) == 100
+        assert CreditTransaction.objects.count() == rows
+
+    def test_an_order_that_was_never_paid_is_refused_and_grants_nothing(self, payments, user):
+        order = payments.buy("one_time", credits=100)
+
+        with pytest.raises(ValueError, match="pending order cannot be fulfilled"):
+            FulfilmentService().fulfil(order)
+
+        order.refresh_from_db()
+        assert order.status == "pending" and Ledger().balance(user) == 0
+        assert not CreditTransaction.objects.filter(user=user).exists()
 
 
 class TestAWrongAmount:

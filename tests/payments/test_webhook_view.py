@@ -10,7 +10,9 @@ Use cases:
 - a bad, missing or foreign signature is a 400 and does not touch the database, not even one query
 - a body that is signed but cannot be read is a 400
 - a gateway that does not exist, or is not switched on, is a 404
-- a body over 256 KB is a 413, by its declared size and by its real size
+- a body over 256 KB is a 413, by its declared size, by Django's own limit and by its real size when it declared none (a
+  chunked upload), and in each case before any database work
+- a body that makes the gateway's parser fail in any way at all is a 400 that touches nothing, never a 500
 - it needs no sign-in and no CSRF cookie, and it is rate limited per address
 - a signed event for an order we do not know is answered 200 (the provider must not retry it forever) and is only
   recorded
@@ -23,7 +25,9 @@ from django.test import Client
 from rest_framework.throttling import SimpleRateThrottle
 
 from credits.ledger import Ledger
+from payments.errors import BodyTooLarge
 from payments.models import PaymentEventLog, PaymentOrder
+from payments.views import WebhookView
 
 pytestmark = pytest.mark.django_db
 
@@ -111,6 +115,20 @@ class TestAnUnprovedCallback:
 
         assert response.status_code == 400
 
+    def test_a_body_that_makes_the_parser_fail_is_a_400_and_touches_nothing(
+        self, payments, browserless, monkeypatch, django_assert_num_queries
+    ):
+        def blow_up(self, headers, raw_body):
+            raise RecursionError("a hostile body")  # not an InvalidWebhook: whatever a parser can raise
+
+        monkeypatch.setattr(payments.gateway_cls, "verify_webhook", blow_up)
+
+        with django_assert_num_queries(0):
+            response = browserless.generic("POST", URL, b"[" * 1000, content_type="application/json")
+
+        assert (response.status_code, response.json()["code"]) == (400, "invalid_webhook")
+        assert not PaymentEventLog.objects.exists()
+
     def test_a_gateway_that_does_not_exist_is_a_404(self, payments, browserless):
         assert (
             browserless.generic(
@@ -130,6 +148,39 @@ class TestAnUnprovedCallback:
         )
 
         assert (response.status_code, response.json()["code"]) == (413, "body_too_large")
+
+    def test_a_big_body_by_its_declared_size_is_refused_before_any_query(
+        self, payments, browserless, django_assert_num_queries
+    ):
+        with django_assert_num_queries(0):
+            response = browserless.generic(
+                "POST", URL, b"{}", content_type="application/json", CONTENT_LENGTH=str(256 * 1024 + 1)
+            )
+
+        assert response.status_code == 413
+
+    def test_a_body_over_djangos_own_limit_is_a_413_before_any_query(
+        self, payments, browserless, settings, django_assert_num_queries
+    ):
+        settings.DATA_UPLOAD_MAX_MEMORY_SIZE = 100  # the body is read lazily, and refused as it is read
+
+        with django_assert_num_queries(0):
+            response = browserless.generic("POST", URL, b"x" * 200, content_type="application/json")
+
+        assert (response.status_code, response.json()["code"]) == (413, "body_too_large")
+
+    def test_a_body_that_declared_no_length_and_is_over_the_cap_is_refused_before_any_query(
+        self, django_assert_num_queries
+    ):
+        class ChunkedRequest:
+            """A chunked upload: no Content-Length to check first, and then more than the cap."""
+
+            META: dict = {}
+            headers: dict = {}
+            body = b"x" * (256 * 1024 + 1)
+
+        with django_assert_num_queries(0), pytest.raises(BodyTooLarge):
+            WebhookView().post(ChunkedRequest(), "scripted")
 
     def test_a_big_body_is_a_413_by_its_real_size(self, payments, browserless):
         response = browserless.generic("POST", URL, b"x" * (256 * 1024 + 1), content_type="application/json")
