@@ -24,6 +24,10 @@ AFTER = [("lessons", "0021_retire_three_sheets")]
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
+def latest():
+    return list(MigrationExecutor(connection).loader.graph.leaf_nodes())
+
+
 def migrate(targets):
     executor = MigrationExecutor(connection)
     executor.loader.build_graph()
@@ -41,7 +45,7 @@ def before(django_user_model):
     apps = migrate(BEFORE)
     owner = django_user_model.objects.create_user("three@example.com", password="x", name="T")
     yield apps, owner
-    migrate(AFTER)  # leave the database at the latest state
+    migrate(latest())  # leave the database at the latest state, whatever migration has been added since
 
 
 def make(apps, owner, **fields):

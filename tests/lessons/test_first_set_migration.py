@@ -28,6 +28,10 @@ BEFORE = [("lessons", "0018_question_first_set")]
 AFTER = [("lessons", "0019_first_set_backfill")]
 
 
+def latest():
+    return list(MigrationExecutor(connection).loader.graph.leaf_nodes())
+
+
 def migrate(targets):
     executor = MigrationExecutor(connection)
     executor.loader.build_graph()
@@ -57,7 +61,7 @@ def owner(django_user_model):
 def before():
     apps = migrate(BEFORE)
     yield apps
-    migrate([("lessons", "0020_contract_final_test")])  # leave the database at the latest state
+    migrate(latest())  # leave the database at the latest state, whatever migration has been added since
 
 
 pytestmark = pytest.mark.django_db(transaction=True)
