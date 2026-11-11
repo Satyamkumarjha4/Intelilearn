@@ -21,7 +21,6 @@ Use cases:
 - another cookie-authenticated unsafe request keeps its CSRF check
 """
 
-import uuid
 from datetime import timedelta
 
 import pytest
@@ -35,6 +34,8 @@ from payments.models import PaymentOrder
 pytestmark = pytest.mark.django_db
 
 ORDERS, GATEWAYS = "/api/payments/orders", "/api/payments/gateways"
+# Fixed, not uuid4(): it is in a test id, and every pytest-xdist worker must collect the same ids.
+NO_SUCH_ORDER = "00000000-0000-4000-8000-000000000000"
 
 
 def make(client, **body):
@@ -42,7 +43,7 @@ def make(client, **body):
 
 
 class TestAccess:
-    @pytest.mark.parametrize("url", [GATEWAYS, ORDERS, f"{ORDERS}/{uuid.uuid4()}"])
+    @pytest.mark.parametrize("url", [GATEWAYS, ORDERS, f"{ORDERS}/{NO_SUCH_ORDER}"])
     def test_they_need_a_signed_in_learner(self, api_client, url):
         assert api_client.get(url).status_code == 401
 
