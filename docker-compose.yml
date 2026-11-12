@@ -152,6 +152,7 @@ services:
     build: ./frontend
     environment:
       DJANGO_API_ORIGIN: http://backend:8000
+      EDGE_PROXY_HOPS: ${EDGE_PROXY_HOPS:-1}
       NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:${BACKEND_PORT:-8000}}
       NEXT_PUBLIC_DJANGO_ADMIN_URL: ${NEXT_PUBLIC_DJANGO_ADMIN_URL:-http://localhost:${BACKEND_PORT:-8000}/admin}
     volumes:

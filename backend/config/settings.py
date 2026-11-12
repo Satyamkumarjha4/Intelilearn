@@ -295,6 +295,8 @@ REST_FRAMEWORK = {
     # Keep the API port bound to localhost (BIND_ADDRESS) so nobody can reach Django directly with a forged header.
     "NUM_PROXIES": env.int("TRUSTED_PROXY_COUNT", default=1),
 }
+# Whether the operator said how many proxies stand in front (`core.E002` in `check --deploy` wants it said, not defaulted).
+TRUSTED_PROXY_COUNT_EXPLICIT = bool(env.str("TRUSTED_PROXY_COUNT", default="").strip())
 
 # --- Auth: JWTs in httpOnly cookies (see accounts/cookies.py) ---
 SIMPLE_JWT = {
