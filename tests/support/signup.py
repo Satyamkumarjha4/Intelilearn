@@ -46,6 +46,11 @@ class Signup:
         with self._capture(execute=True):
             return self.client.post("/api/auth/verify/resend", {"email": email, "purpose": purpose}, format="json")
 
+    @staticmethod
+    def mailbox_to_login():
+        """The login codes sent so far."""
+        return [m for m in MAILBOX.messages if m.kind == "login_code"]
+
     def complete(self, **fields):
         """Register, then enter the code that was mailed: the response of the verify (the account and its cookies)."""
         registered = self.register(**fields)

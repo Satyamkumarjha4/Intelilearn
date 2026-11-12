@@ -6,6 +6,8 @@ caller's transaction; announcing it is a separate step the caller takes after th
 
 import logging
 
+from django.db import transaction
+
 from ..clock import Clock, SystemClock
 from ..models import PendingSignup, SignupRecord, User
 from ..signals import account_ready
@@ -54,10 +56,18 @@ class AccountActivation:
         user.refresh_from_db(fields=["email_verified_at", "email_verification_source"])
         return True
 
+    @classmethod
+    def announce(cls, user: User) -> None:
+        """Tell the rest of the app an account is ready to use, **after the account is committed**: right away when no
+        transaction is open, otherwise when the outermost one commits (and never if it rolls back). So no receiver,
+        and no grant, ever runs for an account that does not exist, and a receiver that makes the database fail cannot
+        take the caller's transaction, and the account with it, down."""
+        transaction.on_commit(lambda: cls._send(user))
+
     @staticmethod
-    def announce(user: User) -> None:
-        """Tell the rest of the app an account is ready to use. A receiver that fails is logged and cannot undo the
-        account: the person exists, and what the receiver does (the signup credits) can be run again for them."""
+    def _send(user: User) -> None:
+        """A receiver that fails is logged and cannot undo the account: the person exists, and what the receiver does
+        (the signup credits) can be run again for them."""
         for receiver, outcome in account_ready.send_robust(sender=User, user=user):
             if isinstance(outcome, Exception):
                 logger.error("account_ready receiver %r failed for user %s", receiver, user.pk, exc_info=outcome)

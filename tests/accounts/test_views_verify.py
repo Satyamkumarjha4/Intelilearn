@@ -19,7 +19,9 @@ Use cases:
   mails queued), and so do verify and resend; the owner of the known address is mailed a notice
 - a resend with the ticket sends a new code and kills the old one; without it nothing is sent and the live code is
   untouched; for an unknown address nothing is sent; always `202`
-- a login resend sends only to an unverified account; always `202`
+- a login resend sends only to an unverified account; always `202`, **and the reply is byte-identical whether or not a
+  code was sent** (known, verified, closed, alias and unknown addresses), with the same limits for an unknown address
+  as a known one
 - the `429`s of the per-email and cooldown limits carry `Retry-After` and spend nothing when validation fails
 - two sign-ups for aliases of one inbox make one account; an alias of an existing account is the known case
 - a disposable domain is refused on the email field, a school address on the blocklist is not
@@ -254,6 +256,35 @@ def test_a_login_resend_goes_only_to_an_unverified_account(signup, user, mailbox
     assert [r.status_code for r in replies] == [202, 202, 202]
     assert [m.kind for m in mailbox.messages] == ["login_code"]
     assert mailbox.messages[0].to == unverified.email
+
+
+def test_a_login_resend_answers_identically_whether_or_not_a_code_was_sent(signup, user, loose_limits):
+    unverified = User.objects.create_user("unproved@example.com", password=PASSWORD, name="Unproved")
+    closed = User.objects.create_user("closed@example.com", password=PASSWORD, name="Closed", verified=False)
+    User.objects.filter(pk=closed.pk).update(is_active=False)
+
+    replies = {
+        email: signup.resend(email, "login")
+        for email in (unverified.email, user.email, "nobody@example.com", closed.email, "ADA+x@example.com")
+    }
+
+    assert {r.status_code for r in replies.values()} == {202}
+    assert len({r.content for r in replies.values()}) == 1  # the same body, byte for byte
+    assert len({tuple(sorted(r.cookies)) for r in replies.values()}) == 1  # and no cookie either way
+    assert [m.to for m in signup.mailbox_to_login()] == ["unproved@example.com"]  # but a code went to one address only
+
+
+def test_a_login_resend_is_limited_the_same_for_an_unknown_address_as_for_a_known_one(signup, monkeypatch):
+    User.objects.create_user("unproved@example.com", password=PASSWORD, name="Unproved")
+    monkeypatch.setitem(SimpleRateThrottle.THROTTLE_RATES, "auth_code_send_email", "2/hour")
+    monkeypatch.setitem(SimpleRateThrottle.THROTTLE_RATES, "auth_code_cooldown", "1000/min")
+
+    known = [signup.resend("unproved@example.com", "login").status_code for _ in range(3)]
+    signup.client.cookies.clear()
+    unknown = [signup.resend("nobody@example.com", "login").status_code for _ in range(3)]
+
+    assert known == unknown == [202, 202, 429]
+    assert "Retry-After" in signup.resend("nobody@example.com", "login")
 
 
 # --- the limits ---
