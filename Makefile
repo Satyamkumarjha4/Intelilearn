@@ -112,6 +112,9 @@ e2e: fake-llm ## Run the Playwright smoke tests against the fake-LLM stack (firs
 e2e-affected: ## Run only the e2e specs the change can touch, against BASE (default main), and say which and why (PLAN=1: print only)
 	cd e2e && BASE="$(BASE)" E2E_COMPOSE="$(E2E_COMPOSE)" E2E_BASE_URL=http://localhost:$(E2E_FRONTEND_PORT) E2E_API_URL=http://localhost:$(E2E_BACKEND_PORT) E2E_STAFF_EMAIL=$(E2E_STAFF_EMAIL) E2E_STAFF_PASSWORD=$(E2E_STAFF_PASSWORD) E2E_WORKERS=$(E2E_WORKERS) bun affected.ts $(if $(PLAN),--plan)
 
+probe-proxy: ## Send a forged X-Forwarded-For through the front door and say which address Django counts: make probe-proxy URL=https://your.site
+	$(COMPOSE) exec backend python manage.py probe_forwarded_header $(if $(URL),--url $(URL))
+
 payments-live: ## Check each provider's real test mode that has keys in .env (no payment is made)
 	$(RUN_BACKEND) pytest -m payments_live ../tests/payments/test_stripe_live.py ../tests/payments/test_razorpay_live.py -rs
 

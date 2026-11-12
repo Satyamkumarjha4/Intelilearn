@@ -1,7 +1,7 @@
 # Implementation plan: Sign-in and account verification (Phase 11)
 
 **Spec:** [credits-system.md](../architecture/credits-system.md) §4.1 and A22 (sign-in is its own phase and **public launch is blocked on it**); the seam is `account_ready` ([design.md](../architecture/design.md) §4.26, [credits plan §5.12](../archive/credits-implementation-plan.md#512-sign-in-is-phase-11))
-**Status:** **Planned, not started.** Product decisions confirmed by the product owner on 2026-11-12 (D1 to D17), amended after the plan review (S2); nothing is built.
+**Status:** **In progress:** phase 11.0 is built (see 12.1); 11.1 onward are planned. Product decisions confirmed by the product owner on 2026-11-12 (D1 to D17), amended after the plan review (S2) and the 11.0 answers (S3).
 **Last updated:** 2026-11-12
 **Checked against:** `main` at `3b20983`: `backend/accounts/` (models, serializers, views, cookies, authentication, throttling, signals), `backend/credits/earning/signup.py`, `credits/signals.py`, `credits/erasure.py`, `config/settings.py`, `frontend/proxy.ts`, `lib/route-guard.ts`, `app/auth/`, `app/api/[...path]/route.ts`, `console/`, `e2e/spec-map.json`, and the docs named in [section 15](#15-docs-to-update).
 
@@ -13,6 +13,7 @@ This plan says how to close the free-credit farming hole before public launch: *
 |---|---|---|
 | S1 | First version of the plan, written after the product owner answered the sixteen questions of 2026-11-12. Question 3 (the sending domain) was left as an unfilled template, so it is planned as **"no domain yet": a launch blocker with the DNS steps** (D3) | all |
 | S2 | Plan review before building. **(1)** A *signup ticket* cookie binds a pending signup to the browser that made it, so a second person re-registering a victim's email can neither set the password nor finish the sign-up (T19, D4). **(2)** Checked whether a learner can change their email: **no** (profile, serializer, console); **the Django admin form can**, which is closed. Email change is out of scope (D17); a defensive model rule and tests hold it; `LinkPolicy` never matches an email that was never proved by its owner (5.5), and never touches a staff account. **(3)** Console *approve* creates the account with an **unusable password**; staff confirm the person out of band first (D15). **(4)** A password reset for an email that has only a pending signup is **unknown** (same reply, nothing sent) (D11). **(5)** D3 unchanged: the domain is not owned yet. A reset for a password-less account with no linked identity (a staff-approved one) works and sets its first password (D11) | 1, 3, 4, 5.2, 5.5, 5.8, 5.11, 7.2, 8.1, 8.3, 10, 11, 12.1, 12.2, 12.5, 13 |
+| S3 | Answers to the 11.0 report. **(1)** The signup ticket lives **24 hours**, the pending row's life (`SIGNUP_TICKET_MINUTES` default 1440); the code still expires in 10 minutes, so a late visitor asks for a new code, which is a resend that the ticket authorises (T19, R14). **(2)** Existing lowercased dev addresses stay as they are: the move to "stored as typed" (11.1) touches only new accounts (D7). **(3)** `REFUSE_STAFF` is confirmed: a staff account is never linked to or taken over by Google (5.5, D6); **two-factor sign-in for staff accounts** is a roadmap item, not this phase. **(4)** A deploy-time probe, `manage.py probe_forwarded_header` (`make probe-proxy URL=…`), sends a forged `X-Forwarded-For` through the real front door and prints the address Django counted; launch checklist item 8 runs it (5.10, 12.7) | 1, 4.2 (T19), 5.5, 5.10, 8.3, 12.1, 12.7, 14 (R14) |
 
 ## Contents
 
@@ -127,7 +128,7 @@ Findings from reading the code that shape the plan. None of them is a surprise t
 | **T16** | No log line, error message or audit entry ever contains a code. The `ConsoleMailer` prints the code to the backend log **only with `DJANGO_DEBUG` true**. | Codes are credentials for ten minutes. |
 | **T17** | The e2e stack runs `MAIL_BACKEND=outbox` and `AUTH_ALLOW_FAKE_PROVIDER=true`; `Api.signUp` registers, reads the code from `GET /api/dev/outbox`, verifies, then fills the profile. | One helper changes; 13 specs keep working. |
 | **T18** | `auth_live` and `mail_live` pytest markers, excluded by default like `payments_live`: optional checks against the real Brevo API (send to a test address) and Google's discovery and JWKS documents. | The tests never need real credentials; the live ones catch API drift when keys exist. |
-| **T19** | **The signup ticket.** `POST /auth/register` sets `lc_signup`, a Django-signed (salt `accounts.signup-ticket`), httpOnly, `SameSite=Lax`, short-lived cookie (path `/api/auth`, `SIGNUP_TICKET_MINUTES`, default 60) whose value is the **pending row's id**. `POST /auth/verify` (purpose `signup`) and `POST /auth/verify/resend` (purpose `signup`) need the cookie **and** that its id equals the live pending row's id for the typed email; otherwise the usual `invalid_code` (or the usual `202` with nothing sent for a resend). A re-register makes a **new row with a new id** and a new cookie; the old ticket then matches nothing. The ticket is not stored anywhere. | Without it, whoever re-registers a victim's address replaces the pending row with their own password and the victim's own code would then create an account with the attacker's password. With it the attacker holds a ticket but not the code, and the victim holds the code but a dead ticket. |
+| **T19** | **The signup ticket.** `POST /auth/register` sets `lc_signup`, a Django-signed (salt `accounts.signup-ticket`), httpOnly, `SameSite=Lax`, cookie (path `/api/auth`, `SIGNUP_TICKET_MINUTES`, default 1440: 24 hours, the pending row's life; the code inside it still lives 10 minutes) whose value is the **pending row's id**. `POST /auth/verify` (purpose `signup`) and `POST /auth/verify/resend` (purpose `signup`) need the cookie **and** that its id equals the live pending row's id for the typed email; otherwise the usual `invalid_code` (or the usual `202` with nothing sent for a resend). A re-register makes a **new row with a new id** and a new cookie; the old ticket then matches nothing. The ticket is not stored anywhere. | Without it, whoever re-registers a victim's address replaces the pending row with their own password and the victim's own code would then create an account with the attacker's password. With it the attacker holds a ticket but not the code, and the victim holds the code but a dead ticket. |
 | **T20** | **A model rule backs the "no email change" decision.** `User.save()` remembers the email it was loaded with; if a saved user's `email` differs, `email_canonical` is recomputed **and `email_verified_at` and the source are cleared**. The admin's `email` field is read-only on the change form (it stays editable on the add form), so there is no ordinary path that triggers it. Erasure, which rewrites the email on purpose, is the one caller and is tested. | Defence in depth: a future form, script or console action that edits an email cannot leave a verified flag behind that belongs to the old address. |
 
 ### 4.3 Unverified facts: read these before the phase that needs them
@@ -270,7 +271,7 @@ A pure class: given the identity, the account found by `(provider, subject)`, an
 | email **not** verified | any | any | `REFUSE_UNVERIFIED_EMAIL` |
 | verified | exists, active | n/a | `SIGN_IN` (the link is the key, the email may have changed) |
 | verified | exists, closed or erased | n/a | `REFUSE_CLOSED` (the same plain error as a wrong password) |
-| verified | none | exists, **a staff account** (`is_staff` or `is_superuser`) | `REFUSE_STAFF` (a staff account signs in with its password; the same plain error; **to be confirmed with the product owner before 11.3**) |
+| verified | none | exists, **a staff account** (`is_staff` or `is_superuser`) | `REFUSE_STAFF` (a staff account signs in with its password; the same plain error; **confirmed by the product owner on 2026-11-12, S3**; two-factor sign-in for staff is a later roadmap item) |
 | verified | none | exists, source **`code`, `google` or `microsoft`** | `LINK_AND_SIGN_IN` |
 | verified | none | exists, source **`legacy`, `staff`, `operator` or empty** | `TAKE_OVER` (password unusable, tokens revoked, verified with the provider as the source, the link made) |
 | verified | none | none | `NEEDS_FINISH` (the "one last step" screen) |
@@ -319,6 +320,8 @@ Message kinds (`MailTemplates`, plain text and a simple HTML part, one template 
 2. If Next cannot see the socket address, the proxy forwards nothing and the edge is the only source.
 
 Either way the app gains a **system check**: with `DJANGO_DEBUG` false, `TRUSTED_PROXY_COUNT` must be set deliberately (not left at the development default), and the docs say what the edge must do. Closing this item removes it from the roadmap's open list.
+
+**The deploy-time probe (S3).** The unit tests prove the proxy's rule, not the edge in front of it. `manage.py probe_forwarded_header [--url <front door>]` (`make probe-proxy URL=https://<the site>`, run where the app's cache is reachable) sends two forged headers through the real front door, **a single forged entry** and **a forged entry followed by an edge's**, then reads the throttle cache and prints which address Django counted. It exits non-zero if the visitor's chosen address was the one counted: a single forged entry that is counted means nothing in front overwrites the header. The launch checklist runs it against the public URL (12.7 item 8). Its logic (`core.proxy_probe.ForwardedHeaderProbe`) is unit-tested against fake front doors; the edge itself can only be tried for real.
 
 ### 5.11 Changing an email: out of scope (D17, T20)
 
@@ -603,7 +606,7 @@ Paths have no trailing slash. Every endpoint gets `@extend_schema`. Updates go i
 
 | Cookie | Holds | Path | Lifetime |
 |---|---|---|---|
-| `lc_signup` | signed id of the pending signup (T19) | `/api/auth` | `SIGNUP_TICKET_MINUTES` (60); cleared after a successful verify |
+| `lc_signup` | signed id of the pending signup (T19) | `/api/auth` | `SIGNUP_TICKET_MINUTES` (1440, the pending row's life); cleared after a successful verify |
 | `lc_oauth` | signed state, nonce, PKCE verifier, `next` | `/api/auth/oauth` | 10 minutes |
 | `lc_finish` | signed verified identity awaiting the last step | `/api/auth/oauth` | 15 minutes |
 
@@ -716,7 +719,7 @@ Each phase is its own branch (`phase-11/<topic>`), ends with **`make check` and 
 
 ### 12.1 Phase 11.0: Prepare, and fix the header: M
 
-**Built** on branch `phase-11/prepare` (not merged). Deviations from the list below: `UserManager` still lowercases the email (it was lowercased before; storing it as typed arrives in 11.1 with the register change, so learners see no change now); the migration's collision fallback is `dup:<id>:<address>` and the column is `char(320)` (T7); the `OUTSIDE` entry for the mail log is deleted by `AccountTraces.mail()` and counted in the erasure report; the purge covers only the mail log for now (the other tables arrive with 11.1).
+**Built** on branch `phase-11/prepare` (not merged). Deviations from the list below: `UserManager` still lowercases the email (it was lowercased before; storing it as typed arrives in 11.1 with the register change, so learners see no change now); the migration's collision fallback is `dup:<id>:<address>` and the column is `char(320)` (T7); the `OUTSIDE` entry for the mail log is deleted by `AccountTraces.mail()` and counted in the erasure report; the purge covers only the mail log for now (the other tables arrive with 11.1). The deploy-time probe of 5.10 was added after the 11.0 review.
 
 Branch `phase-11/prepare`. **Behaviour for learners does not change.**
 
@@ -781,7 +784,7 @@ Public launch needs **11.1 to 11.4 merged and all of this done**:
 5. **Google Cloud:** create the project, the OAuth consent screen (app name, the domain, the contact address `satyamjha4@gmail.com`), set it **In production**, create a **Web application** client with the exact redirect URI `<public site>/api/auth/oauth/google/callback`, and put the client id and secret in the production environment (U4).
 6. **Run `manage.py require_reverification --keep-staff`** (try `--dry-run` first) if dev accounts exist on the production database, or start from an empty one.
 7. **Run `manage.py grant_signup_credits --dry-run`** and read the report: it must now say it skipped the unverified.
-8. Set `TRUSTED_PROXY_COUNT` for the real edge, and confirm the edge overwrites `X-Forwarded-For` (11.0).
+8. Set `TRUSTED_PROXY_COUNT` (and `EDGE_PROXY_HOPS` if more than one proxy stands in front of Next) for the real edge, then **run `make probe-proxy URL=https://<the public site>`** and read it: it must say both cases passed (a single forged `X-Forwarded-For` is not the address Django counts). If it fails, the edge is not overwriting or appending the header; fix the edge before launch (5.10).
 9. Update the Privacy Policy for the mail provider, Google, and the 30-day retention (15) and bump its version.
 10. Check the console's abuse board is empty and the Turnstile switch is **off** and understood.
 11. Run the optional `mail_live` and `auth_live` checks once if keys exist (T18).
@@ -855,7 +858,7 @@ The 15 `/auth/register` call sites change in 11.1: tests that only need a user u
 | R11 | **A legacy dev account is taken over** by a Google sign-in for its address | Low | Low (dev data) | By design (D6, D9); `require_reverification` before launch makes it the rule for all of them |
 | R12 | **Scope:** the largest piece since phase 10 | High | High | Six independently shippable phases; 11.1 closes the hole alone; 11.5 is optional |
 | R13 | **Two sources of "now" and of "ready"** | Low | Medium | One `AccountActivation` sends `account_ready` (T15); one `Clock` port in `accounts` (T10) |
-| R14 | **The signup ticket lives in one browser**: someone who registers on a phone and opens the email on a laptop can read the code but must type it on the phone; one who clears cookies or switches browser must register again | Medium | Low | The verify screen says where to enter the code and offers "Start again"; a re-register replaces the old row; console `resend` has the same limit and says so |
+| R14 | **The signup ticket lives in one browser** (24 hours): someone who registers on a phone and opens the email on a laptop can read the code but must type it on the phone; one who clears cookies or switches browser must register again; the code (10 minutes) is the shorter clock, and a late visitor asks for a new one | Medium | Low | The verify screen says where to enter the code and offers "Start again"; a re-register replaces the old row; console `resend` has the same limit and says so |
 
 ## 15. Docs to update
 
