@@ -53,6 +53,9 @@ An AI tutor that diagnoses what a learner knows, then generates a lesson or stud
 - Every change to behaviour comes with tests in the matching path; every new public method and every branch is exercised.
 - Use injected fakes (fake chat models, `FakeGateway`, `httpx.MockTransport`) over `mock.patch`. Never call external services (LLMs, media APIs); only `pytest -m live` may.
 - **What to run, and when** (the full rules are in `docs/process/testing.md` 6.2): while working, only the tests for the files you touched (`make test-for FILE=backend/x/y.py`, `bun test <file>`), never the whole suite and never `make e2e` per commit. At the end of a phase, or before handing work back, `make check` and `make e2e-affected` **once**. Before merging to `main`, `make check` and then the full `make e2e` **once**. CI runs lint and the whole suite on every push.
+- **Fail-without proofs (mutations) run in a throwaway git worktree**, never in the working tree: a run that is interrupted must not be able to leave a broken guard in the code you are editing.
+- **Never run a script that rewrites source files in bulk** (re-wrapping, search and replace across files). Formatting is ruff and eslint only; a long line is fixed by hand.
+- **Before every commit, review `git diff --stat` and the diff of every file touched**, and confirm no mutation, debug code or unintended change remains. Say in the report that you did.
 - **Report the actual results.** Every report states which e2e specs ran and why (from `make e2e-affected`'s printout), or says that e2e was not run. If something fails, say so and show the output. Never describe work as done while checks fail.
 - A new e2e spec is added to `e2e/spec-map.json` in the same change (a guard test fails otherwise); a new source folder is mapped or named in `e2e/spec-map.test.ts`. Never delete a test that protects money, payments, auth, the ledger or security without naming the test that covers the same rule.
 

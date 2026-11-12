@@ -29,7 +29,7 @@ Items carried over from the phases below, plus gaps found since. Nothing here bl
 **Credits and payments (left after phase 10)**
 
 - [ ] **Phase 11, sign-in methods, blocks public launch** (D15): until accounts are verified, each unverified account gets 30 free credits.
-- [ ] **Two-factor sign-in for staff accounts** (decided 2026-11-12, S3 of [the sign-in plan](../to_be_developed/signin-implementation-plan.md)): staff never sign in with Google or get linked to it (`REFUSE_STAFF`), so their password is the only door to the console; a second factor is a later phase, not Phase 11.
+- [ ] **Two-factor sign-in for staff accounts** (decided 2026-11-12; **must land before any second staff account exists**: until then a staff password can be reset by an emailed code alone; S3 of [the sign-in plan](../to_be_developed/signin-implementation-plan.md)): staff never sign in with Google or get linked to it (`REFUSE_STAFF`), so their password is the only door to the console; a second factor is a later phase, not Phase 11.
 - [ ] Run the live checks with fresh test keys: `make payments-live` and `make e2e-payments` (Stripe's test key supplied for 10.7 was expired; Razorpay's were never supplied). The selectors in the two browser specs for the providers' own pages are unverified.
 - [ ] Re-check Stripe's India onboarding and the RBI card rules before launch (D20); Razorpay is a configuration change if Stripe is not available. Decide the default gateway at launch.
 - [ ] A first real webhook test on a public address (a tunnel or staging) for each provider; until then the return page and the five-minute sweep settle payments.
