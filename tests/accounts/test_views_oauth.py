@@ -250,12 +250,10 @@ def test_an_account_nobody_proved_is_taken_over_its_old_password_and_old_session
         User.objects.filter(pk=victim.pk).update(
             email_verified_at="2026-01-01T00:00:00Z", email_verification_source=source
         )
-    old_refresh = str(RefreshToken.for_user(victim))  # a session the previous holder of the password has
-    thief = APIClient()
-    assert thief.post("/api/auth/login", {"email": victim.email, "password": PASSWORD}).status_code in (200, 403)
-    stale = APIClient()
-    stale.cookies["lc_refresh"] = old_refresh
-    assert stale.post("/api/auth/refresh").status_code == 200
+    holder = APIClient()  # a session the previous holder of the password has: it renews, so it is live
+    holder.cookies["lc_refresh"] = str(RefreshToken.for_user(victim))
+    assert holder.post("/api/auth/refresh").status_code == 200
+    old_refresh = holder.cookies["lc_refresh"].value  # the rotated token: the one still good before the take-over
 
     reply = oauth.sign_in(PERSON)
 
