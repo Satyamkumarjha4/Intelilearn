@@ -8,7 +8,7 @@ import { Api } from "./api";
  */
 export class Outbox {
   /** The six digits in the newest message of `kind` to `email`, waiting for the worker to deliver it. */
-  static async code(request: APIRequestContext, email: string, kind: "signup_code" | "login_code" = "signup_code", after = 0): Promise<string> {
+  static async code(request: APIRequestContext, email: string, kind: "signup_code" | "login_code" | "reset_code" = "signup_code", after = 0): Promise<string> {
     const read = async () => {
       const response = await request.get(`/api/dev/outbox?email=${encodeURIComponent(email)}`);
       const messages: { kind: string; text: string }[] = (await response.json().catch(() => ({ messages: [] }))).messages ?? [];

@@ -1,5 +1,6 @@
 import type { FieldErrors } from "@/lib/api";
 import { AuthErrors } from "@/lib/auth-errors";
+import { CodeEntry } from "@/lib/code-entry";
 import type { CodePurpose } from "@/lib/auth-api";
 
 export type Mode = "login" | "register";
@@ -52,6 +53,60 @@ export class AuthRules {
   /** The sentence under the heading: where the code went. */
   static verifyDescription(email: string): string {
     return `We sent a 6-digit code to ${email}. Enter it below. It only works for a short while.`;
+  }
+
+  static readonly FORGOT = {
+    title: "Forgot your password?",
+    pageTitle: "Forgot password",
+    description: "Tell us your email and we'll send you a code to choose a new one.",
+    submit: "Send me a code",
+    pending: "Sending…",
+    link: "Forgot password?",
+    back: "Back to sign in",
+  } as const;
+
+  static readonly RESET = {
+    title: "Choose a new password",
+    pageTitle: "New password",
+    label: "6-digit code",
+    password: "New password",
+    submit: "Save and sign in",
+    pending: "Saving…",
+    hint: "Can't find it? Look in your spam or junk folder.",
+    different: "Use a different email",
+    lost: "We've lost track of where we sent your code.",
+    start: "Start again",
+  } as const;
+
+  /** The sentence under the heading of the new-password screen. It never says the address has an account: it is the same for every address. */
+  static resetDescription(email: string): string {
+    return `If ${email} has an account, we've sent a 6-digit code to it. Enter it below, then choose a new password.`;
+  }
+
+  /** The address of the forgot-password screen, keeping where the learner was headed. */
+  static forgotHref(next: string): string {
+    return next === AuthRules.DEFAULT_NEXT ? "/auth/forgot" : `/auth/forgot?next=${encodeURIComponent(next)}`;
+  }
+
+  /** The address of the new-password screen, keeping where the learner was headed. */
+  static resetHref(next: string): string {
+    return next === AuthRules.DEFAULT_NEXT ? "/auth/reset" : `/auth/reset?next=${encodeURIComponent(next)}`;
+  }
+
+  /** Checks before asking for a code: an email that looks like one. */
+  static validateForgot(email: string): FieldErrors {
+    if (!email.trim()) return { email: ["Enter your email address."] };
+    return EMAIL.test(email.trim()) ? {} : { email: ["That doesn't look like an email address."] };
+  }
+
+  /** Checks before saving a new password: a whole code and the two password rules the server enforces. */
+  static validateReset(code: string, password: string): FieldErrors {
+    const errors: FieldErrors = {};
+    if (!CodeEntry.isComplete(code)) errors.code = ["Enter the 6-digit code from your email."];
+    if (!password) errors.new_password = ["Choose a new password."];
+    else if (password.length < 8) errors.new_password = ["Use at least 8 characters."];
+    else if (/^\d+$/.test(password)) errors.new_password = ["Use more than numbers."];
+    return errors;
   }
 
   static readonly STEPS = ["A 10-question quick check on any topic", "See your starting point", "An interactive lesson made for you"] as const;

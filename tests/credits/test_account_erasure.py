@@ -13,8 +13,8 @@ Use cases:
   and the erasure goes on to forfeit what is left
 - the anonymised account is unverified, its canonical email is the anonymised address (the real address is free again),
   and the mail log rows sent to the real address are deleted
-- the sign-in records of the account (codes, the pending sign-up, the where-from record, the email lock) are deleted and
-  other people's stay
+- the sign-in records of the account (codes, the pending sign-up, the where-from record, the email lock, linked sign-in
+  providers) are deleted and other people's stay
 - the learner's lessons and quizzes are gone, with their checkpoints and model calls; other learners' are not
 - streak days and the cached streak are gone
 - open holds are released first, then the balance is forfeited in one row equal to what was left; the ledger still
@@ -152,7 +152,7 @@ class TestWhatIsErased:
 
         from django.utils import timezone
 
-        from accounts.models import EmailLock, PendingSignup, SignupRecord, VerificationCode
+        from accounts.models import EmailLock, ExternalIdentity, PendingSignup, SignupRecord, VerificationCode
 
         user, *_ = lived
         now = timezone.now()
@@ -172,9 +172,13 @@ class TestWhatIsErased:
             expires_at=now + timedelta(minutes=10), invalidated_at=now,
         )  # fmt: skip
 
+        ExternalIdentity.objects.create(user=user, provider="google", subject="sub-a")
+        ExternalIdentity.objects.create(user=other_user, provider="google", subject="sub-b")
+
         report = erasure.erase(user)
 
-        assert (report.codes, report.signup_records, report.locks) == (2, 1, 1)
+        assert (report.codes, report.signup_records, report.locks, report.identities) == (2, 1, 1, 1)
+        assert list(ExternalIdentity.objects.values_list("user_id", flat=True)) == [other_user.pk]
         assert not PendingSignup.objects.exists()
         assert list(VerificationCode.objects.values_list("user_id", flat=True)) == [other_user.pk]
         assert list(SignupRecord.objects.values_list("user_id", flat=True)) == [other_user.pk]

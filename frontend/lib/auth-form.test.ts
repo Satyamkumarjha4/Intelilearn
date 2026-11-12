@@ -17,6 +17,9 @@
  *   incomplete (keeping where they were headed)
  * - the "Check your email" screen's address keeps where the learner was headed and says when a sign-in asked for the code;
  *   its purpose is a sign-up unless the address says `login`; its words say "code" and no internal term
+ * - the forgot-password and new-password screens keep where the learner was headed; the forgot form wants an email that
+ *   looks like one; the new-password form wants a whole code and a password that meets the two rules the server enforces;
+ *   their words say "code" and never claim that the address has an account
  * - each mode has its copy, its pending label, its switch link and its page title
  * - the create-account request carries the browser's time zone when it has one, and leaves the key out when it does not
  */
@@ -150,6 +153,38 @@ describe("the code screen", () => {
     expect(AuthRules.VERIFY.title).toBe("Check your email");
     expect(AuthRules.verifyDescription("ada@example.com")).toContain("6-digit code to ada@example.com");
     expect(Object.values(AuthRules.VERIFY).join(" ")).not.toMatch(/OTP|token|pending|verification/i);
+  });
+});
+
+describe("the password reset screens", () => {
+  test("their addresses keep where the learner was headed", () => {
+    expect(AuthRules.forgotHref("/lessons")).toBe("/auth/forgot");
+    expect(AuthRules.resetHref("/lessons")).toBe("/auth/reset");
+    expect(AuthRules.forgotHref("/quizzes/a?b=1")).toBe(`/auth/forgot?next=${encodeURIComponent("/quizzes/a?b=1")}`);
+    expect(AuthRules.resetHref("/quizzes")).toBe(`/auth/reset?next=${encodeURIComponent("/quizzes")}`);
+  });
+
+  test("the forgot form wants an email that looks like one", () => {
+    expect(AuthRules.validateForgot("")).toEqual({ email: ["Enter your email address."] });
+    expect(AuthRules.validateForgot("ada")).toEqual({ email: ["That doesn't look like an email address."] });
+    expect(AuthRules.validateForgot(" ada@example.com ")).toEqual({});
+  });
+
+  test("the new-password form wants a whole code and a password that meets the rules", () => {
+    expect(AuthRules.validateReset("123456", "tulip-garden-7")).toEqual({});
+    expect(AuthRules.validateReset("12345", "tulip-garden-7")).toEqual({ code: ["Enter the 6-digit code from your email."] });
+    expect(AuthRules.validateReset("123 456", "tulip-garden-7")).toEqual({});
+    expect(AuthRules.validateReset("123456", "")).toEqual({ new_password: ["Choose a new password."] });
+    expect(AuthRules.validateReset("123456", "1234567")).toEqual({ new_password: ["Use at least 8 characters."] });
+    expect(AuthRules.validateReset("123456", "12345678")).toEqual({ new_password: ["Use more than numbers."] });
+  });
+
+  test("the words say code, never OTP, and never claim the address has an account", () => {
+    const words = [...Object.values(AuthRules.FORGOT), ...Object.values(AuthRules.RESET), AuthRules.resetDescription("ada@example.com")].join(" ");
+
+    expect(AuthRules.resetDescription("ada@example.com")).toContain("If ada@example.com has an account");
+    expect(words).not.toMatch(/OTP|token|pending|verification|we have an account|your account/i);
+    expect(AuthRules.FORGOT.link).toBe("Forgot password?");
   });
 });
 

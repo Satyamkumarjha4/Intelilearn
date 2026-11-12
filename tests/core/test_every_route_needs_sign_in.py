@@ -29,6 +29,8 @@ OPEN = {
     "api/auth/register": "starts an account: a code is emailed, nothing is created yet",
     "api/auth/verify": "finishes a sign-up or a sign-in with the emailed code (the code is the credential)",
     "api/auth/verify/resend": "asks for a new code for the same sign-up (always 202, rate limited)",
+    "api/auth/password/forgot": "asks for a code to choose a new password (always 202, rate limited)",
+    "api/auth/password/reset": "chooses a new password with the emailed code (the code is the credential)",
     "api/auth/login": "signs in",
     "api/auth/refresh": "renews a session from its own refresh cookie, which is the credential",
     "api/auth/logout": "signs out, harmlessly, for anyone",

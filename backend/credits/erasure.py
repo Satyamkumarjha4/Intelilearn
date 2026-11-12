@@ -29,6 +29,7 @@ from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
 
 from accounts.models import (
     EmailLock,
+    ExternalIdentity,
     OutboundMail,
     PendingSignup,
     Profile,
@@ -67,6 +68,7 @@ class ErasureReport:
     codes: int = 0  # verification codes (and the pending sign-up that held some), deleted
     signup_records: int = 0  # the record of where the account was made from, deleted
     locks: int = 0  # the email lock, deleted
+    identities: int = 0  # linked sign-in providers, deleted
 
 
 class UserDataMap:
@@ -89,6 +91,7 @@ class UserDataMap:
         "accounts.User_user_permissions.user": (CLEARED, "the account's permissions are removed"),
         "token_blacklist.OutstandingToken.user": (ERASED, "every refresh token is deleted, with its blacklist row"),
         "accounts.VerificationCode.user": (ERASED, "the codes sent to the account are deleted"),
+        "accounts.ExternalIdentity.user": (ERASED, "a link to a Google (or Microsoft) sign-in is personal data"),
         "accounts.SignupRecord.user": (ERASED, "where and how the account was made (an IP and a domain) is deleted"),
         "credits.StreakDay.user": (ERASED, "the days studied are deleted"),
         "credits.StreakState.user": (ERASED, "the cached streak is deleted"),
@@ -160,6 +163,9 @@ class AccountTraces:
     def pending(self):
         return PendingSignup.objects.filter(email_canonical=self.user.email_canonical)
 
+    def identities(self):
+        return ExternalIdentity.objects.filter(user=self.user)
+
     def signup_records(self):
         return SignupRecord.objects.filter(user=self.user)
 
@@ -176,6 +182,7 @@ class AccountTraces:
             "codes": self.codes().count(),
             "signup_records": self.signup_records().count(),
             "locks": self.locks().count(),
+            "identities": self.identities().count(),
         }
 
     def forget(self) -> dict[str, int]:
@@ -189,6 +196,7 @@ class AccountTraces:
         self.pending().delete()
         self.signup_records().delete()
         self.locks().delete()
+        self.identities().delete()
         for entry in self.audit():
             AuditEntry.objects.filter(pk=entry.pk).update(
                 before=self._cleaned(entry.before), after=self._cleaned(entry.after)

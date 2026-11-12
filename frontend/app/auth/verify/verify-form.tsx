@@ -7,6 +7,7 @@ import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react"
 
 import { useAuth } from "@/components/auth-provider";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { CodeBoxes } from "@/components/code-boxes";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
 import { AuthApi, type CodePurpose } from "@/lib/auth-api";
@@ -15,7 +16,6 @@ import { AuthRules } from "@/lib/auth-form";
 import { CodeEntry } from "@/lib/code-entry";
 import { PendingEmail } from "@/lib/pending-email";
 import { ResendClock } from "@/lib/resend-clock";
-import { cn } from "@/lib/utils";
 
 import { BrandPanel } from "../brand-panel";
 
@@ -140,38 +140,7 @@ export function VerifyForm({ purpose, next }: { purpose: CodePurpose; next: stri
                 className="flex flex-col gap-4"
                 noValidate
               >
-                <label htmlFor={`${id}-code`} className="text-sm font-extrabold">
-                  {copy.label}
-                </label>
-                <div className="relative focus-within:[&>div]:border-ring">
-                  <div className="grid grid-cols-6 gap-2" aria-hidden="true">
-                    {CodeEntry.boxes(typed).map((digit, index) => (
-                      <div
-                        key={index}
-                        className={cn(
-                          "grid h-14 place-items-center rounded-xl border-[1.5px] border-border bg-background font-mono text-2xl font-bold",
-                          index === typed.length && "border-ring ring-3 ring-ring/40",
-                        )}
-                      >
-                        {digit}
-                      </div>
-                    ))}
-                  </div>
-                  <input
-                    ref={input}
-                    id={`${id}-code`}
-                    name="code"
-                    value={typed}
-                    onChange={(event) => onType(event.target.value)}
-                    autoComplete="one-time-code"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    maxLength={14}
-                    aria-invalid={!!error}
-                    aria-describedby={`${id}-hint`}
-                    className="absolute inset-0 h-full w-full cursor-text opacity-0"
-                  />
-                </div>
+                <CodeBoxes ref={input} id={`${id}-code`} label={copy.label} value={typed} onChange={onType} invalid={!!error} describedBy={`${id}-hint`} />
                 <p id={`${id}-hint`} className="text-sm text-muted-foreground">
                   {copy.hint}
                 </p>

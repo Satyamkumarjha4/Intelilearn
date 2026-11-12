@@ -371,3 +371,24 @@ class SignupRecord(models.Model):
 
     def __str__(self):
         return f"{self.method} sign-up from {self.email_domain}"
+
+
+class ExternalIdentity(models.Model):
+    """A sign-in provider's account linked to one of ours (Google; Microsoft later). The key is `(provider, subject)`,
+    the provider's stable id, never the email (which can change and, for some providers, is not always the person's).
+    Phase 11.2 reads it (an account that signs in with Google and has no password is not sent a reset code); 11.3 makes
+    the rows."""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="identities")
+    provider = models.CharField(max_length=20)
+    subject = models.CharField(max_length=255)
+    email_at_link = models.EmailField(blank=True)
+    hosted_domain = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    last_sign_in_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["provider", "subject"], name="one_account_per_identity")]
+
+    def __str__(self):
+        return f"{self.provider} identity of {self.user_id}"

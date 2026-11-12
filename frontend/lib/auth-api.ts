@@ -22,6 +22,17 @@ export class AuthApi {
     return (await this.client.request<{ user: User }>("/auth/verify", { method: "POST", body: { email, code, purpose } })).user;
   }
 
+  /** Ask for a code to choose a new password. Always accepted, whether or not the address has an account; a refusal is a 429. */
+  async forgot(email: string): Promise<void> {
+    await this.client.request("/auth/password/forgot", { method: "POST", body: { email } });
+  }
+
+  /** Choose a new password with the emailed code: the person is signed in and every older session ends. A weak password is a
+   *  400 with `fields.new_password`; a wrong code is the usual `invalid_code`. */
+  async reset(email: string, code: string, newPassword: string): Promise<User> {
+    return (await this.client.request<{ user: User }>("/auth/password/reset", { method: "POST", body: { email, code, new_password: newPassword } })).user;
+  }
+
   /** Ask for a new code. Always accepted; a refusal is a 429 with `Retry-After`. */
   async resend(email: string, purpose: CodePurpose): Promise<void> {
     await this.client.request("/auth/verify/resend", { method: "POST", body: { email, purpose } });

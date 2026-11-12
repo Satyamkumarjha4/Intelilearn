@@ -47,7 +47,9 @@ A sign-up is **not an account**: `PendingSignup` holds it until the code is ente
 | `EmailLock` | `email_canonical` (unique), `locked_until`, `strikes`, `updated_at` | Three dead codes within an hour lock the email for an hour, whether or not an account has it; the console unlocks (11.4) |
 | `SignupRecord` | `user` FK (`PROTECT`), `ip`, `email_domain`, `method` (`code`, `google`, `microsoft`), `created_at` | Where an account was made from: the abuse board's counters (11.4). Purged after `SIGNUP_RECORD_RETENTION_DAYS` (30) |
 
-All four are in `UserDataMap` (erased with the account; the pending sign-up, the codes and the lock are found by the canonical email).
+`ExternalIdentity` (`user` FK, `provider`, `subject`, `email_at_link`, `hosted_domain`, `created_at`, `last_sign_in_at`; unique `(provider, subject)`) links a Google (later Microsoft) sign-in to an account by the provider's stable id, never the email. Phase 11.2 only reads it (an account with a link and no password gets "sign in with Google" instead of a reset code); 11.3 makes the rows.
+
+All five are in `UserDataMap` (erased with the account; the pending sign-up, the codes and the lock are found by the canonical email).
 
 ### `Profile` (one-to-one with User; created on registration and filled in during onboarding)
 

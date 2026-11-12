@@ -7,7 +7,7 @@ from django.views.decorators.cache import cache_control
 from django.views.decorators.csrf import ensure_csrf_cookie
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import generics, status
-from rest_framework.exceptions import APIException, AuthenticationFailed
+from rest_framework.exceptions import APIException, AuthenticationFailed, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import BaseThrottle
@@ -22,16 +22,19 @@ from .cookies import AuthCookies
 from .models import OutboundMail, User
 from .options import ProfileOptions
 from .serializers import (
+    ForgotSerializer,
     LoginSerializer,
     ProfileOptionsSerializer,
     ProfileSerializer,
     RegisterSerializer,
     ResendSerializer,
+    ResetSerializer,
     UserSerializer,
     VerifySerializer,
 )
 from .throttling import AuthRateThrottle, CodeLimits, LoginAccountThrottle
 from .verification.login import LoginVerification
+from .verification.reset import PasswordReset, WeakPassword
 from .verification.signup import SignupVerification
 from .verification.ticket import SignupTicket
 
@@ -193,6 +196,64 @@ class VerifyResendView(_PublicAuthView):
         else:
             LoginVerification().resend(email, ip=ip)
         return Response({"status": "sent"}, status=status.HTTP_202_ACCEPTED)
+
+
+class ForgotPasswordView(_PublicAuthView):
+    throttle_classes = [AuthRateThrottle]
+    throttle_scope = "auth"
+
+    @extend_schema(
+        tags=AUTH_TAG,
+        summary="Ask for a code to choose a new password",
+        description=(
+            "Always `202`, whether or not the address has an account: the code goes only to an active account, and the "
+            'notice "this address signs in with Google" to one that has no password. An address that only has a '
+            "pending sign-up is treated as unknown. A `429` carries `Retry-After`."
+        ),
+        request=ForgotSerializer,
+        responses={202: OpenApiResponse(_sent_envelope), 429: None},
+    )
+    def post(self, request):
+        serializer = ForgotSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data["email"]
+        CodeLimits().enforce(request, self, email, CodeLimits.SEND)
+        PasswordReset().start(email, ip=self.client_address(request))
+        return Response({"status": "sent"}, status=status.HTTP_202_ACCEPTED)
+
+
+class ResetPasswordView(_PublicAuthView):
+    throttle_classes = [AuthRateThrottle]
+    throttle_scope = "auth"
+
+    @extend_schema(
+        tags=AUTH_TAG,
+        summary="Choose a new password with the emailed code",
+        description=(
+            "Sets the password, ends every older session (every refresh token is blacklisted), counts the reset as "
+            "proof of the inbox, and signs the person in. `400 invalid_code` for every failure of the code; a weak "
+            "password is a `400` with `fields.new_password` and spends no try."
+        ),
+        request=ResetSerializer,
+        responses={200: OpenApiResponse(_user_envelope, description="Signed in; auth cookies set"), 400: None},
+    )
+    def post(self, request):
+        serializer = ResetSerializer(data=request.data)
+        if not serializer.is_valid():
+            if "new_password" in serializer.errors and not {"email", "code"} & set(serializer.errors):
+                raise ValidationError({"new_password": serializer.errors["new_password"]})
+            raise InvalidCode()
+        email, code, new_password = (serializer.validated_data[key] for key in ("email", "code", "new_password"))
+        try:
+            PasswordReset.check_password(new_password, email)
+        except WeakPassword as weak:
+            raise ValidationError({"new_password": weak.messages}) from weak
+        CodeLimits().enforce(request, self, email, CodeLimits.CHECK)
+        user = PasswordReset().confirm(email, code, new_password)
+        if user is None:
+            raise InvalidCode()
+        update_last_login(None, user)
+        return self.signed_in_response(user)
 
 
 class LoginView(_PublicAuthView):

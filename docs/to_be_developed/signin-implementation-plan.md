@@ -749,6 +749,8 @@ Branch `phase-11/email-code`. **This alone closes the farming hole.**
 
 ### 12.3 Phase 11.2: Password reset: M
 
+**Built** on branch `phase-11/reset` (not merged). Deviations from the list below: **`ExternalIdentity` is made in 11.2** (migration `0009`), not 11.3, because "a Google-only address gets the notice" needs something to read; 11.3 only writes the rows. A new password is judged against the **typed address only** (not the account's name), because a rule that knew a real account's name would tell whether the account exists. A weak password is refused **before** the code is checked, so it spends no try. A reset sets `email_verified_at` to the time of the reset for a legacy, staff, operator or never-verified account (source `code`); an account already proved by `code`, `google` or `microsoft` is left alone. `/auth/forgot` and `/auth/reset` share one `CodeBoxes` component with `/auth/verify`.
+
 Branch `phase-11/reset`. `PasswordReset`, the two endpoints, `/auth/forgot` and `/auth/reset`, the reset and "use Google" mails, token revocation. Spec: `signin.spec.ts` gains the reset path.
 
 *Exit:* a reset signs the person in and **every older refresh token is refused** (a test); a Google-only address gets the notice and changes nothing; **a staff-approved account (no password, no identity) gets a code and the reset sets its first password**; **an address with only a pending signup is treated as unknown: the same reply, nothing sent, the pending row and its live code untouched**; an unknown address gets the same reply; a weak password is refused with fields; the cooldown and limits hold; green checks.

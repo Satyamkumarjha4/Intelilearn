@@ -56,6 +56,19 @@ class AccountActivation:
         user.refresh_from_db(fields=["email_verified_at", "email_verification_source"])
         return True
 
+    def prove(self, user: User) -> bool:
+        """The owner of the inbox has just shown they read it (a reset code came back): marks the email verified by code
+        unless it was already proved by its owner. This turns a legacy, staff-vouched, operator-made or never-verified
+        account into a code-verified one. True when something changed (the caller then announces the account)."""
+        if user.email_proved_by_owner:
+            return False
+        User.objects.filter(pk=user.pk).update(
+            email_verified_at=self.clock.now(),
+            email_verification_source=User.VerificationSource.CODE,
+        )
+        user.refresh_from_db(fields=["email_verified_at", "email_verification_source"])
+        return True
+
     @classmethod
     def announce(cls, user: User) -> None:
         """Tell the rest of the app an account is ready to use, **after the account is committed**: right away when no

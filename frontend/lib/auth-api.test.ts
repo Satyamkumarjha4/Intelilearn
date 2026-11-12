@@ -7,6 +7,8 @@
  * Use cases:
  * - `register` posts the body and returns nothing (no user exists yet)
  * - `verify` posts the email, code and purpose and returns the user
+ * - `forgot` posts the email; `reset` posts the email, code and new password (as `new_password`) and returns the user, and
+ *   a weak password reaches the caller as an error with its field messages
  * - `resend` posts the email and purpose
  * - `login` returns the user, and a `verification_required` answer reaches the caller as an error
  */
@@ -51,6 +53,29 @@ describe("AuthApi", () => {
     const failure = await api.verify("ada@example.com", "000000", "signup").catch((e) => e);
     expect(failure).toBeInstanceOf(ApiError);
     expect(failure.code).toBe("invalid_code");
+  });
+
+  test("forgot posts the email and returns nothing", async () => {
+    const { api, seen } = setup(() => json({ status: "sent" }, 202));
+
+    expect(await api.forgot("ada@example.com")).toBeUndefined();
+    expect(seen).toEqual([{ path: "/api/auth/password/forgot", method: "POST", body: { email: "ada@example.com" } }]);
+  });
+
+  test("reset posts the email, code and new password and returns the user", async () => {
+    const { api, seen } = setup(() => json({ user: USER }));
+
+    expect(await api.reset("ada@example.com", "123456", "tulip-garden-7")).toEqual(USER);
+    expect(seen[0]).toEqual({ path: "/api/auth/password/reset", method: "POST", body: { email: "ada@example.com", code: "123456", new_password: "tulip-garden-7" } });
+  });
+
+  test("a weak password reaches the caller with its field messages, and a wrong code with the one code", async () => {
+    const weak = setup(() => json({ detail: "Please correct the highlighted fields.", code: "invalid", fields: { new_password: ["This password is too common."] } }, 400));
+    const failure = await weak.api.reset("ada@example.com", "123456", "password").catch((e) => e);
+    expect(failure.fields).toEqual({ new_password: ["This password is too common."] });
+
+    const wrong = setup(() => json({ detail: "That code didn't work.", code: "invalid_code" }, 400));
+    expect((await wrong.api.reset("ada@example.com", "000000", "tulip-garden-7").catch((e) => e)).code).toBe("invalid_code");
   });
 
   test("resend posts the email and purpose", async () => {

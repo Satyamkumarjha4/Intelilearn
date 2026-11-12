@@ -16,6 +16,8 @@ type AuthState = {
   login: (email: string, password: string) => Promise<User>;
   /** Starts a sign-up: a code is emailed and nothing exists yet, so there is no user until `verify`. */
   register: (name: string, email: string, password: string, acceptTerms: boolean) => Promise<void>;
+  /** Chooses a new password with the emailed code, which also signs the person in. */
+  reset: (email: string, code: string, newPassword: string) => Promise<User>;
   /** Enters the emailed code: the account is made (a sign-up) or verified (a sign-in) and the person is signed in. */
   verify: (email: string, code: string, purpose: CodePurpose) => Promise<User>;
   logout: () => Promise<void>;
@@ -79,6 +81,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [api],
   );
 
+  const reset = useCallback(
+    async (email: string, code: string, newPassword: string) => {
+      const user = await api.reset(email, code, newPassword);
+      setUser(user);
+      return user;
+    },
+    [api],
+  );
+
   const logout = useCallback(async () => {
     await apiClient.request("/auth/logout", { method: "POST" });
     setUser(null);
@@ -87,8 +98,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   const value = useMemo(
-    () => ({ user, loading, login, register, verify, logout, setUser }),
-    [user, loading, login, register, verify, logout],
+    () => ({ user, loading, login, register, verify, reset, logout, setUser }),
+    [user, loading, login, register, verify, reset, logout],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

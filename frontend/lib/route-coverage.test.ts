@@ -19,7 +19,7 @@ import { join } from "node:path";
 import { config } from "../proxy";
 import { RouteGuard } from "./route-guard";
 
-const PUBLIC = new Set(["/", "/auth", "/auth/verify", "/privacy", "/terms", "/contact"]);
+const PUBLIC = new Set(["/", "/auth", "/auth/verify", "/auth/forgot", "/auth/reset", "/privacy", "/terms", "/contact"]);
 const APP = join(import.meta.dir, "..", "app");
 
 /** The URL path of every page under `app/`: route groups vanish and a dynamic segment becomes a value. */

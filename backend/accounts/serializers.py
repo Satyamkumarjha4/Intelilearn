@@ -91,6 +91,19 @@ class VerifySerializer(serializers.Serializer):
     purpose = serializers.ChoiceField(choices=PURPOSES)
 
 
+class ForgotSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+
+class ResetSerializer(serializers.Serializer):
+    """The new password. `email` and `code` that do not parse are answered like a wrong code (in the view); the password
+    is judged against the typed address only, so the answer is the same whether or not an account has it."""
+
+    email = serializers.EmailField()
+    code = serializers.CharField(max_length=32, trim_whitespace=True)
+    new_password = serializers.CharField(write_only=True, trim_whitespace=False, style={"input_type": "password"})
+
+
 class ResendSerializer(serializers.Serializer):
     email = serializers.EmailField()
     purpose = serializers.ChoiceField(choices=VerifySerializer.PURPOSES)

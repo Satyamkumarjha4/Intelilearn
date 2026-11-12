@@ -174,6 +174,13 @@ export function AuthForm({ initialMode, next }: { initialMode: Mode; next: strin
                   </ul>
                 )}
               </FormField>
+              {mode === "login" && (
+                <p className="-mt-2 text-sm">
+                  <Link href={AuthRules.forgotHref(next)} className="rounded-md font-extrabold text-primary-text underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50">
+                    {AuthRules.FORGOT.link}
+                  </Link>
+                </p>
+              )}
               {mode === "register" && (
                 <div className="flex flex-col gap-1.5">
                   <label className="flex items-start gap-3 text-sm">

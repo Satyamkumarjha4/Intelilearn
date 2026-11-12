@@ -2,7 +2,8 @@
  * Signing up with a code (phase 11.1). A person who creates an account is sent a six-digit code and has no account until
  * they enter it in the browser that asked; only then are there credits. The code comes from the throwaway stack's outbox, the
  * way a learner would read it in their inbox. An account from before verification existed keeps its sign-in with no code
- * until `require_reverification` is run (the launch step), and then it is asked for one.
+ * until `require_reverification` is run (the launch step), and then it is asked for one. A forgotten password is reset the same
+ * way (phase 11.2): a code from the inbox, a new password, signed in, and every older session ended.
  */
 import { expect, test } from "@playwright/test";
 
@@ -94,4 +95,45 @@ test("an account from before verification signs in with no code, and is asked fo
 
   await page.getByLabel("6-digit code").fill(await Outbox.code(page.request, asked, "login_code"));
   await page.waitForURL(/\/onboarding/);
+});
+
+test("a forgotten password is reset with an emailed code: signed in, the old password and the old session stop working", async ({ page, browser }) => {
+  const email = E2E.email("reset");
+  await new Api(page).signUp(email, E2E.PASSWORD);
+  const oldRefresh = (await page.context().cookies()).find((cookie) => cookie.name === "lc_refresh")?.value;
+  expect(oldRefresh).toBeTruthy();
+  await page.context().clearCookies(); // a person who cannot sign in
+
+  await page.goto("/auth");
+  await page.getByRole("link", { name: "Forgot password?" }).click();
+  await page.waitForURL(/\/auth\/forgot/);
+  await page.getByLabel("Email").fill(email);
+  await page.locator("form button[type=submit]").click();
+  await page.waitForURL(/\/auth\/reset/);
+  await expect(page.getByText(`If ${email} has an account`)).toBeVisible(); // never says it does
+
+  const code = await Outbox.code(page.request, email, "reset_code");
+  const newPassword = "A-new-passphrase-42";
+  await page.getByLabel("6-digit code").fill(code);
+  await page.getByLabel("New password", { exact: true }).fill(newPassword);
+  await page.locator("form button[type=submit]").click();
+  await page.waitForURL(/\/lessons/); // signed in, and the profile was already complete
+
+  const elsewhere = await (await browser.newContext()).newPage();
+  const other = new Api(elsewhere);
+  expect((await other.call("POST", "/auth/login", { email, password: E2E.PASSWORD })).status).toBe(401);
+  await elsewhere.context().addCookies([{ name: "lc_refresh", value: oldRefresh!, domain: new URL(page.url()).hostname, path: "/api/auth" }]);
+  expect((await other.call("POST", "/auth/refresh")).status).toBe(401); // the old session is over
+  expect((await other.call("POST", "/auth/login", { email, password: newPassword })).status).toBe(200);
+});
+
+test("asking for a reset for an address nobody has looks exactly the same, and sends nothing", async ({ page }) => {
+  const email = E2E.email("nobody");
+  await page.goto("/auth/forgot");
+  await page.getByLabel("Email").fill(email);
+  await page.locator("form button[type=submit]").click();
+
+  await page.waitForURL(/\/auth\/reset/);
+  await expect(page.getByText(`If ${email} has an account`)).toBeVisible();
+  expect(await Outbox.count(page.request, email, "reset_code")).toBe(0);
 });
