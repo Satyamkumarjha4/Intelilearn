@@ -26,6 +26,12 @@ x-e2e-env: &e2e-env
   AUTH_CODE_COOLDOWN_RATE: 10000/min
   AUTH_CODE_CHECK_EMAIL_RATE: 10000/hour
   AUTH_CODE_CHECK_IP_RATE: 10000/hour
+  # Sign in with Google (phase 11.3): the stack's stand-in provider answers the redirect itself with whoever the address
+  # names (accounts.E005, E006 refuse it outside a debug run). The real callback, state check and cookies all run.
+  AUTH_PROVIDERS_ENABLED: fake
+  AUTH_ALLOW_FAKE_PROVIDER: "true"
+  AUTH_PUBLIC_BASE_URL: http://localhost:${E2E_FRONTEND_PORT:-7100}
+  AUTH_OAUTH_RATE: 10000/min
   LESSON_CREATE_THROTTLE_RATE: 10000/hour
   CREDITS_QUOTE_THROTTLE_RATE: 10000/min
   CREDITS_BALANCE_THROTTLE_RATE: 10000/min

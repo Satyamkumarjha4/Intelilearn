@@ -33,6 +33,17 @@ export class AuthApi {
     return (await this.client.request<{ user: User }>("/auth/password/reset", { method: "POST", body: { email, code, new_password: newPassword } })).user;
   }
 
+  /** Who is waiting at the last step of a first sign-in with a provider: the address the provider gave, and its name for them. */
+  async finishInfo(): Promise<{ email: string; name: string }> {
+    return this.client.request<{ email: string; name: string }>("/auth/oauth/finish");
+  }
+
+  /** Take the last step: the name and the terms (and the browser's time zone). The account is made now and the person is signed in. */
+  async finish(name: string, acceptTerms: boolean, timezone: string | null): Promise<User> {
+    const body = { name, accept_terms: acceptTerms, ...(timezone ? { timezone } : {}) };
+    return (await this.client.request<{ user: User }>("/auth/oauth/finish", { method: "POST", body })).user;
+  }
+
   /** Ask for a new code. Always accepted; a refusal is a 429 with `Retry-After`. */
   async resend(email: string, purpose: CodePurpose): Promise<void> {
     await this.client.request("/auth/verify/resend", { method: "POST", body: { email, purpose } });

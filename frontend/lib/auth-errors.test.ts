@@ -8,6 +8,8 @@
  * Use cases:
  * - a wrong email or password, a wrong code, a sign-in that needs a code, too many tries (with and without a wait), no
  *   network and anything else each get plain words, and no message holds an internal word
+ * - each code a refused sign-in with a provider can come back with has plain words of its own, an unknown one gets the
+ *   general words, and no error means no card
  * - the waits read as seconds or minutes, singular and plural
  * - `needsCode` is true only for the `verification_required` error
  */
@@ -39,6 +41,28 @@ describe("message", () => {
   test("no sentence holds a word a learner should not read", () => {
     const all = [error(401, "invalid_credentials"), error(400, "invalid_code"), error(403, "verification_required"), error(429, "throttled")];
     for (const e of all) expect(AuthErrors.message(e)).not.toMatch(/OTP|token|pending|canonical|ApiError|\b4\d\d\b/i);
+  });
+});
+
+describe("callbackMessage", () => {
+  test.each(["email_not_verified", "provider_off", "state_mismatch", "sign_in_failed", "account_closed"])("%s has its own words", (code) => {
+    const words = AuthErrors.callbackMessage(code);
+
+    expect(words).toBeString();
+    expect(words).not.toMatch(/OTP|token|pending|verification|canonical|state|nonce|identity/i);
+  });
+
+  test("the five codes have five different sentences, and an unknown code gets the general one", () => {
+    const codes = ["email_not_verified", "provider_off", "state_mismatch", "sign_in_failed", "account_closed"];
+
+    expect(new Set(codes.map((code) => AuthErrors.callbackMessage(code))).size).toBe(5);
+    expect(AuthErrors.callbackMessage("something_new")).toBe(AuthErrors.callbackMessage("sign_in_failed"));
+  });
+
+  test("no error, no card", () => {
+    expect(AuthErrors.callbackMessage(null)).toBeNull();
+    expect(AuthErrors.callbackMessage(undefined)).toBeNull();
+    expect(AuthErrors.callbackMessage("")).toBeNull();
   });
 });
 

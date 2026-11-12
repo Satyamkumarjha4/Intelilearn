@@ -3,7 +3,9 @@
  * they enter it in the browser that asked; only then are there credits. The code comes from the throwaway stack's outbox, the
  * way a learner would read it in their inbox. An account from before verification existed keeps its sign-in with no code
  * until `require_reverification` is run (the launch step), and then it is asked for one. A forgotten password is reset the same
- * way (phase 11.2): a code from the inbox, a new password, signed in, and every older session ended.
+ * way (phase 11.2): a code from the inbox, a new password, signed in, and every older session ended. Continue with Google
+ * (phase 11.3) runs against the stack's stand-in provider: a new person has no account until the last step, an account made
+ * with a code is linked, one nobody proved is taken over, and an unconfirmed email and a staff account are refused.
  */
 import { expect, test } from "@playwright/test";
 
@@ -136,4 +138,101 @@ test("asking for a reset for an address nobody has looks exactly the same, and s
   await page.waitForURL(/\/auth\/reset/);
   await expect(page.getByText(`If ${email} has an account`)).toBeVisible();
   expect(await Outbox.count(page.request, email, "reset_code")).toBe(0);
+});
+
+// --- Continue with Google (phase 11.3), with the stack's stand-in provider: it answers the redirect itself with whoever the
+// address names, and the real state check, linking rules, cookies and proxy all run. ---
+
+/** The address that signs in with the stand-in provider as `who`. */
+function googleAs(who: { subject: string; email: string; email_verified?: boolean; name?: string }): string {
+  return `/api/auth/oauth/fake/start?fake=${encodeURIComponent(JSON.stringify({ name: "Google Person", ...who }))}`;
+}
+
+const unique = (label: string) => `${label}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+
+test("a new person has no account and no credits until the last step, and exactly 30 after", async ({ page }) => {
+  const email = E2E.email("google-new");
+  await page.goto(googleAs({ subject: unique("sub"), email }));
+
+  await page.waitForURL(/\/auth\/finish/);
+  await expect(page.getByRole("heading", { name: "One last step" })).toBeVisible();
+  await expect(page.getByLabel("Email from Google")).toHaveValue(email);
+  const api = new Api(page);
+  expect((await api.call("GET", "/auth/me")).status).toBe(401); // nothing exists yet
+  expect((await api.call("GET", "/credits/wallet")).status).toBe(401);
+
+  await page.locator("form button[type=submit]").click();
+  await expect(page.locator("#accept_terms-error")).toBeVisible(); // not without agreeing to the terms
+  await page.locator("input[name=accept_terms]").check();
+  await page.locator("form button[type=submit]").click();
+  await page.waitForURL(/\/onboarding/);
+
+  expect((await api.call("GET", "/credits/wallet")).body).toMatchObject({ balance: 30, buckets: [{ source: "signup", remaining: 30 }] });
+});
+
+test("the Continue with Google button starts it, from the sign-in page", async ({ page }) => {
+  await page.goto("/auth");
+
+  await page.getByRole("link", { name: "Continue with Google (test)" }).click();
+
+  await page.waitForURL(/\/auth\/finish/);
+  await expect(page.getByLabel("Name")).toHaveValue("Fake Person");
+});
+
+test("an account made with a code is linked: no second account and no second grant", async ({ page }) => {
+  const email = E2E.email("google-linked");
+  const api = new Api(page);
+  await api.signUp(email, E2E.PASSWORD);
+  await page.context().clearCookies();
+
+  await page.goto(googleAs({ subject: unique("sub"), email: email.toUpperCase().replace("@EXAMPLE.COM", "@example.com") }));
+
+  await page.waitForURL(/\/lessons/); // signed in, and the profile was already complete
+  expect((await api.call("GET", "/auth/me")).body.user.email).toBe(email);
+  expect((await api.call("GET", "/credits/wallet")).body).toMatchObject({ balance: 30 });
+  const again = await (await page.context().browser()!.newContext()).newPage();
+  expect((await new Api(again).call("POST", "/auth/login", { email, password: E2E.PASSWORD })).status).toBe(200); // the password still works
+});
+
+test("an account nobody proved is taken over: its old password and its old session stop working", async ({ page, browser }) => {
+  const email = E2E.email("google-takeover");
+  Seed.legacyAccount(email, E2E.PASSWORD, { reverify: true });
+  const thief = await (await browser.newContext()).newPage();
+  expect((await new Api(thief).call("POST", "/auth/login", { email, password: E2E.PASSWORD })).status).toBe(403); // asks for a code
+
+  await page.goto(googleAs({ subject: unique("sub"), email }));
+
+  await page.waitForURL(/\/(onboarding|lessons)/); // the person who proved the inbox is in
+  const api = new Api(page);
+  expect((await api.call("GET", "/credits/wallet")).body).toMatchObject({ balance: 30 });
+  const elsewhere = await (await browser.newContext()).newPage();
+  expect((await new Api(elsewhere).call("POST", "/auth/login", { email, password: E2E.PASSWORD })).status).toBe(401);
+});
+
+test("an email Google has not confirmed is refused, with words", async ({ page }) => {
+  await page.goto(googleAs({ subject: unique("sub"), email: E2E.email("google-unconfirmed"), email_verified: false }));
+
+  await page.waitForURL(/\/auth\?error=email_not_verified/);
+  await expect(page.getByText("Google hasn't confirmed that email address")).toBeVisible();
+  expect((await new Api(page).call("GET", "/auth/me")).status).toBe(401);
+});
+
+test("a staff account is never signed in or taken over by Google", async ({ page }) => {
+  await page.goto(googleAs({ subject: unique("sub"), email: E2E.STAFF_EMAIL }));
+
+  await page.waitForURL(/\/auth\?error=sign_in_failed/);
+  await expect(page.getByText("We couldn't sign you in that way.")).toBeVisible();
+  expect((await new Api(page).call("GET", "/auth/me")).status).toBe(401);
+});
+
+test("a person who waits too long at the last step is told so and sent back", async ({ page }) => {
+  await page.goto(googleAs({ subject: unique("sub"), email: E2E.email("google-late") }));
+  await page.waitForURL(/\/auth\/finish/);
+
+  await page.context().clearCookies(); // the signed ticket is gone, as it is after its few minutes
+  await page.reload();
+
+  await expect(page.getByText("That took too long.")).toBeVisible();
+  await page.getByRole("button", { name: "Back to sign in" }).click();
+  await expect(page).toHaveURL(/\/auth$/);
 });

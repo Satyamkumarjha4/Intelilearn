@@ -263,7 +263,7 @@ Credits for the work that costs model calls, earned by studying, bought through 
   - [x] 11.0 Forwarded-header test and fix, `User` verification fields and canonical email, the mailer port and backends (Brevo, console, outbox), `OutboundMail`, `AuthSettings`, the system checks, the daily purge, the `Clock` port; learners see no change
   - [x] 11.1 Email with a code: pending signup and ticket, codes, `register` 202, `verify`, the verify screen, disposable list, backfill skips unverified
   - [x] 11.2 Password reset by code
-  - [ ] 11.3 Google: provider port, flow, linking, the last step
+  - [x] 11.3 Google: provider port, flow, linking, the last step (built against the stand-in provider; the real Google Cloud client comes before launch)
   - [ ] 11.4 Console (see, resend, unlock, mark verified, waiting list), abuse board, Turnstile switch
   - [ ] 11.5 Microsoft (optional, after its verified-email rule is written)
   - [ ] Launch checklist (the plan, 12.7): the domain and its DNS, the Brevo key, Google Cloud, `require_reverification`, the proxy, the Privacy Policy

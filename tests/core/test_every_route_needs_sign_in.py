@@ -7,7 +7,8 @@ purpose and fails for any other that is, and for any listed one that no longer i
 
 Use cases:
 - the routes open without a sign-in are exactly the short list below (health, the CSRF cookie, register, the code
-  check and resend, sign-in, refresh and sign-out, the test stack's mail log, the profile choice lists, a signed
+  check and resend, password reset, the provider list and the sign-in dance with a provider, sign-in, refresh and
+  sign-out, the test stack's mail log, the profile choice lists, a signed
   media URL, the payment webhook, the two public landing endpoints, and the API's own schema and docs), each with
   its reason
 - every other route refuses a signed-out request, whatever its method (401, 403, or the console's 404 for "no such
@@ -31,6 +32,10 @@ OPEN = {
     "api/auth/verify/resend": "asks for a new code for the same sign-up (always 202, rate limited)",
     "api/auth/password/forgot": "asks for a code to choose a new password (always 202, rate limited)",
     "api/auth/password/reset": "chooses a new password with the emailed code (the code is the credential)",
+    "api/auth/providers": "which sign-in buttons the screens draw, asked before there is a session",
+    "api/auth/oauth/<str:provider>/start": "sends the browser to the provider (a navigation; the state binds it)",
+    "api/auth/oauth/<str:provider>/callback": "where the provider sends the person back (the signed state checks it)",
+    "api/auth/oauth/finish": "the last step of a first sign-in with a provider (the signed lc_finish ticket)",
     "api/auth/login": "signs in",
     "api/auth/refresh": "renews a session from its own refresh cookie, which is the credential",
     "api/auth/logout": "signs out, harmlessly, for anyone",

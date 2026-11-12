@@ -4,6 +4,8 @@
   live there and would otherwise leak between tests.
 - `_mail_goes_to_the_mailbox` (autouse): the mail backend is `recording` and queued mail is delivered at once, so no
   test needs a broker or sends anything; `mailbox` is where a test reads what was sent (`support/mail.py`).
+- `fake_google` / `oauth`: the stand-in sign-in provider switched on, and `oauth.sign_in({...})` to drive the whole
+  dance through the real endpoints (`support/oauth.py`); `support/oidc.py` is a Google that signs real ID tokens.
 - `api_client`: a DRF APIClient with no credentials.
 - `signup`: registers and verifies through the real endpoints (`support/signup.py`); `new_browser()` is another visitor
   with their own cookies (to play an attacker beside a victim).
@@ -86,6 +88,22 @@ def signup(api_client, django_capture_on_commit_callbacks):
     from support.signup import Signup
 
     return Signup(api_client, django_capture_on_commit_callbacks)
+
+
+@pytest.fixture
+def fake_google(settings):
+    """The stand-in sign-in provider switched on, as the throwaway stack has it, and a way to drive it."""
+    settings.AUTH_PROVIDERS_ENABLED = ["fake"]
+    settings.AUTH_ALLOW_FAKE_PROVIDER = True
+    settings.AUTH_PUBLIC_BASE_URL = "http://localhost:3000"
+
+
+@pytest.fixture
+def oauth(api_client, django_capture_on_commit_callbacks, fake_google):
+    """`oauth.sign_in({...})` signs in with the fake provider through the real endpoints (`support/oauth.py`)."""
+    from support.oauth import OAuthFlow
+
+    return OAuthFlow(api_client, django_capture_on_commit_callbacks)
 
 
 @pytest.fixture

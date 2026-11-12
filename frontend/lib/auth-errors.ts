@@ -19,6 +19,20 @@ export class AuthErrors {
     return error.message;
   }
 
+  /** What the sign-in page says when a sign-in with a provider came back refused (`/auth?error=<code>`). Every code has words;
+   *  one nobody knows gets the general ones, and a staff or look-alike refusal says no more than "didn't work". */
+  static callbackMessage(code: string | null | undefined): string | null {
+    if (!code) return null;
+    const words: Record<string, string> = {
+      email_not_verified: "Google hasn't confirmed that email address, so we can't use it. Confirm it with Google, or create an account with a code instead.",
+      provider_off: "That way of signing in isn't available right now. Please use your email.",
+      state_mismatch: "That sign-in took too long or came from somewhere else. Please try again.",
+      sign_in_failed: "We couldn't sign you in that way. Please try again, or use your email.",
+      account_closed: "That account has been closed. If you think that's a mistake, please contact us.",
+    };
+    return words[code] ?? words.sign_in_failed;
+  }
+
   /** The password was right but the email was never proved: a code is on its way and the next screen asks for it. */
   static needsCode(error: unknown): boolean {
     return error instanceof ApiError && error.code === "verification_required";

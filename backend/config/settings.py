@@ -298,6 +298,9 @@ REST_FRAMEWORK = {
         "auth_code_cooldown": env("AUTH_CODE_COOLDOWN_RATE", default="1/min"),  # a new code, per email
         "auth_code_check_email": env("AUTH_CODE_CHECK_EMAIL_RATE", default="15/hour"),  # code checks, per email
         "auth_code_check_ip": env("AUTH_CODE_CHECK_IP_RATE", default="60/hour"),  # code checks, per client address
+        "auth_oauth": env(
+            "AUTH_OAUTH_RATE", default="30/min"
+        ),  # sign in with Google: start, callback, finish; per address
     },
     # Requests arrive through the Next.js proxy; the client address is the X-Forwarded-For entry it appends.
     # Keep the API port bound to localhost (BIND_ADDRESS) so nobody can reach Django directly with a forged header.
@@ -333,6 +336,22 @@ PENDING_SIGNUP_HOURS = env.int("PENDING_SIGNUP_HOURS", default=24)  # how long a
 SIGNUP_TICKET_MINUTES = env.int("SIGNUP_TICKET_MINUTES", default=60 * 24)  # the `lc_signup` cookie: the row's life
 CODE_LOG_RETENTION_DAYS = env.int("CODE_LOG_RETENTION_DAYS", default=7)  # spent code rows (they hold an address)
 SIGNUP_RECORD_RETENTION_DAYS = env.int("SIGNUP_RECORD_RETENTION_DAYS", default=30)  # who signed up from where
+
+# --- Sign in with an identity provider (phase 11.3): `accounts.identity` ---
+# Which providers get a button and a working flow: a list of keys (`google`). Empty means email and password only.
+AUTH_PROVIDERS_ENABLED = [key.strip() for key in env.list("AUTH_PROVIDERS_ENABLED", default=[]) if key.strip()]
+# The `fake` provider answers the redirect itself with an identity the caller names, for browser tests. It is refused
+# unless this is on, and this is refused unless DJANGO_DEBUG is on (`accounts.E005`, `E006`).
+AUTH_ALLOW_FAKE_PROVIDER = env.bool("AUTH_ALLOW_FAKE_PROVIDER", default=False)
+# The address people reach the site at (the Next.js frontend): Google redirects back to
+# `<AUTH_PUBLIC_BASE_URL>/api/auth/oauth/google/callback`, which must be listed exactly in the Google Cloud client.
+AUTH_PUBLIC_BASE_URL = env("AUTH_PUBLIC_BASE_URL", default=f"http://localhost:{env('FRONTEND_PORT', default='3000')}")
+GOOGLE_OAUTH_CLIENT_ID = env("GOOGLE_OAUTH_CLIENT_ID", default="")
+GOOGLE_OAUTH_CLIENT_SECRET = env("GOOGLE_OAUTH_CLIENT_SECRET", default="")  # a secret: environment only, never logged
+OAUTH_STATE_MINUTES = env.int("OAUTH_STATE_MINUTES", default=10)  # how long the lc_oauth cookie (state, nonce) lives
+OAUTH_FINISH_MINUTES = env.int(
+    "OAUTH_FINISH_MINUTES", default=15
+)  # how long the lc_finish cookie (the last step) lives
 
 # --- Auth: JWTs in httpOnly cookies (see accounts/cookies.py) ---
 SIMPLE_JWT = {

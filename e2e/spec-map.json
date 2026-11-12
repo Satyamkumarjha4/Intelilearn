@@ -33,8 +33,8 @@
         "frontend/lib/session-probe.ts",
         "frontend/lib/auth-form.ts",
         "frontend/app/auth/**",
-        "frontend/lib/{auth-api,auth-errors,code-entry,pending-email,resend-clock}.ts",
-        "frontend/components/{auth-provider,code-boxes}.tsx"
+        "frontend/lib/{auth-api,auth-errors,code-entry,pending-email,resend-clock,sign-in-providers}.ts",
+        "frontend/components/{auth-provider,code-boxes,provider-buttons}.tsx"
       ],
       "why": "sign-in, the session cookie and the route guard sit in front of every spec"
     },
@@ -160,8 +160,8 @@
     {
       "globs": [
         "frontend/app/auth/**",
-        "frontend/lib/{auth-api,auth-errors,code-entry,pending-email,resend-clock}.ts",
-        "frontend/components/code-boxes.tsx",
+        "frontend/lib/{auth-api,auth-errors,code-entry,pending-email,resend-clock,sign-in-providers}.ts",
+        "frontend/components/{code-boxes,provider-buttons}.tsx",
         "backend/accounts/**"
       ],
       "specs": [

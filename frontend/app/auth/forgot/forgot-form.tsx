@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { FormField } from "@/components/form-field";
+import { ProviderButtons } from "@/components/provider-buttons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,6 +72,8 @@ export function ForgotForm({ next }: { next: string }) {
               {sending ? copy.pending : copy.submit}
             </Button>
           </form>
+
+          <ProviderButtons next={next} placement="below" />
 
           <p className="text-center text-sm">
             <Link href={AuthRules.href("login", next)} className="font-bold underline underline-offset-4">

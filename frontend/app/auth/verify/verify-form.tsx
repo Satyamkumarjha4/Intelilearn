@@ -8,6 +8,7 @@ import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react"
 import { useAuth } from "@/components/auth-provider";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { CodeBoxes } from "@/components/code-boxes";
+import { ProviderButtons } from "@/components/provider-buttons";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
 import { AuthApi, type CodePurpose } from "@/lib/auth-api";
@@ -168,6 +169,8 @@ export function VerifyForm({ purpose, next }: { purpose: CodePurpose; next: stri
               </div>
             </>
           )}
+
+          <ProviderButtons next={next} placement="below" />
 
           <p className="text-center text-sm text-muted-foreground">
             <Link href={AuthRules.href("login", next)} className="font-bold underline underline-offset-4">

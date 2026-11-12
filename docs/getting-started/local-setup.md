@@ -133,6 +133,12 @@ docker compose exec backend python manage.py flow runs <lesson>
 
 Creating an account emails a 6-digit code. With the default `MAIL_BACKEND=console` nothing is sent: the **worker** prints the message, code included, to its log (development only; it refuses to run with `DJANGO_DEBUG` off). So: create an account at `/auth?mode=register`, then `docker compose logs -f worker` (or `make worker-log`) and read the code from the newest message. An account made before verification existed (`legacy`) signs in with no code until `manage.py require_reverification` is run. For real mail, see the launch checklist in [the sign-in plan](../to_be_developed/signin-implementation-plan.md#127-the-launch-checklist) (a sending domain, Brevo's key).
 
+## 5b. Sign in with Google in development
+
+With nothing set, there is no "Continue with Google" button. To try the whole flow without Google, put `AUTH_PROVIDERS_ENABLED=fake` and `AUTH_ALLOW_FAKE_PROVIDER=true` in `.env` (and `DJANGO_DEBUG=true`, which the stack already has in development): a "Continue with Google (test)" button appears and signs in as a new person each time. To choose who signs in, open `/api/auth/oauth/fake/start?fake={"subject":"s1","email":"you@example.com","email_verified":true}` (URL-encoded). The throwaway test stack (`make e2e`) does this itself. The stand-in is refused when `DJANGO_DEBUG` is off.
+
+For the real Google, before launch: in the Google Cloud console create a project, the OAuth consent screen (app name, the site's domain, a contact address) set to **In production**, and a **Web application** client whose authorised redirect URI is exactly `<AUTH_PUBLIC_BASE_URL>/api/auth/oauth/google/callback` (https, except for localhost); then set `AUTH_PROVIDERS_ENABLED=google`, `AUTH_PUBLIC_BASE_URL`, `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` in the production environment (never in the repository). The app refuses to start with Google on and either one missing (`accounts.E008`). See the launch checklist in [the sign-in plan](../to_be_developed/signin-implementation-plan.md#127-the-launch-checklist) and its notes on what Google's documentation does not say (U4, U11).
+
 ## 6. Walk through the app without API keys
 
 `tests/e2e/fake_llm_server.py` is a fake OpenAI-compatible server that answers every structured-output call with canned, schema-valid content, so the real gateway, worker and graph run end to end at no cost. It is a development aid, not part of the product.

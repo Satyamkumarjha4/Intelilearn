@@ -6,7 +6,8 @@ class AccountsConfig(AppConfig):
     name = "accounts"
 
     def ready(self):
-        from . import (  # noqa: F401  (signal handlers, the OpenAPI auth extension, mail backends and checks)
+        from . import (  # noqa: F401  (signal handlers, the OpenAPI auth extension, mail backends, providers and checks)
+            identity,
             mail,
             schema,
             signals,

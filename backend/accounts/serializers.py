@@ -104,6 +104,17 @@ class ResetSerializer(serializers.Serializer):
     new_password = serializers.CharField(write_only=True, trim_whitespace=False, style={"input_type": "password"})
 
 
+class FinishSerializer(serializers.Serializer):
+    """The last step of signing in with a provider. `OAuthSignIn.finish` checks the form and owns the rules (the
+    terms, a name); this describes the request for the API schema."""
+
+    name = serializers.CharField(max_length=150)
+    accept_terms = serializers.BooleanField(
+        help_text="Must be true: the same confirmation as when creating an account."
+    )
+    timezone = serializers.CharField(required=False, allow_blank=True, max_length=TimeZoneNames.MAX_LENGTH)
+
+
 class ResendSerializer(serializers.Serializer):
     email = serializers.EmailField()
     purpose = serializers.ChoiceField(choices=VerifySerializer.PURPOSES)

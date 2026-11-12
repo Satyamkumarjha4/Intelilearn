@@ -7,6 +7,7 @@ import { useEffect, useId, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { FormField } from "@/components/form-field";
+import { ProviderButtons } from "@/components/provider-buttons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +19,7 @@ import { cn } from "@/lib/utils";
 
 import { BrandPanel } from "./brand-panel";
 
-export function AuthForm({ initialMode, next }: { initialMode: Mode; next: string }) {
+export function AuthForm({ initialMode, next, refused }: { initialMode: Mode; next: string; refused?: string | null }) {
   const router = useRouter();
   const { login, register } = useAuth();
   const [mode, setMode] = useState<Mode>(initialMode);
@@ -109,6 +110,14 @@ export function AuthForm({ initialMode, next }: { initialMode: Mode; next: strin
               <h1 className="font-heading text-2xl font-semibold tracking-tight">{copy.title}</h1>
               <p className="text-muted-foreground">{copy.description}</p>
             </div>
+
+            {AuthErrors.callbackMessage(refused) && (
+              <Alert variant="destructive">
+                <AlertDescription>{AuthErrors.callbackMessage(refused)}</AlertDescription>
+              </Alert>
+            )}
+
+            <ProviderButtons next={next} />
 
             <form
               onSubmit={onSubmit}

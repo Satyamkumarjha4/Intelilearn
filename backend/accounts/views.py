@@ -1,7 +1,9 @@
+from urllib.parse import urlencode
+
 from django.conf import settings
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import update_last_login
-from django.http import Http404
+from django.http import Http404, HttpResponseRedirect
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_control
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -10,7 +12,7 @@ from rest_framework import generics, status
 from rest_framework.exceptions import APIException, AuthenticationFailed, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.throttling import BaseThrottle
+from rest_framework.throttling import BaseThrottle, ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
@@ -19,9 +21,15 @@ from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 from .authentication import CookieJWTAuthentication
 from .cookies import AuthCookies
+from .identity.provider import ProviderError
+from .identity.registry import IdentityProviders
+from .identity.signin import FinishRefused, OAuthSignIn
+from .identity.state import FinishState, OAuthState
 from .models import OutboundMail, User
 from .options import ProfileOptions
+from .redirect import RedirectPolicy
 from .serializers import (
+    FinishSerializer,
     ForgotSerializer,
     LoginSerializer,
     ProfileOptionsSerializer,
@@ -77,6 +85,16 @@ _verification_envelope = {
     "properties": {"status": {"type": "string", "enum": ["verification_required"]}},
 }
 _sent_envelope = {"type": "object", "properties": {"status": {"type": "string", "enum": ["sent"]}}}
+_providers_envelope = {
+    "type": "object",
+    "properties": {
+        "providers": {
+            "type": "array",
+            "items": {"type": "object", "properties": {"key": {"type": "string"}, "label": {"type": "string"}}},
+        }
+    },
+}
+_finish_info_envelope = {"type": "object", "properties": {"email": {"type": "string"}, "name": {"type": "string"}}}
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
@@ -109,6 +127,12 @@ class VerificationRequired(APIException):
     status_code = status.HTTP_403_FORBIDDEN
     default_code = "verification_required"
     default_detail = "Check your email: we sent you a code to finish signing in."
+
+
+class FinishExpired(APIException):
+    status_code = status.HTTP_400_BAD_REQUEST
+    default_code = "finish_expired"
+    default_detail = "That took too long. Please start signing in again."
 
 
 class RegisterView(_PublicAuthView):
@@ -285,6 +309,156 @@ class LoginView(_PublicAuthView):
             raise VerificationRequired()
         update_last_login(None, user)
         return self.signed_in_response(user)
+
+
+class ProvidersView(APIView):
+    """Which sign-in buttons the screens draw. Public: the sign-in page asks before there is a session."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "public_pages"
+
+    @extend_schema(
+        tags=AUTH_TAG,
+        summary="The sign-in providers that are on",
+        description="`{providers: [{key, label}]}`: only the ones that work, so a screen never draws a dead button.",
+        responses={200: OpenApiResponse(_providers_envelope)},
+    )
+    def get(self, request):
+        providers = [{"key": p.key, "label": p.display_name} for p in IdentityProviders().enabled()]
+        return Response({"providers": providers})
+
+
+class _OAuthView(APIView):
+    """The browser's own navigations of the sign-in dance. They answer with redirects, so they carry no JSON and no CSRF
+    header (a top-level navigation cannot send one): the signed `state` is what binds the callback to the start."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [AuthRateThrottle]
+    throttle_scope = "auth_oauth"
+
+    @staticmethod
+    def redirect_uri(provider: str) -> str:
+        return f"{settings.AUTH_PUBLIC_BASE_URL.rstrip('/')}/api/auth/oauth/{provider}/callback"
+
+    @staticmethod
+    def to(path: str, **query) -> HttpResponseRedirect:
+        query = {key: value for key, value in query.items() if value}
+        return HttpResponseRedirect(f"{path}?{urlencode(query)}" if query else path)
+
+    @staticmethod
+    def after(next_value: str) -> str | None:
+        """`next` as it goes in the address, left out when it is the usual place."""
+        return None if next_value == RedirectPolicy.DEFAULT else next_value
+
+    def sign_in(self, response, user) -> None:
+        update_last_login(None, user)
+        refresh = RefreshToken.for_user(user)
+        AuthCookies().set_session(
+            response, access=str(refresh.access_token), refresh=str(refresh), onboarded=user.profile.is_complete
+        )
+
+
+class OAuthStartView(_OAuthView):
+    @extend_schema(
+        tags=AUTH_TAG,
+        summary="Start signing in with a provider",
+        description=(
+            "`302` to the provider with a `state`, a `nonce` and a PKCE challenge, and the signed `lc_oauth` cookie. "
+            "`next` goes through `RedirectPolicy` (a path on this site or nothing). A provider that is off redirects "
+            "to `/auth?error=provider_off`."
+        ),
+        responses={302: None},
+    )
+    def get(self, request, provider):
+        params = request.query_params.dict()
+        try:
+            started = OAuthSignIn().start(provider, params.get("next"), params, self.redirect_uri(provider))
+        except ProviderError as refused:
+            return self.to("/auth", error=refused.code)
+        response = HttpResponseRedirect(started.url)
+        AuthCookies().set_oauth(response, started.cookie, OAuthState().max_age)
+        return response
+
+
+class OAuthCallbackView(_OAuthView):
+    @extend_schema(
+        tags=AUTH_TAG,
+        summary="Where the provider sends the person back",
+        description=(
+            "`302` to `/auth` (signed in: the session cookies are set), to `/auth/finish` (a new person: the "
+            "`lc_finish` cookie is set and **nothing is created yet**) or to `/auth?error=<code>`: "
+            "`email_not_verified`, `provider_off`, `state_mismatch`, `sign_in_failed` or `account_closed`."
+        ),
+        responses={302: None},
+    )
+    def get(self, request, provider):
+        result = OAuthSignIn().callback(
+            provider, request.query_params.dict(), request.COOKIES.get(AuthCookies.OAUTH), self.redirect_uri(provider)
+        )
+        if result.kind == "signed_in":
+            response = self.to("/auth", next=self.after(result.next))
+            self.sign_in(response, result.user)
+        elif result.kind == "finish":
+            response = self.to("/auth/finish", next=self.after(result.next))
+            AuthCookies().set_finish(response, result.finish_cookie, FinishState().max_age)
+        else:
+            response = self.to("/auth", error=result.error, next=self.after(result.next))
+        AuthCookies().clear_oauth(response)
+        return response
+
+
+class OAuthFinishView(_PublicAuthView):
+    throttle_classes = [AuthRateThrottle]
+    throttle_scope = "auth_oauth"
+
+    @extend_schema(
+        tags=AUTH_TAG,
+        summary="Who is waiting at the last step",
+        description="`{email, name}` from the `lc_finish` cookie, for the form to show. `404` with no live ticket.",
+        responses={200: OpenApiResponse(_finish_info_envelope), 404: None},
+    )
+    def get(self, request):
+        ticket = OAuthSignIn().pending_identity(request.COOKIES.get(AuthCookies.FINISH))
+        if ticket is None:
+            raise Http404
+        return Response({"email": ticket.identity.email, "name": ticket.identity.name})
+
+    @extend_schema(
+        tags=AUTH_TAG,
+        summary="Take the last step: name and terms",
+        description=(
+            "Creates the account (no password: the person signs in with the provider), links the identity, gives the "
+            "signup credits once and signs in. `accept_terms` must be `true`. `400 finish_expired` with no live ticket."
+        ),
+        request=FinishSerializer,
+        responses={201: OpenApiResponse(_user_envelope, description="Signed in; auth cookies set"), 400: None},
+    )
+    def post(self, request):
+        serializer = FinishSerializer(data=request.data)
+        serializer.is_valid(raise_exception=False)
+        data = serializer.initial_data if isinstance(serializer.initial_data, dict) else {}
+        try:
+            result = OAuthSignIn().finish(
+                request.COOKIES.get(AuthCookies.FINISH),
+                str(data.get("name") or ""),
+                data.get("accept_terms"),
+                str(data.get("timezone") or "")[:64],
+                self.client_address(request),
+            )
+        except FinishRefused as refused:
+            if refused.code == "finish_expired":
+                raise FinishExpired() from refused
+            raise ValidationError(refused.fields) from refused
+        if result.kind != "signed_in":
+            response = Response({"detail": "We couldn't finish signing you in.", "code": "sign_in_failed"}, status=400)
+        else:
+            update_last_login(None, result.user)
+            response = self.signed_in_response(result.user, status.HTTP_201_CREATED)
+        AuthCookies().clear_finish(response)
+        return response
 
 
 class DevOutboxView(APIView):

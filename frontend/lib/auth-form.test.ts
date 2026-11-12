@@ -20,6 +20,7 @@
  * - the forgot-password and new-password screens keep where the learner was headed; the forgot form wants an email that
  *   looks like one; the new-password form wants a whole code and a password that meets the two rules the server enforces;
  *   their words say "code" and never claim that the address has an account
+ * - the last step of a first sign-in with Google wants a name and the confirmation of the terms, in plain words
  * - each mode has its copy, its pending label, its switch link and its page title
  * - the create-account request carries the browser's time zone when it has one, and leaves the key out when it does not
  */
@@ -185,6 +186,20 @@ describe("the password reset screens", () => {
     expect(AuthRules.resetDescription("ada@example.com")).toContain("If ada@example.com has an account");
     expect(words).not.toMatch(/OTP|token|pending|verification|we have an account|your account/i);
     expect(AuthRules.FORGOT.link).toBe("Forgot password?");
+  });
+});
+
+describe("the last step of a first sign-in with a provider", () => {
+  test("wants a name and the confirmation of the terms", () => {
+    expect(AuthRules.validateFinish("Ada", true)).toEqual({});
+    expect(AuthRules.validateFinish("   ", true)).toEqual({ name: ["Tell us your name."] });
+    expect(AuthRules.validateFinish("Ada", false)).toEqual({ accept_terms: ["Please confirm to continue."] });
+    expect(AuthRules.validateFinish("", false)).toEqual({ name: ["Tell us your name."], accept_terms: ["Please confirm to continue."] });
+  });
+
+  test("its words are plain and name no internal term", () => {
+    expect(AuthRules.FINISH.title).toBe("One last step");
+    expect(Object.values(AuthRules.FINISH).join(" ")).not.toMatch(/OTP|token|pending|verification|identity|provider/i);
   });
 });
 

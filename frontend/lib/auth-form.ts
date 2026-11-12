@@ -78,6 +78,26 @@ export class AuthRules {
     start: "Start again",
   } as const;
 
+  static readonly FINISH = {
+    title: "One last step",
+    pageTitle: "One last step",
+    description: "Tell us your name and agree to the terms, and your account is ready.",
+    submit: "Create my account",
+    pending: "Creating your account…",
+    email: "Email from Google",
+    expired: "That took too long.",
+    expiredHelp: "Please start again from the sign-in page.",
+    start: "Back to sign in",
+  } as const;
+
+  /** The last step's checks: a name, and the same confirmation as when creating an account with a code. */
+  static validateFinish(name: string, acceptedTerms: boolean): FieldErrors {
+    const errors: FieldErrors = {};
+    if (!name.trim()) errors.name = ["Tell us your name."];
+    if (!acceptedTerms) errors.accept_terms = [AuthRules.CONSENT_MESSAGE];
+    return errors;
+  }
+
   /** The sentence under the heading of the new-password screen. It never says the address has an account: it is the same for every address. */
   static resetDescription(email: string): string {
     return `If ${email} has an account, we've sent a 6-digit code to it. Enter it below, then choose a new password.`;

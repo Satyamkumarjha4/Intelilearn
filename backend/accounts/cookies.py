@@ -4,6 +4,8 @@ lc_access     access JWT, sent on every request                      path=/
 lc_refresh    refresh JWT, only sent to the auth endpoints            path=/api/auth
 lc_session    "signed in" marker for the Next.js route guard          path=/  (lifetime of the refresh token)
 lc_onboarded  "profile complete" marker for the Next.js route guard   path=/
+lc_oauth      state, nonce and PKCE verifier of a sign-in with a provider (signed)   path=/api/auth/oauth  (10 minutes)
+lc_finish     a verified provider identity waiting for the "one last step" (signed)  path=/api/auth/oauth  (15 minutes)
 lc_signup     the signup ticket: the signed id of this browser's pending sign-up   path=/api/auth  (24 hours)
 
 The markers carry no authority; the API checks the tokens on every request.
@@ -20,7 +22,10 @@ class AuthCookies:
     SESSION = "lc_session"
     ONBOARDED = "lc_onboarded"
     SIGNUP = "lc_signup"
+    OAUTH = "lc_oauth"
+    FINISH = "lc_finish"
     REFRESH_PATH = "/api/auth"
+    OAUTH_PATH = "/api/auth/oauth"
 
     def __init__(
         self,
@@ -47,6 +52,18 @@ class AuthCookies:
     def set_signup_ticket(self, response, ticket: str, lifetime: timedelta) -> None:
         """The ticket that binds a pending sign-up to this browser (`SignupTicket`). It carries no authority."""
         self._set(response, self.SIGNUP, ticket, lifetime, path=self.REFRESH_PATH)
+
+    def set_oauth(self, response, value: str, max_age: int) -> None:
+        self._set(response, self.OAUTH, value, timedelta(seconds=max_age), path=self.OAUTH_PATH)
+
+    def clear_oauth(self, response) -> None:
+        response.delete_cookie(self.OAUTH, path=self.OAUTH_PATH, samesite="Lax")
+
+    def set_finish(self, response, value: str, max_age: int) -> None:
+        self._set(response, self.FINISH, value, timedelta(seconds=max_age), path=self.OAUTH_PATH)
+
+    def clear_finish(self, response) -> None:
+        response.delete_cookie(self.FINISH, path=self.OAUTH_PATH, samesite="Lax")
 
     def clear_signup_ticket(self, response) -> None:
         response.delete_cookie(self.SIGNUP, path=self.REFRESH_PATH, samesite="Lax")

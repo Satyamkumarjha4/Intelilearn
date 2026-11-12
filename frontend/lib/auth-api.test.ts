@@ -9,6 +9,8 @@
  * - `verify` posts the email, code and purpose and returns the user
  * - `forgot` posts the email; `reset` posts the email, code and new password (as `new_password`) and returns the user, and
  *   a weak password reaches the caller as an error with its field messages
+ * - `finishInfo` reads who is waiting at the last step of a first sign-in with a provider; `finish` posts the name, the
+ *   terms and the browser's zone (left out when there is none), and an expired last step is an error with its code
  * - `resend` posts the email and purpose
  * - `login` returns the user, and a `verification_required` answer reaches the caller as an error
  */
@@ -76,6 +78,29 @@ describe("AuthApi", () => {
 
     const wrong = setup(() => json({ detail: "That code didn't work.", code: "invalid_code" }, 400));
     expect((await wrong.api.reset("ada@example.com", "000000", "tulip-garden-7").catch((e) => e)).code).toBe("invalid_code");
+  });
+
+  test("finishInfo reads who is waiting at the last step", async () => {
+    const { api, seen } = setup(() => json({ email: "ada@example.com", name: "Ada" }));
+
+    expect(await api.finishInfo()).toEqual({ email: "ada@example.com", name: "Ada" });
+    expect(seen[0].path).toBe("/api/auth/oauth/finish");
+  });
+
+  test("finish posts the name, the terms and the zone, and leaves the zone out when there is none", async () => {
+    const { api, seen } = setup(() => json({ user: USER }, 201));
+
+    expect(await api.finish("Ada", true, "Europe/London")).toEqual(USER);
+    await api.finish("Ada", true, null);
+
+    expect(seen[0]).toEqual({ path: "/api/auth/oauth/finish", method: "POST", body: { name: "Ada", accept_terms: true, timezone: "Europe/London" } });
+    expect(seen[1].body).toEqual({ name: "Ada", accept_terms: true });
+  });
+
+  test("an expired last step reaches the caller as an error with its code", async () => {
+    const { api } = setup(() => json({ detail: "That took too long.", code: "finish_expired" }, 400));
+
+    expect((await api.finish("Ada", true, null).catch((e) => e)).code).toBe("finish_expired");
   });
 
   test("resend posts the email and purpose", async () => {
