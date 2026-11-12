@@ -37,7 +37,9 @@ def now(monkeypatch):
 
 @pytest.fixture
 def staff_user(db):
-    return User.objects.create_user("root@example.com", password=PASSWORD, name="Root Admin", is_staff=True)
+    return User.objects.create_user(
+        "root@example.com", password=PASSWORD, name="Root Admin", is_staff=True, verified=True
+    )
 
 
 @pytest.fixture

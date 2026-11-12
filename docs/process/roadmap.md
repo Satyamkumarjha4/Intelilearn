@@ -14,7 +14,7 @@ Items carried over from the phases below, plus gaps found since. Nothing here bl
 
 - [x] Delete a lesson's LangGraph checkpoints and its `ModelCall` rows together with the lesson (`LessonErasure`). See [data-model.md](../architecture/data-model.md#deleting-a-lesson).
 - [x] The same clean-up for a user removed by hand (there is no self-service account deletion): done in phase 10.3 as `AccountErasure` (`manage.py erase_account`), which anonymises the account in place and erases everything the learner made, checkpoints and `ModelCall` rows included. A user with a wallet can no longer be deleted by hand at all (the credit tables protect it). See [data-model.md](../architecture/data-model.md#deleting-a-lesson).
-- [ ] Make the per-address rate limits independent of a client-supplied `X-Forwarded-For` (the Next.js proxy forwards the client's own first entry). Use the connection address in the proxy, or overwrite the header at the edge. See [api.md](../reference/api.md).
+- [x] Make the per-address rate limits independent of a client-supplied `X-Forwarded-For` (phase 11.0): the `/api` proxy forwards the last entry (or the Nth from the right, `EDGE_PROXY_HOPS`), never the client's first; measured on the real stack. **Still true:** with nothing in front of Next, a single forged header picks the address, so a deployment needs an edge that overwrites or appends, and `check --deploy` fails (`core.E002`) until `TRUSTED_PROXY_COUNT` is set on purpose. See [api.md](../reference/api.md).
 - [ ] `scripts/enable_rls.sql`: row-level security with no policies on every table, including the checkpoint tables, for use with Supabase *(skipped while running on the local Postgres)*.
 - [ ] Set `SUPABASE_DATABASE_URL`, then verify the sync and `/api/health` *(skipped while running on the local Postgres)*.
 
@@ -258,7 +258,14 @@ Credits for the work that costs model calls, earned by studying, bought through 
 - [x] 10.7 Stripe adapter (test mode): `StripeGateway` over `httpx` with a pinned API version, signature and event reading, status lookup and refund; start-up safety checks (`payments.E004`, `E005`); the live checks wait on a working test key
 - [x] 10.8 Razorpay adapter (test mode): `RazorpayGateway` over `httpx`, signature and event reading (replay stopped by the event id), status lookup and refund with the admin form's idempotency token; `RazorpayCheckout` (on-page window, script loaded on demand, completion only navigates to the return page); the live checks wait on Razorpay test keys
 - [x] 10.9 Console (credits and prices, learner wallets, payments and refunds, revenue beside model cost), Terms and Privacy for credits and payments, `retakes_per_day` and `paise_per_credit` retired, the signup backfill, the credit gate and earning switched on by default, the spec moved to `architecture/` and the plan to `archive/`; Razorpay retry on, and the sweep that settles refunds
-- [ ] 11 Sign-in methods (Google, Apple, Microsoft, email OTP; its own plan): **public launch is blocked on this**, because with credits on every unverified account gets 30 free credits (signup farming, D15)
+- [ ] 11 Sign-in and account verification ([the plan](../to_be_developed/signin-implementation-plan.md)): **public launch is blocked on this**, because with credits on every unverified account gets 30 free credits (signup farming, D15)
+  - [x] 11.0 Forwarded-header test and fix, `User` verification fields and canonical email, the mailer port and backends (Brevo, console, outbox), `OutboundMail`, `AuthSettings`, the system checks, the daily purge, the `Clock` port; learners see no change
+  - [ ] 11.1 Email with a code: pending signup and ticket, codes, `register` 202, `verify`, the verify screen, disposable list, backfill skips unverified
+  - [ ] 11.2 Password reset by code
+  - [ ] 11.3 Google: provider port, flow, linking, the last step
+  - [ ] 11.4 Console (see, resend, unlock, mark verified, waiting list), abuse board, Turnstile switch
+  - [ ] 11.5 Microsoft (optional, after its verified-email rule is written)
+  - [ ] Launch checklist (the plan, 12.7): the domain and its DNS, the Brevo key, Google Cloud, `require_reverification`, the proxy, the Privacy Policy
 
 ## Across phases
 

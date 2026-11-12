@@ -11,6 +11,8 @@ Use cases:
   and the profile emptied (education, notes, zone and all)
 - a reserve that is settled while the account is being erased (a run finishing at that moment) is not released twice,
   and the erasure goes on to forfeit what is left
+- the anonymised account is unverified, its canonical email is the anonymised address (the real address is free again),
+  and the mail log rows sent to the real address are deleted
 - the learner's lessons and quizzes are gone, with their checkpoints and model calls; other learners' are not
 - streak days and the cached streak are gone
 - open holds are released first, then the balance is forfeited in one row equal to what was left; the ledger still
@@ -117,6 +119,31 @@ class TestWhatIsErased:
         assert not user.has_usable_password() and user.is_active is False
         assert (user.is_staff, user.is_superuser, user.last_login) == (False, False, None)
         assert user.deleted_at == clock.now()
+
+    def test_the_anonymised_account_is_unverified_and_its_canonical_email_is_anonymised(self, erasure, lived):
+        user, *_ = lived
+        user.email_verified_at, user.email_verification_source = user.date_joined, "code"
+        user.save()
+        real_canonical = user.email_canonical
+
+        erasure.erase(user)
+
+        user.refresh_from_db()
+        assert user.email_canonical == f"deleted-{user.pk}@erased.invalid" != real_canonical
+        assert user.email_verified_at is None and user.email_verification_source == ""
+        assert not User.objects.filter(email_canonical=real_canonical).exists()  # the address can sign up again
+
+    def test_the_mail_sent_to_the_learner_is_deleted_and_other_mail_stays(self, erasure, lived, other_user):
+        from accounts.models import OutboundMail
+
+        user, *_ = lived
+        OutboundMail.objects.create(kind="signup_code", to_email=user.email, backend="outbox")
+        OutboundMail.objects.create(kind="signup_code", to_email=other_user.email, backend="outbox")
+
+        report = erasure.erase(user)
+
+        assert report.mail == 1
+        assert list(OutboundMail.objects.values_list("to_email", flat=True)) == [other_user.email]
 
     def test_the_profile_is_emptied(self, erasure, lived):
         user, *_ = lived

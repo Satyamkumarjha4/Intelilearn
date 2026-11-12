@@ -8,7 +8,8 @@ Use cases:
 - the return base URL is a web address with no trailing slash
 - the fake gateway is off by default
 - the four credits and payments throttle scopes have their planned rates
-- the beat schedule runs `credits.tick` every hour and `payments.reconcile` every five minutes, and nothing else
+- the beat schedule runs `credits.tick` every hour, `payments.reconcile` every five minutes and the sign-in housekeeping
+  (`accounts.purge`) once a day, and nothing else
 """
 
 import pytest
@@ -39,10 +40,11 @@ def test_the_new_throttle_scopes_have_their_planned_rates(scope, rate):
     assert settings.REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"][scope] == rate
 
 
-def test_the_beat_schedule_runs_the_credits_tick_every_hour_and_the_payments_job_every_five_minutes():
+def test_the_beat_schedule_runs_the_credits_tick_hourly_the_payments_job_every_five_minutes_and_the_purge_daily():
     expected = {
         "credits.tick": {"task": "credits.tick", "schedule": 3600.0},
         "payments.reconcile": {"task": "payments.reconcile", "schedule": 300.0},
+        "accounts.purge": {"task": "accounts.purge", "schedule": 86400.0},
     }
 
     assert settings.CELERY_BEAT_SCHEDULE == expected

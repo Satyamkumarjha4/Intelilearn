@@ -26,7 +26,7 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
 
-from accounts.models import Profile, User
+from accounts.models import OutboundMail, Profile, User
 from console.audit import AuditTrail
 from console.models import AuditEntry
 from lessons.models import Lesson
@@ -54,6 +54,7 @@ class ErasureReport:
     sessions: int = 0  # admin sessions deleted
     admin_log: int = 0  # Django admin log rows about the account deleted
     audit_scrubbed: int = 0  # change-log entries about the learner that lost their free text
+    mail: int = 0  # rows of the mail log sent to the account's address, deleted
 
 
 class UserDataMap:
@@ -93,6 +94,10 @@ class UserDataMap:
         "sessions.Session": (ERASED, "admin sessions whose `_auth_user_id` is the account are deleted"),
         "admin.LogEntry (about the account)": (ERASED, "rows about the account and wallet quote the name and email"),
         "console.AuditEntry (about the learner)": (SCRUBBED, "free-text reasons are removed; actions and amounts stay"),
+        "accounts.OutboundMail (sent to the address)": (
+            ERASED,
+            "the mail log rows sent to the account's address are deleted",
+        ),
         "llm_registry.ModelCall": (ERASED, "deleted by lesson and quiz id with the lesson or quiz"),
         "LangGraph checkpoint tables": (ERASED, "the flow and quiz threads are deleted with the lesson or quiz"),
         "Redis caches": (ERASED, "idempotency answers and suggestion caches expire on their own within hours"),
@@ -128,12 +133,17 @@ class AccountTraces:
         """Change-log entries about the learner (a credits change, the exempt switch)."""
         return AuditEntry.objects.filter(target_id=str(self.user.pk))
 
+    def mail(self):
+        """The mail log rows sent to the account's address: they have no relation to the user, only the address."""
+        return OutboundMail.objects.filter(to_email__iexact=self.user.email)
+
     def counts(self) -> dict[str, int]:
         return {
             "tokens": self.tokens().count(),
             "sessions": len(self.session_keys()),
             "admin_log": self.admin_log().count(),
             "audit_scrubbed": self.audit().count(),
+            "mail": self.mail().count(),
         }
 
     def forget(self) -> dict[str, int]:
@@ -142,6 +152,7 @@ class AccountTraces:
         self.tokens().delete()  # the blacklist rows hang on the tokens and go with them
         Session.objects.filter(session_key__in=self.session_keys()).delete()
         self.admin_log().delete()
+        self.mail().delete()
         for entry in self.audit():
             AuditEntry.objects.filter(pk=entry.pk).update(
                 before=self._cleaned(entry.before), after=self._cleaned(entry.after)
@@ -222,8 +233,10 @@ class AccountErasure:
                 education_level="", grade_or_year="", field_of_study="", preferred_language="en",
                 learning_preference="", goal="", notes="", timezone="", timezone_changed_at=None,
             )  # fmt: skip
+            anonymous = f"deleted-{user.pk}@erased.invalid"
             User.objects.filter(pk=user.pk).update(
-                email=f"deleted-{user.pk}@erased.invalid", name="", password=make_password(None), is_active=False,
+                email=anonymous, email_canonical=anonymous, email_verified_at=None, email_verification_source="",
+                name="", password=make_password(None), is_active=False,
                 is_staff=False, is_superuser=False, last_login=None, deleted_at=self.ledger.clock.now(),
             )  # fmt: skip
             user.groups.clear()

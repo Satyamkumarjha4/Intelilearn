@@ -30,6 +30,10 @@ x-e2e-env: &e2e-env
   # payments.E004 refuses the fake gateway unless DEBUG is on, so this stack says so itself (a CI run has no .env).
   DJANGO_DEBUG: "true"
   PAYMENT_ALLOW_FAKE_GATEWAY: "true"
+  # Sign-in codes (phase 11): the mail log keeps the text, so a browser test reads the code (accounts.E002/E003 refuse this
+  # outside a debug run). Nothing is ever sent.
+  MAIL_BACKEND: outbox
+  MAIL_ALLOW_OUTBOX: "true"
   # `make e2e-payments` swaps in `stripe` or `razorpay` (a provider's test mode) for these two; the usual stack is fake only.
   PAYMENT_GATEWAYS_ENABLED: ${E2E_PAYMENT_GATEWAYS:-fake}
   PAYMENT_DEFAULT_GATEWAY: ${E2E_PAYMENT_DEFAULT:-fake}

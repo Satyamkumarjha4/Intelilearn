@@ -18,7 +18,7 @@ Conventions that hold for every table:
 | Field | Type | Notes |
 |---|---|---|
 | id | UUID | |
-| email | email, unique | Login ID (`USERNAME_FIELD`) |
+| email | email, unique | Login ID (`USERNAME_FIELD`). Stored lowercased today; phase 11.1 stores it as typed. A learner cannot change it (the profile serializer's field is read-only, the admin's is read-only after creation) |
 | password | Django hash | |
 | name | char | |
 | is_active | bool | Default true; a false value blocks sign-in |
@@ -28,6 +28,13 @@ Conventions that hold for every table:
 | terms_accepted_at | datetime, null | When the person confirmed the Terms of Use and Privacy Policy at registration. Null for accounts made before the confirmation existed |
 | deleted_at | datetime, null | Set when the account was erased (`AccountErasure`, [design.md §4.26](design.md#426-credits-ledger-gate-earning-and-plans-phases-101-to-104)). The row stays, **anonymised in place** (email `deleted-<id>@erased.invalid`, no name, unusable password, inactive, no staff powers), because the credit ledger is append-only and refers to it. Null for every live account |
 | terms_version | char, blank | `User.TERMS_VERSION` at that moment ("2026-10-25"). Blank for the same older accounts. Nothing compares it with the current version yet, so a newer version does not ask anyone to confirm again |
+| email_verified_at | datetime, null | When the address was proved (phase 11). Null = unverified. The migration marked every account that existed `legacy`, except an erased one. Changing a saved user's email clears it (`User.save()`) |
+| email_verification_source | char(12), blank | `code`, `google`, `microsoft` (the owner proved the inbox), `staff` (marked in the console), `operator` (`createsuperuser`, a script), `legacy` (never proved). Only the first three count as proved for linking a sign-in |
+| email_canonical | char(320), unique | The address in canonical form (`EmailCanonicalizer`: lowercased, the `+tag` dropped, Gmail dots dropped): two spellings of one inbox cannot be two accounts. Where two existing accounts collapsed to one form the migration gave the later one `dup:<id>:<address>`. An erased account has its anonymised address here, so the real one is free again |
+
+### `AuthSettings` (singleton) and `OutboundMail` (phase 11.0)
+
+`AuthSettings.captcha_enabled` (default false) is the console's switch for the sign-up challenge (built in 11.4; the keys stay in the environment). `OutboundMail` is the mail log: `kind` (`signup_code`, `login_code`, `reset_code`, `owner_notice`, `use_google_notice`), `to_email`, `subject`, `backend`, `status` (`queued`, `sent`, `failed`), `attempts`, `provider_message_id`, a short `error` (never a code or a body), `created_at`, `sent_at`, and `body_text`, which only the throwaway-stack `outbox` backend fills. It has no relation to a user: erasing an account deletes the rows sent to its address (`UserDataMap.OUTSIDE`), and the daily `accounts.purge` deletes rows older than `MAIL_LOG_RETENTION_DAYS` (30).
 
 ### `Profile` (one-to-one with User; created on registration and filled in during onboarding)
 

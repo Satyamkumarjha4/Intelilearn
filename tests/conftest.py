@@ -60,7 +60,7 @@ def api_client():
 def user(db):
     from accounts.models import User
 
-    return User.objects.create_user("ada@example.com", password=PASSWORD, name="Ada Lovelace")
+    return User.objects.create_user("ada@example.com", password=PASSWORD, name="Ada Lovelace", verified=True)
 
 
 @pytest.fixture
@@ -74,7 +74,7 @@ def signed_in_client(api_client, user):
 def other_user(db):
     from accounts.models import User
 
-    return User.objects.create_user("grace@example.com", password=PASSWORD, name="Grace Hopper")
+    return User.objects.create_user("grace@example.com", password=PASSWORD, name="Grace Hopper", verified=True)
 
 
 @pytest.fixture

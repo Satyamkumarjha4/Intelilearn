@@ -152,6 +152,7 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_BEAT_SCHEDULE: dict = {
     "credits.tick": {"task": "credits.tick", "schedule": 3600.0},
     "payments.reconcile": {"task": "payments.reconcile", "schedule": 300.0},
+    "accounts.purge": {"task": "accounts.purge", "schedule": 86400.0},  # daily: the mail log past its retention
 }
 
 # Shared cache (Redis db 2): the resolved model registry and per-minute LLM rate-limit counters.
@@ -295,8 +296,22 @@ REST_FRAMEWORK = {
     # Keep the API port bound to localhost (BIND_ADDRESS) so nobody can reach Django directly with a forged header.
     "NUM_PROXIES": env.int("TRUSTED_PROXY_COUNT", default=1),
 }
-# Whether the operator said how many proxies stand in front (`core.E002` in `check --deploy` wants it said, not defaulted).
+# Whether the operator said how many proxies stand in front (`core.E002` in `check --deploy` wants it said, not
+# defaulted).
 TRUSTED_PROXY_COUNT_EXPLICIT = bool(env.str("TRUSTED_PROXY_COUNT", default="").strip())
+
+# --- Email (phase 11): sign-in codes and notices go through `accounts.mail`; see
+# docs/to_be_developed/signin-implementation-plan.md ---
+# `console` prints the message to the log (development only: it refuses to send with DJANGO_DEBUG off), `brevo`
+# sends through
+# Brevo's HTTP API, `outbox` keeps the text on the mail log row for browser tests (throwaway stack only, with
+# MAIL_ALLOW_OUTBOX).
+MAIL_BACKEND = env("MAIL_BACKEND", default="console")
+MAIL_FROM = env("MAIL_FROM", default="Socra <no-reply@localhost>")  # production: no-reply@<the sending domain>
+MAIL_ALLOW_OUTBOX = env.bool("MAIL_ALLOW_OUTBOX", default=False)
+BREVO_API_KEY = env("BREVO_API_KEY", default="")
+MAIL_TIMEOUT_S = env.int("MAIL_TIMEOUT_S", default=10)
+MAIL_LOG_RETENTION_DAYS = env.int("MAIL_LOG_RETENTION_DAYS", default=30)  # the mail log holds addresses
 
 # --- Auth: JWTs in httpOnly cookies (see accounts/cookies.py) ---
 SIMPLE_JWT = {

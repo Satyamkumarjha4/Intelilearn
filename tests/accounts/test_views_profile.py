@@ -11,6 +11,9 @@ Use cases:
 - PUT requires the onboarding fields and rejects unknown choices
 - an empty select gets a readable message
 - PATCH can change the name but never the email
+- neither PUT nor PATCH can change the email, its canonical form or its verification, whatever the body says
+  (nothing lets a
+  learner change their email, and a verified flag must not be settable by the person it is about)
 """
 
 import pytest
@@ -90,3 +93,29 @@ def test_patch_updates_name_but_not_email(signed_in_client, user):
     user.refresh_from_db()
     assert user.name == "Countess Ada"
     assert user.email == "ada@example.com"
+
+
+PROOF_FIELDS = {
+    "email": "evil@example.com",
+    "email_canonical": "evil@example.com",
+    "email_verified_at": None,
+    "email_verification_source": "code",
+}
+
+
+@pytest.mark.parametrize("method", ["put", "patch"])
+def test_a_learner_cannot_change_their_email_or_its_verification(signed_in_client, user, method):
+    user.email_verified_at = None
+    user.email_verification_source = ""
+    user.save()
+    before = (user.email, user.email_canonical, user.email_verified_at, user.email_verification_source)
+
+    response = getattr(signed_in_client, method)(
+        "/api/profile", {**ONBOARDING, "name": "Ada L", **PROOF_FIELDS}, format="json"
+    )
+
+    assert response.status_code == 200
+    user.refresh_from_db()
+    assert (user.email, user.email_canonical, user.email_verified_at, user.email_verification_source) == before
+    assert user.name == "Ada L"  # the rest of the body was honoured
+    assert response.json()["email"] == "ada@example.com"
