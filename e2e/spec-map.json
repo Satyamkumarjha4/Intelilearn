@@ -56,6 +56,7 @@
       "globs": [
         "frontend/app/api/**",
         "frontend/lib/api.ts",
+        "frontend/lib/client-address.ts",
         "frontend/next.config.ts"
       ],
       "why": "the API client and the /api proxy (cookies, CSRF, raw webhook bodies) carry every call"
