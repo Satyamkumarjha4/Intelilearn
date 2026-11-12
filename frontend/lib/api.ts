@@ -30,7 +30,15 @@ type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 // Auth endpoints never trigger the refresh-and-retry (it would loop or hide a real 401).
-const NO_REFRESH_PATHS = new Set(["/auth/login", "/auth/register", "/auth/refresh", "/auth/logout", "/auth/csrf"]);
+const NO_REFRESH_PATHS = new Set([
+  "/auth/login",
+  "/auth/register",
+  "/auth/verify",
+  "/auth/verify/resend",
+  "/auth/refresh",
+  "/auth/logout",
+  "/auth/csrf",
+]);
 
 function documentCookie(name: string): string | null {
   const match = document.cookie.split("; ").find((part) => part.startsWith(`${name}=`));

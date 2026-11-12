@@ -1,5 +1,7 @@
 import { expect, type BrowserContext, type Page } from "@playwright/test";
 
+import { Outbox } from "./outbox";
+
 type Reply<T = any> = { status: number; body: T };
 
 /** The app's own API through the page's session, with the CSRF header the browser would send. */
@@ -24,9 +26,14 @@ export class Api {
     return { status: response.status(), body: (await response.json().catch(() => null)) as T };
   }
 
-  /** A learner with a finished profile, signed in on this page's browser context. */
+  /** A learner with a finished profile, signed in on this page's browser context: the way a person gets there, a code from
+   *  their inbox (the throwaway stack's outbox) entered by the browser that registered. */
   async signUp(email: string, password: string, name = "E2E Learner"): Promise<void> {
-    await this.call("POST", "/auth/register", { name, email, password, accept_terms: true });
+    const registered = await this.call("POST", "/auth/register", { name, email, password, accept_terms: true });
+    expect(registered.status, "register should accept the sign-up").toBe(202);
+    const code = await Outbox.code(this.page.request, email);
+    const verified = await this.call("POST", "/auth/verify", { email, code, purpose: "signup" });
+    expect(verified.status, "the emailed code should create the account").toBe(200);
     await this.call("PUT", "/profile", {
       education_level: "school",
       grade_or_year: "9",

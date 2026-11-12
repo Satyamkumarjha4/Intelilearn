@@ -19,6 +19,13 @@ x-e2e-env: &e2e-env
   PUBLIC_PAGES_THROTTLE_RATE: 10000/min
   AUTH_THROTTLE_RATE: 10000/min
   AUTH_ACCOUNT_THROTTLE_RATE: 10000/min
+  # Every test signs up from one address and a spec resends within a minute, so the code limits (the production ones are
+  # covered by the backend tests) would turn a green run red.
+  AUTH_CODE_SEND_EMAIL_RATE: 10000/hour
+  AUTH_CODE_SEND_IP_RATE: 10000/hour
+  AUTH_CODE_COOLDOWN_RATE: 10000/min
+  AUTH_CODE_CHECK_EMAIL_RATE: 10000/hour
+  AUTH_CODE_CHECK_IP_RATE: 10000/hour
   LESSON_CREATE_THROTTLE_RATE: 10000/hour
   CREDITS_QUOTE_THROTTLE_RATE: 10000/min
   CREDITS_BALANCE_THROTTLE_RATE: 10000/min

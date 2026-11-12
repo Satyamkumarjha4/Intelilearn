@@ -38,6 +38,21 @@ if extra > 0:
 `, email, "from credits.ledger import Ledger");
   }
 
+  /** An account from before verification existed (`legacy`: the migration's mark), made verified or, after
+   *  `require_reverification`, asking for a code at its next password sign-in. */
+  static legacyAccount(email: string, password: string, opts: { reverify: boolean }): void {
+    const script = `
+from django.core.management import call_command
+from django.utils import timezone
+from accounts.models import User
+user = User.objects.create_user(${JSON.stringify(email)}, password=${JSON.stringify(password)}, name="Old Account",
+    email_verified_at=timezone.now(), email_verification_source="legacy")
+${opts.reverify ? 'call_command("require_reverification")' : ""}
+`;
+    const compose = process.env.E2E_COMPOSE || Seed.FALLBACK;
+    execSync(`${compose} exec -T backend python manage.py shell`, { cwd: Seed.REPO, input: script, stdio: ["pipe", "pipe", "pipe"] });
+  }
+
   /** Three placeholder testimonials (samples: unpublished, never shown), made by the command a developer runs. */
   static sampleTestimonials(): void {
     const compose = process.env.E2E_COMPOSE || Seed.FALLBACK;

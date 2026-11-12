@@ -97,4 +97,5 @@ def test_the_outbox_backend_keeps_the_body_with_its_switch_on_and_refuses_withou
 
 
 def test_only_the_outbox_keeps_a_body():
-    assert [k for k, cls in MailBackends.REGISTERED.items() if cls.keeps_body] == ["outbox"]
+    ours = {k: cls for k, cls in MailBackends.REGISTERED.items() if cls.__module__.startswith("accounts.")}  # not the
+    assert [k for k, cls in ours.items() if cls.keeps_body] == ["outbox"]  # test stack's own `recording` backend

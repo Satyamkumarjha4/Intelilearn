@@ -291,6 +291,13 @@ REST_FRAMEWORK = {
         ),  # asking if an order was paid, per user
         # providers' own addresses are not allow-listed: the webhook's signature is the control, this is a ceiling
         "payment_webhook": env("PAYMENT_WEBHOOK_THROTTLE_RATE", default="600/min"),  # per client address
+        # sign-in codes (docs/to_be_developed/signin-implementation-plan.md 8.5). Every key is the email as TYPED (its
+        # canonical form), whether or not an account has it, so a limit cannot be used to find accounts.
+        "auth_code_send_email": env("AUTH_CODE_SEND_EMAIL_RATE", default="5/hour"),  # mails carrying a code, per email
+        "auth_code_send_ip": env("AUTH_CODE_SEND_IP_RATE", default="20/hour"),  # the same, per client address
+        "auth_code_cooldown": env("AUTH_CODE_COOLDOWN_RATE", default="1/min"),  # a new code, per email
+        "auth_code_check_email": env("AUTH_CODE_CHECK_EMAIL_RATE", default="15/hour"),  # code checks, per email
+        "auth_code_check_ip": env("AUTH_CODE_CHECK_IP_RATE", default="60/hour"),  # code checks, per client address
     },
     # Requests arrive through the Next.js proxy; the client address is the X-Forwarded-For entry it appends.
     # Keep the API port bound to localhost (BIND_ADDRESS) so nobody can reach Django directly with a forged header.
@@ -311,7 +318,21 @@ MAIL_FROM = env("MAIL_FROM", default="Socra <no-reply@localhost>")  # production
 MAIL_ALLOW_OUTBOX = env.bool("MAIL_ALLOW_OUTBOX", default=False)
 BREVO_API_KEY = env("BREVO_API_KEY", default="")
 MAIL_TIMEOUT_S = env.int("MAIL_TIMEOUT_S", default=10)
+# How a queued message reaches the sender (a callable class, used by `accounts.mail.tasks.MailQueue`). Tests swap it
+# for one that sends at once, so no test needs a broker.
+MAIL_DISPATCH = "accounts.mail.tasks.CeleryDispatch"
 MAIL_LOG_RETENTION_DAYS = env.int("MAIL_LOG_RETENTION_DAYS", default=30)  # the mail log holds addresses
+
+# --- Sign-in codes (phase 11.1): `accounts.verification`. The one place the numbers live (plan 5.6) ---
+AUTH_CODE_DIGITS = env.int("AUTH_CODE_DIGITS", default=6)
+AUTH_CODE_TTL_MINUTES = env.int("AUTH_CODE_TTL_MINUTES", default=10)  # how long a code works
+AUTH_CODE_MAX_ATTEMPTS = env.int("AUTH_CODE_MAX_ATTEMPTS", default=5)  # wrong tries before a code is dead
+AUTH_LOCK_STRIKES = env.int("AUTH_LOCK_STRIKES", default=3)  # dead codes within AUTH_LOCK_MINUTES that lock an email
+AUTH_LOCK_MINUTES = env.int("AUTH_LOCK_MINUTES", default=60)
+PENDING_SIGNUP_HOURS = env.int("PENDING_SIGNUP_HOURS", default=24)  # how long a sign-up waits for its code
+SIGNUP_TICKET_MINUTES = env.int("SIGNUP_TICKET_MINUTES", default=60 * 24)  # the `lc_signup` cookie: the row's life
+CODE_LOG_RETENTION_DAYS = env.int("CODE_LOG_RETENTION_DAYS", default=7)  # spent code rows (they hold an address)
+SIGNUP_RECORD_RETENTION_DAYS = env.int("SIGNUP_RECORD_RETENTION_DAYS", default=30)  # who signed up from where
 
 # --- Auth: JWTs in httpOnly cookies (see accounts/cookies.py) ---
 SIMPLE_JWT = {

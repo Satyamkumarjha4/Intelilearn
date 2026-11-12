@@ -23,10 +23,19 @@ from django.contrib.auth.hashers import make_password
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.sessions.models import Session
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
 
-from accounts.models import OutboundMail, Profile, User
+from accounts.models import (
+    EmailLock,
+    OutboundMail,
+    PendingSignup,
+    Profile,
+    SignupRecord,
+    User,
+    VerificationCode,
+)
 from console.audit import AuditTrail
 from console.models import AuditEntry
 from lessons.models import Lesson
@@ -55,6 +64,9 @@ class ErasureReport:
     admin_log: int = 0  # Django admin log rows about the account deleted
     audit_scrubbed: int = 0  # change-log entries about the learner that lost their free text
     mail: int = 0  # rows of the mail log sent to the account's address, deleted
+    codes: int = 0  # verification codes (and the pending sign-up that held some), deleted
+    signup_records: int = 0  # the record of where the account was made from, deleted
+    locks: int = 0  # the email lock, deleted
 
 
 class UserDataMap:
@@ -76,6 +88,8 @@ class UserDataMap:
         "accounts.User_groups.user": (CLEARED, "the account's groups are removed"),
         "accounts.User_user_permissions.user": (CLEARED, "the account's permissions are removed"),
         "token_blacklist.OutstandingToken.user": (ERASED, "every refresh token is deleted, with its blacklist row"),
+        "accounts.VerificationCode.user": (ERASED, "the codes sent to the account are deleted"),
+        "accounts.SignupRecord.user": (ERASED, "where and how the account was made (an IP and a domain) is deleted"),
         "credits.StreakDay.user": (ERASED, "the days studied are deleted"),
         "credits.StreakState.user": (ERASED, "the cached streak is deleted"),
         "credits.Wallet.user": (KEPT, "append-only ledger, protected key; credits left are forfeited"),
@@ -98,6 +112,8 @@ class UserDataMap:
             ERASED,
             "the mail log rows sent to the account's address are deleted",
         ),
+        "accounts.PendingSignup (by email)": (ERASED, "a sign-up still waiting for its code, found by canonical email"),
+        "accounts.EmailLock (by email)": (ERASED, "a lock on the canonical email is deleted"),
         "llm_registry.ModelCall": (ERASED, "deleted by lesson and quiz id with the lesson or quiz"),
         "LangGraph checkpoint tables": (ERASED, "the flow and quiz threads are deleted with the lesson or quiz"),
         "Redis caches": (ERASED, "idempotency answers and suggestion caches expire on their own within hours"),
@@ -137,6 +153,19 @@ class AccountTraces:
         """The mail log rows sent to the account's address: they have no relation to the user, only the address."""
         return OutboundMail.objects.filter(to_email__iexact=self.user.email)
 
+    def codes(self):
+        """Codes sent to the account's address, whatever the purpose (some hang on a pending row, some on the user)."""
+        return VerificationCode.objects.filter(Q(email_canonical=self.user.email_canonical) | Q(user=self.user))
+
+    def pending(self):
+        return PendingSignup.objects.filter(email_canonical=self.user.email_canonical)
+
+    def signup_records(self):
+        return SignupRecord.objects.filter(user=self.user)
+
+    def locks(self):
+        return EmailLock.objects.filter(email_canonical=self.user.email_canonical)
+
     def counts(self) -> dict[str, int]:
         return {
             "tokens": self.tokens().count(),
@@ -144,6 +173,9 @@ class AccountTraces:
             "admin_log": self.admin_log().count(),
             "audit_scrubbed": self.audit().count(),
             "mail": self.mail().count(),
+            "codes": self.codes().count(),
+            "signup_records": self.signup_records().count(),
+            "locks": self.locks().count(),
         }
 
     def forget(self) -> dict[str, int]:
@@ -153,6 +185,10 @@ class AccountTraces:
         Session.objects.filter(session_key__in=self.session_keys()).delete()
         self.admin_log().delete()
         self.mail().delete()
+        self.codes().delete()  # before the pending sign-up, whose own codes would go with it
+        self.pending().delete()
+        self.signup_records().delete()
+        self.locks().delete()
         for entry in self.audit():
             AuditEntry.objects.filter(pk=entry.pk).update(
                 before=self._cleaned(entry.before), after=self._cleaned(entry.after)

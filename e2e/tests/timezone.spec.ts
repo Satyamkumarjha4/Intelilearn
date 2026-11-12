@@ -7,6 +7,7 @@ import { expect, test } from "@playwright/test";
 
 import { Api } from "../support/api";
 import { E2E } from "../support/config";
+import { Outbox } from "../support/outbox";
 
 test.use({ timezoneId: "Europe/London" });
 
@@ -23,10 +24,13 @@ const PROFILE = {
 test("sign-up keeps the browser's zone, the profile changes it once, and then it is locked", async ({ page }) => {
   await page.goto("/auth?mode=register");
   await page.getByLabel("Name").fill("Zone Tester");
-  await page.getByLabel("Email").fill(E2E.email("zone"));
+  const email = E2E.email("zone");
+  await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password", { exact: true }).fill(E2E.PASSWORD);
   await page.locator("input[name=accept_terms]").check();
   await page.locator("form button[type=submit]").click();
+  await page.waitForURL(/\/auth\/verify/);
+  await page.getByLabel("6-digit code").fill(await Outbox.code(page.request, email));
   await page.waitForURL(/\/onboarding/);
 
   const api = new Api(page);

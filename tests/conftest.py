@@ -2,7 +2,11 @@
 
 - `_clear_cache` (autouse): empties the cache around each test, because throttle counters and the resolved registry
   live there and would otherwise leak between tests.
+- `_mail_goes_to_the_mailbox` (autouse): the mail backend is `recording` and queued mail is delivered at once, so no
+  test needs a broker or sends anything; `mailbox` is where a test reads what was sent (`support/mail.py`).
 - `api_client`: a DRF APIClient with no credentials.
+- `signup`: registers and verifies through the real endpoints (`support/signup.py`); `new_browser()` is another visitor
+  with their own cookies (to play an attacker beside a victim).
 - `user`: ada@example.com, with the shared test PASSWORD.
 - `signed_in_client`: an APIClient signed in as `user` through the real login endpoint, so it carries the auth cookies.
 - `other_user`: a second learner (grace@example.com), to prove ownership checks.
@@ -51,9 +55,45 @@ def _a_migration_test_leaves_the_schema_at_the_latest(request):
     assert not behind, f"the test left these migrations unapplied for the next test: {[str(m) for m, _ in behind]}"
 
 
+@pytest.fixture(autouse=True)
+def _mail_goes_to_the_mailbox():
+    """No test sends real mail or needs a broker: messages are delivered at once to the in-memory `MAILBOX`.
+
+    It does not take the `settings` fixture: a test may use that name for a parameter of its own."""
+    from django.test import override_settings
+    from support.mail import MAILBOX
+
+    MAILBOX.messages.clear()
+    with override_settings(MAIL_BACKEND="recording", MAIL_DISPATCH="support.mail.InlineDispatch"):
+        yield
+
+
+@pytest.fixture
+def mailbox():
+    from support.mail import MAILBOX
+
+    return MAILBOX
+
+
 @pytest.fixture
 def api_client():
     return APIClient()
+
+
+@pytest.fixture
+def signup(api_client, django_capture_on_commit_callbacks):
+    """Sign up through the real endpoints: `signup.complete(...)` registers and enters the mailed code."""
+    from support.signup import Signup
+
+    return Signup(api_client, django_capture_on_commit_callbacks)
+
+
+@pytest.fixture
+def new_browser(django_capture_on_commit_callbacks):
+    """Another visitor, with their own cookies: `new_browser()` → a `Signup` on a fresh client."""
+    from support.signup import Signup
+
+    return lambda: Signup(APIClient(), django_capture_on_commit_callbacks)
 
 
 @pytest.fixture

@@ -129,6 +129,10 @@ docker compose exec backend python manage.py flow runs <lesson>
 
 `--inline` runs each step in the command's own process; without it the step is queued for the Celery worker. A lesson can be named by the first characters of its id.
 
+## 5a. Sign-up codes in development
+
+Creating an account emails a 6-digit code. With the default `MAIL_BACKEND=console` nothing is sent: the **worker** prints the message, code included, to its log (development only; it refuses to run with `DJANGO_DEBUG` off). So: create an account at `/auth?mode=register`, then `docker compose logs -f worker` (or `make worker-log`) and read the code from the newest message. An account made before verification existed (`legacy`) signs in with no code until `manage.py require_reverification` is run. For real mail, see the launch checklist in [the sign-in plan](../to_be_developed/signin-implementation-plan.md#127-the-launch-checklist) (a sending domain, Brevo's key).
+
 ## 6. Walk through the app without API keys
 
 `tests/e2e/fake_llm_server.py` is a fake OpenAI-compatible server that answers every structured-output call with canned, schema-valid content, so the real gateway, worker and graph run end to end at no cost. It is a development aid, not part of the product.

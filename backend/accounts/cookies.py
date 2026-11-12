@@ -4,6 +4,7 @@ lc_access     access JWT, sent on every request                      path=/
 lc_refresh    refresh JWT, only sent to the auth endpoints            path=/api/auth
 lc_session    "signed in" marker for the Next.js route guard          path=/  (lifetime of the refresh token)
 lc_onboarded  "profile complete" marker for the Next.js route guard   path=/
+lc_signup     the signup ticket: the signed id of this browser's pending sign-up   path=/api/auth  (24 hours)
 
 The markers carry no authority; the API checks the tokens on every request.
 """
@@ -18,6 +19,7 @@ class AuthCookies:
     REFRESH = "lc_refresh"
     SESSION = "lc_session"
     ONBOARDED = "lc_onboarded"
+    SIGNUP = "lc_signup"
     REFRESH_PATH = "/api/auth"
 
     def __init__(
@@ -41,6 +43,13 @@ class AuthCookies:
             self._set(response, self.ONBOARDED, "1", self.refresh_lifetime)
         else:
             response.delete_cookie(self.ONBOARDED, path="/", samesite="Lax")
+
+    def set_signup_ticket(self, response, ticket: str, lifetime: timedelta) -> None:
+        """The ticket that binds a pending sign-up to this browser (`SignupTicket`). It carries no authority."""
+        self._set(response, self.SIGNUP, ticket, lifetime, path=self.REFRESH_PATH)
+
+    def clear_signup_ticket(self, response) -> None:
+        response.delete_cookie(self.SIGNUP, path=self.REFRESH_PATH, samesite="Lax")
 
     def clear(self, response) -> None:
         for name in (self.ACCESS, self.SESSION, self.ONBOARDED):

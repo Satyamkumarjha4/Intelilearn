@@ -1,0 +1,10 @@
+# Domains that are never refused as disposable, whatever the blocklist says. A name covers itself and every subdomain.
+# Schools and colleges first: a student's address must never be turned away because a stranger's list is wrong about it.
+ac.in
+edu.in
+res.in
+edu
+ac.uk
+edu.au
+ac.nz
+ac.za

@@ -17,6 +17,7 @@ from celery import shared_task
 from django.conf import settings
 from django.db import transaction
 from django.db.models import F
+from django.utils.module_loading import import_string
 
 from ..clock import Clock, SystemClock
 from ..models import OutboundMail
@@ -33,13 +34,19 @@ class Outcome(Enum):
     SKIPPED = "skipped"  # already sent or failed, or the row was purged
 
 
+class CeleryDispatch:
+    """The production way a queued message is sent: hand it to the Celery task."""
+
+    def __call__(self, row_id: int, payload: dict) -> object:
+        return send_mail.delay(row_id, payload)
+
+
 class MailQueue:
-    """Logs a message and queues it for the task, after the surrounding transaction commits (a request that rolls
-    back sends
-    nothing)."""
+    """Logs a message and queues it for the task, after the surrounding transaction commits (a request that rolls back
+    sends nothing). `MAIL_DISPATCH` names how it is handed on; tests swap it."""
 
     def __init__(self, dispatch: Callable[[int, dict], object] | None = None):
-        self._dispatch = dispatch or (lambda row_id, payload: send_mail.delay(row_id, payload))
+        self._dispatch = dispatch or import_string(settings.MAIL_DISPATCH)()
 
     def send(self, message: MailMessage) -> OutboundMail:
         row = OutboundMail.objects.create(

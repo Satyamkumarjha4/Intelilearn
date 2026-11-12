@@ -4,10 +4,10 @@ Why: the email is the login identity. If it isn't normalised and matched case-in
 register twice or be unable to sign in, and a user without a profile breaks onboarding.
 
 Use cases:
-- create_user normalises the email and creates the profile
+- create_user keeps the email as typed (only the domain is lowercased), computes its canonical form, makes the profile
 - an email is required
 - create_superuser sets the staff and superuser flags
-- looking a user up by email ignores case
+- looking a user up by email ignores case and finds the account through any alias of the address
 - a profile is complete only once the onboarding fields are filled in
 """
 
@@ -17,10 +17,11 @@ from accounts.models import Profile, User
 
 
 @pytest.mark.django_db
-def test_create_user_normalises_email_and_creates_profile():
+def test_create_user_keeps_the_email_as_typed_and_creates_the_profile():
     user = User.objects.create_user("Ada@Example.COM", password="x", name="Ada")
 
-    assert user.email == "ada@example.com"
+    assert user.email == "Ada@example.com"  # as typed; the domain is lowercased, as every mail system does
+    assert user.email_canonical == "ada@example.com"
     assert user.check_password("x")
     assert not user.is_staff
     assert Profile.objects.filter(user=user).exists()
@@ -44,6 +45,15 @@ def test_lookup_by_email_ignores_case():
     user = User.objects.create_user("ada@example.com", password="x", name="Ada")
 
     assert User.objects.get_by_natural_key("ADA@example.com") == user
+
+
+@pytest.mark.django_db
+def test_lookup_finds_the_account_through_an_alias_of_its_address():
+    user = User.objects.create_user("Ada.Lovelace@gmail.com", password="x", name="Ada")
+
+    assert User.objects.get_by_natural_key("adalovelace+maths@googlemail.com") == user
+    with pytest.raises(User.DoesNotExist):
+        User.objects.get_by_natural_key("not an address")  # a malformed address finds nothing, and does not crash
 
 
 @pytest.mark.django_db

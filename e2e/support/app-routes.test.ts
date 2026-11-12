@@ -53,6 +53,8 @@ describe("AppRoutes", () => {
   test("the landing page and sign-in are the pages only a signed-out visit compiles", () => {
     expect(AppRoutes.isSignedOutOnly("/")).toBe(true);
     expect(AppRoutes.isSignedOutOnly("/auth")).toBe(true);
+    expect(AppRoutes.isSignedOutOnly("/auth/verify")).toBe(true);
+    expect(AppRoutes.isSignedOutOnly("/authors")).toBe(false);
     expect(AppRoutes.isSignedOutOnly("/lessons")).toBe(false);
     expect(AppRoutes.isSignedOutOnly("/privacy")).toBe(false);
   });

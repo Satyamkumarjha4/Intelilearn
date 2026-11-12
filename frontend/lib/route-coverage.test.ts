@@ -9,7 +9,8 @@
  * Use cases:
  * - every page of `app/` that is not public is matched by the proxy (including the sub-pages under a protected prefix)
  * - every protected prefix of `RouteGuard` is matched
- * - the public pages (the landing page, sign-in, the legal pages and contact) are the only ones left out
+ * - the public pages (the landing page, the legal pages and contact) are the only ones left out; the sign-in page and its
+ *   sub-pages (the code screen) are matched, so a signed-in visitor is sent on
  */
 import { describe, expect, test } from "bun:test";
 import { readdirSync } from "node:fs";
@@ -18,7 +19,7 @@ import { join } from "node:path";
 import { config } from "../proxy";
 import { RouteGuard } from "./route-guard";
 
-const PUBLIC = new Set(["/", "/auth", "/privacy", "/terms", "/contact"]);
+const PUBLIC = new Set(["/", "/auth", "/auth/verify", "/privacy", "/terms", "/contact"]);
 const APP = join(import.meta.dir, "..", "app");
 
 /** The URL path of every page under `app/`: route groups vanish and a dynamic segment becomes a value. */
@@ -52,7 +53,8 @@ describe("the proxy matcher", () => {
   test("leaves out only the public pages", () => {
     const left = pages().filter((path) => !matched(path));
 
-    expect(left.sort()).toEqual([...PUBLIC].filter((path) => path !== "/" && path !== "/auth").sort());
+    // the guard also runs for the sign-in page and its sub-pages (a signed-in visitor is sent on), so they are matched too
+    expect(left.sort()).toEqual([...PUBLIC].filter((path) => path !== "/" && !path.startsWith("/auth")).sort());
   });
 
   test("the search helper sees the pages it should", () => {

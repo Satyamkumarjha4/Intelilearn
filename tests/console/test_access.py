@@ -120,7 +120,7 @@ def test_a_bad_token_is_a_401_so_the_browser_can_refresh_and_retry(api_client):
 def test_a_staff_member_is_limited_per_minute_and_others_are_not_affected(routes, staff_user, monkeypatch):
     monkeypatch.setattr(ConsoleRateThrottle, "THROTTLE_RATES", {"console": "3/min"})
     other_staff = User.objects.create_user(
-        "two@example.com", password="correct-horse-battery-staple", name="Two", is_staff=True
+        "two@example.com", password="correct-horse-battery-staple", name="Two", is_staff=True, verified=True
     )
 
     def signed_in(user):

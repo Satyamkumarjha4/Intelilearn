@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 import { apiClient, ApiError } from "@/lib/api";
+import { AuthApi, type CodePurpose } from "@/lib/auth-api";
 import { AuthRules } from "@/lib/auth-form";
 import { BrowserTimezone } from "@/lib/browser-timezone";
 import { SessionProbe } from "@/lib/session-probe";
@@ -13,7 +14,10 @@ type AuthState = {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<User>;
-  register: (name: string, email: string, password: string, acceptTerms: boolean) => Promise<User>;
+  /** Starts a sign-up: a code is emailed and nothing exists yet, so there is no user until `verify`. */
+  register: (name: string, email: string, password: string, acceptTerms: boolean) => Promise<void>;
+  /** Enters the emailed code: the account is made (a sign-up) or verified (a sign-in) and the person is signed in. */
+  verify: (email: string, code: string, purpose: CodePurpose) => Promise<User>;
   logout: () => Promise<void>;
   setUser: (user: User) => void;
 };
@@ -49,23 +53,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const { user } = await apiClient.request<{ user: User }>("/auth/login", {
-      method: "POST",
-      body: { email, password },
-    });
-    setUser(user);
-    return user;
-  }, []);
+  const api = useMemo(() => new AuthApi(apiClient), []);
 
-  const register = useCallback(async (name: string, email: string, password: string, acceptTerms: boolean) => {
-    const { user } = await apiClient.request<{ user: User }>("/auth/register", {
-      method: "POST",
-      body: AuthRules.registerBody({ name, email, password }, acceptTerms, BrowserTimezone.detect()),
-    });
-    setUser(user);
-    return user;
-  }, []);
+  const login = useCallback(
+    async (email: string, password: string) => {
+      const user = await api.login(email, password);
+      setUser(user);
+      return user;
+    },
+    [api],
+  );
+
+  const register = useCallback(
+    (name: string, email: string, password: string, acceptTerms: boolean) =>
+      api.register(AuthRules.registerBody({ name, email, password }, acceptTerms, BrowserTimezone.detect())),
+    [api],
+  );
+
+  const verify = useCallback(
+    async (email: string, code: string, purpose: CodePurpose) => {
+      const user = await api.verify(email, code, purpose);
+      setUser(user);
+      return user;
+    },
+    [api],
+  );
 
   const logout = useCallback(async () => {
     await apiClient.request("/auth/logout", { method: "POST" });
@@ -75,8 +87,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   const value = useMemo(
-    () => ({ user, loading, login, register, logout, setUser }),
-    [user, loading, login, register, logout],
+    () => ({ user, loading, login, register, verify, logout, setUser }),
+    [user, loading, login, register, verify, logout],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

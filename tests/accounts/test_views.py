@@ -1,13 +1,17 @@
-"""Unit under test: the auth views in `accounts.views` (register, login, me, refresh, logout) with
+"""Unit under test: the auth views in `accounts.views` (register, verify, login, me, refresh, logout) with
 `CookieJWTAuthentication` and CSRF.
 
 Why: this is the whole sign-in flow. Tokens must stay in httpOnly cookies, cookie-authenticated writes must need the
 CSRF header, and a refresh token must be rotated and the old one blacklisted, or a stolen token keeps working.
 
 Use cases:
-- register signs in with httpOnly cookies, and keeps when and to which version of the terms the person agreed
-- register refuses a person who has not confirmed the terms (a field error, nothing created)
-- register rejects a duplicate email (any case) and reports a weak password on the password field
+- register starts a pending sign-up: 202, a code mailed to the address as typed, the `lc_signup` ticket cookie, and no
+  account, session or credits
+- the right code makes the account (the email as typed, verified by code) and signs in with httpOnly cookies
+- register for an address that has an account answers the same and mails its owner a notice instead
+- register keeps when and to which version of the terms the person agreed, on the sign-up and then the account
+- register refuses a person who has not confirmed the terms (a field error, nothing kept) and reports a weak password
+  on the password field
 - login accepts any email case and rejects a wrong password
 - login refuses a deactivated account with the same answer as a wrong password, and sets no cookie
 - /auth/me requires authentication and returns the signed-in user, with whether they are staff (the console's guard)
@@ -21,7 +25,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from accounts.models import User
+from accounts.models import PendingSignup, User
 
 PASSWORD = "correct-horse-battery-staple"  # same as the `user` fixture in tests/conftest.py
 
@@ -40,35 +44,42 @@ def is_cleared(response, name):
 # --- register ---
 
 
-def test_register_signs_in_with_httponly_cookies(api_client):
-    response = api_client.post(
-        "/api/auth/register",
-        {"email": "Grace@Example.com", "password": PASSWORD, "name": "Grace", "accept_terms": True},
-        format="json",
-    )
+def test_register_starts_a_signup_and_makes_no_account_session_or_credits(signup, mailbox):
+    response = signup.register(email="Grace@Example.com")
 
-    assert response.status_code == 201
-    assert response.json()["user"]["email"] == "grace@example.com"
+    assert response.status_code == 202
+    assert response.json() == {"status": "verification_required"}
+    assert not User.objects.filter(email_canonical="grace@example.com").exists()  # no account until the code
+    assert PendingSignup.objects.filter(email_canonical="grace@example.com").count() == 1
+    assert not any(name in response.cookies for name in ("lc_access", "lc_refresh", "lc_session"))
+    assert [m.kind for m in mailbox.to("Grace@example.com")] == ["signup_code"]  # mailed to the address as typed
+    ticket = response.cookies["lc_signup"]
+    assert ticket["httponly"] and ticket["path"] == "/api/auth" and ticket["samesite"] == "Lax"
+    assert int(ticket["max-age"]) == 24 * 60 * 60  # the pending row's life
+
+
+def test_the_right_code_makes_the_account_and_signs_in_with_httponly_cookies(signup):
+    response = signup.complete(email="Grace@Example.com")
+
+    assert response.status_code == 200
+    assert response.json()["user"]["email"] == "Grace@example.com"  # stored as typed: only the domain is lowercased
     assert response.json()["user"]["profile_complete"] is False
-    assert User.objects.filter(email="grace@example.com").exists()
+    assert User.objects.get(email_canonical="grace@example.com").is_email_verified
 
     access, refresh = response.cookies["lc_access"], response.cookies["lc_refresh"]
     assert access["httponly"] and refresh["httponly"]
     assert refresh["path"] == "/api/auth"
     assert response.cookies["lc_session"].value == "1"
     assert is_cleared(response, "lc_onboarded")
+    assert is_cleared(response, "lc_signup")  # the ticket is spent
 
 
-def test_register_rejects_duplicate_email_case_insensitively(api_client, user):
-    response = api_client.post(
-        "/api/auth/register",
-        {"email": "ADA@example.com", "password": PASSWORD, "name": "Ada", "accept_terms": True},
-        format="json",
-    )
+def test_register_for_an_existing_address_answers_the_same_and_tells_its_owner_instead(signup, mailbox, user):
+    response = signup.register(email="ADA@example.com")
 
-    assert response.status_code == 400
-    assert response.json()["code"] == "invalid"
-    assert "email" in response.json()["fields"]
+    assert response.status_code == 202 and response.json() == {"status": "verification_required"}
+    assert not PendingSignup.objects.exists()
+    assert [m.kind for m in mailbox.to(user.email)] == ["owner_notice"]  # to the address the account has
 
 
 def test_register_rejects_weak_password_on_the_password_field(api_client):
@@ -80,25 +91,24 @@ def test_register_rejects_weak_password_on_the_password_field(api_client):
 
     assert response.status_code == 400
     assert "password" in response.json()["fields"]
-    assert not User.objects.filter(email="weak@example.com").exists()
+    assert not PendingSignup.objects.exists() and "lc_signup" not in response.cookies
 
 
-def test_register_keeps_when_and_to_what_the_person_agreed(api_client):
+def test_the_terms_the_person_agreed_to_are_kept_with_the_sign_up_and_then_the_account(signup):
     before = timezone.now()
 
-    api_client.post(
-        "/api/auth/register",
-        {"email": "grace@example.com", "password": PASSWORD, "name": "Grace", "accept_terms": True},
-        format="json",
-    )
+    signup.register(email="grace@example.com")
+    pending = PendingSignup.objects.get(email_canonical="grace@example.com")
+    signup.verify("grace@example.com")
 
     grace = User.objects.get(email="grace@example.com")
-    assert before <= grace.terms_accepted_at <= timezone.now()
+    assert before <= pending.terms_accepted_at <= timezone.now()
+    assert grace.terms_accepted_at == pending.terms_accepted_at
     assert grace.terms_version == User.TERMS_VERSION  # whatever the terms are today; bumped with them (docs/legal)
 
 
 @pytest.mark.parametrize("consent", [{}, {"accept_terms": False}, {"accept_terms": None}])
-def test_register_needs_the_terms_confirmed_and_creates_nothing_without_it(api_client, consent):
+def test_register_needs_the_terms_confirmed_and_keeps_nothing_without_it(api_client, consent):
     response = api_client.post(
         "/api/auth/register",
         {"email": "grace@example.com", "password": PASSWORD, "name": "Grace", **consent},
@@ -107,16 +117,12 @@ def test_register_needs_the_terms_confirmed_and_creates_nothing_without_it(api_c
 
     assert response.status_code == 400
     assert response.json()["fields"]["accept_terms"] == ["Please confirm to continue."]
-    assert not User.objects.filter(email="grace@example.com").exists()
-    assert "lc_access" not in response.cookies
+    assert not PendingSignup.objects.exists() and not User.objects.filter(email="grace@example.com").exists()
+    assert "lc_signup" not in response.cookies
 
 
-def test_the_consent_is_not_part_of_what_the_api_says_about_a_person(api_client):
-    body = api_client.post(
-        "/api/auth/register",
-        {"email": "grace@example.com", "password": PASSWORD, "name": "Grace", "accept_terms": True},
-        format="json",
-    ).json()
+def test_the_consent_is_not_part_of_what_the_api_says_about_a_person(signup):
+    body = signup.complete().json()
 
     assert "accept_terms" not in body["user"] and "terms_version" not in body["user"]
 
@@ -165,7 +171,7 @@ def test_me_returns_the_signed_in_user(signed_in_client, user):
 
 
 def test_me_says_when_the_user_is_staff(api_client):
-    staff = User.objects.create_user("staff@example.com", password=PASSWORD, name="Staff", is_staff=True)
+    staff = User.objects.create_user("staff@example.com", password=PASSWORD, name="Staff", is_staff=True, verified=True)
     api_client.post("/api/auth/login", {"email": staff.email, "password": PASSWORD}, format="json")
 
     assert api_client.get("/api/auth/me").json()["is_staff"] is True

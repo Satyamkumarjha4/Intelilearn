@@ -6,9 +6,10 @@ class, or sets `permission_classes = []`, is open to the world and no per-app te
 purpose and fails for any other that is, and for any listed one that no longer is, so the allow-list stays the truth.
 
 Use cases:
-- the routes open without a sign-in are exactly the short list below (health, the CSRF cookie, register, sign-in,
-  refresh and sign-out, the profile choice lists, a signed media URL, the payment webhook, the two public landing
-  endpoints, and the API's own schema and docs), each with its reason
+- the routes open without a sign-in are exactly the short list below (health, the CSRF cookie, register, the code
+  check and resend, sign-in, refresh and sign-out, the test stack's mail log, the profile choice lists, a signed
+  media URL, the payment webhook, the two public landing endpoints, and the API's own schema and docs), each with
+  its reason
 - every other route refuses a signed-out request, whatever its method (401, 403, or the console's 404 for "no such
   page"), and nothing it does is reached
 - the walk really found the API (a table that moved or an empty walk would pass for nothing)
@@ -25,10 +26,13 @@ pytestmark = pytest.mark.django_db
 OPEN = {
     "api/health": "uptime checks and the stack's own readiness check",
     "api/auth/csrf": "sets the CSRF cookie before anyone has signed in",
-    "api/auth/register": "makes an account",
+    "api/auth/register": "starts an account: a code is emailed, nothing is created yet",
+    "api/auth/verify": "finishes a sign-up or a sign-in with the emailed code (the code is the credential)",
+    "api/auth/verify/resend": "asks for a new code for the same sign-up (always 202, rate limited)",
     "api/auth/login": "signs in",
     "api/auth/refresh": "renews a session from its own refresh cookie, which is the credential",
     "api/auth/logout": "signs out, harmlessly, for anyone",
+    "api/dev/outbox": "the throwaway test stack's mail log; a 404 everywhere else (the system checks guard it)",
     "api/profile/options": "the choice lists the sign-up screens read before there is an account",
     "api/media/<str:asset_id>": "a lesson's image: the URL's signature is the credential (an iframe sends no cookie)",
     "api/payments/webhooks/<str:gateway>": "the payment provider calls it; the signature is the credential",

@@ -261,7 +261,7 @@ Credits for the work that costs model calls, earned by studying, bought through 
 - [x] 10.9 Console (credits and prices, learner wallets, payments and refunds, revenue beside model cost), Terms and Privacy for credits and payments, `retakes_per_day` and `paise_per_credit` retired, the signup backfill, the credit gate and earning switched on by default, the spec moved to `architecture/` and the plan to `archive/`; Razorpay retry on, and the sweep that settles refunds
 - [ ] 11 Sign-in and account verification ([the plan](../to_be_developed/signin-implementation-plan.md)): **public launch is blocked on this**, because with credits on every unverified account gets 30 free credits (signup farming, D15)
   - [x] 11.0 Forwarded-header test and fix, `User` verification fields and canonical email, the mailer port and backends (Brevo, console, outbox), `OutboundMail`, `AuthSettings`, the system checks, the daily purge, the `Clock` port; learners see no change
-  - [ ] 11.1 Email with a code: pending signup and ticket, codes, `register` 202, `verify`, the verify screen, disposable list, backfill skips unverified
+  - [x] 11.1 Email with a code: pending signup and ticket, codes, `register` 202, `verify`, the verify screen, disposable list, backfill skips unverified
   - [ ] 11.2 Password reset by code
   - [ ] 11.3 Google: provider port, flow, linking, the last step
   - [ ] 11.4 Console (see, resend, unlock, mark verified, waiting list), abuse board, Turnstile switch

@@ -20,7 +20,7 @@ class UserManager(BaseUserManager):
         ):  # made by code (a script, a fixture, `createsuperuser`): the operator vouches, nobody proved the inbox
             extra_fields.setdefault("email_verified_at", timezone.now())
             extra_fields.setdefault("email_verification_source", User.VerificationSource.OPERATOR)
-        user = self.model(email=self.normalize_email(email).lower(), **extra_fields)
+        user = self.model(email=self.normalize_email(email), **extra_fields)  # as typed: the domain only is lowercased
         user.set_password(password)
         user.save(using=self._db)
         return user
@@ -38,7 +38,11 @@ class UserManager(BaseUserManager):
         return self._create_user(email, password, verified=verified, **extra_fields)
 
     def get_by_natural_key(self, username):
-        return self.get(email__iexact=username)  # the alias-aware lookup arrives with sign-up in phase 11.1
+        """Sign-in looks the account up by its canonical email, so an alias of an address finds the same account."""
+        try:
+            return self.get(email_canonical=EmailCanonicalizer.of(username))
+        except MalformedEmail as error:
+            raise self.model.DoesNotExist from error
 
 
 class User(AbstractBaseUser, PermissionsMixin):
@@ -94,7 +98,7 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def clean(self):
         super().clean()
-        self.email = self.__class__.objects.normalize_email(self.email).lower()
+        self.email = self.__class__.objects.normalize_email(self.email)
 
     @classmethod
     def from_db(cls, db, field_names, values):
@@ -267,3 +271,103 @@ class OutboundMail(models.Model):
 
     def __str__(self):
         return f"{self.kind} to {self.to_email} ({self.status})"
+
+
+class PendingSignup(models.Model):
+    """A sign-up waiting for its code. **It is not an account**: there is no `User`, no session and no credits until
+    the right code arrives with the matching ticket (`lc_signup`, which holds this row's id). One row per canonical
+    email: a second register deletes it and makes a new row with a **new id**, so the first browser's ticket matches
+    nothing."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    email = models.EmailField(help_text="As typed: what the code is sent to and the account will show.")
+    email_canonical = models.CharField(max_length=320, unique=True)
+    name = models.CharField(max_length=150)
+    password_hash = models.CharField(max_length=128, help_text="Never shown, and never copied by a staff approval.")
+    created_at = models.DateTimeField(default=timezone.now)  # above `timezone`: the field below hides the module
+    terms_accepted_at = models.DateTimeField()
+    terms_version = models.CharField(max_length=20)
+    expires_at = models.DateTimeField()
+    timezone = models.CharField(max_length=TimeZoneNames.MAX_LENGTH, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Sign-up of {self.email}"
+
+
+class VerificationCode(models.Model):
+    """One code sent to an email, for one purpose. Only a keyed hash of the code is kept (`CodeHasher`); the code never
+    reaches the database, a log or a staff screen. **At most one live code per `(purpose, email)`**: the partial unique
+    index below is what holds that when two requests race."""
+
+    class Purpose(models.TextChoices):
+        SIGNUP = "signup", "Finish creating an account"
+        LOGIN = "login", "Finish signing in (an unverified account)"
+        RESET = "reset", "Choose a new password"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    purpose = models.CharField(max_length=10, choices=Purpose.choices)
+    email_canonical = models.CharField(max_length=320)
+    pending = models.ForeignKey(PendingSignup, null=True, blank=True, on_delete=models.CASCADE, related_name="codes")
+    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.PROTECT, related_name="verification_codes")
+    code_hash = models.CharField(max_length=64)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    max_attempts = models.PositiveSmallIntegerField()
+    created_at = models.DateTimeField(default=timezone.now)
+    expires_at = models.DateTimeField()
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    invalidated_at = models.DateTimeField(null=True, blank=True)
+    requested_ip = models.GenericIPAddressField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["purpose", "email_canonical"],
+                condition=models.Q(consumed_at__isnull=True, invalidated_at__isnull=True),
+                name="one_live_code_per_purpose_and_email",
+            )
+        ]
+        indexes = [models.Index(fields=["email_canonical", "-created_at"])]
+
+    def __str__(self):
+        return f"{self.purpose} code for {self.email_canonical}"
+
+
+class EmailLock(models.Model):
+    """An email whose codes keep dying (three within an hour): it checks no more codes until `locked_until`. A row, not
+    a cache entry, so the console can show it and clear it. Keyed on the canonical email whether or not an account has
+    it, so a lock cannot be used to find accounts."""
+
+    email_canonical = models.CharField(max_length=320, unique=True)
+    locked_until = models.DateTimeField(null=True, blank=True)
+    strikes = models.PositiveSmallIntegerField(default=0)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    def __str__(self):
+        return f"Lock on {self.email_canonical}"
+
+
+class SignupRecord(models.Model):
+    """Who created an account, from where and how: the counters of the abuse board (phase 11.4) read it. It holds an
+    address, so it is erased with the account and purged after 30 days."""
+
+    class Method(models.TextChoices):
+        CODE = "code", "Email with a code"
+        GOOGLE = "google", "Google"
+        MICROSOFT = "microsoft", "Microsoft"
+
+    user = models.ForeignKey(User, on_delete=models.PROTECT, related_name="signup_records")
+    ip = models.GenericIPAddressField(null=True, blank=True)
+    email_domain = models.CharField(max_length=255)
+    method = models.CharField(max_length=10, choices=Method.choices)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["-created_at"]), models.Index(fields=["ip", "-created_at"])]
+
+    def __str__(self):
+        return f"{self.method} sign-up from {self.email_domain}"

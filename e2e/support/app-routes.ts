@@ -34,9 +34,9 @@ export class AppRoutes {
     return AppRoutes.fromPageFiles(readdirSync(AppRoutes.APP_DIR, { recursive: true }) as string[]);
   }
 
-  /** The pages a signed-in person is sent away from (the landing page and sign-in), so only a signed-out visit compiles them. */
+  /** The pages a signed-in person is sent away from (the landing page, sign-in and the code screen under it), so only a signed-out visit compiles them. */
   static isSignedOutOnly(path: string): boolean {
-    return path === "/" || path === "/auth";
+    return path === "/" || path === "/auth" || path.startsWith("/auth/");
   }
 
   /** The console is for staff: a learner is shown a page that does not exist there, which compiles nothing. */

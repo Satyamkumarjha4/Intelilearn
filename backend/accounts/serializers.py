@@ -1,16 +1,14 @@
-import logging
-
+from django.contrib.auth.hashers import make_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
+from .emailrules.policy import EmailPolicy, EmailRefused
 from .models import Profile, User
-from .signals import account_ready
 from .timezones import ProfileTimezone, TimeZoneNames
-
-logger = logging.getLogger(__name__)
+from .verification.signup import SignupRequest
 
 CONSENT_MESSAGE = "Please confirm to continue."
 
@@ -25,6 +23,8 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class RegisterSerializer(serializers.Serializer):
+    policy = EmailPolicy()  # which addresses may sign up (not a field)
+
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True, trim_whitespace=False, style={"input_type": "password"})
     name = serializers.CharField(max_length=150)
@@ -50,9 +50,13 @@ class RegisterSerializer(serializers.Serializer):
         return value
 
     def validate_email(self, value):
-        email = value.strip().lower()
-        if User.objects.filter(email__iexact=email).exists():
-            raise serializers.ValidationError("An account with this email already exists.")
+        """The address as typed (the domain lowercased, as every mail system does), checked against the sign-up
+        policy. Whether an account has it is not asked here: nothing in the answer may tell."""
+        email = User.objects.normalize_email(value.strip())
+        try:
+            self.policy.check(email)
+        except EmailRefused as refused:
+            raise serializers.ValidationError(refused.message) from refused
         return email
 
     def validate(self, attrs):
@@ -63,25 +67,33 @@ class RegisterSerializer(serializers.Serializer):
             raise serializers.ValidationError({"password": list(exc.messages)}) from exc
         return attrs
 
-    def create(self, validated_data):
-        validated_data.pop("accept_terms")  # only a yes gets this far; what is kept is when and to which version
-        zone = validated_data.pop("timezone", "")
-        user = User.objects.create_user(
-            **validated_data, terms_accepted_at=timezone.now(), terms_version=User.TERMS_VERSION
+    def signup_request(self) -> SignupRequest:
+        """What `SignupVerification.start` needs. The password is **always** hashed, whether or not the address has an
+        account, so the request takes the same time either way (no enumeration by timing)."""
+        data = self.validated_data
+        return SignupRequest(
+            email=data["email"],
+            name=data["name"],
+            password_hash=make_password(data["password"]),
+            timezone=data.get("timezone", "") if TimeZoneNames.is_valid(data.get("timezone", "")) else "",
+            terms_version=User.TERMS_VERSION,
+            terms_accepted_at=timezone.now(),
         )
-        if TimeZoneNames.is_valid(zone):  # a name no zone database knows must not stop anyone signing up
-            ProfileTimezone().apply(user.profile, zone)
-            user.profile.save(update_fields=["timezone", "timezone_changed_at", "updated_at"])
-        self._announce(user)
-        return user
 
-    @staticmethod
-    def _announce(user: User) -> None:
-        """Tell the rest of the app an account is ready to use. A receiver that fails is logged and cannot undo the
-        account: the person exists, and what the receiver does (the signup credits) can be run again for them."""
-        for receiver, outcome in account_ready.send_robust(sender=User, user=user):
-            if isinstance(outcome, Exception):
-                logger.error("account_ready receiver %r failed for user %s", receiver, user.pk, exc_info=outcome)
+
+class VerifySerializer(serializers.Serializer):
+    """The code check. Anything that does not parse is answered like a wrong code (in the view), never with field
+    errors."""
+
+    PURPOSES = ("signup", "login")
+    email = serializers.EmailField()
+    code = serializers.CharField(max_length=32, trim_whitespace=True)
+    purpose = serializers.ChoiceField(choices=PURPOSES)
+
+
+class ResendSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    purpose = serializers.ChoiceField(choices=VerifySerializer.PURPOSES)
 
 
 class LoginSerializer(serializers.Serializer):

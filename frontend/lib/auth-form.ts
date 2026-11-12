@@ -1,11 +1,12 @@
-import { ApiError, type FieldErrors } from "@/lib/api";
+import type { FieldErrors } from "@/lib/api";
+import { AuthErrors } from "@/lib/auth-errors";
+import type { CodePurpose } from "@/lib/auth-api";
 
 export type Mode = "login" | "register";
 export type Values = { name: string; email: string; password: string; acceptedTerms?: boolean };
 export type CheckItem = { label: string; /** null: not checked here (the server does it) */ met: boolean | null };
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const NETWORK = "We couldn't reach Socra. Check your connection and try again.";
 
 /** The rules of the sign-in and create-account form. The server stays the authority: this only saves a round trip. */
 export class AuthRules {
@@ -35,6 +36,23 @@ export class AuthRules {
       switchLink: "Already have an account? Sign in",
     },
   } as const;
+
+  static readonly VERIFY = {
+    title: "Check your email",
+    pageTitle: "Check your email",
+    submit: "Continue",
+    pending: "Checking…",
+    label: "6-digit code",
+    hint: "Can't find it? Look in your spam or junk folder.",
+    different: "Use a different email",
+    lost: "We've lost track of where we sent your code.",
+    start: "Start again",
+  } as const;
+
+  /** The sentence under the heading: where the code went. */
+  static verifyDescription(email: string): string {
+    return `We sent a 6-digit code to ${email}. Enter it below. It only works for a short while.`;
+  }
 
   static readonly STEPS = ["A 10-question quick check on any topic", "See your starting point", "An interactive lesson made for you"] as const;
 
@@ -67,10 +85,7 @@ export class AuthRules {
   }
 
   static errorMessage(error: unknown): string {
-    if (!(error instanceof ApiError)) return NETWORK;
-    if (error.code === "invalid_credentials") return "That email and password don't match. Check them and try again.";
-    if (error.status === 429) return `Too many tries. Please wait ${AuthRules.wait(error.retryAfter)} and try again.`;
-    return error.message;
+    return AuthErrors.message(error);
   }
 
   /** Where to go once signed in: on to `next`, through onboarding first (which carries on to `next`) if the profile is incomplete. */
@@ -88,10 +103,17 @@ export class AuthRules {
     return text ? `/auth?${text}` : "/auth";
   }
 
-  private static wait(seconds: number | null): string {
-    if (seconds === null) return "a minute";
-    if (seconds < 60) return `${seconds} ${seconds === 1 ? "second" : "seconds"}`;
-    const minutes = Math.ceil(seconds / 60);
-    return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+  /** The "Check your email" screen, keeping where the learner was headed. A sign-in that asked for a code says so (`purpose`). */
+  static verifyHref(next: string, purpose: CodePurpose = "signup"): string {
+    const params = new URLSearchParams();
+    if (purpose === "login") params.set("purpose", "login");
+    if (next !== AuthRules.DEFAULT_NEXT) params.set("next", next);
+    const text = params.toString();
+    return text ? `/auth/verify?${text}` : "/auth/verify";
+  }
+
+  /** The purpose a verify screen was opened for: anything but `login` is a sign-up. */
+  static purposeOf(value: string | string[] | undefined): CodePurpose {
+    return value === "login" ? "login" : "signup";
   }
 }

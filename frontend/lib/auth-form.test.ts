@@ -15,6 +15,8 @@
  *   plain words; the server's own message is kept for anything else it said
  * - after signing in the learner goes to where they were headed, or through onboarding first when their profile is
  *   incomplete (keeping where they were headed)
+ * - the "Check your email" screen's address keeps where the learner was headed and says when a sign-in asked for the code;
+ *   its purpose is a sign-up unless the address says `login`; its words say "code" and no internal term
  * - each mode has its copy, its pending label, its switch link and its page title
  * - the create-account request carries the browser's time zone when it has one, and leaves the key out when it does not
  */
@@ -126,6 +128,28 @@ describe("copy", () => {
     expect(AuthRules.href("register", "/lessons")).toBe("/auth?mode=register");
     expect(AuthRules.href("login", "/lessons/abc")).toBe("/auth?next=%2Flessons%2Fabc");
     expect(AuthRules.href("register", "/lessons/abc")).toBe("/auth?mode=register&next=%2Flessons%2Fabc");
+  });
+});
+
+describe("the code screen", () => {
+  test("the address keeps where the learner was headed and the purpose", () => {
+    expect(AuthRules.verifyHref("/lessons")).toBe("/auth/verify");
+    expect(AuthRules.verifyHref("/lessons/abc?tab=test")).toBe(`/auth/verify?next=${encodeURIComponent("/lessons/abc?tab=test")}`);
+    expect(AuthRules.verifyHref("/lessons", "login")).toBe("/auth/verify?purpose=login");
+    expect(AuthRules.verifyHref("/quizzes", "login")).toBe(`/auth/verify?purpose=login&next=${encodeURIComponent("/quizzes")}`);
+  });
+
+  test("the purpose is a sign-up unless the address says login", () => {
+    expect(AuthRules.purposeOf("login")).toBe("login");
+    expect(AuthRules.purposeOf("signup")).toBe("signup");
+    expect(AuthRules.purposeOf(undefined)).toBe("signup");
+    expect(AuthRules.purposeOf(["login"])).toBe("signup");
+  });
+
+  test("the words say code and where it went, and no internal term", () => {
+    expect(AuthRules.VERIFY.title).toBe("Check your email");
+    expect(AuthRules.verifyDescription("ada@example.com")).toContain("6-digit code to ada@example.com");
+    expect(Object.values(AuthRules.VERIFY).join(" ")).not.toMatch(/OTP|token|pending|verification/i);
   });
 });
 

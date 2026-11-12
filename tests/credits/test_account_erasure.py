@@ -13,6 +13,8 @@ Use cases:
   and the erasure goes on to forfeit what is left
 - the anonymised account is unverified, its canonical email is the anonymised address (the real address is free again),
   and the mail log rows sent to the real address are deleted
+- the sign-in records of the account (codes, the pending sign-up, the where-from record, the email lock) are deleted and
+  other people's stay
 - the learner's lessons and quizzes are gone, with their checkpoints and model calls; other learners' are not
 - streak days and the cached streak are gone
 - open holds are released first, then the balance is forfeited in one row equal to what was left; the ledger still
@@ -144,6 +146,39 @@ class TestWhatIsErased:
 
         assert report.mail == 1
         assert list(OutboundMail.objects.values_list("to_email", flat=True)) == [other_user.email]
+
+    def test_the_sign_in_records_of_the_account_are_deleted_and_other_peoples_stay(self, erasure, lived, other_user):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from accounts.models import EmailLock, PendingSignup, SignupRecord, VerificationCode
+
+        user, *_ = lived
+        now = timezone.now()
+        pending = PendingSignup.objects.create(
+            email=user.email, email_canonical=user.email_canonical, name="x", password_hash="x", terms_version="v",
+            terms_accepted_at=now, expires_at=now + timedelta(hours=1),
+        )  # fmt: skip
+        for owner, address in ((user, user.email_canonical), (other_user, other_user.email_canonical)):
+            VerificationCode.objects.create(
+                purpose="login", email_canonical=address, user=owner, code_hash="h", max_attempts=5,
+                expires_at=now + timedelta(minutes=10),
+            )  # fmt: skip
+            SignupRecord.objects.create(user=owner, ip="203.0.113.7", email_domain="example.com", method="code")
+            EmailLock.objects.create(email_canonical=address, locked_until=now + timedelta(hours=1), strikes=3)
+        VerificationCode.objects.create(
+            purpose="signup", email_canonical=user.email_canonical, pending=pending, code_hash="h", max_attempts=5,
+            expires_at=now + timedelta(minutes=10), invalidated_at=now,
+        )  # fmt: skip
+
+        report = erasure.erase(user)
+
+        assert (report.codes, report.signup_records, report.locks) == (2, 1, 1)
+        assert not PendingSignup.objects.exists()
+        assert list(VerificationCode.objects.values_list("user_id", flat=True)) == [other_user.pk]
+        assert list(SignupRecord.objects.values_list("user_id", flat=True)) == [other_user.pk]
+        assert list(EmailLock.objects.values_list("email_canonical", flat=True)) == [other_user.email_canonical]
 
     def test_the_profile_is_emptied(self, erasure, lived):
         user, *_ = lived

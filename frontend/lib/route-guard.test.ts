@@ -11,6 +11,8 @@
  * - "/auth" is open to a signed-out visitor; a signed-in one is sent to their lessons, or to onboarding if they have not
  *   finished it, to `next` when it is a safe path on
  *   this site (an address that could leave the site is ignored, however it is encoded)
+ * - the pages under "/auth" (the code screen) follow the same rule: open to a signed-out visitor, a signed-in one is sent on,
+ *   and a look-alike ("/authors") is not one of them
  * - the app pages ("/lessons", "/quizzes", "/profile", "/onboarding" and what is under them) send a signed-out visitor to
  *   "/auth" with `next` set to where they were going, query string included
  * - a signed-in visitor who has not been onboarded is sent to "/onboarding" from the other app pages, with the page they
@@ -44,6 +46,13 @@ describe("RouteGuard", () => {
     expect(RouteGuard.redirectFor("/auth", "", out)).toBeNull();
     expect(RouteGuard.redirectFor("/auth", "", full)).toBe("/lessons");
     expect(RouteGuard.redirectFor("/auth", "", half)).toBe("/onboarding");
+  });
+
+  test("the pages under /auth follow the same rule, and a look-alike does not", () => {
+    expect(RouteGuard.redirectFor("/auth/verify", "", out)).toBeNull();
+    expect(RouteGuard.redirectFor("/auth/verify", "", full)).toBe("/lessons");
+    expect(RouteGuard.redirectFor("/auth/verify", "", half)).toBe("/onboarding");
+    expect(RouteGuard.redirectFor("/authors", "", full)).toBeNull();
   });
 
   test("a signed-in visitor sent from /auth goes where they were headed", () => {

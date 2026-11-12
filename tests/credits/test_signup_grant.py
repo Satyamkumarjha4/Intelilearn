@@ -9,16 +9,17 @@ never
 for an account that is closed.
 
 Use cases:
-- registering gives the new learner 30 credits in a bucket that never expires, in one ledger row keyed by the learner
+- no credits until the code is entered, and exactly 30 after, in a bucket that never expires, in one ledger row keyed by
+  the learner
 - the grant is repeatable: the signal sent again, or the grant asked for twice, changes nothing
 - the amount comes from the settings
 - a registration that fails, and a sign-in, give nothing
-- a receiver that fails does not undo the registration, and the backfill gives it back later
-- the backfill gives the credits to every active account without a grant, once; a second run gives nothing; accounts
-  that
-  already have it are untouched; closed accounts are skipped
+- a receiver that fails does not undo the account, and the backfill gives it back later
+- the backfill gives the credits to every active, verified account without a grant, once; a second run gives nothing;
+  accounts that already have it are untouched; closed accounts are skipped; unverified ones are skipped and counted
+- an account that proves its email later (a code at sign-in) gets the credits then
 - the dry run reports what it would do and writes nothing, not even a wallet
-- the command prints the numbers, and says so when there is nothing to do
+- the command prints the numbers, says so when there is nothing to do, and warns about the unverified it skipped
 """
 
 from io import StringIO
@@ -33,11 +34,7 @@ from credits.models import CreditBucket, CreditSettings, CreditTransaction, Wall
 
 pytestmark = pytest.mark.django_db
 
-NEW = {"email": "new@example.com", "password": "correct-horse-battery-staple", "name": "New", "accept_terms": True}
-
-
-def register(api_client, **extra):
-    return api_client.post("/api/auth/register", {**NEW, **extra}, format="json")
+NEW_EMAIL = "new@example.com"
 
 
 def signup_rows(user):
@@ -45,10 +42,17 @@ def signup_rows(user):
 
 
 class TestOnAccountReady:
-    def test_registering_gives_30_credits_that_never_expire(self, api_client):
-        assert register(api_client).status_code == 201
+    def test_no_credits_until_the_code_is_entered_and_exactly_30_after(self, signup):
+        assert signup.register(email=NEW_EMAIL).status_code == 202
 
-        user = User.objects.get(email="new@example.com")
+        assert not User.objects.filter(email=NEW_EMAIL).exists()  # a pending sign-up is not an account
+        assert not CreditBucket.objects.exists() and not CreditTransaction.objects.exists()
+        assert signup.verify(NEW_EMAIL, "000000").status_code == 400  # a wrong code gives nothing either
+        assert not CreditBucket.objects.exists()
+
+        assert signup.verify(NEW_EMAIL).status_code == 200
+
+        user = User.objects.get(email=NEW_EMAIL)
         bucket = CreditBucket.objects.get(user=user)
         assert (bucket.source, bucket.amount_granted, bucket.amount_remaining, bucket.expires_at) == (
             "signup",
@@ -58,10 +62,11 @@ class TestOnAccountReady:
         )
         row = signup_rows(user).get()
         assert (row.type, row.amount, row.balance_after) == ("grant", 30, 30)
+        assert CreditTransaction.objects.count() == 1
 
-    def test_the_signal_sent_again_changes_nothing(self, api_client):
-        register(api_client)
-        user = User.objects.get(email="new@example.com")
+    def test_the_signal_sent_again_changes_nothing(self, signup):
+        signup.complete(email=NEW_EMAIL)
+        user = User.objects.get(email=NEW_EMAIL)
 
         account_ready.send(sender=User, user=user)
         account_ready.send(sender=User, user=user)
@@ -74,31 +79,29 @@ class TestOnAccountReady:
 
         assert first.created and not again.created and CreditBucket.objects.filter(user=user).count() == 1
 
-    def test_the_amount_comes_from_the_settings(self, api_client):
+    def test_the_amount_comes_from_the_settings(self, signup):
         CreditSettings.objects.update_or_create(pk=1, defaults={"signup_credits": 45})
 
-        register(api_client)
+        signup.complete(email=NEW_EMAIL)
 
-        assert CreditBucket.objects.get(user__email="new@example.com").amount_granted == 45
+        assert CreditBucket.objects.get(user__email=NEW_EMAIL).amount_granted == 45
 
-    def test_a_refused_registration_and_a_sign_in_give_nothing(self, api_client, user):
-        assert register(api_client, accept_terms=False).status_code == 400
+    def test_a_refused_registration_and_a_sign_in_give_nothing(self, signup, api_client, user):
+        assert signup.register(email=NEW_EMAIL, accept_terms=False).status_code == 400
         api_client.post(
             "/api/auth/login", {"email": user.email, "password": "correct-horse-battery-staple"}, format="json"
         )
 
         assert not CreditBucket.objects.exists()
 
-    def test_a_grant_that_fails_does_not_undo_the_registration_and_the_backfill_gives_it_later(
-        self, api_client, monkeypatch
-    ):
+    def test_a_grant_that_fails_does_not_undo_the_account_and_the_backfill_gives_it_later(self, signup, monkeypatch):
         def broken(self, user):
             raise RuntimeError("the ledger is down")
 
         monkeypatch.setattr(SignupGrant, "on_account_ready", broken)
-        assert register(api_client).status_code == 201
+        assert signup.complete(email=NEW_EMAIL).status_code == 200  # the person has their account
         monkeypatch.undo()
-        user = User.objects.get(email="new@example.com")
+        user = User.objects.get(email=NEW_EMAIL)
         assert not signup_rows(user).exists()
 
         report = SignupGrant().backfill()
@@ -145,6 +148,26 @@ class TestTheBackfill:
             not Wallet.objects.exists() and not CreditBucket.objects.exists() and not CreditTransaction.objects.exists()
         )
 
+    def test_an_unverified_account_gets_nothing_and_is_reported(self, user):
+        stranger = User.objects.create_user("unproved@example.com", password="x" * 12, name="Unproved")  # not verified
+
+        report = SignupGrant().backfill()
+
+        assert (report.granted, report.unverified) == (1, 1)
+        assert not CreditBucket.objects.filter(user=stranger).exists()
+        assert SignupGrant().backfill(dry_run=True).unverified == 1
+
+    def test_an_account_that_proves_its_email_later_gets_the_credits_then(self, signup):
+        stranger = User.objects.create_user("unproved@example.com", password="x" * 12, name="Unproved")
+        SignupGrant().backfill()
+        assert not CreditBucket.objects.filter(user=stranger).exists()
+
+        # signing in with the right password asks for a code; entering it verifies the account and announces it
+        assert signup.login(stranger.email, "x" * 12).status_code == 403
+        assert signup.verify(stranger.email, purpose="login").status_code == 200
+
+        assert CreditBucket.objects.get(user=stranger).amount_granted == 30
+
     def test_staff_get_the_credits_too(self, user):
         User.objects.filter(pk=user.pk).update(is_staff=True)
 
@@ -170,3 +193,11 @@ class TestTheCommand:
         self.run()
 
         assert "Nothing to do" in self.run()
+
+    def test_it_warns_about_the_unverified_accounts_it_skipped(self, user):
+        User.objects.create_user("unproved@example.com", password="x" * 12, name="Unproved")
+
+        out = self.run()
+
+        assert "1 unverified skipped" in out
+        assert "1 active accounts were skipped because their email was never verified" in out

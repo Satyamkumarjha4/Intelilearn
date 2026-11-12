@@ -18,7 +18,7 @@ Conventions that hold for every table:
 | Field | Type | Notes |
 |---|---|---|
 | id | UUID | |
-| email | email, unique | Login ID (`USERNAME_FIELD`). Stored lowercased today; phase 11.1 stores it as typed. A learner cannot change it (the profile serializer's field is read-only, the admin's is read-only after creation) |
+| email | email, unique | Login ID (`USERNAME_FIELD`). Stored **as typed** since phase 11.1 (only the domain is lowercased); accounts made before that stay lowercase. A learner cannot change it (the profile serializer's field is read-only, the admin's is read-only after creation) |
 | password | Django hash | |
 | name | char | |
 | is_active | bool | Default true; a false value blocks sign-in |
@@ -35,6 +35,19 @@ Conventions that hold for every table:
 ### `AuthSettings` (singleton) and `OutboundMail` (phase 11.0)
 
 `AuthSettings.captcha_enabled` (default false) is the console's switch for the sign-up challenge (built in 11.4; the keys stay in the environment). `OutboundMail` is the mail log: `kind` (`signup_code`, `login_code`, `reset_code`, `owner_notice`, `use_google_notice`), `to_email`, `subject`, `backend`, `status` (`queued`, `sent`, `failed`), `attempts`, `provider_message_id`, a short `error` (never a code or a body), `created_at`, `sent_at`, and `body_text`, which only the throwaway-stack `outbox` backend fills. It has no relation to a user: erasing an account deletes the rows sent to its address (`UserDataMap.OUTSIDE`), and the daily `accounts.purge` deletes rows older than `MAIL_LOG_RETENTION_DAYS` (30).
+
+### Sign-in tables (`accounts`, phase 11.1)
+
+A sign-up is **not an account**: `PendingSignup` holds it until the code is entered.
+
+| Table | Columns | Notes |
+|---|---|---|
+| `PendingSignup` | id uuid, `email` (as typed), `email_canonical` (unique), name, `password_hash`, timezone, `terms_accepted_at`, `terms_version`, created_at, expires_at | One row per canonical email: a second register **deletes it and makes a new row with a new id**, so the first browser's signup ticket (`lc_signup`, which holds the id) matches nothing. The hash is never shown and a staff approval never copies it. Purged after `PENDING_SIGNUP_HOURS` (24) |
+| `VerificationCode` | id uuid, `purpose` (`signup`, `login`, `reset`), `email_canonical`, `pending` FK null (cascade), `user` FK null (`PROTECT`), `code_hash`, `attempts`, `max_attempts`, created_at, expires_at, `consumed_at`, `invalidated_at`, `requested_ip` | **At most one live code per `(purpose, email_canonical)`**: a partial unique index (`one_live_code_per_purpose_and_email`). Only a keyed hash (`CodeHasher`, salted with purpose, email and row id) is stored, never the code. Spent, dead and expired rows are purged after `CODE_LOG_RETENTION_DAYS` (7) |
+| `EmailLock` | `email_canonical` (unique), `locked_until`, `strikes`, `updated_at` | Three dead codes within an hour lock the email for an hour, whether or not an account has it; the console unlocks (11.4) |
+| `SignupRecord` | `user` FK (`PROTECT`), `ip`, `email_domain`, `method` (`code`, `google`, `microsoft`), `created_at` | Where an account was made from: the abuse board's counters (11.4). Purged after `SIGNUP_RECORD_RETENTION_DAYS` (30) |
+
+All four are in `UserDataMap` (erased with the account; the pending sign-up, the codes and the lock are found by the canonical email).
 
 ### `Profile` (one-to-one with User; created on registration and filled in during onboarding)
 

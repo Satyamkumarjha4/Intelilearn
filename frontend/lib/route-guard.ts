@@ -17,7 +17,7 @@ export class RouteGuard {
   static redirectFor(pathname: string, search: string, visitor: Visitor): string | null {
     const next = RedirectPolicy.safeNext(new URLSearchParams(search).get("next"), "");
     if (pathname === "/") return null;
-    if (pathname === "/auth") return visitor.signedIn ? RouteGuard.arrival(visitor, next) : null;
+    if (RouteGuard.isAuthPage(pathname)) return visitor.signedIn ? RouteGuard.arrival(visitor, next) : null;
     // Nothing left to set up, unless this is a refresh on the last step: the profile saves at step 4, which is "onboarded".
     if (pathname === "/onboarding" && visitor.signedIn && visitor.onboarded && !visitor.settingUp) return next || "/lessons";
     if (RouteGuard.isConsole(pathname)) return visitor.signedIn ? null : `/auth?next=${encodeURIComponent(pathname + search)}`;
@@ -26,6 +26,11 @@ export class RouteGuard {
     if (!visitor.signedIn) return `/auth?next=${encodeURIComponent(pathname + search)}`;
     if (!visitor.onboarded && pathname !== "/onboarding") return RouteGuard.setup(pathname + search);
     return null;
+  }
+
+  /** The sign-in page and the pages that belong to it (`/auth/verify`...): for a signed-out visitor only. */
+  private static isAuthPage(pathname: string): boolean {
+    return pathname === "/auth" || pathname.startsWith("/auth/");
   }
 
   /** The staff console needs a session but not onboarding; the API (and the console layout) decide who is staff. */

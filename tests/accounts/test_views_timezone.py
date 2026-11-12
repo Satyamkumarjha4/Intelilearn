@@ -15,8 +15,9 @@ Use cases:
 - a change inside the lock is refused with 409 `timezone_locked` and the instant it opens, and nothing else in the
   same request is saved
 - setting the same zone again is not a change; PUT (the profile page) can carry the zone too
-- registration sends `account_ready` once with the new user; a refused registration sends nothing; a receiver that
-  raises does not undo the account
+- entering the right code sends `account_ready` once with the new user, the zone already stored; a sign-up that is
+  waiting for its code, refused, or answered with a wrong code sends nothing; a receiver that raises does not undo the
+  account
 """
 
 from datetime import UTC, datetime, timedelta
@@ -29,29 +30,32 @@ from accounts.signals import account_ready
 
 pytestmark = pytest.mark.django_db
 
-PASSWORD = "correct-horse-battery-staple"
-NEW_ACCOUNT = {"email": "new@example.com", "password": PASSWORD, "name": "New", "accept_terms": True}
 
+@pytest.fixture
+def register(signup):
+    """Sign up as a new person and enter the mailed code: the response of the code check (the account, signed in)."""
 
-def register(api_client, **extra):
-    return api_client.post("/api/auth/register", {**NEW_ACCOUNT, **extra}, format="json")
+    def _register(**extra):
+        return signup.complete(**{"email": "new@example.com", **extra})
+
+    return _register
 
 
 class TestRegistrationZone:
-    def test_the_browsers_zone_is_stored_without_starting_the_lock(self, api_client):
-        assert register(api_client, timezone="Europe/London").status_code == 201
+    def test_the_browsers_zone_is_stored_without_starting_the_lock(self, register):
+        assert register(timezone="Europe/London").status_code == 200
 
         profile = Profile.objects.get(user__email="new@example.com")
         assert profile.timezone == "Europe/London" and profile.timezone_changed_at is None
 
-    def test_no_zone_leaves_it_unset(self, api_client):
-        assert register(api_client).status_code == 201
+    def test_no_zone_leaves_it_unset(self, register):
+        assert register().status_code == 200
 
         assert Profile.objects.get(user__email="new@example.com").timezone == ""
 
     @pytest.mark.parametrize("name", ["Mars/Olympus", "", "IST", "../x"])
-    def test_a_zone_nobody_knows_does_not_stop_the_account_being_made(self, api_client, name):
-        assert register(api_client, timezone=name).status_code == 201
+    def test_a_zone_nobody_knows_does_not_stop_the_account_being_made(self, register, name):
+        assert register(timezone=name).status_code == 200
 
         assert Profile.objects.get(user__email="new@example.com").timezone == ""
 
@@ -174,14 +178,14 @@ class TestAccountReady:
         yield calls
         account_ready.disconnect(receiver)
 
-    def test_registration_sends_it_once_with_the_new_user(self, api_client, received):
-        register(api_client)
+    def test_the_code_check_sends_it_once_with_the_new_user(self, register, received):
+        register()
 
         assert len(received) == 1
         sender, user = received[0]
         assert sender is User and user.email == "new@example.com"
 
-    def test_the_receiver_sees_the_zone_already_stored(self, api_client):
+    def test_the_receiver_sees_the_zone_already_stored(self, register):
         seen = []
 
         def receiver(sender, **kwargs):
@@ -189,29 +193,31 @@ class TestAccountReady:
 
         account_ready.connect(receiver, weak=False)
         try:
-            register(api_client, timezone="Europe/London")
+            register(timezone="Europe/London")
         finally:
             account_ready.disconnect(receiver)
 
         assert seen == ["Europe/London"]
 
-    def test_a_refused_registration_sends_nothing(self, api_client, user, received):
-        assert register(api_client, email=user.email).status_code == 400
-        assert register(api_client, accept_terms=False).status_code == 400
+    def test_a_sign_up_waiting_for_its_code_or_refused_sends_nothing(self, signup, user, received):
+        assert signup.register(email="waiting@example.com").status_code == 202  # no account yet
+        assert signup.register(email=user.email).status_code == 202  # an address that has an account: a notice only
+        assert signup.register(accept_terms=False).status_code == 400
+        assert signup.verify("waiting@example.com", "000000").status_code == 400
 
         assert received == []
 
-    def test_a_receiver_that_raises_does_not_undo_the_account(self, api_client):
+    def test_a_receiver_that_raises_does_not_undo_the_account(self, register):
         def broken(sender, **kwargs):
             raise RuntimeError("boom")
 
         account_ready.connect(broken, weak=False)
         try:
-            response = register(api_client)
+            response = register()
         finally:
             account_ready.disconnect(broken)
 
-        assert response.status_code == 201 and User.objects.filter(email="new@example.com").exists()
+        assert response.status_code == 200 and User.objects.filter(email="new@example.com").exists()
 
     def test_signing_in_or_saving_the_profile_does_not_send_it(self, signed_in_client, received):
         signed_in_client.patch("/api/profile", {"notes": "x"}, format="json")

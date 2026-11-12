@@ -7,6 +7,7 @@ every visitor shares one bucket behind the Next.js proxy; and routine refreshes 
 Use cases:
 - registering is limited per client address, and another address is not affected
 - login is limited per account, across client addresses
+- the per-account limit counts by the canonical email, so an alias of the address shares the budget
 - other accounts are not affected by one account's limit
 - the per-address limit keys on the X-Forwarded-For client address
 - token refresh has its own budget
@@ -15,7 +16,7 @@ Use cases:
 import pytest
 from rest_framework.throttling import SimpleRateThrottle
 
-from accounts.models import User
+from accounts.models import PendingSignup
 
 pytestmark = pytest.mark.django_db
 
@@ -50,14 +51,14 @@ def register(client, n, ip="10.0.0.1"):
 
 def test_registering_is_limited_per_client_address(api_client, rates):
     rates(auth="2/min", auth_account="100/min")
-    assert register(api_client, 1).status_code == 201
-    assert register(api_client, 2).status_code == 201
+    assert register(api_client, 1).status_code == 202
+    assert register(api_client, 2).status_code == 202
 
     blocked = register(api_client, 3)
 
     assert blocked.status_code == 429 and blocked.json()["code"] == "throttled"
-    assert not User.objects.filter(email="new3@example.com").exists()
-    assert register(api_client, 4, ip="10.0.0.2").status_code == 201  # another visitor behind the same proxy
+    assert not PendingSignup.objects.filter(email="new3@example.com").exists()
+    assert register(api_client, 4, ip="10.0.0.2").status_code == 202  # another visitor behind the same proxy
 
 
 def test_login_is_limited_per_account_across_addresses(api_client, user, rates):
@@ -69,6 +70,16 @@ def test_login_is_limited_per_account_across_addresses(api_client, user, rates):
 
     assert blocked.status_code == 429
     assert blocked.json()["code"] == "throttled"
+
+
+def test_the_per_account_limit_counts_by_the_canonical_email_so_an_alias_cannot_dodge_it(api_client, user, rates):
+    rates(auth="100/min", auth_account="2/min")
+
+    assert login(api_client, "ada@example.com", ip="10.0.0.1").status_code == 401
+    assert login(api_client, "Ada+one@example.com", ip="10.0.0.2").status_code == 401  # an alias: the same budget
+    blocked = login(api_client, "ADA+two@example.com", password=PASSWORD, ip="10.0.0.3")
+
+    assert blocked.status_code == 429
 
 
 def test_other_accounts_are_not_affected(api_client, user, rates):
