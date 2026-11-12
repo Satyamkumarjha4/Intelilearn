@@ -132,3 +132,21 @@ the maker's note), adapts to your level, progress, revise, pricing, FAQ, the fin
 - **"Study this"** in the progress example is a picture of the button, not a link: the chart is example data.
 - Still open for a designer: a photo for the maker's note (an "S" avatar stands in), and the sample quiz's other topics.
 
+
+## 11. Sign-in and account verification (Phase 11, planned)
+
+Nothing here is built. The screens are listed ahead of the code, each with the phase that builds it, so a designer sees the whole set
+first. The plan is [signin-implementation-plan.md](../to_be_developed/signin-implementation-plan.md) (section 9). Learners read
+"code" and "Check your email"; never OTP, pending, token or identity provider.
+
+| Screen | Where | What needs a look |
+|---|---|---|
+| Sign in / Create account, changed (11.1, 11.3) | `/auth` | A "Continue with Google" button above the form with an "or" divider, shown only when the provider is on; the create tab now ends at the code screen; a card for a refused Google sign-in (the email is not verified, the sign-in failed, the account is closed) |
+| Check your email (11.1) | `/auth/verify` | One input drawn as six boxes, auto-submit at six digits, a paste of "123 456" works; the address as typed; "Send a new code" with a 60-second countdown; "Use a different email"; "Try Google instead". The same words for every wrong code. On a phone the keyboard must be the number pad |
+| Forgot password (11.2) | `/auth/forgot` | An email box and one button; the next screen says the same for every address |
+| Choose a new password (11.2) | `/auth/reset` | The code and the new password with the same checklist as sign-up |
+| One last step (11.3) | `/auth/finish` | After Google, for a new person: the Google address (read only), the name (prefilled), the terms checkbox with its links, one button. The time zone is taken from the browser and is not shown |
+| Emails (11.1, 11.2) | none (sent mail) | The code email, the "someone tried to sign up with your address" notice, the reset email and the "this address signs in with Google" notice. Plain, one large code, no buttons, no links that carry a token |
+| Console: verification (11.4) | `/console/learners`, the learner's page | A verified badge (and "legacy"), the sign-in methods, and a panel with the codes' history (never the code), the last emails, the lock, and three actions: resend, unlock, mark verified (a typed reason) |
+| Console: waiting for a code (11.4) | `/console/signups` | A list of sign-ups that have no account yet, with resend, unlock and approve (a typed reason) |
+| Console: sign-up abuse (11.4) | `/console/abuse` | Accounts, codes sent and failed checks per day; the top addresses and email domains of the last 24 hours; the Turnstile switch |

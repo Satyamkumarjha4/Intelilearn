@@ -63,6 +63,11 @@ Start here. The docs are grouped by what you are trying to do. Status marks: ✅
 |---|---|---|
 | [README.md](legal/README.md) | Where the privacy, terms and contact words live (`frontend/content/legal/`), the owner's note, and what to update when they change | ✅ |
 
+### to_be_developed/ (planned, not built)
+| Item | What it is | Status |
+|---|---|---|
+| [signin-implementation-plan.md](to_be_developed/signin-implementation-plan.md) | The plan for phase 11 (sign-in and account verification): email with a code, Google, password reset, the mailer, abuse limits, the console, phases 11.0 to 11.5, the launch checklist, and the facts still unverified | 📝 |
+
 ### archive/ (finished, kept for the record)
 | Item | What it is | Status |
 |---|---|---|
