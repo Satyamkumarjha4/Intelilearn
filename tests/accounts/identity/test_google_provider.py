@@ -15,8 +15,8 @@ Use cases:
   returns a verified identity keyed by `sub`, with the name and hosted domain
 - an `error=access_denied` callback, a missing code, a token endpoint that refuses or fails, an answer with no ID
   token, and a token that fails any check (wrong nonce, audience, signature) are each `sign_in_failed`
-- **`email_verified` that is false, missing, `null` or the string `"true"` is `email_not_verified`**, and so is a
-  missing email
+- **`email_verified` is accepted as the boolean `true` or the exact string `"true"`**; anything else (`false`,
+  `"false"`, `"True"`, `1`, missing, `null`) is `email_not_verified`, and so is a missing email
 - the refusal text never holds a token, a secret or Google's error description
 - the provider reports the settings it lacks
 """
@@ -162,12 +162,25 @@ def test_a_token_signed_with_another_key_is_sign_in_failed(google, ticket):
     assert error.value.code == "sign_in_failed" and "InvalidSignatureError" in error.value.detail
 
 
+@pytest.mark.parametrize("verified", [True, "true"], ids=["boolean true", 'the exact string "true"'])
+def test_an_email_google_calls_verified_is_accepted_as_the_boolean_true_or_the_exact_string_true(
+    google, ticket, verified
+):
+    """Google's own example shows the string; its tokens are reported to carry the boolean. Either says yes."""
+    identity = callback(google, ticket, claims=google.claims(ticket.nonce, email_verified=verified))
+
+    assert identity.email_verified
+
+
 @pytest.mark.parametrize(
     "verified",
-    [False, MISSING, None, "true", "True", 1, "false"],
-    ids=["false", "missing", "null", "string true", "string True", "number 1", "string false"],
-)
-def test_an_email_google_did_not_call_verified_with_the_boolean_true_is_refused(google, ticket, verified):
+    [False, MISSING, None, "True", "TRUE", " true", "true ", 1, "false", "", "yes", [True]],
+    ids=[
+        "false", "missing", "null", "string True", "string TRUE", "padded left", "padded right", "number 1",
+        "string false", "empty", "string yes", "list",
+    ],
+)  # fmt: skip
+def test_anything_else_is_not_google_calling_the_email_verified(google, ticket, verified):
     refused = failure(google, ticket, claims=google.claims(ticket.nonce, email_verified=verified))
 
     assert refused.code == "email_not_verified"

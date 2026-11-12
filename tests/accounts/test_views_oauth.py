@@ -269,6 +269,49 @@ def test_an_account_nobody_proved_is_taken_over_its_old_password_and_old_session
     assert grants(victim) == 1  # and the person who proved the inbox gets the credits, once
 
 
+def test_a_takeover_tells_the_address_the_account_has_and_only_a_takeover_does(oauth, mailbox, signup):
+    victim = User.objects.create_user("Ada@example.com", password=PASSWORD, name="Pre-made")
+
+    oauth.sign_in({**PERSON, "email": "ada+typed-differently@example.com"})  # an alias: the notice goes to what the
+    # account has, not to what Google said
+
+    sent = [m for m in mailbox.messages if m.kind == "takeover_notice"]
+    assert [m.to for m in sent] == ["Ada@example.com"] and victim.email == "Ada@example.com"
+    assert "now signs in with Google" in sent[0].text and "old password no longer works" in sent[0].text
+    assert "satyamjha4@gmail.com" in sent[0].text  # the contact address of the legal pages (CONTACT_EMAIL)
+    before = len(mailbox.messages)
+    oauth.sign_in(PERSON)  # signing in again through the link is not a takeover
+    assert len(mailbox.messages) == before
+
+
+def test_no_takeover_notice_for_a_new_person_a_link_or_a_refusal(oauth, mailbox, signup):
+    signup.complete(email="linked@example.com")  # an account made by code: it is linked, not taken over
+    User.objects.create_user("staff@example.com", password=PASSWORD, name="Staff", is_staff=True)
+    mails_before = len(mailbox.messages)
+
+    oauth.sign_in({"subject": "s-new", "email": "brand-new@example.com"})  # a new person
+    oauth.sign_in({"subject": "s-link", "email": "linked@example.com"})  # a link
+    oauth.sign_in({"subject": "s-staff", "email": "staff@example.com"})  # refused
+    oauth.sign_in({"subject": "s-unverified", "email": "x@example.com", "email_verified": False})  # refused
+
+    assert [m for m in mailbox.messages[mails_before:] if m.kind == "takeover_notice"] == []
+
+
+def test_a_takeover_that_does_not_commit_sends_no_notice(oauth, mailbox, monkeypatch):
+    from accounts.verification.activation import AccountActivation
+
+    User.objects.create_user("ada@example.com", password=PASSWORD, name="Pre-made")
+    monkeypatch.setattr(
+        AccountActivation, "link", lambda self, user, identity: (_ for _ in ()).throw(RuntimeError("x"))
+    )
+
+    with pytest.raises(RuntimeError):
+        oauth.sign_in(PERSON)
+
+    assert [m for m in mailbox.messages if m.kind == "takeover_notice"] == []
+    assert User.objects.get().has_usable_password()  # and the account is as it was
+
+
 def test_a_second_sign_in_after_a_takeover_adds_no_second_grant(oauth):
     victim = User.objects.create_user("ada@example.com", password=PASSWORD, name="Pre-made")
     oauth.sign_in(PERSON)

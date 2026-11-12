@@ -9,8 +9,7 @@ What the documentation does and does not say is in plan U4. Notably: `nonce` is 
 optional, so it is always sent and always checked; PKCE is listed in Google's discovery document
 (`code_challenge_methods_supported`) but the web-server page never shows its parameters, so it is sent as RFC 7636 says
 and confirmed against a real client before launch (unverified); and `email_verified` is not described as a boolean (its
-example shows the string "true"), so this class accepts only the boolean `true` and a real token must be checked once
-(unverified).
+example shows the string "true"), so this class accepts the boolean `true` or the exact string "true" and nothing else.
 """
 
 import logging
@@ -95,9 +94,12 @@ class GoogleProvider(IdentityProvider):
                 claims = self.validator.validate(raw, self._jwks or self._shared(http), ticket.nonce)
             except InvalidIdToken as error:
                 raise ProviderError("sign_in_failed", f"id token refused: {error.reason}") from error
-        # Only the boolean `true` is Google calling the address verified (not the string "true", nothing, or false).
+        # Google's page words `email_verified` as "True if ... verified" and its example shows the string "true", while
+        # its tokens are reported to carry the boolean: either is Google saying yes. Nothing else is ("True", 1, null).
         email = claims.get("email")
-        if claims.get("email_verified") is not True or not isinstance(email, str) or not email:
+        verified = claims.get("email_verified")
+        said_yes = verified is True or (isinstance(verified, str) and verified == "true")  # not `1`, which `== True`
+        if not said_yes or not isinstance(email, str) or not email:
             raise ProviderError("email_not_verified", "google did not call the email verified")
         return VerifiedIdentity(
             provider=self.key,

@@ -319,6 +319,8 @@ TRUSTED_PROXY_COUNT_EXPLICIT = bool(env.str("TRUSTED_PROXY_COUNT", default="").s
 MAIL_BACKEND = env("MAIL_BACKEND", default="console")
 MAIL_FROM = env("MAIL_FROM", default="Socra <no-reply@localhost>")  # production: no-reply@<the sending domain>
 MAIL_ALLOW_OUTBOX = env.bool("MAIL_ALLOW_OUTBOX", default=False)
+# Where a person who gets an email about their account can write if it was not them (the legal pages' contact address).
+CONTACT_EMAIL = env("CONTACT_EMAIL", default="satyamjha4@gmail.com")
 BREVO_API_KEY = env("BREVO_API_KEY", default="")
 MAIL_TIMEOUT_S = env.int("MAIL_TIMEOUT_S", default=10)
 # How a queued message reaches the sender (a callable class, used by `accounts.mail.tasks.MailQueue`). Tests swap it

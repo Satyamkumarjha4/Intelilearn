@@ -16,6 +16,8 @@ from django.db import IntegrityError, transaction
 from ..clock import Clock, SystemClock
 from ..dblock import DbLock
 from ..emailrules.canonical import EmailCanonicalizer, MalformedEmail
+from ..mail.tasks import MailQueue
+from ..mail.templates import MailTemplates
 from ..models import ExternalIdentity, User
 from ..redirect import RedirectPolicy
 from ..verification.activation import AccountActivation
@@ -69,8 +71,12 @@ class OAuthSignIn:
         policy: LinkPolicy | None = None,
         activation: AccountActivation | None = None,
         clock: Clock | None = None,
+        mail: MailQueue | None = None,
+        templates: MailTemplates | None = None,
     ):
         self.clock = clock or SystemClock()
+        self.mail = mail or MailQueue()
+        self.templates = templates or MailTemplates()
         self.providers = providers or IdentityProviders()
         self.state = state or OAuthState()
         self.finish_state = finish_state or FinishState()
@@ -171,6 +177,8 @@ class OAuthSignIn:
             return SignInResult("signed_in", next_value, user=by_email), None
         if decision is LinkDecision.TAKE_OVER:
             self.activation.take_over(by_email, identity)
+            # Tell the address the account has (never the one the provider named): its password just stopped working.
+            self.mail.send(self.templates.takeover_notice(by_email.email))
             return SignInResult("signed_in", next_value, user=by_email), by_email  # announced: the grant is idempotent
         # NEEDS_FINISH: a new person. Nothing exists until they take the last step.
         if create is None:

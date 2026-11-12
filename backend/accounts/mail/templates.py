@@ -8,6 +8,8 @@ has a text part and an HTML part that say the same thing. Mail goes to the addre
 
 import html
 
+from django.conf import settings
+
 from .mailer import MailMessage
 
 
@@ -45,6 +47,18 @@ class MailTemplates:
             "If you didn't ask for this, you can ignore this email.",
         ]
         return self._mail("use_google_notice", to, "Sign in to Socra with Google", lines)
+
+    def takeover_notice(self, to: str, contact: str | None = None) -> MailMessage:
+        """To the address of an account that someone has just taken over by signing in with Google (an account whose
+        email nobody had proved). The owner of the inbox did it, or someone with access to it: either way they are
+        told what changed and who to tell."""
+        contact = contact or settings.CONTACT_EMAIL
+        lines = [
+            "Your Socra account now signs in with Google. The old password no longer works.",
+            'To choose a password of your own, use "Forgot password" on the sign-in page.',
+            f"If this wasn't you, please tell us at {contact}.",
+        ]
+        return self._mail("takeover_notice", to, "Your Socra account now signs in with Google", lines)
 
     def _code_mail(self, kind: str, to: str, code: str, minutes: int, subject: str, purpose: str) -> MailMessage:
         lines = [

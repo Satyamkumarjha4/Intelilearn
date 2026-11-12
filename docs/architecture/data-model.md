@@ -34,7 +34,7 @@ Conventions that hold for every table:
 
 ### `AuthSettings` (singleton) and `OutboundMail` (phase 11.0)
 
-`AuthSettings.captcha_enabled` (default false) is the console's switch for the sign-up challenge (built in 11.4; the keys stay in the environment). `OutboundMail` is the mail log: `kind` (`signup_code`, `login_code`, `reset_code`, `owner_notice`, `use_google_notice`), `to_email`, `subject`, `backend`, `status` (`queued`, `sent`, `failed`), `attempts`, `provider_message_id`, a short `error` (never a code or a body), `created_at`, `sent_at`, and `body_text`, which only the throwaway-stack `outbox` backend fills. It has no relation to a user: erasing an account deletes the rows sent to its address (`UserDataMap.OUTSIDE`), and the daily `accounts.purge` deletes rows older than `MAIL_LOG_RETENTION_DAYS` (30).
+`AuthSettings.captcha_enabled` (default false) is the console's switch for the sign-up challenge (built in 11.4; the keys stay in the environment). `OutboundMail` is the mail log: `kind` (`signup_code`, `login_code`, `reset_code`, `owner_notice`, `use_google_notice`, `takeover_notice`), `to_email`, `subject`, `backend`, `status` (`queued`, `sent`, `failed`), `attempts`, `provider_message_id`, a short `error` (never a code or a body), `created_at`, `sent_at`, and `body_text`, which only the throwaway-stack `outbox` backend fills. It has no relation to a user: erasing an account deletes the rows sent to its address (`UserDataMap.OUTSIDE`), and the daily `accounts.purge` deletes rows older than `MAIL_LOG_RETENTION_DAYS` (30).
 
 ### Sign-in tables (`accounts`, phase 11.1)
 
