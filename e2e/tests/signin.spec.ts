@@ -188,7 +188,7 @@ test("an account made with a code is linked: no second account and no second gra
   await page.goto(googleAs({ subject: unique("sub"), email: email.toUpperCase().replace("@EXAMPLE.COM", "@example.com") }));
 
   await page.waitForURL(/\/lessons/); // signed in, and the profile was already complete
-  expect((await api.call("GET", "/auth/me")).body.user.email).toBe(email);
+  expect((await api.call("GET", "/auth/me")).body.email).toBe(email);
   expect((await api.call("GET", "/credits/wallet")).body).toMatchObject({ balance: 30 });
   const again = await (await page.context().browser()!.newContext()).newPage();
   expect((await new Api(again).call("POST", "/auth/login", { email, password: E2E.PASSWORD })).status).toBe(200); // the password still works
