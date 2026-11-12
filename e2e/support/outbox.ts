@@ -18,6 +18,13 @@ export class Outbox {
     return Outbox.digits(found[0].text);
   }
 
+  /** On the "Check your email" screen after creating an account: types the code the outbox holds and waits for onboarding. */
+  static async enterCode(page: import("@playwright/test").Page, email: string): Promise<void> {
+    await page.waitForURL(/\/auth\/verify/);
+    await page.getByLabel("6-digit code").fill(await Outbox.code(page.request, email));
+    await page.waitForURL(/\/onboarding/);
+  }
+
   /** The code in a message's text. */
   static digits(text: string): string {
     const match = text.match(/\b(\d{6})\b/);

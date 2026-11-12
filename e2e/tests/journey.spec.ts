@@ -15,6 +15,7 @@ import { AttemptPage } from "../support/attempt";
 import { E2E } from "../support/config";
 import { Deck } from "../support/deck";
 import { Onboarding } from "../support/onboarding";
+import { Outbox } from "../support/outbox";
 
 test("a learner signs up, learns, takes the test, tries again with new questions and sees the trend", async ({ page }) => {
   const api = new Api(page);
@@ -25,13 +26,14 @@ test("a learner signs up, learns, takes the test, tries again with new questions
   await page.getByLabel("Topic").press("Enter");
   await page.waitForURL(/\/auth/);
   await page.getByLabel("Name").fill("E2E Learner");
-  await page.getByLabel("Email").fill(E2E.email("journey"));
+  const email = E2E.email("journey");
+  await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password", { exact: true }).fill(E2E.PASSWORD);
   await page.locator("form button[type=submit]").click();
   await expect(page.locator("#accept_terms-error")).toBeVisible(); // not without agreeing to the terms
   await page.locator("input[name=accept_terms]").check();
   await page.locator("form button[type=submit]").click();
-  await page.waitForURL(/\/onboarding/);
+  await Outbox.enterCode(page, email); // the account exists only once the emailed code is entered
 
   const setup = new Onboarding(page);
   await setup.throughStepFour();

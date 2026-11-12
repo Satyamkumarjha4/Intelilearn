@@ -6,6 +6,7 @@ import { expect, test } from "@playwright/test";
 
 import { E2E } from "../support/config";
 import { Onboarding } from "../support/onboarding";
+import { Outbox } from "../support/outbox";
 
 test("refreshing on the last step stays on it, and the landing topic is still offered", async ({ page }) => {
   await page.goto("/");
@@ -13,11 +14,12 @@ test("refreshing on the last step stays on it, and the landing topic is still of
   await page.getByLabel("Topic").press("Enter");
   await page.waitForURL(/\/auth/);
   await page.getByLabel("Name").fill("Refresh Tester");
-  await page.getByLabel("Email").fill(E2E.email("refresh"));
+  const email = E2E.email("refresh");
+  await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password", { exact: true }).fill(E2E.PASSWORD);
   await page.locator("input[name=accept_terms]").check();
   await page.locator("form button[type=submit]").click();
-  await page.waitForURL(/\/onboarding/);
+  await Outbox.enterCode(page, email);
   await new Onboarding(page).throughStepFour();
 
   await page.reload();
