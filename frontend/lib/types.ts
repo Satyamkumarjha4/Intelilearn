@@ -873,8 +873,24 @@ export type ConsoleLearner = {
   profile_complete: boolean;
   is_staff: boolean;
   joined_at: string;
+  /** Whether the email was proved or vouched for, and by whom (`code`, `google`, `microsoft`, `staff`, `operator`, `legacy`). */
+  email_verified: boolean;
+  verification_source: string;
+  /** Too many dead codes lately: the email is locked right now. */
+  email_locked: boolean;
 };
-export type LearnerSummary = { total: number; active_7d: number; profile_complete: number; staff: number };
+/** The sign-in states the list can be kept to (open accounts only); "" is everyone. */
+export type SigninFilter = "" | "unverified" | "legacy" | "locked";
+export type LearnerSummary = {
+  total: number;
+  active_7d: number;
+  profile_complete: number;
+  staff: number;
+  /** Open accounts whose email was never proved, from before verification and never proved, and locked now. */
+  unverified: number;
+  legacy: number;
+  locked: number;
+};
 export type LearnerPage = Page<ConsoleLearner> & { summary: LearnerSummary };
 
 export type AuditEntry = {

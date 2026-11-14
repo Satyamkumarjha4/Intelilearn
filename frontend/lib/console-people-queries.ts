@@ -1,7 +1,7 @@
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 
 import { ConsoleApi, consoleApi } from "@/lib/console-api";
-import type { AuditEntry, ConsoleLearner, LearnerPage, Page } from "@/lib/types";
+import type { AuditEntry, ConsoleLearner, LearnerPage, Page, SigninFilter } from "@/lib/types";
 
 /** The cache entries of the Learners and Change log pages. They are in their own class so that each page's queries sit
  *  next to its data shaping (`lib/console-people.ts`, `lib/console-audit.ts`); the keys start with "console" like every other. */
@@ -13,12 +13,12 @@ export class PeopleQueries {
 
   constructor(private readonly api: ConsoleApi = consoleApi) {}
 
-  /** Learners matching the search, a page at a time (newest first). */
-  learners(search: string) {
+  /** Learners matching the search and the sign-in filter, a page at a time (newest first). */
+  learners(search: string, verification: SigninFilter = "") {
     const q = search.trim();
     return infiniteQueryOptions({
-      queryKey: ["console", "learners", "list", q] as const,
-      queryFn: ({ pageParam }): Promise<LearnerPage> => this.api.learners({ q, cursor: pageParam, pageSize: PeopleQueries.LEARNERS_PAGE }),
+      queryKey: ["console", "learners", "list", q, verification] as const,
+      queryFn: ({ pageParam }): Promise<LearnerPage> => this.api.learners({ q, verification, cursor: pageParam, pageSize: PeopleQueries.LEARNERS_PAGE }),
       initialPageParam: null as string | null,
       getNextPageParam: (last: Page<ConsoleLearner>) => ConsoleApi.cursorOf(last.next) ?? undefined,
     });

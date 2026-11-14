@@ -6,8 +6,9 @@
  * hammer the console's throttle.
  *
  * Use cases:
- * - the learners list is keyed by the trimmed search, so "" and "  " are one entry and another search is another
- * - the list asks for a page of 25 after the cursor it was given, with the search, and the next page's cursor comes
+ * - the learners list is keyed by the trimmed search and the sign-in filter, so "" and "  " are one entry and
+ *   another search, or another filter, is another
+ * - the list asks for a page of 25 after the cursor it was given, with the search and the filter, and the next page's cursor comes
  *   from the reply's `next` link (none when it was the last page)
  * - the sample for the tiles is one fixed entry of the newest 100, whatever is searched
  * - the change log pages by cursor too, 50 entries at a time
@@ -36,8 +37,10 @@ describe("PeopleQueries keys", () => {
   const { queries } = fake();
 
   test("are under console, and a search is its own entry", () => {
-    expect(key(queries.learners(""))).toEqual(["console", "learners", "list", ""]);
-    expect(key(queries.learners("  aditi "))).toEqual(["console", "learners", "list", "aditi"]);
+    expect(key(queries.learners(""))).toEqual(["console", "learners", "list", "", ""]);
+    expect(key(queries.learners("  aditi "))).toEqual(["console", "learners", "list", "aditi", ""]);
+    expect(key(queries.learners("", "locked"))).toEqual(["console", "learners", "list", "", "locked"]);
+    expect(key(queries.learners("", "locked"))).not.toEqual(key(queries.learners("", "legacy")));
     expect(key(queries.learners("  "))).toEqual(key(queries.learners("")));
     expect(key(queries.learnerSample())).toEqual(["console", "learners", "sample"]);
     expect(key(queries.audit())).toEqual(["console", "audit"]);
@@ -57,9 +60,17 @@ describe("PeopleQueries fetchers", () => {
     await fetchPage(options, "abc");
 
     expect(calls).toEqual([
-      ["learners", { q: "aditi", cursor: null, pageSize: 25 }],
-      ["learners", { q: "aditi", cursor: "abc", pageSize: 25 }],
+      ["learners", { q: "aditi", verification: "", cursor: null, pageSize: 25 }],
+      ["learners", { q: "aditi", verification: "", cursor: "abc", pageSize: 25 }],
     ]);
+  });
+
+  test("a filtered list asks for the filter", async () => {
+    const { calls, queries } = fake();
+
+    await fetchPage(queries.learners("", "unverified"), null);
+
+    expect(calls).toEqual([["learners", { q: "", verification: "unverified", cursor: null, pageSize: 25 }]]);
   });
 
   test("the next page starts at the cursor in the reply's next link, and there is none after the last", () => {

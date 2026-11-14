@@ -12,7 +12,7 @@
  * - reads one run and starts its retry or cancel
  * - lists and changes providers; lists, adds, changes, deletes and tests models
  * - reads the routing, saves a step with PUT, lists the profiles and previews one with POST
- * - reads and changes the lesson settings, lists learners (searched, paged) and the change log
+ * - reads and changes the lesson settings, lists learners (searched, filtered by sign-in state, paged) and the change log
  * - previews and performs the erasure of a learner (DELETE with the confirming email)
  * - reads the testimonials, adds one, changes one (PATCH, only what is sent), deletes one and reorders with every id
  * - reads the credits and changes a price, a plan and the settings; reads a wallet, gives credits and switches the exemption;
@@ -177,16 +177,20 @@ describe("ConsoleApi", () => {
     ]);
   });
 
-  test("lists learners (searched, paged) and the change log", async () => {
+  test("lists learners (searched, filtered by sign-in state, paged) and the change log", async () => {
     const { api, calls } = fakeClient();
 
     await api.learners();
     await api.learners({ q: " ada ", cursor: "x" });
+    await api.learners({ verification: "locked", pageSize: 25 });
+    await api.learners({ q: "ada", verification: "" });
     await api.audit({ pageSize: 10 });
 
     expect(calls.map((c) => c.path)).toEqual([
       "/console/learners",
       "/console/learners?q=ada&cursor=x",
+      "/console/learners?verification=locked&page_size=25",
+      "/console/learners?q=ada",
       "/console/audit?page_size=10",
     ]);
   });

@@ -23,6 +23,7 @@ import type {
   RunQuery,
   RunRow,
   RunStatus,
+  SigninFilter,
   UsageFilters,
 } from "@/lib/types";
 
@@ -168,8 +169,9 @@ export class ConsoleApi {
     return this.send("PATCH", "/console/flow-settings", changes);
   }
 
-  learners(query: { q?: string } & PageQuery = {}): Promise<LearnerPage> {
-    return this.get(`/console/learners${ConsoleApi.query({ q: query.q?.trim(), ...ConsoleApi.page(query) })}`);
+  /** `verification` keeps one sign-in state (`unverified`, `legacy` or `locked`); an empty one is everyone. */
+  learners(query: { q?: string; verification?: SigninFilter } & PageQuery = {}): Promise<LearnerPage> {
+    return this.get(`/console/learners${ConsoleApi.query({ q: query.q?.trim(), verification: query.verification, ...ConsoleApi.page(query) })}`);
   }
 
   audit(page: PageQuery = {}): Promise<Page<AuditEntry>> {

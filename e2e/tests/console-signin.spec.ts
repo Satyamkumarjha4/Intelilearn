@@ -15,12 +15,15 @@
  *   no "mark verified" for an account that already is, and the API refuses it (a code is never part of the page: that is
  *   proved by tests/console/test_learner_verification.py)
  * - /console/abuse shows the numbers and the sign-up check is off, and cannot be switched on in this stack (no keys)
+ * - the Learners list keeps to a sign-in state: an account from before verification shows under Legacy, one set back to
+ *   unverified under Not verified, each with its pill, and the chips change the address
  * - a learner gets the page that does not exist for each of the new pages, and the API's 404
  */
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
 import { Api } from "../support/api";
 import { E2E } from "../support/config";
+import { Seed } from "../support/seed";
 
 async function staffPage(browser: Browser): Promise<{ page: Page; api: Api }> {
   const page = await (await browser.newContext()).newPage();
@@ -114,4 +117,30 @@ test("a learner gets the page that does not exist for each new console page, and
   for (const path of ["/console/signups", "/console/abuse", "/console/auth-settings"]) {
     expect((await api.call("GET", path)).status).toBe(404);
   }
+});
+
+test("the Learners list keeps to a sign-in state: legacy and not verified, with their counts", async ({ browser }) => {
+  const legacy = E2E.email("legacy-list");
+  const unverified = E2E.email("unverified-list");
+  Seed.signInState(legacy, E2E.PASSWORD, "legacy");
+  Seed.signInState(unverified, E2E.PASSWORD, "unverified");
+  const { page, api } = await staffPage(browser);
+
+  await page.goto("/console/learners");
+  const chips = page.getByRole("group", { name: "Sign-in" });
+  await expect(chips.getByRole("button", { name: /^Everyone/ })).toBeVisible();
+  await chips.getByRole("button", { name: /^Legacy/ }).click();
+  await expect(page).toHaveURL(/verification=legacy/);
+  await expect(page.getByRole("row", { name: new RegExp(legacy) })).toContainText("Legacy");
+  await expect(page.getByRole("row", { name: new RegExp(unverified) })).toHaveCount(0);
+
+  await chips.getByRole("button", { name: /^Not verified/ }).click();
+  await expect(page).toHaveURL(/verification=unverified/);
+  await expect(page.getByRole("row", { name: new RegExp(unverified) })).toContainText("Not verified");
+  await expect(page.getByRole("row", { name: new RegExp(legacy) })).toHaveCount(0);
+
+  const summary = (await api.call("GET", "/console/learners?verification=locked")).body.summary;
+  expect(summary.legacy).toBeGreaterThanOrEqual(1);
+  expect(summary.unverified).toBeGreaterThanOrEqual(1);
+  expect((await api.call("GET", "/console/learners?verification=nonsense")).status).toBe(400);
 });

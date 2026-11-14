@@ -3,7 +3,7 @@ from drf_spectacular.utils import OpenApiParameter, extend_schema
 from console.models import AuditEntry
 from console.pagination import ConsoleCursorPagination
 from console.serializers import AuditEntrySerializer, LearnerPageSerializer, LearnerSerializer
-from console.services.learners import LearnerQuery, LearnerSummary
+from console.services.learners import LearnerQuery, LearnerSummary, VerificationFilters
 
 from .base import CONSOLE_TAG, ConsoleListView
 
@@ -17,7 +17,8 @@ class LearnerListView(ConsoleListView):
     pagination_class = Pagination
 
     def get_queryset(self):
-        return LearnerQuery().queryset(self.request.query_params.get("q", ""))
+        params = self.request.query_params
+        return LearnerQuery().queryset(params.get("q", ""), params.get("verification", ""))
 
     def get_paginated_response(self, data):
         response = super().get_paginated_response(data)
@@ -29,10 +30,23 @@ class LearnerListView(ConsoleListView):
         summary="List learners",
         description=(
             "Everyone with an account, newest first: their profile choices, lesson count, last activity and whether "
-            "their profile is complete. Read-only, and without anything they wrote about themselves. `summary` counts "
-            "every learner, whatever the search."
+            "their profile is complete, and whether their email is verified, who vouched for it and whether it is "
+            "locked. Read-only, and without anything they wrote about themselves. `summary` counts every learner, "
+            "whatever the search or the filter, including how many are `unverified`, `legacy` or `locked`."
         ),
-        parameters=[OpenApiParameter("q", str, description="Search the name or email.")],
+        parameters=[
+            OpenApiParameter("q", str, description="Search the name or email."),
+            OpenApiParameter(
+                "verification",
+                str,
+                enum=VerificationFilters.names(),
+                description=(
+                    "Keep one sign-in state (open accounts only): `unverified` (the email was never proved), `legacy` "
+                    "(from before verification, never proved) or `locked` (too many dead codes lately). Another value "
+                    "is a `400` naming `verification`."
+                ),
+            ),
+        ],
         responses={200: LearnerPageSerializer},
     )
     def get(self, request, *args, **kwargs):

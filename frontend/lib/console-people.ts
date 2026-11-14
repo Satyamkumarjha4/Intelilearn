@@ -1,7 +1,7 @@
 import { ONBOARDING_COPY } from "@/lib/onboarding-flow";
 import { ConsoleFormat } from "@/lib/console-format";
 import { RunText } from "@/lib/run-text";
-import type { ConsoleLearner, LearnerSummary } from "@/lib/types";
+import type { ConsoleLearner, LearnerSummary, SigninFilter } from "@/lib/types";
 
 const DAY_MS = 86_400_000;
 const NONE = "–";
@@ -47,6 +47,37 @@ export class LearnerText {
 
   static onboarding(learner: Pick<ConsoleLearner, "profile_complete">): { label: string; tone: "ok" | "off" } {
     return learner.profile_complete ? { label: "Finished", tone: "ok" } : { label: "Not finished", tone: "off" };
+  }
+
+  /** The state of the email: a lock is what to act on first, then an email nobody proved, then an account from before
+   *  verification; a verified email says "by staff" when staff vouched for it (the owner did not prove it). */
+  static verification(learner: Pick<ConsoleLearner, "email_verified" | "verification_source" | "email_locked">): { label: string; tone: "ok" | "warn" | "bad" } {
+    if (learner.email_locked) return { label: "Locked", tone: "bad" };
+    if (!learner.email_verified) return { label: "Not verified", tone: "warn" };
+    if (learner.verification_source === "legacy") return { label: "Legacy", tone: "warn" };
+    return learner.verification_source === "staff" ? { label: "Verified by staff", tone: "ok" } : { label: "Verified", tone: "ok" };
+  }
+}
+
+/** The three sign-in states the Learners list can be kept to, as filter chips with the API's counts. */
+export class SigninFilters {
+  private static readonly STATES: readonly { value: Exclude<SigninFilter, "">; label: string; empty: string }[] = [
+    { value: "unverified", label: "Not verified", empty: "Every email is verified. Nobody is waiting on a code." },
+    { value: "legacy", label: "Legacy", empty: "No account from before verification is left unproved." },
+    { value: "locked", label: "Locked", empty: "No email is locked right now." },
+  ];
+
+  static parse(value: string | null | undefined): SigninFilter {
+    return SigninFilters.STATES.find((state) => state.value === value)?.value ?? "";
+  }
+
+  static options(summary: Pick<LearnerSummary, "total" | "unverified" | "legacy" | "locked">): { value: SigninFilter; label: string; count: number }[] {
+    return [{ value: "", label: "Everyone", count: summary.total }, ...SigninFilters.STATES.map(({ value, label }) => ({ value, label, count: summary[value] }))];
+  }
+
+  /** What to say when the filter finds nobody. */
+  static empty(filter: Exclude<SigninFilter, "">): string {
+    return SigninFilters.STATES.find((state) => state.value === filter)?.empty ?? "";
   }
 }
 
@@ -103,10 +134,18 @@ export class PeopleUrl {
     return params.get("q")?.trim() ?? "";
   }
 
-  /** `""` for nothing to search for, else `?q=aditi+rao`. */
-  static searchQuery(text: string): string {
-    const q = text.trim();
-    return q ? `?${new URLSearchParams({ q })}` : "";
+  /** The sign-in filter in the address; anything but one of the three is "everyone". */
+  static verification(params: { get(name: string): string | null }): SigninFilter {
+    return SigninFilters.parse(params.get("verification"));
+  }
+
+  /** `""` for nothing to search for or filter by, else `?q=aditi+rao` and/or `verification=locked`. */
+  static searchQuery(text: string, verification: SigninFilter = ""): string {
+    const found = new URLSearchParams();
+    if (text.trim()) found.set("q", text.trim());
+    if (verification) found.set("verification", verification);
+    const query = found.toString();
+    return query ? `?${query}` : "";
   }
 }
 

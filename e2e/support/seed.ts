@@ -53,6 +53,23 @@ ${opts.reverify ? 'call_command("require_reverification")' : ""}
     execSync(`${compose} exec -T backend python manage.py shell`, { cwd: Seed.REPO, input: script, stdio: ["pipe", "pipe", "pipe"] });
   }
 
+  /**
+   * An account in one sign-in state, for the console's Learners filter. Neither kind is touched by another spec's
+   * `require_reverification` (which resets non-staff legacy accounts): `unverified` was never verified, and `legacy` is a
+   * **staff** account marked legacy, which that command leaves alone.
+   */
+  static signInState(email: string, password: string, kind: "unverified" | "legacy"): void {
+    const legacy = kind === "legacy";
+    const script = `
+from django.utils import timezone
+from accounts.models import User
+User.objects.create_user(${JSON.stringify(email)}, password=${JSON.stringify(password)}, name="Sign-in State",
+    ${legacy ? 'is_staff=True, email_verified_at=timezone.now(), email_verification_source="legacy"' : ""})
+`;
+    const compose = process.env.E2E_COMPOSE || Seed.FALLBACK;
+    execSync(`${compose} exec -T backend python manage.py shell`, { cwd: Seed.REPO, input: script, stdio: ["pipe", "pipe", "pipe"] });
+  }
+
   /** Three placeholder testimonials (samples: unpublished, never shown), made by the command a developer runs. */
   static sampleTestimonials(): void {
     const compose = process.env.E2E_COMPOSE || Seed.FALLBACK;

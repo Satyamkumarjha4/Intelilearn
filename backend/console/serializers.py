@@ -600,6 +600,13 @@ class LearnerSerializer(serializers.Serializer):
     profile_complete = serializers.SerializerMethodField()
     is_staff = serializers.BooleanField()
     joined_at = serializers.DateTimeField(source="date_joined")
+    email_verified = serializers.BooleanField(source="is_email_verified")
+    verification_source = serializers.CharField(
+        source="email_verification_source",
+        allow_blank=True,
+        help_text="Who proved or vouched for the email (`code`, `google`, `microsoft`, `staff`, `operator`, `legacy`).",
+    )
+    email_locked = serializers.BooleanField(help_text="Too many dead codes lately: the email is locked right now.")
 
     def _profile(self, member):
         return getattr(member, "profile", None)
@@ -630,6 +637,9 @@ class LearnerSummarySerializer(serializers.Serializer):
     active_7d = serializers.IntegerField(help_text="Signed in or had lesson activity in the last 7 days.")
     profile_complete = serializers.IntegerField()
     staff = serializers.IntegerField()
+    unverified = serializers.IntegerField(help_text="Open accounts whose email was never proved.")
+    legacy = serializers.IntegerField(help_text="Open accounts from before verification, never proved.")
+    locked = serializers.IntegerField(help_text="Open accounts whose email is locked right now.")
 
 
 class LearnerPageSerializer(serializers.Serializer):

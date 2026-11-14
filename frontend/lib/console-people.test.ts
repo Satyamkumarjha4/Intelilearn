@@ -18,12 +18,15 @@
  *   partial sample says so
  * - an empty app shows dashes, not 0% or NaN
  * - the search is read from `?q=` trimmed and written only when there is something to search for
+ * - the sign-in filter (`?verification=unverified|legacy|locked`) is read only when it is one of the three and is
+ *   written beside the search; each learner's email reads Verified, Verified by staff, Legacy, Not verified or Locked
+ *   (locked wins), and the filter chips carry the API's counts and say what an empty answer means
  * - the admin link is built from an http(s) address, whether the setting holds the origin or the admin's own address,
  *   and there is no link when it is unset or not a web address
  */
 import { describe, expect, test } from "bun:test";
 
-import { AdminLinks, LearnerStats, LearnerText, PeopleUrl } from "./console-people";
+import { AdminLinks, LearnerStats, LearnerText, PeopleUrl, SigninFilters } from "./console-people";
 import type { ConsoleLearner, LearnerSummary } from "./types";
 
 const NOW = new Date("2026-03-15T12:00:00Z");
@@ -42,11 +45,14 @@ function learner(patch: Partial<ConsoleLearner> = {}): ConsoleLearner {
     profile_complete: true,
     is_staff: false,
     joined_at: "2026-03-01T08:00:00Z",
+    email_verified: true,
+    verification_source: "code",
+    email_locked: false,
     ...patch,
   };
 }
 
-const summary: LearnerSummary = { total: 37, active_7d: 22, profile_complete: 31, staff: 2 };
+const summary: LearnerSummary = { total: 37, active_7d: 22, profile_complete: 31, staff: 2, unverified: 4, legacy: 3, locked: 1 };
 
 describe("LearnerText", () => {
   test.each([
@@ -146,7 +152,7 @@ describe("LearnerStats.tiles", () => {
   });
 
   test("nobody new, nobody yet, and nobody with a profile are said plainly", () => {
-    const empty = LearnerStats.tiles({ total: 0, active_7d: 0, profile_complete: 0, staff: 0 }, { rows: [], more: false }, NOW);
+    const empty = LearnerStats.tiles({ total: 0, active_7d: 0, profile_complete: 0, staff: 0, unverified: 0, legacy: 0, locked: 0 }, { rows: [], more: false }, NOW);
 
     expect(empty.map((t) => t.value)).toEqual(["0", "–", "0", "–"]);
     expect(empty[0]!.detail).toBe("None joined this week");
@@ -160,6 +166,52 @@ describe("PeopleUrl search", () => {
     expect(PeopleUrl.search(new URLSearchParams(""))).toBe("");
     expect(PeopleUrl.searchQuery("aditi rao")).toBe("?q=aditi+rao");
     expect(PeopleUrl.searchQuery("   ")).toBe("");
+  });
+
+  test("the sign-in filter is read only when it is one of the three, and written beside the search", () => {
+    expect(PeopleUrl.verification(new URLSearchParams("verification=locked"))).toBe("locked");
+    expect(PeopleUrl.verification(new URLSearchParams("verification=verified"))).toBe("");
+    expect(PeopleUrl.verification(new URLSearchParams(""))).toBe("");
+    expect(PeopleUrl.searchQuery("", "legacy")).toBe("?verification=legacy");
+    expect(PeopleUrl.searchQuery("ada", "unverified")).toBe("?q=ada&verification=unverified");
+    expect(PeopleUrl.searchQuery("  ", "")).toBe("");
+  });
+});
+
+describe("LearnerText.verification", () => {
+  test.each([
+    [{ email_verified: true, verification_source: "code", email_locked: false }, "Verified", "ok"],
+    [{ email_verified: true, verification_source: "google", email_locked: false }, "Verified", "ok"],
+    [{ email_verified: true, verification_source: "staff", email_locked: false }, "Verified by staff", "ok"],
+    [{ email_verified: true, verification_source: "legacy", email_locked: false }, "Legacy", "warn"],
+    [{ email_verified: false, verification_source: "", email_locked: false }, "Not verified", "warn"],
+    [{ email_verified: false, verification_source: "", email_locked: true }, "Locked", "bad"],
+    [{ email_verified: true, verification_source: "code", email_locked: true }, "Locked", "bad"],
+  ] as const)("%j reads %s", (patch, label, tone) => {
+    expect(LearnerText.verification(learner(patch))).toEqual({ label, tone });
+  });
+});
+
+describe("SigninFilters", () => {
+  test("lists everyone first and then the three states with the API's counts", () => {
+    expect(SigninFilters.options(summary)).toEqual([
+      { value: "", label: "Everyone", count: 37 },
+      { value: "unverified", label: "Not verified", count: 4 },
+      { value: "legacy", label: "Legacy", count: 3 },
+      { value: "locked", label: "Locked", count: 1 },
+    ]);
+  });
+
+  test("parses only the three known values", () => {
+    expect(SigninFilters.parse("legacy")).toBe("legacy");
+    expect(SigninFilters.parse("verified")).toBe("");
+    expect(SigninFilters.parse(null)).toBe("");
+  });
+
+  test("says what an empty answer means for the chosen state", () => {
+    expect(SigninFilters.empty("unverified")).toMatch(/every email is verified/i);
+    expect(SigninFilters.empty("legacy")).toMatch(/before verification/i);
+    expect(SigninFilters.empty("locked")).toMatch(/no email is locked/i);
   });
 });
 

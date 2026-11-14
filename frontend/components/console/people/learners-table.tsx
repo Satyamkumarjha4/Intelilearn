@@ -61,6 +61,14 @@ function columns(now: Date): Column<ConsoleLearner>[] {
       ),
     },
     {
+      key: "email",
+      header: "Email",
+      cell: (row) => {
+        const { label, tone } = LearnerText.verification(row);
+        return <StatusPill tone={tone}>{label}</StatusPill>;
+      },
+    },
+    {
       key: "signin",
       header: "Sign-in",
       cell: (row) => (

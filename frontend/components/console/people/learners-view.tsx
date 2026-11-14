@@ -17,19 +17,22 @@ import { useDebouncedText } from "@/components/console/use-debounced-text";
 import { useNow } from "@/components/lessons/use-now";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { LearnerStats, PeopleUrl } from "@/lib/console-people";
+import { ConsoleFormat } from "@/lib/console-format";
+import { LearnerStats, PeopleUrl, SigninFilters } from "@/lib/console-people";
 import { peopleQueries } from "@/lib/console-people-queries";
 
 /** The Learners page: who is using Socra. Read-only; the search lives in the address. */
 export function LearnersView() {
   const router = useRouter();
   const pathname = usePathname();
-  const q = PeopleUrl.search(useSearchParams());
-  const [text, setText] = useDebouncedText(q, (next) => router.replace(`${pathname}${PeopleUrl.searchQuery(next)}`, { scroll: false }));
+  const params = useSearchParams();
+  const q = PeopleUrl.search(params);
+  const verification = PeopleUrl.verification(params);
+  const [text, setText] = useDebouncedText(q, (next) => router.replace(`${pathname}${PeopleUrl.searchQuery(next, verification)}`, { scroll: false }));
   const now = new Date(useNow(true, 60_000));
 
   const sample = useConsoleQuery(peopleQueries.learnerSample());
-  const list = notFoundIfRefused(useInfiniteQuery({ ...peopleQueries.learners(q), placeholderData: keepPreviousData }));
+  const list = notFoundIfRefused(useInfiniteQuery({ ...peopleQueries.learners(q, verification), placeholderData: keepPreviousData }));
   const rows = useMemo(() => list.data?.pages.flatMap((page) => page.results) ?? [], [list.data]);
 
   const tiles = sample.data
@@ -68,6 +71,22 @@ export function LearnersView() {
         )}
       </div>
 
+      {sample.data ? (
+        <div role="group" aria-label="Sign-in" className="mb-3 flex flex-wrap gap-2">
+          {SigninFilters.options(sample.data.summary).map((option) => (
+            <button
+              key={option.value || "all"}
+              type="button"
+              aria-pressed={option.value === verification}
+              onClick={() => router.replace(`${pathname}${PeopleUrl.searchQuery(q, option.value)}`, { scroll: false })}
+              className="rounded-full border bg-card px-3 py-1 text-[13px] font-extrabold outline-none focus-visible:ring-3 focus-visible:ring-ring/50 aria-pressed:border-primary aria-pressed:bg-primary-soft aria-pressed:text-primary-text"
+            >
+              {option.label} <span className="font-mono text-muted-foreground">{ConsoleFormat.count(option.count)}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       <section aria-label="Learners" aria-busy={list.isFetching && !list.isFetchingNextPage} className="min-w-0 rounded-2xl border bg-card shadow-card">
         <div className="px-[18px] py-3">
           {list.error && !list.data ? (
@@ -79,7 +98,11 @@ export function LearnersView() {
               ))}
             </div>
           ) : rows.length === 0 ? (
-            <EmptyState icon={UsersIcon} title={q ? `No learners match “${q}”` : "No learners yet"} description={q ? "Try part of a name or an email address." : "Accounts show up here as people sign up."} />
+            <EmptyState
+              icon={UsersIcon}
+              title={q ? `No learners match “${q}”` : verification ? "Nobody here" : "No learners yet"}
+              description={q ? "Try part of a name or an email address." : verification ? SigninFilters.empty(verification) : "Accounts show up here as people sign up."}
+            />
           ) : (
             <>
               <LearnersTable rows={rows} now={now} />
