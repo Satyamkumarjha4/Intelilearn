@@ -161,8 +161,9 @@
     {
       "globs": [
         "frontend/app/auth/**",
-        "frontend/lib/{auth-api,auth-errors,code-entry,pending-email,resend-clock,sign-in-providers}.ts",
-        "frontend/components/{code-boxes,provider-buttons}.tsx",
+        "frontend/lib/{auth-api,auth-errors,captcha,code-entry,pending-email,resend-clock,sign-in-providers}.ts",
+        "frontend/components/{captcha-widget,code-boxes,provider-buttons}.tsx",
+        "frontend/components/use-captcha-config.ts",
         "backend/accounts/**"
       ],
       "specs": [
@@ -208,6 +209,7 @@
         "frontend/components/console/**",
         "frontend/lib/console-*.ts",
         "frontend/lib/console-testimonials/**",
+        "frontend/lib/console-signin/**",
         "frontend/lib/{model-*,routing-*,flow-*,run-filters,run-timeline,run-actions,run-text,table-sort,probe-queue,chart-shapes}.ts",
         "backend/console/**"
       ],
