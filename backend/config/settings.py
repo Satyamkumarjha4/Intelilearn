@@ -291,7 +291,7 @@ REST_FRAMEWORK = {
         ),  # asking if an order was paid, per user
         # providers' own addresses are not allow-listed: the webhook's signature is the control, this is a ceiling
         "payment_webhook": env("PAYMENT_WEBHOOK_THROTTLE_RATE", default="600/min"),  # per client address
-        # sign-in codes (docs/to_be_developed/signin-implementation-plan.md 8.5). Every key is the email as TYPED (its
+        # sign-in codes (docs/archive/signin-implementation-plan.md 8.5). Every key is the email as TYPED (its
         # canonical form), whether or not an account has it, so a limit cannot be used to find accounts.
         "auth_code_send_email": env("AUTH_CODE_SEND_EMAIL_RATE", default="5/hour"),  # mails carrying a code, per email
         "auth_code_send_ip": env("AUTH_CODE_SEND_IP_RATE", default="20/hour"),  # the same, per client address
@@ -311,7 +311,7 @@ REST_FRAMEWORK = {
 TRUSTED_PROXY_COUNT_EXPLICIT = bool(env.str("TRUSTED_PROXY_COUNT", default="").strip())
 
 # --- Email (phase 11): sign-in codes and notices go through `accounts.mail`; see
-# docs/to_be_developed/signin-implementation-plan.md ---
+# docs/archive/signin-implementation-plan.md ---
 # `console` prints the message to the log (development only: it refuses to send with DJANGO_DEBUG off), `brevo`
 # sends through
 # Brevo's HTTP API, `outbox` keeps the text on the mail log row for browser tests (throwaway stack only, with

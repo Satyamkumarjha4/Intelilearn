@@ -5,7 +5,8 @@ The endpoint, the `api-key` header and the body are from Brevo's reference page 
 `messageId`; a `400` with a `code` and a `message`). Which statuses are worth retrying is our rule, not Brevo's
 (the page does
 not say): a rate limit (429) and server errors (5xx) and a network failure retry, every other refusal does not.
-Whether a sender must be verified before sending is not stated on that page either (docs/to_be_developed U1, U2).
+Whether a sender must be verified before sending is not stated on that page either (U1 and U2 in
+docs/archive/signin-implementation-plan.md).
 
 The key is never in an error, a log line or a repr.
 """

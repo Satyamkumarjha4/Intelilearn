@@ -63,17 +63,13 @@ Start here. The docs are grouped by what you are trying to do. Status marks: ✅
 |---|---|---|
 | [README.md](legal/README.md) | Where the privacy, terms and contact words live (`frontend/content/legal/`), the owner's note, and what to update when they change | ✅ |
 
-### to_be_developed/ (planned, not built)
-| Item | What it is | Status |
-|---|---|---|
-| [signin-implementation-plan.md](to_be_developed/signin-implementation-plan.md) | The plan for phase 11 (sign-in and account verification): email with a code, Google, password reset, the mailer, abuse limits, the console, phases 11.0 to 11.5, the launch checklist, and the facts still unverified | 📝 |
-
 ### archive/ (finished, kept for the record)
 | Item | What it is | Status |
 |---|---|---|
 | [ui-audit-2026-10-25.md](archive/ui-audit-2026-10-25.md) | The screen-by-screen UI audit and its fixes | 🗄️ |
 | [credits-implementation-plan.md](archive/credits-implementation-plan.md) | The plan phase 10 was built from: the decisions (D1 to D21 and T1 to T36), the places the spec was changed, the changelog of every phase (P1 to P16) and the risks | 🗄️ |
 | [modular-lessons-implementation-plan.md](archive/modular-lessons-implementation-plan.md) | The plan phase 9 was built from: the decisions (D1 to D24), the places the spec was changed, the changelog of every phase (C1 to C41 and on) and the risks. Read it to learn why something is the way it is | 🗄️ |
+| [signin-implementation-plan.md](archive/signin-implementation-plan.md) | The plan phase 11 (sign-in and account verification) was built from: email with a code, Google, password reset, the mailer, abuse limits, the console, the decisions (D1 to D17, T1 to T20), the facts read from vendors' documentation (U1 to U12), and the changelog (S1 to S6). Built through 11.4; the optional 11.5 (Microsoft) and the launch checklist are tracked in [process/roadmap.md](process/roadmap.md#launch-checklist-public-launch) | 🗄️ |
 | `ui-audit-screenshots/` | About 30 MB of audit screenshots. Gitignored, so it only exists on the machine that took them | 🗄️ |
 
 ## What changed in the last review

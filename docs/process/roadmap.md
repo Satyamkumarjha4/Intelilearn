@@ -6,6 +6,32 @@ Each phase ended with something runnable and checkable. Every phase was verified
 
 Tick items off as they land (a `CLAUDE.md` rule).
 
+## Launch checklist (public launch)
+
+The one list of what stands between the built app and a public launch of sign-in and account verification (phase 11; the reasons are in [the plan](../archive/signin-implementation-plan.md), D3 and sections 6 to 8). The other launch items (payments, tax, legal review) are under [Open work](#open-work). Tick a line when it is done and checked.
+
+**Only the owner can do these** (they need a domain, an account or a decision):
+
+- [ ] **Buy a domain** and choose where its DNS lives (the registrar or Cloudflare). **This blocks launch** (D3): Brevo needs a sender domain to authenticate.
+- [ ] **In Brevo, add the domain as a sender domain** (the exact menu path is U1: read Brevo's help page). Brevo shows the records to publish: **copy the values from Brevo, never from here**. Publish at the domain's DNS: the **domain-ownership TXT** record if Brevo asks for one; the **DKIM** record(s) Brevo shows (a CNAME or a TXT at a `…_domainkey` name); **one SPF TXT** at the root (a domain may have only one: if it has one, add Brevo's `include:` to it), ending `~all` at first; and a **DMARC TXT** at `_dmarc.<domain>`, starting `v=DMARC1; p=none; rua=mailto:<a mailbox you read>`. Read the reports for two to four weeks, then move to `p=quarantine`.
+- [ ] **Wait until Brevo marks the domain authenticated**, set `MAIL_BACKEND=brevo` and `MAIL_FROM=Socra <no-reply@<domain>>`, and send a test code to a Gmail, an Outlook and a few `.ac.in` or school addresses. In the message headers confirm **SPF, DKIM and DMARC all pass** and the mail is in the inbox, not spam (U12).
+- [ ] **Put the Brevo API key in the production environment only** (never in the repo or `.env.example`).
+- [ ] **Google Cloud:** create the project and the OAuth consent screen (app name, the domain, the contact address `satyamjha4@gmail.com`), set it **In production**, and create a **Web application** client with the exact redirect URI `<public site>/api/auth/oauth/google/callback`. Put the client id and secret in the production environment, with `AUTH_PROVIDERS_ENABLED=google` and `AUTH_PUBLIC_BASE_URL=<public site>` (the stand-in provider must stay off: checks `accounts.E005` to `E008` refuse it). Then **sign in once with the real client and check what 11.3 could not read from a page** (U4): that Google accepts the PKCE parameters (`code_challenge`, `code_verifier`) and that `openid email profile` shows no "unverified app" screen. Also try a sign-in from a school Google Workspace account.
+- [ ] **Update the Privacy Policy** for the mail provider (Brevo), Google, the Turnstile check if it is used, and the 30-day retention of the sign-up records and events, and bump its version ([legal/README.md](../legal/README.md)).
+- [ ] **Set `TRUSTED_PROXY_COUNT`** (and `EDGE_PROXY_HOPS` if more than one proxy stands in front of Next) for the real edge, then run **`make probe-proxy URL=https://<the public site>`** and read it: both cases must pass (a single forged `X-Forwarded-For` is not the address Django counted). If it fails, fix the edge before launch (the limits depend on it).
+- [ ] **Optional: Turnstile.** Create a Cloudflare Turnstile widget and put `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` in the production environment. It is **off at launch** and only switched on in the console (`/console/abuse`) if the board shows abuse, then watched: whether Indian visitors are shown a challenge more often can only be learned from real visitors (U10).
+- [ ] **Optional: automated live checks.** The plan's `mail_live` and `auth_live` pytest markers (T18) were **never built**; the two manual checks above (real mail headers, a real Google sign-in) stand in for them. Build them only if you want the checks repeatable.
+
+**Run on the production database** (these can be done with the assistant once the above exists):
+
+- [ ] **`manage.py require_reverification --keep-staff`** (try `--dry-run` first) if dev accounts exist on the production database, or start from an empty one.
+- [ ] **`manage.py grant_signup_credits --dry-run`** and read the report: it must say it skipped the unverified.
+
+**Last look before opening the door:**
+
+- [ ] The console's abuse board is empty and the Turnstile switch is **off** and understood; a Learners filter on Not verified and Legacy shows what you expect.
+- [ ] **Staff two-factor** is built before a second staff account exists (see Open work): until then a staff password can be reset by an emailed code alone.
+
 ## Open work
 
 Items carried over from the phases below, plus gaps found since. Nothing here blocks running the app locally.
@@ -28,8 +54,8 @@ Items carried over from the phases below, plus gaps found since. Nothing here bl
 
 **Credits and payments (left after phase 10)**
 
-- [ ] **Phase 11, sign-in methods, blocks public launch** (D15): until accounts are verified, each unverified account gets 30 free credits.
-- [ ] **Two-factor sign-in for staff accounts** (decided 2026-11-12; **must land before any second staff account exists**: until then a staff password can be reset by an emailed code alone; S3 of [the sign-in plan](../to_be_developed/signin-implementation-plan.md)): staff never sign in with Google or get linked to it (`REFUSE_STAFF`), so their password is the only door to the console; a second factor is a later phase, not Phase 11.
+- [x] Phase 11, sign-in and account verification, is built (phases 11.0 to 11.4; 11.5 is optional). **Public launch is still blocked on its [launch checklist](#launch-checklist-public-launch)**, which is the only place those steps are listed.
+- [ ] **Two-factor sign-in for staff accounts** (decided 2026-11-12; **must land before any second staff account exists**: until then a staff password can be reset by an emailed code alone; S3 of [the sign-in plan](../archive/signin-implementation-plan.md)): staff never sign in with Google or get linked to it (`REFUSE_STAFF`), so their password is the only door to the console; a second factor is a later phase, not Phase 11.
 - [ ] Run the live checks with fresh test keys: `make payments-live` and `make e2e-payments` (Stripe's test key supplied for 10.7 was expired; Razorpay's were never supplied). The selectors in the two browser specs for the providers' own pages are unverified.
 - [ ] Re-check Stripe's India onboarding and the RBI card rules before launch (D20); Razorpay is a configuration change if Stripe is not available. Decide the default gateway at launch.
 - [ ] A first real webhook test on a public address (a tunnel or staging) for each provider; until then the return page and the five-minute sweep settle payments.
@@ -259,14 +285,14 @@ Credits for the work that costs model calls, earned by studying, bought through 
 - [x] 10.7 Stripe adapter (test mode): `StripeGateway` over `httpx` with a pinned API version, signature and event reading, status lookup and refund; start-up safety checks (`payments.E004`, `E005`); the live checks wait on a working test key
 - [x] 10.8 Razorpay adapter (test mode): `RazorpayGateway` over `httpx`, signature and event reading (replay stopped by the event id), status lookup and refund with the admin form's idempotency token; `RazorpayCheckout` (on-page window, script loaded on demand, completion only navigates to the return page); the live checks wait on Razorpay test keys
 - [x] 10.9 Console (credits and prices, learner wallets, payments and refunds, revenue beside model cost), Terms and Privacy for credits and payments, `retakes_per_day` and `paise_per_credit` retired, the signup backfill, the credit gate and earning switched on by default, the spec moved to `architecture/` and the plan to `archive/`; Razorpay retry on, and the sweep that settles refunds
-- [ ] 11 Sign-in and account verification ([the plan](../to_be_developed/signin-implementation-plan.md)): **public launch is blocked on this**, because with credits on every unverified account gets 30 free credits (signup farming, D15)
+- [x] 11 Sign-in and account verification ([the plan](../archive/signin-implementation-plan.md)): built and closed, **apart from the optional 11.5 and the [launch checklist](#launch-checklist-public-launch)**. It was needed because with credits on every unverified account got 30 free credits (signup farming, D15)
   - [x] 11.0 Forwarded-header test and fix, `User` verification fields and canonical email, the mailer port and backends (Brevo, console, outbox), `OutboundMail`, `AuthSettings`, the system checks, the daily purge, the `Clock` port; learners see no change
   - [x] 11.1 Email with a code: pending signup and ticket, codes, `register` 202, `verify`, the verify screen, disposable list, backfill skips unverified
   - [x] 11.2 Password reset by code
   - [x] 11.3 Google: provider port, flow, linking, the last step (built against the stand-in provider; the real Google Cloud client comes before launch)
-  - [x] 11.4 Console (see, resend, unlock, mark verified, waiting list), abuse board, Turnstile switch (branch `phase-11/console`, not merged)
+  - [x] 11.4 Console (see, resend, unlock, mark verified, waiting list), abuse board, Turnstile switch on sign-up, resend and forgot-password, and a verification column, filter and counts on the Learners list
   - [ ] 11.5 Microsoft (optional, after its verified-email rule is written)
-  - [ ] Launch checklist (the plan, 12.7): the domain and its DNS, the Brevo key, Google Cloud, `require_reverification`, the proxy, the Privacy Policy
+  - [ ] The [launch checklist](#launch-checklist-public-launch) below
 
 ## Across phases
 
