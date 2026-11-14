@@ -350,6 +350,16 @@ AUTH_ALLOW_FAKE_PROVIDER = env.bool("AUTH_ALLOW_FAKE_PROVIDER", default=False)
 AUTH_PUBLIC_BASE_URL = env("AUTH_PUBLIC_BASE_URL", default=f"http://localhost:{env('FRONTEND_PORT', default='3000')}")
 GOOGLE_OAUTH_CLIENT_ID = env("GOOGLE_OAUTH_CLIENT_ID", default="")
 GOOGLE_OAUTH_CLIENT_SECRET = env("GOOGLE_OAUTH_CLIENT_SECRET", default="")  # a secret: environment only, never logged
+# The sign-up challenge (phase 11.4): off by default; the switch is a console setting (`AuthSettings`, audited), and
+# only these two keys come from the environment. The site key is public (the widget needs it); the secret is never
+# logged.
+TURNSTILE_SITE_KEY = env("TURNSTILE_SITE_KEY", default="")
+TURNSTILE_SECRET_KEY = env("TURNSTILE_SECRET_KEY", default="")
+# Which `CaptchaVerifier` answers when the switch is on (a dotted path; tests swap it for a fake).
+CAPTCHA_VERIFIER = "accounts.abuse.captcha.TurnstileVerifier"
+AUTH_EVENT_RETENTION_DAYS = env.int(
+    "AUTH_EVENT_RETENTION_DAYS", default=30
+)  # failed checks and refusals: IP and domain
 OAUTH_STATE_MINUTES = env.int("OAUTH_STATE_MINUTES", default=10)  # how long the lc_oauth cookie (state, nonce) lives
 OAUTH_FINISH_MINUTES = env.int(
     "OAUTH_FINISH_MINUTES", default=15

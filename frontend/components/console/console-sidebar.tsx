@@ -9,9 +9,11 @@ import {
   CpuIcon,
   LayoutDashboardIcon,
   type LucideIcon,
+  MailQuestionIcon,
   MessageSquareQuoteIcon,
   RouteIcon,
   ScrollTextIcon,
+  ShieldAlertIcon,
   SlidersHorizontalIcon,
   UsersIcon,
 } from "lucide-react";
@@ -38,6 +40,8 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   testimonials: MessageSquareQuoteIcon,
   payments: CreditCardIcon,
   learners: UsersIcon,
+  signups: MailQuestionIcon,
+  abuse: ShieldAlertIcon,
   audit: ScrollTextIcon,
 };
 

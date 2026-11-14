@@ -11,7 +11,8 @@
  *   a weak password reaches the caller as an error with its field messages
  * - `finishInfo` reads who is waiting at the last step of a first sign-in with a provider; `finish` posts the name, the
  *   terms and the browser's zone (left out when there is none), and an expired last step is an error with its code
- * - `resend` posts the email and purpose
+ * - `resend` posts the email and purpose, and the sign-up check's token only when there is one
+ * - `captcha` reads whether the check is on, and a look that fails is "off"
  * - `login` returns the user, and a `verification_required` answer reaches the caller as an error
  */
 import { describe, expect, test } from "bun:test";
@@ -118,5 +119,32 @@ describe("AuthApi", () => {
     const failure = await unverified.api.login("ada@example.com", "pw").catch((e) => e);
     expect(failure.code).toBe("verification_required");
     expect(failure.status).toBe(403);
+  });
+});
+
+describe("AuthApi and the sign-up check", () => {
+  test("resend sends the check's token only when there is one", async () => {
+    const { api, seen } = setup(() => json({}));
+
+    await api.resend("ada@example.com", "signup");
+    await api.resend("ada@example.com", "signup", "tok");
+
+    expect(seen.map((s) => s.body)).toEqual([
+      { email: "ada@example.com", purpose: "signup" },
+      { email: "ada@example.com", purpose: "signup", captcha_token: "tok" },
+    ]);
+  });
+
+  test("captcha reads whether the check is on", async () => {
+    const { api, seen } = setup(() => json({ enabled: true, site_key: "abc" }));
+
+    expect(await api.captcha()).toEqual({ enabled: true, site_key: "abc" });
+    expect(seen[0].path).toBe("/api/auth/captcha");
+  });
+
+  test("a check that cannot be read is treated as off", async () => {
+    const { api } = setup(() => json({ detail: "boom" }, 500));
+
+    expect(await api.captcha()).toEqual({ enabled: false, site_key: "" });
   });
 });

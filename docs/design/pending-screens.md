@@ -133,10 +133,9 @@ the maker's note), adapts to your level, progress, revise, pricing, FAQ, the fin
 - Still open for a designer: a photo for the maker's note (an "S" avatar stands in), and the sample quiz's other topics.
 
 
-## 11. Sign-in and account verification (Phase 11, planned)
+## 11. Sign-in and account verification (Phase 11)
 
-Nothing here is built. The screens are listed ahead of the code, each with the phase that builds it, so a designer sees the whole set
-first. The plan is [signin-implementation-plan.md](../to_be_developed/signin-implementation-plan.md) (section 9). Learners read
+Built through 11.4 (the screens marked 11.5 come with Microsoft, if it is built). The screens were listed ahead of the code, each with the phase that builds it, so a designer sees the whole set. The plan is [signin-implementation-plan.md](../to_be_developed/signin-implementation-plan.md) (section 9). Learners read
 "code" and "Check your email"; never OTP, pending, token or identity provider.
 
 | Screen | Where | What needs a look |
@@ -147,6 +146,7 @@ first. The plan is [signin-implementation-plan.md](../to_be_developed/signin-imp
 | Choose a new password (11.2) | `/auth/reset` | The code and the new password with the same checklist as sign-up |
 | One last step (11.3) | `/auth/finish` | After Google, for a new person: the Google address (read only), the name (prefilled), the terms checkbox with its links, one button. The time zone is taken from the browser and is not shown |
 | Emails (11.1, 11.2) | none (sent mail) | The code email, the "someone tried to sign up with your address" notice, the reset email and the "this address signs in with Google" notice. Plain, one large code, no buttons, no links that carry a token |
-| Console: verification (11.4) | `/console/learners`, the learner's page | A verified badge (and "legacy"), the sign-in methods, and a panel with the codes' history (never the code), the last emails, the lock, and three actions: resend, unlock, mark verified (a typed reason) |
-| Console: waiting for a code (11.4) | `/console/signups` | A list of sign-ups that have no account yet, with resend, unlock and approve (a typed reason) |
-| Console: sign-up abuse (11.4) | `/console/abuse` | Accounts, codes sent and failed checks per day; the top addresses and email domains of the last 24 hours; the Turnstile switch |
+| Console: a learner's sign-in (built in 11.4) | `/console/learners/{id}/verification`, linked from a "Sign-in" column on the Learners table | Three tiles (email verified and by whom, how they can sign in, the lock); tables of the last five codes (state and tries, never the code) and the last five emails; how the account was made; "Send a new code" and "Unlock this email"; and a "Mark the email verified" card that needs a typed reason and says to confirm the person out of band first. Built in the console's existing style, without a mockup |
+| Console: waiting for a code (built in 11.4) | `/console/signups` | A searchable table of sign-ups that have no account yet (when, live code and its tries, lock) with "Send a new code", "Unlock" and "Approve…"; approving opens a reason card above the table (the out-of-band warning, a typed reason) and then a green "Approved" card with the note that the person signs in with Google or by "Forgot password". Same style as the Learners page |
+| Console: sign-up abuse (built in 11.4) | `/console/abuse` | Four tiles (accounts made, wrong codes, waiting, locked emails), the sign-up-check switch (disabled with "Not set up" until the keys exist), a per-day table of the last 14 days, and two tables of the busiest client addresses and email domains. A table rather than a chart, so a designer may want a bar chart per day |
+| The sign-up check, only when staff switch it on (built in 11.4) | `/auth` (create tab) and `/auth/verify` | Cloudflare's Turnstile widget above the "Create account" button, and above "Send a new code" on the code screen. Drawn only when the console switch is on; the button waits for it. It is Cloudflare's own box, so a designer can only choose where it sits and its spacing |

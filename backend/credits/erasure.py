@@ -117,6 +117,10 @@ class UserDataMap:
         ),
         "accounts.PendingSignup (by email)": (ERASED, "a sign-up still waiting for its code, found by canonical email"),
         "accounts.EmailLock (by email)": (ERASED, "a lock on the canonical email is deleted"),
+        "accounts.AuthEvent (by address)": (
+            KEPT,
+            "a visitor's address and an email domain, never an email or a user; purged after 30 days",
+        ),
         "llm_registry.ModelCall": (ERASED, "deleted by lesson and quiz id with the lesson or quiz"),
         "LangGraph checkpoint tables": (ERASED, "the flow and quiz threads are deleted with the lesson or quiz"),
         "Redis caches": (ERASED, "idempotency answers and suggestion caches expire on their own within hours"),

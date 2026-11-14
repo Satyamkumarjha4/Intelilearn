@@ -6,6 +6,7 @@
   test needs a broker or sends anything; `mailbox` is where a test reads what was sent (`support/mail.py`).
 - `fake_google` / `oauth`: the stand-in sign-in provider switched on, and `oauth.sign_in({...})` to drive the whole
   dance through the real endpoints (`support/oauth.py`); `support/oidc.py` is a Google that signs real ID tokens.
+- `captcha_on`: the sign-up challenge switched on, answered by a fake that passes only the token `GOOD`.
 - `api_client`: a DRF APIClient with no credentials.
 - `signup`: registers and verifies through the real endpoints (`support/signup.py`); `new_browser()` is another visitor
   with their own cookies (to play an attacker beside a victim).
@@ -104,6 +105,21 @@ def oauth(api_client, django_capture_on_commit_callbacks, fake_google):
     from support.oauth import OAuthFlow
 
     return OAuthFlow(api_client, django_capture_on_commit_callbacks)
+
+
+@pytest.fixture
+def captcha_on(db, settings):
+    """The sign-up challenge switched on (as staff would in the console), answered by `support/captcha.py`'s fake: a
+    visitor passes only with `GOOD`."""
+    from support.captcha import FakeVerifier
+
+    from accounts.models import AuthSettings
+
+    settings.CAPTCHA_VERIFIER = "support.captcha.FakeVerifier"
+    settings.TURNSTILE_SITE_KEY = "site-key-for-the-widget"
+    AuthSettings.objects.update_or_create(pk=1, defaults={"captcha_enabled": True})
+    FakeVerifier.asked.clear()
+    return FakeVerifier
 
 
 @pytest.fixture

@@ -10,11 +10,12 @@ from .disposable import DisposableDomains
 
 
 class EmailRefused(Exception):
-    """The address cannot be used to sign up. `message` is what the person reads."""
+    """The address cannot be used to sign up. `message` is what the person reads; `reason` is for the abuse board
+    (`malformed` or `disposable`)."""
 
-    def __init__(self, message: str):
+    def __init__(self, message: str, reason: str = ""):
         super().__init__(message)
-        self.message = message
+        self.message, self.reason = message, reason
 
 
 class EmailRule(ABC):
@@ -30,7 +31,7 @@ class WellFormed(EmailRule):
         try:
             EmailCanonicalizer.of(email)
         except MalformedEmail as error:
-            raise EmailRefused(self.MESSAGE) from error
+            raise EmailRefused(self.MESSAGE, "malformed") from error
 
 
 class NotDisposable(EmailRule):
@@ -45,7 +46,7 @@ class NotDisposable(EmailRule):
 
     def check(self, email: str) -> None:
         if self.domains.blocks(email.strip().rpartition("@")[2]):
-            raise EmailRefused(self.MESSAGE)
+            raise EmailRefused(self.MESSAGE, "disposable")
 
 
 class EmailPolicy:

@@ -1,6 +1,19 @@
 from django.urls import path
 
-from .views import credits, erasure, overview, payments, people, registry, routing, runs, settings, testimonials, usage
+from .views import (
+    credits,
+    erasure,
+    overview,
+    payments,
+    people,
+    registry,
+    routing,
+    runs,
+    settings,
+    signin,
+    testimonials,
+    usage,
+)
 
 urlpatterns = [
     path("overview", overview.OverviewView.as_view(), name="console-overview"),
@@ -24,6 +37,30 @@ urlpatterns = [
     path("learners/<uuid:learner_id>/wallet", credits.WalletView.as_view(), name="console-wallet"),
     path("learners/<uuid:learner_id>/wallet/adjust", credits.WalletAdjustView.as_view(), name="console-wallet-adjust"),
     path("learners/<uuid:learner_id>/erasure", erasure.LearnerErasureView.as_view(), name="console-learner-erasure"),
+    path(
+        "learners/<uuid:learner_id>/verification", signin.LearnerVerificationView.as_view(), name="console-verification"
+    ),
+    path(
+        "learners/<uuid:learner_id>/verification/resend",
+        signin.LearnerVerificationResendView.as_view(),
+        name="console-verification-resend",
+    ),
+    path(
+        "learners/<uuid:learner_id>/verification/unlock",
+        signin.LearnerVerificationUnlockView.as_view(),
+        name="console-verification-unlock",
+    ),
+    path(
+        "learners/<uuid:learner_id>/verification/mark-verified",
+        signin.LearnerMarkVerifiedView.as_view(),
+        name="console-verification-mark",
+    ),
+    path("signups", signin.SignupListView.as_view(), name="console-signups"),
+    path("signups/<uuid:signup_id>/resend", signin.SignupResendView.as_view(), name="console-signup-resend"),
+    path("signups/<uuid:signup_id>/unlock", signin.SignupUnlockView.as_view(), name="console-signup-unlock"),
+    path("signups/<uuid:signup_id>/approve", signin.SignupApproveView.as_view(), name="console-signup-approve"),
+    path("abuse", signin.AbuseView.as_view(), name="console-abuse"),
+    path("auth-settings", signin.AuthSettingsView.as_view(), name="console-auth-settings"),
     path("credits", credits.CreditsView.as_view(), name="console-credits"),
     path("credits/prices/<str:key>", credits.PriceView.as_view(), name="console-credit-price"),
     path("credits/plans/<str:key>", credits.PlanView.as_view(), name="console-credit-plan"),

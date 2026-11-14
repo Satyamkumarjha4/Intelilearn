@@ -5,8 +5,9 @@ from django.utils import timezone
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
+from .abuse.events import AuthEvents
 from .emailrules.policy import EmailPolicy, EmailRefused
-from .models import Profile, User
+from .models import AuthEvent, Profile, User
 from .timezones import ProfileTimezone, TimeZoneNames
 from .verification.signup import SignupRequest
 
@@ -56,6 +57,9 @@ class RegisterSerializer(serializers.Serializer):
         try:
             self.policy.check(email)
         except EmailRefused as refused:
+            # The abuse board counts these: where from and which domain, never the address.
+            if refused.reason == "disposable":
+                AuthEvents().record(AuthEvent.Kind.DISPOSABLE_REFUSED, self.context.get("ip"), email)
             raise serializers.ValidationError(refused.message) from refused
         return email
 

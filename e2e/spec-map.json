@@ -16,6 +16,7 @@
     "console": [
       "console.spec.ts",
       "console-credits.spec.ts",
+      "console-signin.spec.ts",
       "landing.spec.ts"
     ]
   },

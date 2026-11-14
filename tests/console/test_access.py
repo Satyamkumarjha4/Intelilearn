@@ -18,6 +18,7 @@ Use cases:
 
 import io
 from contextlib import redirect_stderr
+from uuid import uuid4
 
 import pytest
 from django.core.management import call_command
@@ -70,6 +71,17 @@ def routes(registry, lesson, monkeypatch):
         ("patch", "/api/console/flow-settings", {"alignment_max_rounds": 3}),
         ("get", "/api/console/learners", None),
         ("get", "/api/console/audit", None),
+        ("get", f"/api/console/learners/{lesson.owner_id}/verification", None),
+        ("post", f"/api/console/learners/{lesson.owner_id}/verification/resend", None),
+        ("post", f"/api/console/learners/{lesson.owner_id}/verification/unlock", None),
+        ("post", f"/api/console/learners/{lesson.owner_id}/verification/mark-verified", {"reason": "Phoned them"}),
+        ("get", "/api/console/signups", None),
+        ("post", f"/api/console/signups/{uuid4()}/resend", None),
+        ("post", f"/api/console/signups/{uuid4()}/unlock", None),
+        ("post", f"/api/console/signups/{uuid4()}/approve", {"reason": "Confirmed by phone"}),
+        ("get", "/api/console/abuse", None),
+        ("get", "/api/console/auth-settings", None),
+        ("put", "/api/console/auth-settings", {"captcha_enabled": False}),
     ]
 
 
@@ -168,6 +180,11 @@ CONSOLE_PATHS = {
     "/api/console/payments/{order_id}/refund", "/api/console/refunds/{attempt_id}/mark-failed", "/api/console/revenue",
     "/api/console/learners/{learner_id}/erasure", "/api/console/testimonials",
     "/api/console/testimonials/reorder", "/api/console/testimonials/{testimonial_id}",
+    "/api/console/learners/{learner_id}/verification", "/api/console/learners/{learner_id}/verification/resend",
+    "/api/console/learners/{learner_id}/verification/unlock",
+    "/api/console/learners/{learner_id}/verification/mark-verified", "/api/console/signups",
+    "/api/console/signups/{signup_id}/resend", "/api/console/signups/{signup_id}/unlock",
+    "/api/console/signups/{signup_id}/approve", "/api/console/abuse", "/api/console/auth-settings",
 }  # fmt: skip
 
 

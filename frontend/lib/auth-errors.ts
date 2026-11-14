@@ -10,10 +10,14 @@ export class AuthErrors {
   /** The one answer for every failed code: the same words whatever was wrong, so they say nothing about the address. */
   static readonly INVALID_CODE = "That code didn't work. Check it, or ask for a new one.";
 
+  /** The sign-up check was missing or not passed (only when staff have switched it on). */
+  static readonly CAPTCHA_FAILED = "Please complete the security check and try again.";
+
   static message(error: unknown): string {
     if (!(error instanceof ApiError)) return NETWORK;
     if (error.code === "invalid_credentials") return "That email and password don't match. Check them and try again.";
     if (error.code === "invalid_code") return AuthErrors.INVALID_CODE;
+    if (error.code === "captcha_failed") return AuthErrors.CAPTCHA_FAILED;
     if (error.code === "verification_required") return "We sent you a code. Check your email to finish signing in.";
     if (error.status === 429) return `Too many tries. Please wait ${AuthErrors.wait(error.retryAfter)} and try again.`;
     return error.message;

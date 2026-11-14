@@ -1,4 +1,4 @@
-export type NavIcon = "overview" | "usage" | "runs" | "payments" | "models" | "routing" | "settings" | "credits" | "testimonials" | "learners" | "audit";
+export type NavIcon = "overview" | "usage" | "runs" | "payments" | "models" | "routing" | "settings" | "credits" | "testimonials" | "learners" | "signups" | "abuse" | "audit";
 export type NavItem = { key: NavIcon; label: string; href: string };
 export type NavSection = { label: string; items: NavItem[] };
 
@@ -28,6 +28,8 @@ export class ConsoleNav {
       label: "People",
       items: [
         { key: "learners", label: "Learners", href: "/console/learners" },
+        { key: "signups", label: "Waiting for a code", href: "/console/signups" },
+        { key: "abuse", label: "Sign-up abuse", href: "/console/abuse" },
         { key: "audit", label: "Change log", href: "/console/audit" },
       ],
     },

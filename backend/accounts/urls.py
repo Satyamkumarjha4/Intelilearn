@@ -10,6 +10,7 @@ urlpatterns = [
     path("auth/password/forgot", views.ForgotPasswordView.as_view(), name="auth-password-forgot"),
     path("auth/password/reset", views.ResetPasswordView.as_view(), name="auth-password-reset"),
     path("auth/providers", views.ProvidersView.as_view(), name="auth-providers"),
+    path("auth/captcha", views.CaptchaConfigView.as_view(), name="auth-captcha"),
     path("auth/oauth/finish", views.OAuthFinishView.as_view(), name="auth-oauth-finish"),
     path("auth/oauth/<str:provider>/start", views.OAuthStartView.as_view(), name="auth-oauth-start"),
     path("auth/oauth/<str:provider>/callback", views.OAuthCallbackView.as_view(), name="auth-oauth-callback"),

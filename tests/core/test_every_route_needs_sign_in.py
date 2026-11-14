@@ -33,6 +33,7 @@ OPEN = {
     "api/auth/password/forgot": "asks for a code to choose a new password (always 202, rate limited)",
     "api/auth/password/reset": "chooses a new password with the emailed code (the code is the credential)",
     "api/auth/providers": "which sign-in buttons the screens draw, asked before there is a session",
+    "api/auth/captcha": "whether the sign-up screens show the challenge, and its public key",
     "api/auth/oauth/<str:provider>/start": "sends the browser to the provider (a navigation; the state binds it)",
     "api/auth/oauth/<str:provider>/callback": "where the provider sends the person back (the signed state checks it)",
     "api/auth/oauth/finish": "the last step of a first sign-in with a provider (the signed lc_finish ticket)",

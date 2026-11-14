@@ -5,7 +5,8 @@
  * "0" or "1043" would send a maintainer the wrong way or cry wolf.
  *
  * Use cases:
- * - three sections (Monitor, Configure, People) with the eleven pages, in order, each with a path under /console
+ * - three sections (Monitor, Configure, People) with the thirteen pages, in order, each with a path under /console
+ *   (People: learners, the sign-ups waiting for a code, sign-up abuse, the change log)
  * - the overview is current only on /console; the others are current on their page and below it
  * - a look-alike path ("/console/usagefoo") is not a page; a trailing slash does not matter
  * - a path finds its item
@@ -16,14 +17,14 @@ import { describe, expect, test } from "bun:test";
 import { ConsoleNav } from "./console-nav";
 
 describe("ConsoleNav", () => {
-  test("has the three sections and eleven pages", () => {
+  test("has the three sections and thirteen pages", () => {
     expect(ConsoleNav.SECTIONS.map((s) => [s.label, s.items.map((i) => i.label)])).toEqual([
       ["Monitor", ["Overview", "Usage & cost", "Lesson runs", "Payments"]],
       ["Configure", ["Models", "Model routing", "Lesson settings", "Credits & prices", "Testimonials"]],
-      ["People", ["Learners", "Change log"]],
+      ["People", ["Learners", "Waiting for a code", "Sign-up abuse", "Change log"]],
     ]);
     expect(ConsoleNav.items().every((i) => i.href === "/console" || i.href.startsWith("/console/"))).toBe(true);
-    expect(new Set(ConsoleNav.items().map((i) => i.href)).size).toBe(11);
+    expect(new Set(ConsoleNav.items().map((i) => i.href)).size).toBe(13);
   });
 
   test.each([

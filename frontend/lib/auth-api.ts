@@ -1,4 +1,5 @@
 import { apiClient, type ApiClient } from "@/lib/api";
+import { type CaptchaConfig, CaptchaRules } from "@/lib/captcha";
 import type { User } from "@/lib/types";
 
 export type CodePurpose = "signup" | "login";
@@ -44,8 +45,18 @@ export class AuthApi {
     return (await this.client.request<{ user: User }>("/auth/oauth/finish", { method: "POST", body })).user;
   }
 
-  /** Ask for a new code. Always accepted; a refusal is a 429 with `Retry-After`. */
-  async resend(email: string, purpose: CodePurpose): Promise<void> {
-    await this.client.request("/auth/verify/resend", { method: "POST", body: { email, purpose } });
+  /** Ask for a new code. Always accepted; a refusal is a 429 with `Retry-After`, or a 400 `captcha_failed` when the
+   *  sign-up check is on and `captchaToken` is missing or did not pass. */
+  async resend(email: string, purpose: CodePurpose, captchaToken: string | null = null): Promise<void> {
+    await this.client.request("/auth/verify/resend", { method: "POST", body: CaptchaRules.withToken({ email, purpose }, captchaToken) });
+  }
+
+  /** Whether the sign-up check is on. A failed look is "off": the server is what insists on the check. */
+  async captcha(): Promise<CaptchaConfig> {
+    try {
+      return CaptchaRules.parse(await this.client.request("/auth/captcha"));
+    } catch {
+      return CaptchaRules.OFF;
+    }
   }
 }

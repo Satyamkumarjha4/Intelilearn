@@ -8,7 +8,7 @@ from django.conf import settings
 from django.db.models import Q
 
 from .clock import Clock, SystemClock
-from .models import OutboundMail, PendingSignup, SignupRecord, VerificationCode
+from .models import AuthEvent, OutboundMail, PendingSignup, SignupRecord, VerificationCode
 
 
 @dataclass(frozen=True)
@@ -17,6 +17,7 @@ class PurgeReport:
     pending: int = 0  # sign-ups that never got their code, and their codes
     codes: int = 0  # spent, dead or expired codes
     signup_records: int = 0  # where-from records of accounts
+    events: int = 0  # failed checks, refused throwaway addresses and failed challenges (an address and a domain each)
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -41,6 +42,9 @@ class AccountsPurge:
             pending=self._delete(PendingSignup.objects.filter(expires_at__lt=now)),  # its codes go with it
             codes=self._delete(spent_codes),
             signup_records=self._delete(old_records),
+            events=self._delete(
+                AuthEvent.objects.filter(created_at__lt=now - timedelta(days=settings.AUTH_EVENT_RETENTION_DAYS))
+            ),
         )
 
     @staticmethod

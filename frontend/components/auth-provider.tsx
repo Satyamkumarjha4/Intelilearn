@@ -15,7 +15,7 @@ type AuthState = {
   loading: boolean;
   login: (email: string, password: string) => Promise<User>;
   /** Starts a sign-up: a code is emailed and nothing exists yet, so there is no user until `verify`. */
-  register: (name: string, email: string, password: string, acceptTerms: boolean) => Promise<void>;
+  register: (name: string, email: string, password: string, acceptTerms: boolean, captchaToken?: string | null) => Promise<void>;
   /** Chooses a new password with the emailed code, which also signs the person in. */
   reset: (email: string, code: string, newPassword: string) => Promise<User>;
   /** Enters the emailed code: the account is made (a sign-up) or verified (a sign-in) and the person is signed in. */
@@ -67,8 +67,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const register = useCallback(
-    (name: string, email: string, password: string, acceptTerms: boolean) =>
-      api.register(AuthRules.registerBody({ name, email, password }, acceptTerms, BrowserTimezone.detect())),
+    (name: string, email: string, password: string, acceptTerms: boolean, captchaToken: string | null = null) =>
+      api.register(AuthRules.registerBody({ name, email, password }, acceptTerms, BrowserTimezone.detect(), captchaToken)),
     [api],
   );
 

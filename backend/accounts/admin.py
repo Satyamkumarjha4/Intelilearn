@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
-from .models import Profile, User
+from .models import AuthEvent, AuthSettings, Profile, SignupRecord, User
 
 
 class ProfileInline(admin.StackedInline):
@@ -46,3 +46,39 @@ class UserAdmin(BaseUserAdmin):
     add_fieldsets = [
         (None, {"classes": ["wide"], "fields": ["email", "name", "password1", "password2"]}),
     ]
+
+
+class ReadOnlyAdmin(admin.ModelAdmin):
+    """For tables the app writes and a person only reads: the records behind the abuse board. Nothing can be added,
+    changed or deleted here, so an entry cannot be forged or removed to hide what happened (a switch that staff may
+    change is changed in the console, where it is audited)."""
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(SignupRecord)
+class SignupRecordAdmin(ReadOnlyAdmin):
+    list_display = ["created_at", "method", "email_domain", "ip", "user"]
+    list_filter = ["method"]
+    search_fields = ["email_domain", "ip"]
+    date_hierarchy = "created_at"
+
+
+@admin.register(AuthEvent)
+class AuthEventAdmin(ReadOnlyAdmin):
+    list_display = ["created_at", "kind", "email_domain", "ip"]
+    list_filter = ["kind"]
+    search_fields = ["email_domain", "ip"]
+    date_hierarchy = "created_at"
+
+
+@admin.register(AuthSettings)
+class AuthSettingsAdmin(ReadOnlyAdmin):
+    list_display = ["__str__", "captcha_enabled", "updated_at"]

@@ -358,6 +358,7 @@ class SignupRecord(models.Model):
         CODE = "code", "Email with a code"
         GOOGLE = "google", "Google"
         MICROSOFT = "microsoft", "Microsoft"
+        STAFF = "staff", "Approved in the console"
 
     user = models.ForeignKey(User, on_delete=models.PROTECT, related_name="signup_records")
     ip = models.GenericIPAddressField(null=True, blank=True)
@@ -392,3 +393,27 @@ class ExternalIdentity(models.Model):
 
     def __str__(self):
         return f"{self.provider} identity of {self.user_id}"
+
+
+class AuthEvent(models.Model):
+    """Something the abuse board counts that has no account to hang on: a sign-up refused for a throwaway address, a
+    code check that failed, a challenge that was not passed. It holds the visitor's address and the email's **domain**
+    (never the address itself) and nothing that names a person, so it has no relation to a user; it is purged after 30
+    days."""
+
+    class Kind(models.TextChoices):
+        DISPOSABLE_REFUSED = "disposable_refused", "A throwaway email address was refused"
+        CHECK_FAILED = "check_failed", "A code was entered wrongly"
+        CAPTCHA_FAILED = "captcha_failed", "The sign-up challenge was not passed"
+
+    kind = models.CharField(max_length=20, choices=Kind.choices)
+    ip = models.GenericIPAddressField(null=True, blank=True)
+    email_domain = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["kind", "-created_at"]), models.Index(fields=["ip", "-created_at"])]
+
+    def __str__(self):
+        return f"{self.kind} from {self.ip or 'an unknown address'}"

@@ -12,6 +12,7 @@
  *   general words, and no error means no card
  * - the waits read as seconds or minutes, singular and plural
  * - `needsCode` is true only for the `verification_required` error
+ * - a missing or failed sign-up check (`captcha_failed`) says to complete the security check, in plain words
  */
 import { describe, expect, test } from "bun:test";
 
@@ -28,6 +29,11 @@ describe("message", () => {
     expect(AuthErrors.message(error(403, "verification_required"))).toBe("We sent you a code. Check your email to finish signing in.");
     expect(AuthErrors.message(error(429, "throttled", "x", 30))).toBe("Too many tries. Please wait 30 seconds and try again.");
     expect(AuthErrors.message(error(429, "throttled"))).toBe("Too many tries. Please wait a minute and try again.");
+  });
+
+  test("a missing or failed sign-up check says to complete the security check", () => {
+    expect(AuthErrors.message(error(400, "captcha_failed"))).toBe("Please complete the security check and try again.");
+    expect(AuthErrors.CAPTCHA_FAILED).not.toMatch(/captcha|turnstile|token/i);
   });
 
   test("no network, or something that is not an API error", () => {

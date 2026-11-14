@@ -19,13 +19,15 @@ from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.settings import api_settings as jwt_settings
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
+from .abuse.captcha import CaptchaGate
+from .abuse.events import AuthEvents
 from .authentication import CookieJWTAuthentication
 from .cookies import AuthCookies
 from .identity.provider import ProviderError
 from .identity.registry import IdentityProviders
 from .identity.signin import FinishRefused, OAuthSignIn
 from .identity.state import FinishState, OAuthState
-from .models import OutboundMail, User
+from .models import AuthEvent, OutboundMail, User
 from .options import ProfileOptions
 from .redirect import RedirectPolicy
 from .serializers import (
@@ -94,6 +96,10 @@ _providers_envelope = {
         }
     },
 }
+_captcha_envelope = {
+    "type": "object",
+    "properties": {"enabled": {"type": "boolean"}, "site_key": {"type": "string"}},
+}
 _finish_info_envelope = {"type": "object", "properties": {"email": {"type": "string"}, "name": {"type": "string"}}}
 
 
@@ -151,11 +157,13 @@ class RegisterView(_PublicAuthView):
         responses={202: OpenApiResponse(_verification_envelope, description="A code was emailed (or its owner told)")},
     )
     def post(self, request):
-        serializer = RegisterSerializer(data=request.data)
+        ip = self.client_address(request)
+        serializer = RegisterSerializer(data=request.data, context={"ip": ip})
         serializer.is_valid(raise_exception=True)
         signup = serializer.signup_request()
+        CaptchaGate().check(request.data.get("captcha_token"), ip)  # only when the console has switched it on
         CodeLimits().enforce(request, self, signup.email, CodeLimits.SEND)
-        started = SignupVerification().start(signup, ip=self.client_address(request))
+        started = SignupVerification().start(signup, ip=ip)
         response = Response({"status": "verification_required"}, status=status.HTTP_202_ACCEPTED)
         AuthCookies().set_signup_ticket(response, started.ticket, SignupTicket().settings.ticket_ttl)
         return response
@@ -188,6 +196,7 @@ class VerifyView(_PublicAuthView):
         else:
             user = LoginVerification().confirm(email, code)
         if user is None:
+            AuthEvents().record(AuthEvent.Kind.CHECK_FAILED, self.client_address(request), email)
             raise InvalidCode()
         update_last_login(None, user)
         response = self.signed_in_response(user)
@@ -213,8 +222,9 @@ class VerifyResendView(_PublicAuthView):
         serializer = ResendSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         email, purpose = serializer.validated_data["email"], serializer.validated_data["purpose"]
-        CodeLimits().enforce(request, self, email, CodeLimits.SEND)
         ip = self.client_address(request)
+        CaptchaGate().check(request.data.get("captcha_token"), ip)  # only when the console has switched it on
+        CodeLimits().enforce(request, self, email, CodeLimits.SEND)
         if purpose == "signup":
             SignupVerification().resend(email, request.COOKIES.get(SignupTicket.COOKIE), ip=ip)
         else:
@@ -275,6 +285,7 @@ class ResetPasswordView(_PublicAuthView):
         CodeLimits().enforce(request, self, email, CodeLimits.CHECK)
         user = PasswordReset().confirm(email, code, new_password)
         if user is None:
+            AuthEvents().record(AuthEvent.Kind.CHECK_FAILED, self.client_address(request), email)
             raise InvalidCode()
         update_last_login(None, user)
         return self.signed_in_response(user)
@@ -328,6 +339,28 @@ class ProvidersView(APIView):
     def get(self, request):
         providers = [{"key": p.key, "label": p.display_name} for p in IdentityProviders().enabled()]
         return Response({"providers": providers})
+
+
+class CaptchaConfigView(APIView):
+    """Whether the sign-up screens should show the challenge, and the public key to draw it with."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "public_pages"
+
+    @extend_schema(
+        tags=AUTH_TAG,
+        summary="Is the sign-up challenge on?",
+        description=(
+            "`{enabled, site_key}`. `enabled` is the console's switch; the `site_key` is the public key of the widget "
+            "(empty when off). When on, `register` and `verify/resend` need a `captcha_token` from the widget and "
+            "answer `400 captcha_failed` for a missing or failed one."
+        ),
+        responses={200: OpenApiResponse(_captcha_envelope)},
+    )
+    def get(self, request):
+        return Response(CaptchaGate().public_config())
 
 
 class _OAuthView(APIView):

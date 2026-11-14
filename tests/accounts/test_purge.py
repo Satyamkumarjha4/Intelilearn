@@ -12,6 +12,7 @@ Use cases:
 - a pending sign-up past its expiry goes with its codes; a live one stays
 - spent, dead and expired codes go after `CODE_LOG_RETENTION_DAYS`; recent ones and live ones stay
 - where-from records go after `SIGNUP_RECORD_RETENTION_DAYS`
+- failed checks and refusals (an address and a domain each) go after `AUTH_EVENT_RETENTION_DAYS`
 - the Celery task runs the purge and reports the counts
 """
 
@@ -125,6 +126,18 @@ def test_where_from_records_go_after_thirty_days(settings, user, other_user):
     ]
 
 
+def test_failed_checks_and_refusals_go_after_thirty_days(settings):
+    from accounts.models import AuthEvent
+
+    settings.AUTH_EVENT_RETENTION_DAYS = 30
+    for days in (31, 29):
+        AuthEvent.objects.create(kind="check_failed", ip="203.0.113.1", created_at=NOW - timedelta(days=days))
+
+    report = AccountsPurge(clock=FakeClock(NOW)).run()
+
+    assert report.events == 1 and AuthEvent.objects.count() == 1
+
+
 def test_the_celery_task_runs_the_purge(settings):
     settings.MAIL_LOG_RETENTION_DAYS = 0
     OutboundMail.objects.create(
@@ -132,4 +145,4 @@ def test_the_celery_task_runs_the_purge(settings):
     )
 
     assert purge.name == "accounts.purge"
-    assert purge.apply().get() == {"mail": 1, "pending": 0, "codes": 0, "signup_records": 0}
+    assert purge.apply().get() == {"mail": 1, "pending": 0, "codes": 0, "signup_records": 0, "events": 0}

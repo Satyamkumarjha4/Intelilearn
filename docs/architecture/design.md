@@ -284,6 +284,7 @@ classDiagram
   - `User` carries `email_verified_at`, `email_verification_source` and `email_canonical` (unique). `EmailCanonicalizer` (`emailrules/canonical.py`, a pure class) says when two addresses are one inbox; the address stays as typed in `email`. `User.save()` keeps the canonical form true and **clears the proof if a saved user's email ever changes** (nothing lets a learner change it today; the admin field is read-only after creation). `UserManager.create_user(verified=True)` and `createsuperuser` stamp the proof with source `operator`; only the sources `code`, `google` and `microsoft` count as proved by the owner (`User.PROVED_BY_OWNER`).
   - **Mail** (`accounts/mail/`): `Mailer` is the port (Strategy), `MailBackends` the registry chosen by `MAIL_BACKEND` (the pattern of `PaymentGateways`), with `BrevoMailer` (an `httpx` client of Brevo's API), `ConsoleMailer` (development: the message goes to the log, refused with `DJANGO_DEBUG` off) and `OutboxMailer` (the throwaway stack: the mail log keeps the text). `MailTemplates` builds the five emails (code in the body, never in the subject, no links). `MailQueue` logs an `OutboundMail` row and, after the transaction commits, queues the Celery task `accounts.send_mail`; `MailDelivery` sends it, retries what is transient and records what happened (a short reason, never a code). `MailSafety` is the system checks `accounts.E001` to `E004`.
   - **Verification** (`accounts/verification/`, phase 11.1): `SignupVerification` (Facade: `start` keeps a pending sign-up and mails a code, or mails the owner of a known address a notice; `confirm` turns it into the account when the right code arrives with the signup ticket; `resend`), `LoginVerification` (the same for an existing unverified account), `AccountActivation` (**the only sender of `account_ready`**, after the account's transaction), `CodeIssuer` (a new code cancels the old; an advisory lock `DbLock` makes two sends take turns), `CodeChecker` (**the try is counted in the database before the compare**; one failure answer), `CodeHasher` (a keyed hash), `EmailLocks`, `SignupTicket` (the signed `lc_signup` value), `VerificationSettings` (the numbers, from settings). `emailrules/`: `EmailPolicy` (Chain of responsibility: `WellFormed`, `NotDisposable`), `DisposableDomains` (the vendored snapshot and the school allow-list, which wins), `MajorProviders` (never blocked), `DisposableSnapshot` (`manage.py refresh_disposable_domains`). `CodeLimits` and the `Code*Throttle` classes (`throttling.py`) are the per-email and per-address limits, keyed on the canonical email and spent only after validation. `PasswordReset` (phase 11.2: `start` mails a reset code only to an active account that can use one, or the "sign in with Google" notice to a provider-only account, and nothing to any other address; `confirm` checks the code, sets the password, ends every older session through `RefreshTokens.revoke_all`, and counts the reset as proof of the inbox through `AccountActivation.prove`; `check_password` judges a new password against the typed address only, so the answer tells nothing), `IdentityLinks` (`identity/links.py`: does an account sign in with a provider). **Identity** (`accounts/identity/`, phase 11.3): `IdentityProvider` is the port (Strategy; `start` builds the address to send the person to, `complete` turns the callback into a `VerifiedIdentity`, and **a provider decides for itself whether the email is verified**), `IdentityProviders` the registry chosen by `AUTH_PROVIDERS_ENABLED` (the pattern of `PaymentGateways` and `MailBackends`), `GoogleProvider` (the server-side authorization-code flow with `state`, `nonce` and PKCE `S256`: the code is exchanged by us with the client secret, no token reaches the browser; only `email_verified` as the boolean `true` or the exact string `"true"` counts) and `FakeProvider` (a stand-in for the throwaway stack that answers the redirect itself with a named identity; refused in production by system checks `accounts.E005` and `E006`, with `E007` an unknown key and `E008` a provider missing its settings). `IdTokenValidator` (PyJWT: the algorithm is read from the header and refused unless on the list **before** a key is looked up, then signature, issuer, audience, expiry and an always-checked nonce) with `JwksSource` (`HttpJwks` caches by the response's `max-age` and refetches an unknown `kid` at most once a minute; `StaticJwks`). `OAuthState` and `FinishState` seal the two short-lived signed cookies (`lc_oauth`, `lc_finish`) and the PKCE pair. `LinkPolicy` (pure, a Strategy-free decision table: `REFUSE_UNVERIFIED_EMAIL`, `SIGN_IN`, `REFUSE_CLOSED`, `REFUSE_STAFF`, `REFUSE_OTHER_IDENTITY`, `LINK_AND_SIGN_IN` only for an email its **owner** proved (`code`, `google`, `microsoft`), `TAKE_OVER` for every other source, `NEEDS_FINISH`). `OAuthSignIn` is the Facade the three views call (`start`, `callback`, `finish`): it looks up, asks `LinkPolicy`, and acts under an advisory lock on the identity and the email, through `AccountActivation` (`create_from_identity`, `link`, `take_over`). `RedirectPolicy` (`accounts/redirect.py`) turns an untrusted `next` into a path on this site. `manage.py require_reverification` sets legacy accounts back to unverified before launch. `RegisterSerializer._announce` moved into `AccountActivation`.
+  - **Abuse and the sign-up check** (`accounts/abuse/`, phase 11.4): `CaptchaVerifier` (`NoCaptcha`, `TurnstileVerifier`), `CaptchaGate`, `AuthEvents`, `SignupRecords` and `AbuseCounters`, with the console's side (`LearnerVerification`, `PendingSignups`, `AbuseBoard`, `ChallengeSwitch`) in [§4.16](#416-console-the-staff-api).
   - `Clock` / `SystemClock` (`clock.py`) is the one source of "now" for sign-in code. `AccountsPurge` (task `accounts.purge`, daily on beat) deletes mail log rows past `MAIL_LOG_RETENTION_DAYS`. `AuthSettings` is the console's singleton of sign-in switches. `core.checks.DeploySecurityChecks.proxy_count` (`core.E002`) wants `TRUSTED_PROXY_COUNT` set on purpose in a deployment.
   - The `/api` proxy picks the client address with `ClientAddress` (`frontend/lib/client-address.ts`): the last `X-Forwarded-For` entry, or the Nth from the right (`EDGE_PROXY_HOPS`).
 
@@ -1839,6 +1840,84 @@ classDiagram
 - **Adapter**: `ModelProbeService` runs the same `CapabilityProbe`s as `probe_models`, one at a time under one 20-second deadline (each client gets the time left), because `ModelProber` gives every probe the whole timeout. `UsageCsv` streams rows through a `csv.writer` over an `Echo` buffer.
 - **Views** are thin: `ConsoleAccess` gives them staff-only access (404, never 403), the `console` throttle, `Cache-Control: no-store` and the audit trail; serializers (`console/serializers.py`) describe the shapes for Swagger and reject fields that cannot be set (`RejectUnknownFields`). A guard test fails when an endpoint that changes something is added without an audit test.
 - The timeline is derived from `GraphRun.node_timings`, which `GraphRunRecorder.record` fills as node events arrive (first start, latest finish, retry count); `NodePhases` places a node in a phase by the module that defines it. [api.md](../reference/api.md#console-staff-only) has the derivation and every endpoint.
+
+#### Sign-in in the console and the abuse board (phase 11.4)
+
+```mermaid
+classDiagram
+    direction LR
+    class CaptchaVerifier {
+        <<abstract>>
+        +passes(token, ip) bool
+        +missing_config() str[]
+    }
+    class NoCaptcha
+    class TurnstileVerifier {
+        +SITEVERIFY_URL
+        +passes(token, ip) bool
+    }
+    class CaptchaGate {
+        +check(token, ip)
+        +public_config() dict
+        +verifier()$ CaptchaVerifier
+    }
+    class AuthEvents {
+        +record(kind, ip, email)
+    }
+    class SignupRecords {
+        +record(user, ip, method)
+        +of(user) SignupRecord
+    }
+    class AbuseCounters {
+        +daily(days) DayRow[]
+        +top_addresses(hours, limit) TopEntry[]
+        +top_domains(hours, limit) TopEntry[]
+        +locked_emails() int
+    }
+    class AbuseBoard {
+        +report() dict
+    }
+    class ChallengeSwitch {
+        +state()$ dict
+        +set(enabled) dict
+    }
+    class LearnerVerification {
+        +panel(id) dict
+        +resend(id) dict
+        +unlock(id) dict
+        +mark_verified(id, reason) dict
+    }
+    class PendingSignups {
+        +queryset(search)$ QuerySet
+        +resend(id) dict
+        +unlock(id) dict
+        +approve(id, reason) dict
+    }
+    class AccountActivation {
+        +create_approved(pending) User
+        +verify_existing(user, source) bool
+        +announce(user)$
+    }
+    class AuditTrail
+    CaptchaVerifier <|-- NoCaptcha
+    CaptchaVerifier <|-- TurnstileVerifier
+    CaptchaGate ..> CaptchaVerifier : chosen by CAPTCHA_VERIFIER
+    CaptchaGate ..> AuthEvents : a failure is counted
+    AbuseBoard o-- AbuseCounters
+    AbuseBoard ..> ChallengeSwitch
+    ChallengeSwitch o-- AuditTrail
+    ChallengeSwitch ..> CaptchaGate
+    LearnerVerification o-- AuditTrail
+    LearnerVerification o-- AccountActivation
+    PendingSignups o-- AuditTrail
+    PendingSignups o-- AccountActivation
+```
+
+- **Null object + Strategy (the sign-up check).** `CaptchaVerifier` is the port; `NoCaptcha` always says yes and `TurnstileVerifier` asks Cloudflare's Siteverify (`secret`, `response`, and `remoteip`; a token over 2048 characters is refused without asking; **any answer that is not a clear `success: true`, including a network error, a non-200, a body that is not a JSON object, is a refusal: it fails closed**). `CaptchaGate` is what `register` and `resend` call: with the switch off it does nothing, with it on it refuses a missing or failed challenge **before anything is sent or kept**, and records a `captcha_failed` event. `CAPTCHA_VERIFIER` names the class, so a test swaps in a fake without `mock.patch`. The keys are environment only; the switch is `AuthSettings.captcha_enabled`, changed through `ChallengeSwitch` (audited, and refusing to switch on without both keys: a challenge nobody can pass would lock every new person out).
+- **Counting never blocks.** `AuthEvents.record` stores a client address and the email's **domain** (never the address) and swallows and logs its own failure, so a database hiccup in the counter cannot refuse a visitor. `SignupRecords.record` is called by `AccountActivation` for every way an account is made (code, Google, staff). `AbuseCounters` reads the mail log (`OutboundMail`), `SignupRecord`, `AuthEvent` and `EmailLock`; days are UTC, a quiet day is a row of zeros, and a window is a window. The daily `accounts.purge` deletes events and records older than their retention.
+- **Template of a support action** (`LearnerVerification`, `PendingSignups`): lock the row (`select_for_update`), check the state and refuse the wrong one with a 409 whose `code` a screen can say, do the change, write the `AuditTrail` entry in the same transaction, and return the new state. The one action that vouches for a person (`mark_verified`, `approve`) needs a typed reason of at least 10 characters, kept in the entry, and **announces the account through `AccountActivation.announce` after the commit**, so the signup credits (keyed on the learner) are given exactly once however many staff press it.
+- **`approve` never copies the password hash.** `AccountActivation.create_approved` makes the user with `set_unusable_password()`, source `staff`, record method `staff`, and deletes the pending row. The reply carries the out-of-band note. The change log holds the **domain**, never the address of a sign-up (there is no account to erase it with).
+- **`ReadOnlyAdmin`** (`accounts/admin.py`) registers `SignupRecord`, `AuthEvent` and `AuthSettings` with no add, change or delete.
 
 ### 4.17 `graph`: levels, difficulties and score bands (Phase 9, modular lessons)
 

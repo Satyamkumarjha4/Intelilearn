@@ -6,13 +6,16 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
+import { CaptchaWidget } from "@/components/captcha-widget";
 import { FormField } from "@/components/form-field";
 import { ProviderButtons } from "@/components/provider-buttons";
+import { useCaptchaConfig } from "@/components/use-captcha-config";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError, type FieldErrors } from "@/lib/api";
 import { AuthErrors } from "@/lib/auth-errors";
+import { CaptchaRules } from "@/lib/captcha";
 import { AuthRules, type Mode } from "@/lib/auth-form";
 import { PendingEmail } from "@/lib/pending-email";
 import { cn } from "@/lib/utils";
@@ -29,6 +32,10 @@ export function AuthForm({ initialMode, next, refused }: { initialMode: Mode; ne
   const [password, setPassword] = useState("");
   const [shown, setShown] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  // The sign-up check, only when staff have switched it on (it is drawn, and waited for, only then).
+  const captcha = useCaptchaConfig();
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaRound, setCaptchaRound] = useState(0);
   const id = useId();
   const copy = AuthRules.COPY[mode];
 
@@ -58,7 +65,13 @@ export function AuthForm({ initialMode, next, refused }: { initialMode: Mode; ne
     try {
       if (mode === "register") {
         // No account yet: a code is on its way, and the next screen asks for it.
-        await register(values.name.trim(), values.email, values.password, acceptedTerms);
+        try {
+          await register(values.name.trim(), values.email, values.password, acceptedTerms, captchaToken);
+        } finally {
+          // A token works once, so whatever the answer, the next try needs a new check.
+          setCaptchaToken(null);
+          setCaptchaRound((n) => n + 1);
+        }
         new PendingEmail().save(values.email);
         router.push(AuthRules.verifyHref(next));
         return;
@@ -221,7 +234,8 @@ export function AuthForm({ initialMode, next, refused }: { initialMode: Mode; ne
                   )}
                 </div>
               )}
-              <Button type="submit" size="lg" disabled={submitting} className="mt-1 h-11">
+              {mode === "register" && <CaptchaWidget config={captcha} onToken={setCaptchaToken} resetKey={captchaRound} />}
+              <Button type="submit" size="lg" disabled={submitting || (mode === "register" && !CaptchaRules.canSend(captcha, captchaToken))} className="mt-1 h-11">
                 {submitting ? copy.pending : copy.submit}
               </Button>
             </form>

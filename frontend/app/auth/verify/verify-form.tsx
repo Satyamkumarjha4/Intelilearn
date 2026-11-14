@@ -7,13 +7,16 @@ import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react"
 
 import { useAuth } from "@/components/auth-provider";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { CaptchaWidget } from "@/components/captcha-widget";
 import { CodeBoxes } from "@/components/code-boxes";
 import { ProviderButtons } from "@/components/provider-buttons";
+import { useCaptchaConfig } from "@/components/use-captcha-config";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
 import { AuthApi, type CodePurpose } from "@/lib/auth-api";
 import { AuthErrors } from "@/lib/auth-errors";
 import { AuthRules } from "@/lib/auth-form";
+import { CaptchaRules } from "@/lib/captcha";
 import { CodeEntry } from "@/lib/code-entry";
 import { PendingEmail } from "@/lib/pending-email";
 import { ResendClock } from "@/lib/resend-clock";
@@ -33,6 +36,10 @@ export function VerifyForm({ purpose, next }: { purpose: CodePurpose; next: stri
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  // The sign-up check, only when staff have switched it on: a new code is asked for with it.
+  const captcha = useCaptchaConfig();
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaRound, setCaptchaRound] = useState(0);
   // The first code was sent a moment ago, so the wait for another starts now.
   const [clock] = useState(() => {
     const first = new ResendClock();
@@ -82,11 +89,15 @@ export function VerifyForm({ purpose, next }: { purpose: CodePurpose; next: stri
     clock.start();
     tick((n) => n + 1);
     try {
-      await new AuthApi().resend(email, purpose);
+      await new AuthApi().resend(email, purpose, captchaToken);
       setNote("We sent a new code. The old one no longer works.");
     } catch (err) {
       if (err instanceof ApiError && err.status === 429) clock.start(err.retryAfter);
       setError(AuthErrors.message(err));
+    } finally {
+      // A token works once, so the next new code needs a new check.
+      setCaptchaToken(null);
+      setCaptchaRound((n) => n + 1);
     }
   };
 
@@ -151,10 +162,11 @@ export function VerifyForm({ purpose, next }: { purpose: CodePurpose; next: stri
               </form>
 
               <div className="flex flex-col items-start gap-2 text-sm">
+                <CaptchaWidget config={captcha} onToken={setCaptchaToken} resetKey={captchaRound} />
                 <button
                   type="button"
                   onClick={() => void resend()}
-                  disabled={!clock.ready()}
+                  disabled={!clock.ready() || !CaptchaRules.canSend(captcha, captchaToken)}
                   className="rounded-md font-extrabold text-primary-text underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 disabled:text-muted-foreground disabled:no-underline"
                 >
                   {clock.label()}

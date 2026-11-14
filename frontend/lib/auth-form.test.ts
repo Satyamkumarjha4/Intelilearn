@@ -23,6 +23,7 @@
  * - the last step of a first sign-in with Google wants a name and the confirmation of the terms, in plain words
  * - each mode has its copy, its pending label, its switch link and its page title
  * - the create-account request carries the browser's time zone when it has one, and leaves the key out when it does not
+ * - it carries the sign-up check's token only when there is one
  */
 import { describe, expect, test } from "bun:test";
 
@@ -218,5 +219,15 @@ describe("registerBody", () => {
 
   test("leaves the time zone out when the browser cannot say", () => {
     expect("timezone" in AuthRules.registerBody(person, true, null)).toBe(false);
+  });
+});
+
+describe("registerBody and the sign-up check", () => {
+  const person = { name: "Ada", email: "ada@example.com", password: "a-long-password" };
+
+  test("carries the check's token when there is one, and not otherwise", () => {
+    expect(AuthRules.registerBody(person, true, null, "tok")).toMatchObject({ captcha_token: "tok" });
+    expect("captcha_token" in AuthRules.registerBody(person, true, null)).toBe(false);
+    expect("captcha_token" in AuthRules.registerBody(person, true, null, "")).toBe(false);
   });
 });

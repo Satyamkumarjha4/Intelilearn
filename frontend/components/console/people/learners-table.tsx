@@ -61,6 +61,19 @@ function columns(now: Date): Column<ConsoleLearner>[] {
       ),
     },
     {
+      key: "signin",
+      header: "Sign-in",
+      cell: (row) => (
+        <Link
+          href={`/console/learners/${row.id}/verification`}
+          aria-label={`Open the sign-in of ${LearnerText.displayName(row)}`}
+          className="rounded text-[12.5px] font-extrabold whitespace-nowrap text-primary-text outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          Sign-in
+        </Link>
+      ),
+    },
+    {
       key: "admin",
       header: "Account",
       cell: (row) => {

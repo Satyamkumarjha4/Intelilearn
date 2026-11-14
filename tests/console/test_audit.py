@@ -15,6 +15,7 @@ Use cases:
 - the log is read in a fixed number of queries
 """
 
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -22,7 +23,7 @@ import pytest
 from django.urls import get_resolver
 from langchain_core.messages import AIMessage
 
-from accounts.models import User
+from accounts.models import EmailLock, PendingSignup, User
 from console.audit import AuditTrail
 from console.models import AuditEntry
 from credits.pricing.seed import PriceSeed
@@ -156,7 +157,7 @@ class Chat:
 
 
 @pytest.fixture
-def changes(registry, make_lesson, queue, monkeypatch, user, other_user, payments):
+def changes(registry, make_lesson, queue, monkeypatch, user, other_user, payments, now, settings):
     """Each endpoint that changes something: (url name, method) → (action it must log, a call that makes the change)."""
     monkeypatch.setattr("llm_registry.providers.CHAT_MODEL_FACTORY", lambda model, timeout: Chat())
     failed_lesson = make_lesson(stage=Stage.FAILED, error="boom")
@@ -175,6 +176,24 @@ def changes(registry, make_lesson, queue, monkeypatch, user, other_user, payment
     attempt = RefundAttempt.objects.create(
         token=uuid4(), order=order, amount_paise=100, refund_ref="r1", created_at=order.created_at
     )
+
+    stuck = User.objects.create_user("stuck@example.com", password="correct-horse-battery-staple", name="Stuck")
+    waiting = [  # sign-ups waiting for a code: one to resend to, one locked to unlock, one to approve
+        PendingSignup.objects.create(
+            email=f"wait{n}@example.com",
+            email_canonical=f"wait{n}@example.com",
+            name=f"Wait {n}",
+            password_hash="x",
+            terms_accepted_at=now,
+            terms_version="1",
+            expires_at=now + timedelta(hours=1),
+        )  # fmt: skip
+        for n in range(3)
+    ]
+    EmailLock.objects.create(  # the lock rules read the system clock, not the frozen `now`
+        email_canonical="wait1@example.com", locked_until=datetime.now(UTC) + timedelta(minutes=30), strikes=3
+    )
+    settings.TURNSTILE_SITE_KEY, settings.TURNSTILE_SECRET_KEY = "site-key", "secret-key"
 
     first, second, third = (
         Testimonial.objects.create(name=n, context="Class 12 student", quote="q", position=i)
@@ -254,6 +273,34 @@ def changes(registry, make_lesson, queue, monkeypatch, user, other_user, payment
             "testimonial.delete",
             do("delete", f"/api/console/testimonials/{second.pk}"),
         ),
+        ("console-verification-resend", "post"): (
+            "learner.verification_resent",
+            do("post", f"/api/console/learners/{stuck.pk}/verification/resend"),
+        ),
+        ("console-verification-unlock", "post"): (
+            "learner.verification_unlocked",
+            do("post", f"/api/console/learners/{stuck.pk}/verification/unlock"),
+        ),
+        ("console-verification-mark", "post"): (
+            "learner.verification_marked",
+            do("post", f"/api/console/learners/{stuck.pk}/verification/mark-verified", {"reason": "Phoned the school"}),
+        ),
+        ("console-signup-resend", "post"): (
+            "signup.resend",
+            do("post", f"/api/console/signups/{waiting[0].pk}/resend"),
+        ),
+        ("console-signup-unlock", "post"): (
+            "signup.unlock",
+            do("post", f"/api/console/signups/{waiting[1].pk}/unlock"),
+        ),
+        ("console-signup-approve", "post"): (
+            "signup.approved",
+            do("post", f"/api/console/signups/{waiting[2].pk}/approve", {"reason": "Confirmed by phone"}),
+        ),
+        ("console-auth-settings", "put"): (
+            "auth_settings.update",
+            do("put", "/api/console/auth-settings", {"captcha_enabled": True}),
+        ),
     }
 
 
@@ -282,6 +329,9 @@ def test_no_entry_is_written_when_a_request_is_refused(staff_client, changes):
         lambda c: c.patch("/api/console/flow-settings", {"alignment_min_score": 99}, format="json"),
         lambda c: c.put("/api/console/nodes/learner.assess", {**NODE_OFF, "enabled": False}, format="json"),
         lambda c: c.post("/api/console/runs/00000000-0000-0000-0000-000000000000/cancel"),
+        lambda c: c.post("/api/console/learners/00000000-0000-0000-0000-000000000000/verification/resend"),
+        lambda c: c.post("/api/console/signups/00000000-0000-0000-0000-000000000000/approve", {"reason": "A reason"}),
+        lambda c: c.put("/api/console/auth-settings", {}, format="json"),
     ]  # fmt: skip
 
     for attempt in refused:
@@ -300,7 +350,7 @@ def test_reading_and_previewing_write_nothing(staff_client, changes, monkeypatch
 
     monkeypatch.setattr(OverviewView, "health", Health())
     for path in ("overview", "usage", "usage/export.csv", "runs", "providers", "models", "nodes", "profiles",
-                 "flow-settings", "learners", "audit"):  # fmt: skip
+                 "flow-settings", "learners", "audit", "signups", "abuse", "auth-settings"):  # fmt: skip
         response = staff_client.get(f"/api/console/{path}")
         b"".join(response.streaming_content) if response.streaming else None
         assert response.status_code == 200, path

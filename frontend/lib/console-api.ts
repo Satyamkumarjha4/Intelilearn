@@ -41,6 +41,14 @@ import type {
   Shortfall,
   WalletPanel,
 } from "@/lib/console-credits/types";
+import type {
+  AbuseReport,
+  ChallengeState,
+  PendingSignupPage,
+  SignupActionResult,
+  SignupApproved,
+  VerificationPanel,
+} from "@/lib/console-signin/types";
 import type { ConsoleTestimonial, TestimonialInput, TestimonialList } from "@/lib/console-testimonials/types";
 
 export type PageQuery = { cursor?: string | null; pageSize?: number };
@@ -255,6 +263,57 @@ export class ConsoleApi {
 
   revenue(filters: UsageFilters = {}): Promise<Revenue> {
     return this.get(`/console/revenue${ConsoleApi.query({ range: filters.range, start: filters.start, end: filters.end })}`);
+  }
+
+  // --- sign-in: a learner's verification, the sign-ups waiting, the abuse board, the challenge switch
+
+  verification(learnerId: string): Promise<VerificationPanel> {
+    return this.get(`/console/learners/${learnerId}/verification`);
+  }
+
+  /** A new code to the learner's own address. A 409 `code` says why not (`already_verified`, `account_closed`, `account_erased`). */
+  resendVerification(learnerId: string): Promise<VerificationPanel> {
+    return this.send("POST", `/console/learners/${learnerId}/verification/resend`);
+  }
+
+  /** A 409 `nothing_to_unlock` when the email is not locked and has no live code. */
+  unlockVerification(learnerId: string): Promise<VerificationPanel> {
+    return this.send("POST", `/console/learners/${learnerId}/verification/unlock`);
+  }
+
+  /** Vouches for the person: needs a typed reason of 10 characters or more, and gives the signup credits once. */
+  markVerified(learnerId: string, reason: string): Promise<VerificationPanel> {
+    return this.send("POST", `/console/learners/${learnerId}/verification/mark-verified`, { reason });
+  }
+
+  signups(filters: { q?: string } & PageQuery = {}): Promise<PendingSignupPage> {
+    return this.get(`/console/signups${ConsoleApi.query({ q: filters.q?.trim(), ...ConsoleApi.page(filters) })}`);
+  }
+
+  resendSignup(id: string): Promise<SignupActionResult> {
+    return this.send("POST", `/console/signups/${id}/resend`);
+  }
+
+  unlockSignup(id: string): Promise<SignupActionResult> {
+    return this.send("POST", `/console/signups/${id}/unlock`);
+  }
+
+  /** Makes the account with no password; the reply tells staff to confirm the person first. Needs a typed reason. */
+  approveSignup(id: string, reason: string): Promise<SignupApproved> {
+    return this.send("POST", `/console/signups/${id}/approve`, { reason });
+  }
+
+  abuse(): Promise<AbuseReport> {
+    return this.get("/console/abuse");
+  }
+
+  authSettings(): Promise<ChallengeState> {
+    return this.get("/console/auth-settings");
+  }
+
+  /** A 409 `captcha_not_configured` when switching on without the Turnstile keys. */
+  setCaptcha(captchaEnabled: boolean): Promise<ChallengeState> {
+    return this.send("PUT", "/console/auth-settings", { captcha_enabled: captchaEnabled });
   }
 
   /** The cursor inside a `next` link from a list reply (the link itself points at the backend's own host). */

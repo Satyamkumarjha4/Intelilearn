@@ -8,6 +8,7 @@ import logging
 
 from django.db import transaction
 
+from ..abuse.records import SignupRecords
 from ..clock import Clock, SystemClock
 from ..emailrules.canonical import EmailCanonicalizer
 from ..identity.provider import VerifiedIdentity
@@ -39,13 +40,29 @@ class AccountActivation:
         if TimeZoneNames.is_valid(pending.timezone):  # a name no zone database knows must not stop anyone signing up
             ProfileTimezone().apply(user.profile, pending.timezone)
             user.profile.save(update_fields=["timezone", "timezone_changed_at", "updated_at"])
-        SignupRecord.objects.create(
-            user=user,
-            ip=ip or None,
-            email_domain=user.email_canonical.rpartition("@")[2],
-            method=SignupRecord.Method.CODE,
-            created_at=self.clock.now(),
+        SignupRecords(self.clock).record(user, ip, SignupRecord.Method.CODE)
+        pending.delete()
+        return user
+
+    def create_approved(self, pending: PendingSignup) -> User:
+        """The account a staff member approves from a pending sign-up (plan S2, D15), **with an unusable password**: the
+        hash the person typed at sign-up is never copied, so approving gives nobody a way in. The person signs in with
+        Google or chooses a password by a reset. Verified by staff (`staff`: someone vouched, the owner did not prove
+        it)."""
+        user = User(
+            email=pending.email,
+            name=pending.name,
+            terms_accepted_at=pending.terms_accepted_at,
+            terms_version=pending.terms_version,
+            email_verified_at=self.clock.now(),
+            email_verification_source=User.VerificationSource.STAFF,
         )
+        user.set_unusable_password()
+        user.save()
+        if TimeZoneNames.is_valid(pending.timezone):
+            ProfileTimezone().apply(user.profile, pending.timezone)
+            user.profile.save(update_fields=["timezone", "timezone_changed_at", "updated_at"])
+        SignupRecords(self.clock).record(user, None, SignupRecord.Method.STAFF)
         pending.delete()
         return user
 
@@ -68,10 +85,7 @@ class AccountActivation:
             ProfileTimezone().apply(user.profile, zone)
             user.profile.save(update_fields=["timezone", "timezone_changed_at", "updated_at"])
         self.link(user, identity)
-        SignupRecord.objects.create(
-            user=user, ip=ip or None, email_domain=user.email_canonical.rpartition("@")[2],
-            method=identity.source, created_at=self.clock.now(),
-        )  # fmt: skip
+        SignupRecords(self.clock).record(user, ip, identity.source)
         PendingSignup.objects.filter(email_canonical=EmailCanonicalizer.of(identity.email)).delete()
         return user
 

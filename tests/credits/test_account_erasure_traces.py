@@ -207,6 +207,7 @@ class TestEveryTableThatPointsAtAUserIsAccountedFor:
             "admin.LogEntry (about the account)",
             "console.AuditEntry (about the learner)",
             "accounts.OutboundMail (sent to the address)",
+            "accounts.AuthEvent (by address)",
         } <= set(UserDataMap.OUTSIDE)
 
     def test_kept_rows_are_only_the_money(self):

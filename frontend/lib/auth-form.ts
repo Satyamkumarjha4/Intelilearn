@@ -155,8 +155,8 @@ export class AuthRules {
   }
 
   /** The create-account request. The browser's zone sets the learner's day (credits plan D9); the server ignores a name it does not know. */
-  static registerBody(person: { name: string; email: string; password: string }, acceptTerms: boolean, zone: string | null) {
-    return { ...person, accept_terms: acceptTerms, ...(zone ? { timezone: zone } : {}) };
+  static registerBody(person: { name: string; email: string; password: string }, acceptTerms: boolean, zone: string | null, captchaToken: string | null = null) {
+    return { ...person, accept_terms: acceptTerms, ...(zone ? { timezone: zone } : {}), ...(captchaToken ? { captcha_token: captchaToken } : {}) };
   }
 
   static errorMessage(error: unknown): string {
