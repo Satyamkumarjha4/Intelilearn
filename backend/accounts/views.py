@@ -242,7 +242,9 @@ class ForgotPasswordView(_PublicAuthView):
         description=(
             "Always `202`, whether or not the address has an account: the code goes only to an active account, and the "
             'notice "this address signs in with Google" to one that has no password. An address that only has a '
-            "pending sign-up is treated as unknown. A `429` carries `Retry-After`."
+            "pending sign-up is treated as unknown. While the sign-up challenge is on (the console's switch) it also "
+            "needs a `captcha_token` and answers `400 captcha_failed` for a missing or failed one, the same for every "
+            "address. A `429` carries `Retry-After`."
         ),
         request=ForgotSerializer,
         responses={202: OpenApiResponse(_sent_envelope), 429: None},
@@ -251,8 +253,11 @@ class ForgotPasswordView(_PublicAuthView):
         serializer = ForgotSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         email = serializer.validated_data["email"]
+        ip = self.client_address(request)
+        # Before the limits and the lookup: a failed challenge costs no limit and says nothing about the address.
+        CaptchaGate().check(request.data.get("captcha_token"), ip)  # only when the console has switched it on
         CodeLimits().enforce(request, self, email, CodeLimits.SEND)
-        PasswordReset().start(email, ip=self.client_address(request))
+        PasswordReset().start(email, ip=ip)
         return Response({"status": "sent"}, status=status.HTTP_202_ACCEPTED)
 
 
@@ -354,8 +359,8 @@ class CaptchaConfigView(APIView):
         summary="Is the sign-up challenge on?",
         description=(
             "`{enabled, site_key}`. `enabled` is the console's switch; the `site_key` is the public key of the widget "
-            "(empty when off). When on, `register` and `verify/resend` need a `captcha_token` from the widget and "
-            "answer `400 captcha_failed` for a missing or failed one."
+            "(empty when off). When on, `register`, `verify/resend` and `password/forgot` need a `captcha_token` from "
+            "the widget and answer `400 captcha_failed` for a missing or failed one."
         ),
         responses={200: OpenApiResponse(_captcha_envelope)},
     )

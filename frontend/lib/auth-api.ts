@@ -23,9 +23,10 @@ export class AuthApi {
     return (await this.client.request<{ user: User }>("/auth/verify", { method: "POST", body: { email, code, purpose } })).user;
   }
 
-  /** Ask for a code to choose a new password. Always accepted, whether or not the address has an account; a refusal is a 429. */
-  async forgot(email: string): Promise<void> {
-    await this.client.request("/auth/password/forgot", { method: "POST", body: { email } });
+  /** Ask for a code to choose a new password. Always accepted, whether or not the address has an account; a refusal is a 429,
+   *  or a 400 `captcha_failed` when the sign-up check is on and `captchaToken` is missing or did not pass. */
+  async forgot(email: string, captchaToken: string | null = null): Promise<void> {
+    await this.client.request("/auth/password/forgot", { method: "POST", body: CaptchaRules.withToken({ email }, captchaToken) });
   }
 
   /** Choose a new password with the emailed code: the person is signed in and every older session ends. A weak password is a

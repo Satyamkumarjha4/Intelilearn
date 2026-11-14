@@ -1,5 +1,5 @@
-"""Unit under test: the sign-up challenge as `POST /api/auth/register` and `POST /api/auth/verify/resend` use it, and
-`GET /api/auth/captcha` (`accounts.views`).
+"""Unit under test: the sign-up challenge as `POST /api/auth/register`, `POST /api/auth/verify/resend` and
+`POST /api/auth/password/forgot` use it, and `GET /api/auth/captcha` (`accounts.views`).
 
 Why: when abuse shows up, staff switch a challenge on in the console. From that moment a register or a resend without a
 passed challenge must get nowhere (no pending sign-up, no mail, no code made, no throttle spent), and the reply must say
@@ -10,6 +10,10 @@ Use cases:
 - **off by default**: register and resend work with no token and the verifier is never asked
 - **with the switch on, register and resend refuse a missing token and a failed one** with the same `400
   captcha_failed`, and nothing is created, mailed or counted against the limits; a good token goes through as usual
+- **a request for a password-reset code is challenged the same way** (the third door that sends mail): with the
+  switch on it refuses a missing or failed token with the same `400 captcha_failed` before anything is looked up,
+  sent or counted against the limits, the same for an address that has an account and one that does not; a good
+  token goes through as usual; off, the verifier is never asked
 - the refusal is the same for an address that has an account and one that does not
 - the check comes after the form is validated (a weak password is still a field error) and before the limits and the
   work
@@ -168,3 +172,54 @@ def test_a_counter_that_cannot_be_written_never_stops_the_request(with_token, mo
     reply = with_token("/api/auth/register", new_person(email="x@mailinator.com"))
 
     assert reply.status_code == 400 and "email" in reply.json()["fields"]  # the refusal still reaches the person
+
+
+# --- forgot password is challenged too ---
+
+
+def test_forgot_off_by_default_needs_no_token_and_the_verifier_is_never_asked(with_token, settings, user, mailbox):
+    from support.captcha import FakeVerifier
+
+    settings.CAPTCHA_VERIFIER = "support.captcha.FakeVerifier"
+    FakeVerifier.asked.clear()
+
+    reply = with_token("/api/auth/password/forgot", {"email": user.email})
+
+    assert reply.status_code == 202 and [m.kind for m in mailbox.messages] == ["reset_code"]
+    assert FakeVerifier.asked == [] and not AuthEvent.objects.exists()
+
+
+@pytest.mark.parametrize("token", [None, "", "bad-token"], ids=["missing", "empty", "failed"])
+def test_forgot_refuses_a_missing_or_failed_challenge_and_sends_nothing(with_token, captcha_on, user, mailbox, token):
+    reply = with_token("/api/auth/password/forgot", {"email": user.email}, token)
+
+    assert reply.status_code == 400 and reply.json() == REFUSED
+    assert mailbox.messages == [] and not VerificationCode.objects.exists() and not OutboundMail.objects.exists()
+
+
+def test_forgot_refuses_the_same_for_an_address_with_an_account_and_one_without(with_token, captcha_on, user):
+    known = with_token("/api/auth/password/forgot", {"email": user.email}, "bad-token")
+    unknown = with_token("/api/auth/password/forgot", {"email": "nobody@example.com"}, "bad-token")
+
+    assert known.status_code == unknown.status_code == 400 and known.json() == unknown.json() == REFUSED
+
+
+def test_forgot_with_a_passed_challenge_goes_through_as_usual_and_asks_about_the_visitors_address(
+    with_token, captcha_on, user, mailbox
+):
+    reply = with_token("/api/auth/password/forgot", {"email": user.email}, "good-token", ip="198.51.100.5")
+
+    assert reply.status_code == 202 and reply.json() == {"status": "sent"}
+    assert [m.kind for m in mailbox.messages] == ["reset_code"]
+    assert captcha_on.asked == [("good-token", "198.51.100.5")]
+
+
+def test_a_failed_challenge_on_forgot_spends_no_limit_and_is_counted(with_token, captcha_on, user, monkeypatch):
+    monkeypatch.setitem(SimpleRateThrottle.THROTTLE_RATES, "auth_code_cooldown", "1/min")
+    body = {"email": user.email}
+
+    assert with_token("/api/auth/password/forgot", body, "bad-token", ip="203.0.113.6").status_code == 400
+    assert with_token("/api/auth/password/forgot", body, None).status_code == 400
+
+    assert with_token("/api/auth/password/forgot", body, "good-token").status_code == 202
+    assert AuthEvent.objects.filter(kind="captcha_failed", ip="203.0.113.6").exists()

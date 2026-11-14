@@ -11,7 +11,7 @@
  *   a weak password reaches the caller as an error with its field messages
  * - `finishInfo` reads who is waiting at the last step of a first sign-in with a provider; `finish` posts the name, the
  *   terms and the browser's zone (left out when there is none), and an expired last step is an error with its code
- * - `resend` posts the email and purpose, and the sign-up check's token only when there is one
+ * - `resend` and `forgot` post the sign-up check's token only when there is one (`forgot` also posts the email)
  * - `captcha` reads whether the check is on, and a look that fails is "off"
  * - `login` returns the user, and a `verification_required` answer reaches the caller as an error
  */
@@ -146,5 +146,16 @@ describe("AuthApi and the sign-up check", () => {
     const { api } = setup(() => json({ detail: "boom" }, 500));
 
     expect(await api.captcha()).toEqual({ enabled: false, site_key: "" });
+  });
+});
+
+describe("AuthApi forgot and the sign-up check", () => {
+  test("forgot sends the check's token only when there is one", async () => {
+    const { api, seen } = setup(() => json({ status: "sent" }, 202));
+
+    await api.forgot("ada@example.com");
+    await api.forgot("ada@example.com", "tok");
+
+    expect(seen.map((s) => s.body)).toEqual([{ email: "ada@example.com" }, { email: "ada@example.com", captcha_token: "tok" }]);
   });
 });

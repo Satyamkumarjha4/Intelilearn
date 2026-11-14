@@ -5,8 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { CaptchaWidget } from "@/components/captcha-widget";
 import { FormField } from "@/components/form-field";
 import { ProviderButtons } from "@/components/provider-buttons";
+import { useCaptchaConfig } from "@/components/use-captcha-config";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +16,7 @@ import { ApiError, type FieldErrors } from "@/lib/api";
 import { AuthApi } from "@/lib/auth-api";
 import { AuthErrors } from "@/lib/auth-errors";
 import { AuthRules } from "@/lib/auth-form";
+import { CaptchaRules } from "@/lib/captcha";
 import { PendingEmail } from "@/lib/pending-email";
 
 import { BrandPanel } from "../brand-panel";
@@ -23,6 +26,10 @@ export function ForgotForm({ next }: { next: string }) {
   const [error, setError] = useState<string | null>(null);
   const [fields, setFields] = useState<FieldErrors>({});
   const [sending, setSending] = useState(false);
+  // The sign-up check, only when staff have switched it on (it is drawn, and waited for, only then).
+  const captcha = useCaptchaConfig();
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaRound, setCaptchaRound] = useState(0);
   const copy = AuthRules.FORGOT;
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -35,13 +42,16 @@ export function ForgotForm({ next }: { next: string }) {
 
     setSending(true);
     try {
-      await new AuthApi().forgot(email);
+      await new AuthApi().forgot(email, captchaToken);
       new PendingEmail().save(email);
       router.push(AuthRules.resetHref(next)); // the same next screen whether or not the address has an account
     } catch (err) {
       setError(AuthErrors.message(err));
       setFields(err instanceof ApiError ? err.fields : {});
       setSending(false);
+      // A token works once, so the next try needs a new check.
+      setCaptchaToken(null);
+      setCaptchaRound((n) => n + 1);
     }
   };
 
@@ -68,7 +78,8 @@ export function ForgotForm({ next }: { next: string }) {
             <FormField id="email" label="Email" errors={fields.email}>
               <Input id="email" name="email" type="email" autoComplete="email" aria-invalid={!!fields.email} aria-describedby={fields.email ? "email-error" : undefined} />
             </FormField>
-            <Button type="submit" size="lg" disabled={sending} className="h-11">
+            <CaptchaWidget config={captcha} onToken={setCaptchaToken} resetKey={captchaRound} />
+            <Button type="submit" size="lg" disabled={sending || !CaptchaRules.canSend(captcha, captchaToken)} className="h-11">
               {sending ? copy.pending : copy.submit}
             </Button>
           </form>
