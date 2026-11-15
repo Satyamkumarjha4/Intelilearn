@@ -52,6 +52,6 @@ test("one-time credits bought through Stripe's test mode arrive by the return pa
   await expect(page.getByTestId("return-headline")).toHaveText("Your credits are here", { timeout: 150_000 });
 
   const order = (await api.call("GET", `/payments/orders/${orderId}`)).body;
-  expect(order).toMatchObject({ status: "fulfilled", amount_paise: 10000, credits: 100 });
+  expect(order).toMatchObject({ status: "fulfilled", amount_paise: 20000, credits: 100 });
   expect(await balance(api)).toBe(130);
 });

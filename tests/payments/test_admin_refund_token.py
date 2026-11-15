@@ -209,7 +209,7 @@ class TestTwoSubmissionsAreTwoRefunds:
         submit(client, order, token=str(uuid.uuid4()))
 
         assert [a for _, a in payments.script.refunds] == [4000, order.amount_paise - 4000]
-        assert Ledger().balance(order.user) == 60
+        assert Ledger().balance(order.user) == 80  # 4000 of 20000 paise is a fifth of the 100 credits
 
     def test_a_second_partial_refund_after_the_first_is_confirmed_works(self, client, staff, payments):
         order = paid(payments)
@@ -222,7 +222,7 @@ class TestTwoSubmissionsAreTwoRefunds:
 
 
 class TestTheAmountField:
-    @pytest.mark.parametrize("amount", ["101", "1000", "0", "-5", "abc", "1.234"])
+    @pytest.mark.parametrize("amount", ["201", "1000", "0", "-5", "abc", "1.234"])
     def test_an_amount_that_is_too_much_or_not_an_amount_asks_for_nothing(self, client, staff, payments, amount):
         order = paid(payments)
 

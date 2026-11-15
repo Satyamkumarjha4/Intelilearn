@@ -43,7 +43,7 @@ SECRET = "whsec_" + "w" * 24  # not a real secret
 HOOK = "/api/payments/webhooks/stripe"
 SESSION_ID, INTENT = "cs_test_flow1", "pi_3Flow1"
 SESSION = {
-    "id": SESSION_ID, "object": "checkout.session", "amount_total": 10000, "currency": "inr", "mode": "payment",
+    "id": SESSION_ID, "object": "checkout.session", "amount_total": 20000, "currency": "inr", "mode": "payment",
     "payment_intent": None, "payment_status": "unpaid", "status": "open",
     "url": f"https://checkout.stripe.com/c/pay/{SESSION_ID}#frag",
 }  # fmt: skip
@@ -139,7 +139,7 @@ class TestBuying:
         body = response.json()
         assert body["checkout"] == {"kind": "redirect", "redirect_url": SESSION["url"]}
         assert stripe.form()["client_reference_id"] == body["id"]
-        assert stripe.form()["line_items[0][price_data][unit_amount]"] == "10000"
+        assert stripe.form()["line_items[0][price_data][unit_amount]"] == "20000"
         order = PaymentOrder.objects.get(pk=body["id"])
         assert (order.gateway, order.status, order.provider_ref) == ("stripe", "pending", SESSION_ID)
 
@@ -228,45 +228,45 @@ class TestRefundsAndDisputes:
     def test_the_admin_refunds_through_stripe_and_the_credits_return_with_its_event(
         self, client, staff, paid, stripe, user
     ):
-        stripe.answers = [(200, refund_object(10000))]
+        stripe.answers = [(200, refund_object(20000))]
 
         ask_refund(client, paid)
 
         assert (stripe.sent.method, stripe.sent.url.path) == ("POST", "/v1/refunds")
-        assert stripe.form() == {"payment_intent": INTENT, "amount": "10000"}
+        assert stripe.form() == {"payment_intent": INTENT, "amount": "20000"}
         assert Ledger().balance(user) == 100  # not yet: Stripe has not said so
 
-        deliver(event("refund.created", refund_object(10000)))
+        deliver(event("refund.created", refund_object(20000)))
 
         paid.refresh_from_db()
-        assert Ledger().balance(user) == 0 and paid.refunded_paise == 10000 and paid.status == "fulfilled"
+        assert Ledger().balance(user) == 0 and paid.refunded_paise == 20000 and paid.status == "fulfilled"
 
     def test_the_same_refund_seen_again_and_the_charges_total_change_nothing_more(self, paid, user):
-        deliver(event("refund.created", refund_object(4000)))
+        deliver(event("refund.created", refund_object(8000)))
 
-        deliver(event("refund.updated", refund_object(4000)))
-        deliver(event("charge.refunded", {"id": "ch_1", "payment_intent": INTENT, "amount_refunded": 4000}))
+        deliver(event("refund.updated", refund_object(8000)))
+        deliver(event("charge.refunded", {"id": "ch_1", "payment_intent": INTENT, "amount_refunded": 8000}))
 
         paid.refresh_from_db()
-        assert paid.refunded_paise == 4000 and Ledger().balance(user) == 60
+        assert paid.refunded_paise == 8000 and Ledger().balance(user) == 60
 
     def test_two_partial_refunds_add_up_to_the_whole(self, paid, user):
-        deliver(event("refund.created", refund_object(4000, "re_1")))
-        deliver(event("refund.created", refund_object(6000, "re_2")))
+        deliver(event("refund.created", refund_object(8000, "re_1")))
+        deliver(event("refund.created", refund_object(12000, "re_2")))
 
         paid.refresh_from_db()
-        assert paid.refunded_paise == 10000 and Ledger().balance(user) == 0
+        assert paid.refunded_paise == 20000 and Ledger().balance(user) == 0
 
     def test_a_refund_still_pending_takes_nothing_until_it_succeeds(self, paid, user):
-        deliver(event("refund.created", refund_object(10000, status="pending")))
+        deliver(event("refund.created", refund_object(20000, status="pending")))
         assert Ledger().balance(user) == 100
 
-        deliver(event("refund.updated", refund_object(10000)))
+        deliver(event("refund.updated", refund_object(20000)))
 
         assert Ledger().balance(user) == 0
 
     def test_a_dispute_takes_the_credits_back_by_the_payment_intent(self, paid, user):
-        dispute = {"id": "du_1", "object": "dispute", "payment_intent": INTENT, "amount": 10000, "currency": "inr"}
+        dispute = {"id": "du_1", "object": "dispute", "payment_intent": INTENT, "amount": 20000, "currency": "inr"}
 
         deliver(event("charge.dispute.created", dispute))
 

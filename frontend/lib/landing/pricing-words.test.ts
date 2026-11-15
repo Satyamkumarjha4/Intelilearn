@@ -33,7 +33,7 @@ const text = (lines: { bold?: string; text: string }[]) => lines.map((l) => `${l
 
 describe("words for numbers", () => {
   test("money, a price a credit, lessons, ranges and spans", () => {
-    expect(PricingWords.rupees(19900)).toBe("₹199");
+    expect(PricingWords.rupees(39800)).toBe("₹398");
     expect(PricingWords.perCredit(40)).toBe("₹0.40 a credit");
     expect(PricingWords.aboutLessons(1)).toBe("About 1 full lesson");
     expect(PricingWords.aboutLessons(10)).toBe("About 10 full lessons");
@@ -64,7 +64,7 @@ describe("the cards", () => {
   test("a plan shows its price, period, credits and lessons from the numbers it was given", () => {
     const monthly = card("monthly_pro");
 
-    expect([monthly.name, monthly.price, monthly.per]).toEqual(["Monthly Pro", "₹199", "/ 28 days"]);
+    expect([monthly.name, monthly.price, monthly.per]).toEqual(["Monthly Pro", "₹398", "/ 28 days"]);
     expect(text(monthly.lines).slice(0, 2)).toEqual(["500 credits for 28 days", "About 50 full lessons"]);
     expect(card("weekly_pro").per).toBe("/ week");
     expect(text(card("weekly_pro").lines).slice(0, 2)).toEqual(["100 credits a week", "About 10 full lessons a week"]);
@@ -105,8 +105,8 @@ describe("the cards", () => {
   });
 
   test("with a dearer plan the claim softens, and with no saving there is no claim", () => {
-    const soft = pricing().plans.map((p) => (p.key === "monthly_pro" ? { ...p, price_paise_per_credit: 60 } : p));
-    const same = pricing().plans.map((p) => (p.key === "monthly_pro" ? { ...p, price_paise_per_credit: 100 } : p));
+    const soft = pricing().plans.map((p) => (p.key === "monthly_pro" ? { ...p, price_paise_per_credit: 120 } : p));
+    const same = pricing().plans.map((p) => (p.key === "monthly_pro" ? { ...p, price_paise_per_credit: 200 } : p));
 
     expect(text(card("monthly_pro", { plans: soft }).lines)[2]).toBe("Cheaper per credit than a top-up");
     expect(text(card("monthly_pro", { plans: same }).lines)[2]).toBeUndefined();
@@ -151,7 +151,7 @@ describe("what credits buy and the top-up", () => {
   test("the top-up line follows the one-time rules, and is absent when top-ups are off", () => {
     const line = PricingWords.topUp(pricing())!;
 
-    expect(line.bold + line.text).toBe("Need just a few more? Top up at ₹1 a credit, 10 or more at a time, valid for a year, on top of any plan.");
+    expect(line.bold + line.text).toBe("Need just a few more? Top up at ₹2 a credit, 10 or more at a time, valid for a year, on top of any plan.");
     expect(PricingWords.topUp(pricing({ one_time: null }))).toBeNull();
   });
 });

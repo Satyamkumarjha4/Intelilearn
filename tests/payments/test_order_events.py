@@ -132,7 +132,7 @@ class TestFulfilmentItself:
 
 class TestAWrongAmount:
     @pytest.mark.parametrize(
-        ("amount", "currency"), [(9999, "INR"), (10000 - 1, "INR"), (10000, "USD"), (10001, "INR")]
+        ("amount", "currency"), [(9999, "INR"), (20000 - 1, "INR"), (20000, "USD"), (20001, "INR")]
     )
     def test_nothing_is_granted_and_it_is_logged(self, payments, user, caplog, amount, currency):
         order = payments.buy("one_time", credits=100)
@@ -210,19 +210,19 @@ class TestRefunds:
     def test_a_partial_refund_takes_its_share_and_the_parts_add_up_to_the_whole(self, payments, user):
         order = self.bought(payments, credits=100)
 
-        payments.send("refunded", order, amount=2500)
-        assert Ledger().balance(user) == 75
-        payments.send("refunded", order, amount=2500)
-        assert Ledger().balance(user) == 50
         payments.send("refunded", order, amount=5000)
+        assert Ledger().balance(user) == 75
+        payments.send("refunded", order, amount=5000)
+        assert Ledger().balance(user) == 50
+        payments.send("refunded", order, amount=10000)
 
         order.refresh_from_db()
-        assert Ledger().balance(user) == 0 and order.refunded_paise == 10000
+        assert Ledger().balance(user) == 0 and order.refunded_paise == 20000
         sound(user)
 
     def test_odd_amounts_still_add_up_exactly(self, payments, user):
-        order = self.bought(payments, credits=10)  # 1000 paise
-        for paise in (333, 333, 334):
+        order = self.bought(payments, credits=10)  # 2000 paise
+        for paise in (667, 667, 666):
             payments.send("refunded", order, amount=paise)
 
         assert Ledger().balance(user) == 0

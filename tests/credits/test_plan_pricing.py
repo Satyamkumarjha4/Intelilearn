@@ -12,7 +12,7 @@ Use cases:
 - one-time credits cost the plan's price a credit, with the smallest and largest amount from the settings (10 and
   5,000), and
   are bought once at a time; below, above, fractional, boolean and text amounts are refused as `invalid_amount`
-- Weekly Pro costs 4,900 paise a week and may be bought 1 to 12 weeks at once; 0, 13 and a non-number are refused
+- Weekly Pro costs 9,800 paise a week and may be bought 1 to 12 weeks at once; 0, 13 and a non-number are refused
 - Monthly Pro and Pro Plus are bought one at a time
 - a recurring plan takes no credit amount and a one-time purchase takes no quantity other than 1
 - the numbers are whole: paise and credits, never a float
@@ -28,15 +28,15 @@ from credits.plans.errors import InvalidPlanRequest
 from credits.plans.pricing import PlanPricing, PlanTerms
 
 ONE_TIME = PlanTerms(
-    "one_time", "One-time credits", credits=0, period_days=365, price_paise=100, max_quantity=1, one_time=True
+    "one_time", "One-time credits", credits=0, period_days=365, price_paise=200, max_quantity=1, one_time=True
 )
 WEEKLY = PlanTerms(
-    "weekly_pro", "Weekly Pro", credits=100, period_days=7, price_paise=4900, max_quantity=12, one_time=False
+    "weekly_pro", "Weekly Pro", credits=100, period_days=7, price_paise=9800, max_quantity=12, one_time=False
 )
 MONTHLY = PlanTerms(
-    "monthly_pro", "Monthly Pro", credits=500, period_days=28, price_paise=19900, max_quantity=1, one_time=False
+    "monthly_pro", "Monthly Pro", credits=500, period_days=28, price_paise=39800, max_quantity=1, one_time=False
 )
-PLUS = PlanTerms("pro_plus", "Pro Plus", credits=750, period_days=28, price_paise=27900, max_quantity=1, one_time=False)
+PLUS = PlanTerms("pro_plus", "Pro Plus", credits=750, period_days=28, price_paise=55800, max_quantity=1, one_time=False)
 LIMITS = {"minimum": 10, "maximum": 5000}
 
 
@@ -45,7 +45,7 @@ def price(terms, **kwargs):
 
 
 class TestOneTimeCredits:
-    @pytest.mark.parametrize(("credits", "paise"), [(10, 1000), (11, 1100), (250, 25000), (5000, 500000)])
+    @pytest.mark.parametrize(("credits", "paise"), [(10, 2000), (11, 2200), (250, 50000), (5000, 1000000)])
     def test_the_price_is_the_plans_price_a_credit(self, credits, paise):
         priced = price(ONE_TIME, credits=credits)
 
@@ -59,7 +59,7 @@ class TestOneTimeCredits:
         assert refused.value.get_codes() == "invalid_amount" and refused.value.status_code == 400
 
     def test_the_limits_are_whatever_the_settings_say(self):
-        assert PlanPricing().price(ONE_TIME, credits=3, minimum=1, maximum=3).amount_paise == 300
+        assert PlanPricing().price(ONE_TIME, credits=3, minimum=1, maximum=3).amount_paise == 600
         with pytest.raises(InvalidPlanRequest):
             PlanPricing().price(ONE_TIME, credits=4, minimum=1, maximum=3)
 
@@ -78,10 +78,10 @@ class TestOneTimeCredits:
 
 class TestRecurringPlans:
     @pytest.mark.parametrize("weeks", range(1, 13))
-    def test_weekly_pro_costs_4900_paise_a_week(self, weeks):
+    def test_weekly_pro_costs_9800_paise_a_week(self, weeks):
         priced = price(WEEKLY, quantity=weeks)
 
-        assert (priced.quantity, priced.amount_paise, priced.periods, priced.credits) == (weeks, 4900 * weeks, weeks, 0)
+        assert (priced.quantity, priced.amount_paise, priced.periods, priced.credits) == (weeks, 9800 * weeks, weeks, 0)
 
     @pytest.mark.parametrize("weeks", [0, -1, 13, 100, 2.5, "3", None, True])
     def test_weeks_outside_one_to_twelve_are_refused(self, weeks):
@@ -90,7 +90,7 @@ class TestRecurringPlans:
 
         assert refused.value.get_codes() == "invalid_amount"
 
-    @pytest.mark.parametrize(("terms", "paise"), [(MONTHLY, 19900), (PLUS, 27900)])
+    @pytest.mark.parametrize(("terms", "paise"), [(MONTHLY, 39800), (PLUS, 55800)])
     def test_the_monthly_plans_are_bought_one_at_a_time(self, terms, paise):
         priced = price(terms)
 

@@ -10,15 +10,16 @@ add the
 tables, seed the plans without overwriting an edit, and come out cleanly.
 
 Use cases:
-- the seeded plans are the spec's: one-time credits 100 paise a credit; Weekly Pro 100 credits, 7 days, 4,900 paise,
+- the seeded plans are the spec's: one-time credits 200 paise a credit; Weekly Pro 100 credits, 7 days, 9,800 paise,
   up to 12
-  weeks; Monthly Pro 500 credits, 28 days, 19,900 paise; Pro Plus 750 credits, 28 days, 27,900 paise
+  weeks; Monthly Pro 500 credits, 28 days, 39,800 paise; Pro Plus 750 credits, 28 days, 55,800 paise (the prices
+  doubled on 2026-11-15; `test_plan_price_change.py` covers that change)
 - a plan key is unique; the seed adds only plans that are missing and never overwrites an edit, and can be repeated
 - a purchase has a status, a source and a quantity of at least one; a period is unique within its purchase by position
 - the buckets of a purchase can be found by its id, and an index backs that
 - a learner with a purchase or a period cannot be deleted by accident
-- migration 0007 seeds the same plans as `PlanSeed`, never overwrites, and can be undone; 0006 can be undone and
-  redone with the
+- migration 0007 seeds the original plans (`PlanSeed` the current ones), never overwrites, and can be undone; 0006 can
+  be undone and redone with the
   learners untouched
 """
 
@@ -35,7 +36,13 @@ from credits.plans.seed import PlanSeed
 
 AT = datetime(2026, 11, 5, 12, 0, tzinfo=UTC)
 
-SPEC = {
+SPEC = {  # the current plans (prices doubled on 2026-11-15, migration 0009)
+    "one_time": dict(credits=0, period_days=365, price_paise=200, max_quantity=1),
+    "weekly_pro": dict(credits=100, period_days=7, price_paise=9800, max_quantity=12),
+    "monthly_pro": dict(credits=500, period_days=28, price_paise=39800, max_quantity=1),
+    "pro_plus": dict(credits=750, period_days=28, price_paise=55800, max_quantity=1),
+}
+ORIGINAL = {  # what migration 0007 seeds: it is written out there and never changes
     "one_time": dict(credits=0, period_days=365, price_paise=100, max_quantity=1),
     "weekly_pro": dict(credits=100, period_days=7, price_paise=4900, max_quantity=12),
     "monthly_pro": dict(credits=500, period_days=28, price_paise=19900, max_quantity=1),
@@ -153,7 +160,7 @@ class TestTheMigrations:
         return list(MigrationExecutor(connection).loader.graph.leaf_nodes())
 
     @pytest.mark.django_db
-    def test_0007_seeds_the_plans_the_seed_class_holds(self):
+    def test_0007_seeds_the_original_plans_and_the_seed_class_the_current_ones(self):
         from django.apps import apps
 
         Plan.objects.all().delete()
@@ -161,7 +168,13 @@ class TestTheMigrations:
 
         module.seed(apps, None)
 
-        assert {p.key: {f: getattr(p, f) for f in SPEC["weekly_pro"]} for p in Plan.objects.all()} == SPEC
+        def held():
+            return {p.key: {f: getattr(p, f) for f in SPEC["weekly_pro"]} for p in Plan.objects.all()}
+
+        assert held() == ORIGINAL  # 0009 is what brings them to the current prices
+        Plan.objects.all().delete()
+        PlanSeed().apply()
+        assert held() == SPEC
 
     @pytest.mark.django_db
     def test_0007_never_overwrites_and_can_be_undone(self):

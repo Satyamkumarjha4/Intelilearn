@@ -13,7 +13,7 @@ Amendment of 2026-11-03: the decisions confirmed by the product owner, and the s
 
 | # | Change | Sections |
 |---|---|---|
-| A1 | **Plan prices confirmed.** Monthly Pro is ₹199 for 500 credits and Pro Plus is ₹279 for 750 credits, both valid 28 days. The "proposed" asterisk is gone | 5.1, 12 |
+| A1 | **Plan prices confirmed.** Monthly Pro is ₹199 for 500 credits and Pro Plus is ₹279 for 750 credits, both valid 28 days. The "proposed" asterisk is gone (both doubled on 2026-11-15, A29) | 5.1, 12 |
 | A2 | **Streak repair rule decided.** A repair fixes the **previous day only**, within 48 hours: a missed local day *D* can be repaired during local day *D + 1* and not after. The limits stay (1 per week, 3 per 28 days), and a repaired day earns no daily credit | 4.4, 12 |
 | A3 | **Signup credits never expire.** The proposed 90 days is dropped. Bonus credits keep 90 days. Because a credit that never expires is spent last, it is the learner's long-lived reserve | 4.1, 6, 7, 12 |
 | A4 | **"Create a lesson for this"** (from the result of a topic quick quiz) **costs 9** (first written as 10; **corrected in A12**). The level is already known, so there is no quick check and the whole lesson is one charge | 2.3 |
@@ -46,6 +46,7 @@ Answers of 2026-11-03 to the open questions (second pass):
 | A26 | **Sheets-only lessons are priced by the number of sheets, whatever the score.** A Quick check with one sheet is **3** in total (3 + 0) and with both sheets **5** (3 + 2), for any score, perfect or not. The half-price rule of §2.1, and its "half your credits back" message, apply **only to the mastery choice of a lesson** (a perfect Quick check that chose the cheat sheet and the revision sheet instead of an Expert lesson). This replaces the perfect-check part of A14 | 2.1, 2.3 |
 | A27 | **Confirmed:** the streak keeps counting past day 28, with +10 at every multiple of 7 and a further +10 at every multiple of 28, each paid once per run; and a sheet added later to a sheets-only lesson that started from a Quick check costs 2 | 2.3, 4.3 |
 | A28 | **A blank attempt is not activity** (decided in the Phase 10.0 brief). An attempt with every answer blank, or a Quick check of only "I don't know", is stored as before but never reported to the activity sink, so it earns no daily credit and no streak day. Any attempt with at least one real answer counts, at the instant it is handed in. Spec §4.2 says so | 4.2 |
+| A29 | **All plan prices doubled (approved by the product owner, 2026-11-15).** One-time credits ₹1 → ₹2 a credit (minimum 10 credits is now ₹20; the maximum is unchanged), Weekly Pro ₹49 → ₹98, Monthly Pro ₹199 → ₹398, Pro Plus ₹279 → ₹558, all tax-inclusive. Credits per plan, validity and every action's credit cost are unchanged, so a 10-credit lesson earns twice as much. Migration `0009_double_plan_prices` changes the `Plan` rows (reversibly, and only a price still at the old figure); purchases, periods and buckets already made keep what was paid and given. Terms and Privacy state no plan amount, so they are unchanged | 5.1, 5.2, 12 |
 
 ---
 
@@ -260,17 +261,28 @@ All purchases are **prepaid**. There is no auto-renewal.
 
 | Plan | Credits | Validity | Price | ₹ / credit |
 |---|---|---|---|---|
-| One-time credits | any amount, **minimum 10** | 1 year | ₹1 per credit (min ₹10) | 1.00 |
-| Weekly Pro | 100 per week | 1 week | ₹49 per week | 0.49 |
-| Monthly Pro | 500 | 28 days | ₹199 | 0.40 |
-| Pro Plus | 750 | 28 days | ₹279 | 0.37 |
+| One-time credits | any amount, **minimum 10** | 1 year | ₹2 per credit (min ₹20) | 2.00 |
+| Weekly Pro | 100 per week | 1 week | ₹98 per week | 0.98 |
+| Monthly Pro | 500 | 28 days | ₹398 | 0.80 |
+| Pro Plus | 750 | 28 days | ₹558 | 0.74 |
+
+Prices doubled on 2026-11-15 (A29). What a plan gives, and what an action costs in credits, did not change.
 
 - One-time credits have **no volume discount**. This is deliberate, to promote plans.
 - One-time credits can be bought on top of any plan.
 
+**What a full lesson earns.** A full lesson costs 10 credits (`lesson.full`), so a lesson brings in the credit price times ten. This is revenue before payment-gateway fees and tax-inclusive, and it is the figure to set against what a lesson costs in model calls.
+
+| Paid with | ₹ / credit | Revenue per 10-credit lesson | Before the change |
+|---|---|---|---|
+| One-time credits | 2.00 | ₹20.00 | ₹10.00 |
+| Weekly Pro | 0.98 | ₹9.80 | ₹4.90 |
+| Monthly Pro | 0.796 | ₹7.96 | ₹3.98 |
+| Pro Plus | 0.744 | ₹7.44 | ₹3.72 |
+
 ### 5.2 Buying multiple weeks
 
-Buying several Weekly Pro plans at once **drips** the credits week by week. For example, 3 × ₹49 = ₹147 gives:
+Buying several Weekly Pro plans at once **drips** the credits week by week. For example, 3 × ₹98 = ₹294 gives:
 
 - Week 1: 100 credits, valid 1 week
 - Week 2: 100 credits, valid 1 week
@@ -429,7 +441,7 @@ StreakState
 **Closed in the 2026-11-03 amendments**
 
 - [x] **Lesson stage-1 charge:** 3, with 7 at stage two (the code and the Phase 9 gate are built on it).
-- [x] **Monthly Pro / Pro Plus prices:** ₹199 / ₹279 (A1).
+- [x] **Monthly Pro / Pro Plus prices:** ₹199 / ₹279 (A1); now ₹398 / ₹558 (A29).
 - [x] **Short/long answer cap per batch:** 1 long + 2 short, built in Phase 9 (A8).
 - [x] **Streak repair window:** the previous day only, within 48 hours (A2).
 - [x] **Signup credit expiry:** never (A3).

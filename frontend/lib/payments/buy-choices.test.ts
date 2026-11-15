@@ -18,9 +18,9 @@ import type { OneTimeRules, Plan } from "@/lib/credits/types";
 
 import { OneTimeChoices, PlanQuantity } from "./buy-choices";
 
-const rules: OneTimeRules = { min_credits: 10, max_credits: 5000, price_paise_per_credit: 100, valid_days: 365 };
-const weekly: Plan = { key: "weekly_pro", name: "Weekly Pro", kind: "recurring", credits: 100, period_days: 7, price_paise: 4900, max_quantity: 12 };
-const monthly: Plan = { ...weekly, key: "monthly_pro", name: "Monthly Pro", credits: 500, period_days: 28, price_paise: 19900, max_quantity: 1 };
+const rules: OneTimeRules = { min_credits: 10, max_credits: 5000, price_paise_per_credit: 200, valid_days: 365 };
+const weekly: Plan = { key: "weekly_pro", name: "Weekly Pro", kind: "recurring", credits: 100, period_days: 7, price_paise: 9800, max_quantity: 12 };
+const monthly: Plan = { ...weekly, key: "monthly_pro", name: "Monthly Pro", credits: 500, period_days: 28, price_paise: 39800, max_quantity: 1 };
 
 describe("the amount of one-time credits", () => {
   test("the chips are the presets the limits allow", () => {
@@ -29,22 +29,22 @@ describe("the amount of one-time credits", () => {
   });
 
   test("a chip gives its credits and its price", () => {
-    expect(OneTimeChoices.amount(200, "", rules)).toEqual({ credits: 200, paise: 20000 });
+    expect(OneTimeChoices.amount(200, "", rules)).toEqual({ credits: 200, paise: 40000 });
   });
 
   test("the box is checked against the limits and says why not", () => {
-    expect(OneTimeChoices.amount(null, "250", rules)).toEqual({ credits: 250, paise: 25000 });
+    expect(OneTimeChoices.amount(null, "250", rules)).toEqual({ credits: 250, paise: 50000 });
     expect(OneTimeChoices.amount(null, "5", rules)).toEqual({ message: "The smallest amount is 10 credits." });
     expect(OneTimeChoices.amount(null, "abc", rules)).toEqual({ message: "Enter a whole number of credits." });
   });
 
   test("nothing picked and nothing typed is nothing yet; a chip wins over the box", () => {
     expect(OneTimeChoices.amount(null, "  ", rules)).toBeNull();
-    expect(OneTimeChoices.amount(50, "999", rules)).toEqual({ credits: 50, paise: 5000 });
+    expect(OneTimeChoices.amount(50, "999", rules)).toEqual({ credits: 50, paise: 10000 });
   });
 
   test("the total reads as rupees for credits", () => {
-    expect(OneTimeChoices.total(250, rules)).toBe("₹250 for 250 credits");
+    expect(OneTimeChoices.total(250, rules)).toBe("₹500 for 250 credits");
   });
 });
 
@@ -60,8 +60,8 @@ describe("a plan's quantity", () => {
   });
 
   test("the total follows the weeks", () => {
-    expect(PlanQuantity.total(weekly, 3)).toEqual({ paise: 14700, credits: 300 });
-    expect(PlanQuantity.total(weekly, 50)).toEqual({ paise: 58800, credits: 1200 });
+    expect(PlanQuantity.total(weekly, 3)).toEqual({ paise: 29400, credits: 300 });
+    expect(PlanQuantity.total(weekly, 50)).toEqual({ paise: 117600, credits: 1200 });
   });
 
   test("the weeks read in words, and a plan bought whole says nothing", () => {

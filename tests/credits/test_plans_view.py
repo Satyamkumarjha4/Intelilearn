@@ -57,13 +57,13 @@ def test_it_lists_the_plans_that_are_on_with_their_terms(signed_in_client):
     by_key = {p["key"]: p for p in body["plans"]}
     assert by_key["weekly_pro"] == {
         "key": "weekly_pro", "name": "Weekly Pro", "kind": "recurring", "credits": 100, "period_days": 7,
-        "price_paise": 4900, "max_quantity": 12,
+        "price_paise": 9800, "max_quantity": 12,
     }  # fmt: skip
     monthly = by_key["monthly_pro"]
     assert (monthly["credits"], monthly["period_days"], monthly["price_paise"]) == (
-        500, 28, 19900
+        500, 28, 39800
     )  # fmt: skip
-    assert (by_key["pro_plus"]["credits"], by_key["pro_plus"]["price_paise"]) == (750, 27900)
+    assert (by_key["pro_plus"]["credits"], by_key["pro_plus"]["price_paise"]) == (750, 55800)
     assert by_key["one_time"]["kind"] == "one_time"
 
 
@@ -78,7 +78,7 @@ def test_it_carries_the_one_time_rules(signed_in_client):
 
     rules = signed_in_client.get(URL).json()["one_time"]
 
-    assert rules == {"min_credits": 20, "max_credits": 5000, "price_paise_per_credit": 100, "valid_days": 300}
+    assert rules == {"min_credits": 20, "max_credits": 5000, "price_paise_per_credit": 200, "valid_days": 300}
 
 
 def test_a_learner_with_no_plan_has_no_periods_and_a_free_queue(signed_in_client, user):

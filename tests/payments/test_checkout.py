@@ -35,7 +35,7 @@ class TestAnOrder:
         order = payments.buy("one_time", credits=250)
 
         assert (order.amount_paise, order.currency, order.status, order.gateway) == (
-            25000,
+            50000,
             "INR",
             "pending",
             "scripted",
@@ -47,7 +47,7 @@ class TestAnOrder:
     def test_a_plan_is_priced_by_its_weeks(self, payments):
         order = payments.buy("weekly_pro", quantity=3)
 
-        assert order.amount_paise == 3 * 4900 and order.purchase.quantity == 3
+        assert order.amount_paise == 3 * 9800 and order.purchase.quantity == 3
 
     def test_nothing_is_granted_by_starting_a_payment(self, payments, user):
         payments.buy("one_time", credits=100)
@@ -63,7 +63,7 @@ class TestAnOrder:
         order = payments.buy("monthly_pro")
 
         asked, urls = payments.script.checkouts[0]
-        assert (asked.order_id, asked.amount_paise, asked.currency) == (str(order.pk), 19900, "INR")
+        assert (asked.order_id, asked.amount_paise, asked.currency) == (str(order.pk), 39800, "INR")
         assert (asked.description, asked.buyer_email) == ("Monthly Pro", user.email)
         assert urls.success == f"http://shop.test/buy/return?order={order.pk}"
         assert urls.cancel == f"http://shop.test/buy/return?order={order.pk}&cancelled=1"
