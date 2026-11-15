@@ -13,6 +13,7 @@ from ..assessment import AssessmentRequest, AssessmentSource, AssessmentSources
 from ..context import FlowContext, NodeBudget
 from ..grading import QuizResult, RoutingPolicy
 from ..levels import LevelScheme
+from ..option_repair import OptionRepair
 from ..profile import LearnerProfile
 from ..prompts import AssessLearnerPrompt, DiagnosticPrompt, DiagnosticReviewPrompt
 from ..schemas import DiagnosticBundle, LearnerAssessment, QuizReview
@@ -65,16 +66,20 @@ class ValidateDiagnosticNode(ValidateNode):
     retry_node = "generate_diagnostic"
     label = "The diagnostic quiz"
 
+    def __init__(self, repair: OptionRepair | None = None):
+        self.repair = repair or OptionRepair()
+
     def validator(self, state: dict, ctx: FlowContext) -> Validator:
         return DiagnosticValidator(ctx.sandbox)  # the deterministic rules; the optional reviewer comes after them
 
     def run(self, state: dict, ctx: FlowContext) -> dict:
+        # A question whose options repeat is rewritten alone first, so it does not send the whole quiz back.
+        repaired = self.repair.repair(state, ctx)
+        state = state | {"bundle": repaired.bundle}
         update = super().run(state, ctx)
-        if update["feedback"][
-            self.feedback_key
-        ]:  # a rule failed: the reviewer is not asked about a quiz that will go back
-            return update
-        return self.review(state, ctx)
+        if not update["feedback"][self.feedback_key]:  # when a rule failed the quiz goes back: no reviewer for it
+            update = self.review(state, ctx)
+        return update | {"bundle": repaired.bundle} if repaired.repaired else update
 
     def review(self, state: dict, ctx: FlowContext) -> dict:
         """The optional `diagnostic.review` judge. It can send the quiz back, but a lesson never fails because of it:

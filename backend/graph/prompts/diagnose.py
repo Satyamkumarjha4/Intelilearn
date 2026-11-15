@@ -160,3 +160,35 @@ Results look {consistency}.
                 f"- [{label}] {concept}: {'correct' if result['per_question'][q['id']] else 'wrong / did not know'}"
             )
         return "\n".join(rows)
+
+
+class RepairOptionsPrompt(Prompt):
+    """One question whose options a rule rejected (repeated, or "all of the above"), to be rewritten alone.
+
+    Subject: the topic, the learner's profile, `question` (the question as stored) and `problem` (what the validator
+    said). The model answers with the same kind of question as the one it was given."""
+
+    def system(self, subject: dict) -> str:
+        return f"""You are an expert assessment designer. One question of a quiz was rejected because of its options.
+Rewrite that question so its four options are all different in meaning, not just in wording.
+
+Rules:
+- Keep the question, its concept and its difficulty band: change the options (and the question's wording only if it
+  has to change for the options to make sense). Do not make it easier or harder.
+- Exactly 4 options and exactly one correct, at "correct_index". The wrong options are plausible, similar in length
+  and style to the correct one, and each wrong in a different way.
+- Never use "all of the above", "none of the above" or "both A and B".
+- Keep the explanation true for the correct option, in 1-3 sentences.
+- Use Markdown for code (`inline`) and LaTeX between $…$ for maths.
+
+{self.language_rule(subject.get("profile"))}"""
+
+    def user(self, subject: dict) -> str:
+        return f"""{self.topic_text(subject)}
+
+The rejected question:
+{self.to_json(subject["question"])}
+
+What was wrong: {subject["problem"]}
+
+Write the corrected question."""

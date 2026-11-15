@@ -1062,6 +1062,12 @@ classDiagram
 - `QuizGrader` is shared by `QuizService` (synchronous grading in the request) and the `grade_*` nodes, so both always agree.
 - Validators are pure: no ORM, no network. They depend only on `LatexChecker` (implemented by `SandboxRunner`, faked in tests).
 - `Prompt` subclasses hold no state between calls; one class per node key in `graph/prompts/`.
+- `OptionRepair` (`graph/option_repair.py`) is used by `ValidateDiagnosticNode` (injected through its constructor). It finds the
+  diagnostic and prerequisite questions whose options repeat or say "all of the above", and asks the `diagnostic.generate`
+  node's own models (`RepairOptionsPrompt`, one call per question, one try, at most three questions) to rewrite each one
+  alone, keeping its id, band, concept or prerequisite. A rewrite that still breaks the rule, a node whose models all fail
+  and a quiz with more than three offenders leave the quiz as it was, so the validator's verdict and the whole-quiz retry
+  are what they were before the repair existed.
 
 **Question types (`graph/questions/`, Phase 9.1).** What differs between kinds of question lives in one class per kind
 (Strategy), found by name in `QuestionTypes`, instead of `if kind ==` ladders in six places:

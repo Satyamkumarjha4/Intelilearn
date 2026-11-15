@@ -10,7 +10,13 @@ from .author import (
 )
 from .base import Prompt
 from .build import CompilePagePrompt, RepairCodePrompt, RuntimeRepairPrompt
-from .diagnose import AssessLearnerPrompt, DiagnosticPrompt, DiagnosticReviewPrompt, PlanPrerequisitesPrompt
+from .diagnose import (
+    AssessLearnerPrompt,
+    DiagnosticPrompt,
+    DiagnosticReviewPrompt,
+    PlanPrerequisitesPrompt,
+    RepairOptionsPrompt,
+)
 from .grading import GradeTestPrompt
 from .media import MediaAgentPrompt, VerifyMediaPrompt
 from .quiz import WriteQuizQuestionsPrompt
@@ -21,6 +27,6 @@ __all__ = [
     "SCOPE_REFERENCE", "AlignmentPrompt", "AssessLearnerPrompt", "CompilePagePrompt", "DiagnosticPrompt",
     "DiagnosticReviewPrompt", "GenerateInteractivePrompt", "GradeTestPrompt", "MediaAgentPrompt",
     "PlanInteractivesPrompt", "PlanLessonPrompt", "PlanPrerequisitesPrompt", "Prompt", "RepairCodePrompt",
-    "RuntimeRepairPrompt",
+    "RepairOptionsPrompt", "RuntimeRepairPrompt",
     "StudyMaterialPrompt", "VerifyMediaPrompt", "WritePagePrompt", "WriteQuestionsPrompt", "WriteQuizQuestionsPrompt",
 ]  # fmt: skip
