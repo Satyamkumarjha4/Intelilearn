@@ -22,6 +22,10 @@ export class RoutingDraft {
         enabled: b.enabled,
         max_retries: b.max_retries,
         overrides: { params: b.overrides.params, reasoning_effort: b.overrides.reasoning_effort },
+        max_output_tokens: b.max_output_tokens,
+        timeout_s: b.timeout_s,
+        structured_mode: b.structured_mode,
+        fall_through_on: b.fall_through_on,
       })),
     };
   }
@@ -68,6 +72,11 @@ export class RoutingDraft {
       enabled: true,
       max_retries: DEFAULT_RETRIES,
       overrides: { params: {}, reasoning_effort: "" },
+      max_output_tokens: null,
+      timeout_s: null,
+      structured_mode: "",
+      fall_through_on: [],
+      price: model.price ?? null,
       problems: [],
     };
     return { ...node, bindings: [...node.bindings, binding] };

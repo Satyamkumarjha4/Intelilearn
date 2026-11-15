@@ -12,6 +12,8 @@
  * - writes the rate limit, the models count and the 7-day spend of a provider card
  * - lists what a model can do (JSON, tools, vision, reasoning)
  * - writes the context window, the prices per million tokens and the limit for the table
+ * - takes the price from the row in force (and says when it is the legacy one typed on the model), shows what the
+ *   price becomes, and lists the warnings and the tier and status marks of a model
  * - says how the last test went (works with its time, failed with its reason, never tested, or no key)
  * - keeps a fresh test result on its row without asking the server again
  * - explains a delete refused because steps still use the model
@@ -51,6 +53,17 @@ const model = (extra: Partial<ConsoleModel> = {}): ConsoleModel =>
     input_cost_per_mtok: "0.1500",
     output_cost_per_mtok: "0.6000",
     last_probe: null,
+    tier: "",
+    status: "stable",
+    shutdown_on: null,
+    reasoning_levels: [],
+    reasoning_off: "",
+    strict_structured: false,
+    min_cache_tokens: null,
+    max_request_tokens: null,
+    price: null,
+    next_price: null,
+    warnings: [],
     ...extra,
   }) as ConsoleModel;
 
@@ -219,5 +232,47 @@ describe("inUse", () => {
     expect(ModelCatalog.inUse(new ApiError(409, "other", "x"))).toBeNull();
     expect(ModelCatalog.inUse(new ApiError(400, "invalid", "x"))).toBeNull();
     expect(ModelCatalog.inUse(new Error("x"))).toBeNull();
+  });
+});
+
+describe("price in force", () => {
+  const row = { input: "0.7500", output: "3.7500", cached_input: "0.0750", legacy: false, checked_on: "2026-11-15", source_url: "https://x.test/p", valid_until: "2026-12-31" };
+
+  test("is the row in force, whatever the legacy fields say", () => {
+    const m = model({ price: row, input_cost_per_mtok: "9", output_cost_per_mtok: "9" });
+
+    expect([ModelCatalog.priceIn(m), ModelCatalog.priceOut(m)]).toEqual(["0.75", "3.75"]);
+  });
+
+  test("falls back to the price typed on the model, and to a dash with none", () => {
+    expect(ModelCatalog.priceIn(model())).toBe("0.15");
+    expect(ModelCatalog.priceIn(model({ input_cost_per_mtok: null, output_cost_per_mtok: null }))).toBe("–");
+  });
+
+  test("says what the price becomes and from when", () => {
+    const m = model({ price: row, next_price: { from: "2027-01-01", input: "1.5000", output: "7.5000" } });
+
+    expect(ModelCatalog.nextPrice(m)).toBe("$1.50 / $7.50 from 2027-01-01");
+    expect(ModelCatalog.nextPrice(model())).toBeNull();
+  });
+
+  test("marks the legacy price as having no source", () => {
+    expect(ModelCatalog.priceSource(model({ price: { ...row, legacy: true, checked_on: null, source_url: "" } }))).toBe("typed on the model, no source page");
+    expect(ModelCatalog.priceSource(model({ price: row }))).toBe("read on 2026-11-15 from https://x.test/p");
+    expect(ModelCatalog.priceSource(model())).toBeNull();
+  });
+});
+
+describe("tier, status and warnings", () => {
+  test("the marks are the tier, then the status when it is not stable", () => {
+    expect(ModelCatalog.marks(model({ tier: "T1" }))).toEqual(["T1"]);
+    expect(ModelCatalog.marks(model({ tier: "T2", status: "preview" }))).toEqual(["T2", "preview"]);
+    expect(ModelCatalog.marks(model({ tier: "", status: "deprecated" }))).toEqual(["deprecated"]);
+    expect(ModelCatalog.marks(model())).toEqual([]);
+  });
+
+  test("the warnings are the server's, in its order", () => {
+    expect(ModelCatalog.warnings(model({ warnings: ["No price: its calls have no cost."] }))).toEqual(["No price: its calls have no cost."]);
+    expect(ModelCatalog.warnings(model())).toEqual([]);
   });
 });

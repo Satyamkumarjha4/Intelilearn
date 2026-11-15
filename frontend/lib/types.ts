@@ -631,6 +631,8 @@ export type ConsoleUsage = {
     tokens_in: number;
     tokens_out: number;
     spend: Money;
+    /** Spend in rupees, at the server's USD_INR_RATE. */
+    spend_inr: string;
     /** Of the calls that worked; null if none did. */
     median_latency_s: number | null;
     p95_latency_s: number | null;
@@ -645,6 +647,8 @@ export type ConsoleUsage = {
     failed: number;
     calls: number;
     spend: Money;
+    thinking_k: number;
+    cached_k: number;
   }[];
   by_node: {
     node: string;
@@ -655,6 +659,16 @@ export type ConsoleUsage = {
     tokens_k: number;
     spend: Money;
     p95_s: number | null;
+    /** Share of attempts on the first layer that worked; null with none. */
+    layer1_ok_pct: number | null;
+    /** Share of attempts made on a fallback layer. */
+    fallback_pct: number;
+    thinking_k: number;
+    cached_k: number;
+    /** Thinking tokens as a share of output tokens. */
+    thinking_pct: number | null;
+    cost_per_call: Money;
+    cost_per_call_inr: string;
   }[];
 };
 
@@ -741,6 +755,21 @@ export type ModelCapabilities = {
   reasoning_control: "effort" | "budget_tokens" | "none";
   reasoning_disables_sampling: boolean;
 };
+/** What a model costs per million tokens in US dollars, as the console shows it. */
+export type ModelPrice = {
+  input: string;
+  output: string;
+  cached_input: string | null;
+  /** True: typed on the model itself, with no source page or date. */
+  legacy: boolean;
+  /** The day the provider's page was read. */
+  checked_on: string | null;
+  source_url: string;
+  valid_until: string | null;
+};
+export type NextPrice = { from: string; input: string; output: string };
+export type ModelTier = "" | "T0" | "T1" | "T2" | "T3" | "T4";
+export type ModelStatus = "stable" | "preview" | "deprecated";
 export type ConsoleModelFields = ModelCapabilities & {
   name: string;
   label: string;
@@ -749,9 +778,17 @@ export type ConsoleModelFields = ModelCapabilities & {
   context_window: number;
   max_output_tokens: number;
   rpm_limit: number | null;
-  /** US dollars per million tokens, for example "0.1500". */
+  /** US dollars per million tokens, for example "0.1500". The legacy price: `price` wins when there is one. */
   input_cost_per_mtok: string | null;
   output_cost_per_mtok: string | null;
+  tier: ModelTier;
+  status: ModelStatus;
+  shutdown_on: string | null;
+  reasoning_levels: string[];
+  reasoning_off: "" | "unsupported" | "minimal" | "disabled" | "none";
+  strict_structured: boolean;
+  min_cache_tokens: number | null;
+  max_request_tokens: number | null;
 };
 export type ConsoleModel = ConsoleModelFields & {
   id: number;
@@ -761,6 +798,12 @@ export type ConsoleModel = ConsoleModelFields & {
   /** The steps (node keys) that use it. */
   bound_nodes: string[];
   last_probe: { at: string; ok: boolean; latency_s: number | null; error: string } | null;
+  /** What applies today (the row in force, else the legacy price); null with no price at all. */
+  price: ModelPrice | null;
+  /** The next row: what the price becomes, and from when. */
+  next_price: NextPrice | null;
+  /** What to look at: no price, a price or a shutdown within 60 days, a deprecated model. */
+  warnings: string[];
 };
 /** To add a model; only `provider` and `name` are required. */
 export type NewModel = Partial<ConsoleModelFields> & { provider: string; name: string };
@@ -771,8 +814,18 @@ export type ModelInUseExtra = { nodes: string[] };
 
 export type BindingOverrides = { params: Record<string, unknown>; reasoning_effort: Effort | "" };
 /** A model in a step's chain, as sent when saving. The chain's order is its priority. */
-export type BindingInput = { model: number; enabled?: boolean; max_retries?: number; overrides?: Partial<BindingOverrides> };
-export type RoutingBinding = {
+export type BindingLayer = {
+  /** The most this layer may write, thinking included; null: the model's own. */
+  max_output_tokens: number | null;
+  /** Per call on this layer; null: the step's. */
+  timeout_s: number | null;
+  /** Blank: strict where the model can. */
+  structured_mode: "" | "strict" | "best_effort" | "off";
+  /** Events after which the next layer is tried; empty: every failure. */
+  fall_through_on: string[];
+};
+export type BindingInput = { model: number; enabled?: boolean; max_retries?: number; overrides?: Partial<BindingOverrides> } & Partial<BindingLayer>;
+export type RoutingBinding = BindingLayer & {
   /** The model's id; null for a model a profile names that the registry lacks. */
   model: number | null;
   /** provider/name */
@@ -780,6 +833,8 @@ export type RoutingBinding = {
   enabled: boolean;
   max_retries: number;
   overrides: BindingOverrides;
+  /** What the model costs today; null with no price. Not sent when saving. */
+  price: ModelPrice | null;
   /** Why this model cannot serve this step; empty if it can. */
   problems: string[];
 };
