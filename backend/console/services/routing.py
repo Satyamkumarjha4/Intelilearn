@@ -13,6 +13,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 
 from console.audit import AuditTrail
+from console.services.prices import ModelPrices
 from llm_registry.models import LLMModel, NodeConfig, NodeModelBinding
 from llm_registry.node_specs import NODE_SPECS
 from llm_registry.resolver import RegistryResolver
@@ -29,6 +30,11 @@ class ProposedBinding:
     enabled: bool = True
     params: dict = field(default_factory=dict)
     reasoning_effort: str = ""
+    # what only this layer has: its output cap, timeout, structured mode and the events it falls through on
+    max_output_tokens: int | None = None
+    timeout_s: int | None = None
+    structured_mode: str = ""
+    fall_through_on: list = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -62,6 +68,10 @@ class ProposedNode:
                     enabled=b.is_enabled,
                     params=b.params_override,
                     reasoning_effort=b.reasoning_effort,
+                    max_output_tokens=b.max_output_tokens,
+                    timeout_s=b.timeout_s,
+                    structured_mode=b.structured_mode,
+                    fall_through_on=list(b.fall_through_on),
                 )
                 for b in bindings
             ),
@@ -71,11 +81,16 @@ class ProposedNode:
 class NodeRoutingReader:
     def nodes(self) -> list[NodeConfig]:
         """Every step's config, in the order of the specs (the order of a lesson), in four queries."""
-        rows = {n.node_key: n for n in NodeConfig.objects.prefetch_related("bindings__model__provider")}
+        nodes = NodeConfig.objects.prefetch_related("bindings__model__provider", "bindings__model__prices")
+        rows = {n.node_key: n for n in nodes}
         return [rows[key] for key in NODE_SPECS if key in rows]
 
     def get(self, key: str) -> NodeConfig | None:
-        return NodeConfig.objects.prefetch_related("bindings__model__provider").filter(node_key=key).first()
+        return (
+            NodeConfig.objects.prefetch_related("bindings__model__provider", "bindings__model__prices")
+            .filter(node_key=key)
+            .first()
+        )
 
 
 class NodeRoutingValidator:
@@ -98,7 +113,11 @@ class NodeRoutingValidator:
         # own check.
         trial_node = NodeConfig(node_key=node.node_key, params_override=proposed.params_override)
         trial = NodeModelBinding(
-            node=trial_node, model=model, params_override=binding.params, reasoning_effort=binding.reasoning_effort
+            node=trial_node,
+            model=model,
+            params_override=binding.params,
+            reasoning_effort=binding.reasoning_effort,
+            max_output_tokens=binding.max_output_tokens,
         )
         return problems + trial.problems()
 
@@ -157,7 +176,11 @@ class NodeRoutingPresenter:
             "min_context": spec.min_context,
             **self._settings(proposed),
             "bindings": [
-                {**self._binding(b), "problems": self._validator.binding_problems(node, proposed, b)}
+                {
+                    **self._binding(b),
+                    "price": ModelPrices().current(b.model) if b.model else None,
+                    "problems": self._validator.binding_problems(node, proposed, b),
+                }
                 for b in proposed.bindings
             ],
         }
@@ -186,6 +209,10 @@ class NodeRoutingPresenter:
             "enabled": binding.enabled,
             "max_retries": binding.max_retries,
             "overrides": {"params": binding.params, "reasoning_effort": binding.reasoning_effort},
+            "max_output_tokens": binding.max_output_tokens,
+            "timeout_s": binding.timeout_s,
+            "structured_mode": binding.structured_mode,
+            "fall_through_on": binding.fall_through_on,
         }
 
 
@@ -216,6 +243,10 @@ class NodeRoutingWriter:
                     is_enabled=binding.enabled,
                     params_override=binding.params,
                     reasoning_effort=binding.reasoning_effort,
+                    max_output_tokens=binding.max_output_tokens,
+                    timeout_s=binding.timeout_s,
+                    structured_mode=binding.structured_mode,
+                    fall_through_on=binding.fall_through_on,
                 )
             after = self._presenter.snapshot(NodeRoutingReader().get(node.node_key))
             self._trail.record("node.update", "node", node.node_key, before=before, after=after)
@@ -293,6 +324,10 @@ class ProfilePreview:
                     enabled=entry.get("is_enabled", True),
                     params=entry.get("params_override", {}),
                     reasoning_effort=entry.get("reasoning_effort", ""),
+                    max_output_tokens=entry.get("max_output_tokens"),
+                    timeout_s=entry.get("timeout_s"),
+                    structured_mode=entry.get("structured_mode", ""),
+                    fall_through_on=list(entry.get("fall_through_on", [])),
                 )
             )
         return ProposedNode(

@@ -1,12 +1,54 @@
 import os
+from datetime import date
 
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models
+from django.db.models import Q
 
 from .node_specs import NODE_SPECS, Capability, Effort, OutputMode
-from .profiles import PROVIDER_PROFILES, ProviderKind, ReasoningControl
+from .profiles import PROVIDER_PROFILES, ProviderKind, ReasoningControl, ReasoningOff
+
+NOT_NEGATIVE = MinValueValidator(0)
+
+
+def price_field(**kwargs) -> models.DecimalField:
+    """US dollars per million tokens, never below zero."""
+    return models.DecimalField(max_digits=10, decimal_places=4, validators=[NOT_NEGATIVE], **kwargs)
+
 
 EFFORT_CHOICES = [(e.value, e.value.capitalize()) for e in Effort]
+
+
+class Tier(models.TextChoices):
+    T0 = "T0", "T0 tiny"
+    T1 = "T1", "T1 cheap"
+    T2 = "T2", "T2 mid"
+    T3 = "T3", "T3 strong"
+    T4 = "T4", "T4 premium"
+
+
+class ModelStatus(models.TextChoices):
+    STABLE = "stable", "Stable"
+    PREVIEW = "preview", "Preview"
+    DEPRECATED = "deprecated", "Deprecated"
+
+
+class StructuredMode(models.TextChoices):
+    STRICT = "strict", "Strict (constrained decoding)"
+    BEST_EFFORT = "best_effort", "Best effort"
+    OFF = "off", "Off (plain JSON mode)"
+
+
+class FallThrough(models.TextChoices):
+    """The events after which the next layer of a chain is tried."""
+
+    QUOTA = "quota", "A spent quota"
+    RATE_LIMIT = "rate_limit", "A per-minute limit"
+    SERVER_ERROR = "server_error", "A server error or timeout"
+    BAD_REQUEST = "bad_request", "A request the model refuses"
+    INVALID_OUTPUT = "invalid_output", "A reply that does not match the schema"
+    VALIDATION = "validation", "A reply the lesson's checks reject"
 
 
 class Provider(models.Model):
@@ -78,9 +120,44 @@ class LLMModel(models.Model):
     context_window = models.PositiveIntegerField(default=128_000)
     max_output_tokens = models.PositiveIntegerField(default=8192)
     rpm_limit = models.PositiveIntegerField(null=True, blank=True, help_text="Requests per minute for this model.")
+    max_request_tokens = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="The most one request may use (its prompt plus the reply it may write). Set it when a provider's "
+        "per-minute token limit is small: a binding that could exceed it is skipped. Empty = no limit.",
+    )
+    # Legacy: a price typed on the model itself. `ModelPrice` rows (a price per window of dates, with its source) win;
+    # these two are used only for a model that has none.
     input_cost_per_mtok = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
     output_cost_per_mtok = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
     is_enabled = models.BooleanField(default=True)
+
+    # What the model is (docs/to_be_developed/model-strategy.md): its tier, whether it is on its way out and when, and
+    # what the provider accepts for reasoning and structured output.
+    tier = models.CharField(max_length=2, choices=Tier.choices, blank=True)
+    status = models.CharField(max_length=12, choices=ModelStatus.choices, default=ModelStatus.STABLE)
+    shutdown_on = models.DateField(
+        null=True, blank=True, help_text="The day the provider stops serving it (or reroutes it), when it says so."
+    )
+    reasoning_levels = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='The reasoning levels the model accepts, lowest first, e.g. ["minimal", "low", "medium", "high"]. '
+        "Empty = low, medium and high.",
+    )
+    reasoning_off = models.CharField(
+        max_length=12,
+        choices=ReasoningOff.CHOICES,
+        blank=True,
+        help_text="How 'no reasoning' is asked for: the model's lowest level, a disabled switch, effort none, or "
+        "(blank) nothing is sent and the provider's own default applies.",
+    )
+    strict_structured = models.BooleanField(
+        default=False, help_text="The provider can guarantee the reply matches the schema (constrained decoding)."
+    )
+    min_cache_tokens = models.PositiveIntegerField(
+        null=True, blank=True, help_text="The shortest prompt the provider will cache. Empty = unknown."
+    )
 
     # The latest connectivity test (the console's "Test" button): when, whether it worked, how long the plain text round
     # trip took and, if it did not work, why (already redacted by the prober). Never an input to routing.
@@ -113,6 +190,90 @@ class LLMModel(models.Model):
             errors["default_params"] = problems
         if self.supports_reasoning and self.reasoning_control == ReasoningControl.NONE:
             errors["reasoning_control"] = "Choose how reasoning is controlled for a reasoning model."
+        profile = self.provider_id and self.provider.profile
+        if profile and (problem := profile.rejects_reasoning_control(self.name, self.reasoning_control)):
+            errors["reasoning_control"] = problem
+        if not isinstance(self.reasoning_levels, list) or not all(isinstance(v, str) for v in self.reasoning_levels):
+            errors["reasoning_levels"] = 'Must be a list of level names, e.g. ["low", "medium", "high"].'
+        if errors:
+            raise ValidationError(errors)
+
+
+class ModelPriceQuerySet(models.QuerySet):
+    def in_effect(self, provider_key: str, model_name: str, day: date) -> "ModelPrice | None":
+        """The row whose window holds `day` (both ends inclusive), or None."""
+        return (
+            self.filter(model__provider__key=provider_key, model__name=model_name)
+            .filter(Q(valid_from__isnull=True) | Q(valid_from__lte=day))
+            .filter(Q(valid_until__isnull=True) | Q(valid_until__gte=day))
+            .order_by("-valid_from")
+            .first()
+        )
+
+    def next_after(self, provider_key: str, model_name: str, day: date) -> "ModelPrice | None":
+        """The first row that starts after `day`: what the price becomes, and when."""
+        return (
+            self.filter(model__provider__key=provider_key, model__name=model_name, valid_from__gt=day)
+            .order_by("valid_from")
+            .first()
+        )
+
+
+class ModelPrice(models.Model):
+    """A model's price in US dollars per million tokens for a window of dates, with the page it was read from and the
+    day it was read. A change of price is a new row, so a `ModelCall` keeps the price it was billed at. `output` is
+    what thinking tokens are billed at too: every provider bills them as output."""
+
+    model = models.ForeignKey(LLMModel, on_delete=models.CASCADE, related_name="prices")
+    input_per_mtok = price_field()
+    output_per_mtok = price_field(help_text="Thinking tokens are billed at it.")
+    cached_input_per_mtok = price_field(null=True, blank=True)
+    cache_write_per_mtok = price_field(null=True, blank=True)
+    long_context_threshold = models.PositiveIntegerField(
+        null=True, blank=True, help_text="A prompt with more input tokens than this is billed at the long prices."
+    )
+    long_input_per_mtok = price_field(null=True, blank=True)
+    long_output_per_mtok = price_field(null=True, blank=True)
+    long_cached_input_per_mtok = price_field(null=True, blank=True)
+    batch_discount = models.DecimalField(
+        max_digits=4, decimal_places=3, default=0.5, help_text="The share a batch call saves (0.5 = half price)."
+    )
+    valid_from = models.DateField(null=True, blank=True, help_text="First day it applies. Empty = from the beginning.")
+    valid_until = models.DateField(null=True, blank=True, help_text="Last day it applies. Empty = until replaced.")
+    source_url = models.URLField(max_length=300, help_text="The provider's own page it was read from.")
+    checked_on = models.DateField(help_text="The day that page was read.")
+    note = models.TextField(blank=True)
+
+    objects = ModelPriceQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["model__provider__key", "model__name", "valid_from"]
+
+    def __str__(self):
+        window = f"{self.valid_from or 'start'} to {self.valid_until or 'open'}"
+        return f"{self.model_id and self.model} ${self.input_per_mtok} / ${self.output_per_mtok} ({window})"
+
+    def _overlaps(self, other: "ModelPrice") -> bool:
+        """Two windows overlap unless one ends before the other starts (an empty end means open)."""
+
+        def ends_before(first_until, second_from) -> bool:
+            return first_until is not None and second_from is not None and first_until < second_from
+
+        return not (ends_before(self.valid_until, other.valid_from) or ends_before(other.valid_until, self.valid_from))
+
+    def clean(self):
+        errors = {}
+        if self.valid_from and self.valid_until and self.valid_until < self.valid_from:
+            errors["valid_until"] = "A price cannot end before it starts."
+        long = [self.long_context_threshold, self.long_input_per_mtok, self.long_output_per_mtok]
+        if any(v is not None for v in long) and any(v is None for v in long):
+            errors["long_context_threshold"] = "Give the threshold, the long input price and the long output price."
+        if self.model_id and not errors:
+            others = ModelPrice.objects.filter(model_id=self.model_id).exclude(pk=self.pk)
+            for other in others:
+                if self._overlaps(other):
+                    errors["valid_from"] = f"These dates overlap another price of this model ({other})."
+                    break
         if errors:
             raise ValidationError(errors)
 
@@ -166,6 +327,25 @@ class NodeModelBinding(models.Model):
     )
     max_retries = models.PositiveSmallIntegerField(default=2, help_text="Retries on this model before falling back.")
     is_enabled = models.BooleanField(default=True)
+    max_output_tokens = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="The most this layer may write, thinking included (sent as max_tokens). Empty = the model's own.",
+    )
+    timeout_s = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Per call on this layer. Empty = the node's timeout."
+    )
+    structured_mode = models.CharField(
+        max_length=12,
+        choices=StructuredMode.choices,
+        blank=True,
+        help_text="Blank = strict when the model supports it, otherwise best effort.",
+    )
+    fall_through_on = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Events after which the next layer is tried. Empty = every failure (today's behaviour).",
+    )
 
     class Meta:
         ordering = ["node__node_key", "priority"]
@@ -189,11 +369,24 @@ class NodeModelBinding(models.Model):
             issues.append(f"{model} has a {model.context_window}-token context; {spec.key} needs {spec.min_context}.")
         merged = {**model.default_params, **self.node.params_override, **self.params_override}
         issues += model.provider.profile.validate_params(merged)
+        if model.max_request_tokens:
+            written = self.max_output_tokens or merged.get("max_tokens") or model.max_output_tokens
+            if spec.typical_input_tokens + written > model.max_request_tokens:
+                issues.append(
+                    f"{model} allows {model.max_request_tokens} tokens in one request; {spec.key} sends about "
+                    f"{spec.typical_input_tokens} and may write {written}. Lower max_output_tokens."
+                )
         return issues
 
     def clean(self):
-        if self.node_id and self.model_id and (issues := self.problems()):
-            raise ValidationError(issues)
+        errors = []
+        events = {event.value for event in FallThrough}
+        if not isinstance(self.fall_through_on, list) or not set(self.fall_through_on) <= events:
+            errors.append(f"fall_through_on must be a list of: {', '.join(sorted(events))}.")
+        if self.node_id and self.model_id:
+            errors += self.problems()
+        if errors:
+            raise ValidationError(errors)
 
 
 class ModelCall(models.Model):
@@ -223,8 +416,14 @@ class ModelCall(models.Model):
     input_tokens = models.PositiveIntegerField(null=True)
     output_tokens = models.PositiveIntegerField(null=True)
     reasoning_tokens = models.PositiveIntegerField(null=True)
+    cached_input_tokens = models.PositiveIntegerField(null=True, help_text="Input tokens served from the cache.")
+    cache_write_tokens = models.PositiveIntegerField(null=True, help_text="Input tokens written to the cache.")
     tool_calls = models.PositiveSmallIntegerField(default=0)
+    # US dollars, priced with the `ModelPrice` row in force on the day of the call (cached input and cache writes at
+    # their own prices; thinking is part of the output tokens). `cost` is the same figure, kept for the readers that
+    # have not moved to `cost_usd` yet.
     cost = models.DecimalField(max_digits=12, decimal_places=6, null=True)
+    cost_usd = models.DecimalField(max_digits=12, decimal_places=6, null=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:

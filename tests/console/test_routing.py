@@ -91,9 +91,12 @@ def test_a_nodes_models_come_in_priority_order_with_their_settings(staff_client,
     assert (plan["enabled"], plan["reasoning_effort"], plan["max_attempts"], plan["timeout_s"]) == (True, "high", 2, 90)
     assert plan["bindings"] == [
         {"model": registry.models["flash"].id, "model_label": "gemini/gemini-3.5-flash", "enabled": True,
-         "max_retries": 2, "overrides": {"params": {}, "reasoning_effort": ""}, "problems": []},
+         "max_retries": 2, "overrides": {"params": {}, "reasoning_effort": ""}, "max_output_tokens": None,
+         "timeout_s": None, "structured_mode": "", "fall_through_on": [], "price": None, "problems": []},
         {"model": registry.models["lite"].id, "model_label": "gemini/gemini-3.5-flash-lite", "enabled": True,
-         "max_retries": 1, "overrides": {"params": {"temperature": 0.1}, "reasoning_effort": "high"}, "problems": []},
+         "max_retries": 1, "overrides": {"params": {"temperature": 0.1}, "reasoning_effort": "high"},
+         "max_output_tokens": None, "timeout_s": None, "structured_mode": "", "fall_through_on": [], "price": None,
+         "problems": []},
     ]  # fmt: skip
 
 
@@ -405,7 +408,7 @@ def test_previewing_a_profile_shows_each_step_as_it_is_and_as_it_would_be_and_sa
     plan = nodes["lesson.plan"]
     assert plan["changed"] is True
     assert [b["model_label"] for b in plan["current"]["bindings"]] == [
-        "gemini/gemini-3.5-flash", "groq/openai/gpt-oss-120b", "gemini/gemini-3.5-flash-lite"]  # fmt: skip
+        "gemini/gemini-3.6-flash", "groq/openai/gpt-oss-120b", "gemini/gemini-3.5-flash-lite"]  # fmt: skip
     assert [b["model_label"] for b in plan["proposed"]["bindings"]] == [
         "gemini/gemini-3.5-flash-lite", "gemini/gemini-3.1-flash-lite"]  # fmt: skip
     assert plan["proposed"]["reasoning_effort"] == "low" and plan["current"]["reasoning_effort"] == "high"

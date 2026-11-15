@@ -127,7 +127,9 @@ def bound_registry(db):
     from llm_registry.node_configs import NodeConfigSync
 
     NodeConfigSync().ensure()
-    provider = Provider.objects.create(key="fake", kind="openai", api_key_env="OPENAI_API_KEY")
+    # No key variable: a layer whose provider's key is not set is skipped when the chain is resolved, and these tests
+    # run with no keys.
+    provider = Provider.objects.create(key="fake", kind="openai", api_key_env="")
     model = LLMModel.objects.create(
         provider=provider,
         name="fake-model",

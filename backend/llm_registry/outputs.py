@@ -33,8 +33,8 @@ class OutputAdapter(ABC):
         return None  # text output needs nothing extra
 
     @abstractmethod
-    def bind(self, chat, *, structured_output_method: str, schema, tools):
-        """The runnable to invoke for this mode."""
+    def bind(self, chat, *, structured_output_method: str, schema, tools, strict: bool = False):
+        """The runnable to invoke for this mode. `strict` asks the provider to guarantee the schema (structured)."""
 
     @abstractmethod
     def interpret(self, reply) -> Outcome: ...
@@ -61,8 +61,9 @@ class StructuredOutputAdapter(OutputAdapter):
         if schema is None:
             raise ValueError(f"{node_key} returns structured output; pass schema=")
 
-    def bind(self, chat, *, structured_output_method: str, schema, tools):
-        return chat.with_structured_output(schema, method=structured_output_method, include_raw=True)
+    def bind(self, chat, *, structured_output_method: str, schema, tools, strict: bool = False):
+        extra = {"strict": True} if strict else {}
+        return chat.with_structured_output(schema, method=structured_output_method, include_raw=True, **extra)
 
     def interpret(self, reply) -> Outcome:
         raw, parsed, parse_error = reply.get("raw"), reply.get("parsed"), reply.get("parsing_error")
@@ -91,7 +92,7 @@ class ToolsOutputAdapter(OutputAdapter):
         if not tools:
             raise ValueError(f"{node_key} is a tool-calling node; pass tools=")
 
-    def bind(self, chat, *, structured_output_method: str, schema, tools):
+    def bind(self, chat, *, structured_output_method: str, schema, tools, strict: bool = False):
         return chat.bind_tools(tools)
 
     def interpret(self, reply) -> Outcome:
@@ -103,7 +104,7 @@ class TextOutputAdapter(OutputAdapter):
 
     mode = OutputMode.TEXT
 
-    def bind(self, chat, *, structured_output_method: str, schema, tools):
+    def bind(self, chat, *, structured_output_method: str, schema, tools, strict: bool = False):
         return chat
 
     def interpret(self, reply) -> Outcome:

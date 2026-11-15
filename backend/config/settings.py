@@ -255,8 +255,9 @@ PAYMENTS_LIVE_MODE = env.bool("PAYMENTS_LIVE_MODE", default=False)
 PAYMENT_ALLOW_FAKE_GATEWAY = env.bool("PAYMENT_ALLOW_FAKE_GATEWAY", default=False)
 # The secret the fake gateway signs its webhooks with. Not a real secret: it exists only where the fake gateway does.
 PAYMENT_FAKE_GATEWAY_SECRET = env("PAYMENT_FAKE_GATEWAY_SECRET", default="fake-gateway-dev-secret")
-# Rupees per US dollar, to show what model calls cost (recorded in dollars) next to revenue (in rupees).
-USD_INR_RATE = Decimal(env("USD_INR_RATE", default="85"))
+# Rupees per US dollar, to show what model calls cost (recorded in dollars) next to revenue (in rupees). Planning
+# rate decided 2026-11-15: 90.
+USD_INR_RATE = Decimal(env("USD_INR_RATE", default="90"))
 
 # --- DRF / OpenAPI ---
 REST_FRAMEWORK = {
@@ -403,6 +404,7 @@ SPECTACULAR_SETTINGS = {
         "QuizSourceTypeEnum": "quizzes.models.QuickQuiz.SourceType",
         "QuizLevelModeEnum": "quizzes.serializers.LEVEL_MODES",
         "MaterialKindEnum": "lessons.stages.MaterialKind",
+        "ModelStatusEnum": "llm_registry.models.ModelStatus",
         "OfferedSheetEnum": "lessons.stages.OfferedSheet",
         "QuizKindEnum": "lessons.models.Quiz.Kind",
         "RunStatusEnum": "lessons.models.GraphRun.Status",
