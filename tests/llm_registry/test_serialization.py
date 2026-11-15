@@ -13,7 +13,8 @@ Use cases:
   cheapest models, at low reasoning effort, each with a second model behind it
 - the onboarding topic suggester is seeded for speed: the small Groq model with a cheap Gemini behind it, low effort,
   one attempt, a 4 second timeout and no retries on a model (the next model is tried instead), in both profiles
-- export then import round-trips to the same JSON
+- export then import round-trips to the same JSON, prices included (they are written as exact text, since a number like
+  0.075 cannot be stored back into a four-decimal field), and a file from before that, with prices as numbers, loads
 - an invalid import rolls back everything
 - seed_registry leaves an existing registry alone unless forced, except that a node with no binding at all (a node a
   release added) is bound from the profile, using only models the install already has, never touching a binding that
@@ -111,6 +112,28 @@ def test_export_then_import_round_trips():
     RegistrySerializer().load(exported)
 
     assert json.loads(json.dumps(RegistrySerializer().export())) == exported
+
+
+def test_prices_are_exported_as_exact_text():
+    RegistrySerializer().load(DefaultRegistry().build())
+
+    models = {m["name"]: m for m in RegistrySerializer().export()["models"]}
+
+    assert models["openai/gpt-oss-20b"]["input_cost_per_mtok"] == "0.075"
+    assert models["openai/gpt-oss-120b"]["output_cost_per_mtok"] == "0.6"
+    assert models["gemini-3.5-flash"]["input_cost_per_mtok"] is None
+
+
+def test_a_file_that_wrote_prices_as_numbers_still_loads():
+    data = DefaultRegistry().build()
+    for model in data["models"]:
+        if model["name"] == "openai/gpt-oss-20b":
+            model["input_cost_per_mtok"], model["output_cost_per_mtok"] = 0.075, 0.3
+
+    RegistrySerializer().load(data)
+
+    stored = LLMModel.objects.get(name="openai/gpt-oss-20b")
+    assert (str(stored.input_cost_per_mtok), str(stored.output_cost_per_mtok)) == ("0.0750", "0.3000")
 
 
 def test_invalid_import_rolls_back_everything():

@@ -8,6 +8,7 @@ them on a paid plan. Loaded by `manage.py seed_registry`.
 """
 
 from .node_specs import NODE_SPECS, Effort
+from .prices import PriceBook
 from .serialization import RegistrySerializer
 
 _GEMINI = {
@@ -126,8 +127,18 @@ class DefaultRegistry:
                 },
                 {"key": "groq", "kind": "groq", "api_key_env": "GROQ_API_KEY", "base_url": "", "is_enabled": True},
             ],
-            "models": _MODELS,
+            "models": [self._priced(model) for model in _MODELS],
             "nodes": [self._node(key, chain, settings) for key, (chain, settings) in self.nodes.items()],
+        }
+
+    @staticmethod
+    def _priced(model: dict) -> dict:
+        """The model with the price the price book has for it (none when no official page confirmed one)."""
+        entry = PriceBook().entry(model["provider"], model["name"])
+        price_in, price_out = (entry.input_per_mtok, entry.output_per_mtok) if entry else (None, None)
+        return model | {
+            "input_cost_per_mtok": None if price_in is None else str(price_in),
+            "output_cost_per_mtok": None if price_out is None else str(price_out),
         }
 
     @staticmethod

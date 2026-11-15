@@ -15,6 +15,9 @@ Use cases:
 - validate_diagnostic accepts a good bundle and clears the feedback
 - validate_diagnostic keeps the problems and announces another attempt while attempts remain
 - validate_diagnostic sets the error, the node to resume at and the counters to reset when attempts run out
+- validate_diagnostic rewrites a question whose options repeat with one call to `diagnostic.generate` (see
+  `tests/graph/test_option_repair.py`) and keeps the repaired bundle, also when the reviewer runs after it; when the
+  rewrite fails or the quiz has other problems, it goes back for another attempt exactly as before
 - the optional reviewer never fails a lesson: when none of its models answer it is skipped with a warning, and when
   the attempts are spent while every rule passes and only the reviewer objects, the quiz is kept with a warning
 - validate_diagnostic asks the optional reviewer only after the deterministic rules pass, and only if it is enabled
@@ -299,6 +302,73 @@ class TestValidateDiagnostic:
         state = self.state(lesson_state, valid_bundle, snapshot=make_snapshot_for_nodes(disabled=()))
 
         assert ValidateDiagnosticNode()(state, runtime) == {"feedback": {"diagnostic": []}}
+
+
+class TestValidateDiagnosticRepairsRepeatedOptions:
+    """One question with a repeated option is rewritten alone; the quiz is sent back only when that cannot help."""
+
+    def state(self, lesson_state, bundle, **extra):
+        bundle["diagnostic"][3]["options"][1] = bundle["diagnostic"][3]["options"][0]
+        return lesson_state | {"bundle": bundle} | extra
+
+    @staticmethod
+    def rewrite(bundle):
+        return bundle["diagnostic"][3] | {"options": ["first", "second", "third", "fourth"]}
+
+    def test_the_question_is_rewritten_and_the_quiz_passes_without_another_attempt(
+        self, lesson_state, runtime, gateway, valid_bundle, events
+    ):
+        gateway.script("diagnostic.generate", self.rewrite(valid_bundle))
+        state = self.state(lesson_state, valid_bundle, attempts={"diagnostic": 2})
+
+        update = ValidateDiagnosticNode()(state, runtime)
+
+        assert update["feedback"] == {"diagnostic": []} and "error" not in update
+        assert update["bundle"]["diagnostic"][3]["options"] == ["first", "second", "third", "fourth"]
+        assert len(gateway.called("diagnostic.generate")) == 1 and events.of_type("attempt") == []
+
+    def test_when_the_rewrite_does_not_help_the_problem_goes_back_as_before(
+        self, lesson_state, runtime, gateway, valid_bundle, events
+    ):
+        gateway.script("diagnostic.generate", AllModelsFailed("diagnostic.generate", ["groq: 429"]))
+        state = self.state(lesson_state, valid_bundle, attempts={"diagnostic": 1})
+
+        update = ValidateDiagnosticNode()(state, runtime)
+
+        assert update["feedback"]["diagnostic"] == ["Question q4: options must all be different."]
+        assert "error" not in update and "bundle" not in update
+        assert events.of_type("attempt")[0]["node"] == "generate_diagnostic"
+
+    def test_the_rewrite_cannot_save_a_lesson_whose_attempts_are_spent_by_other_problems(
+        self, lesson_state, runtime, gateway, valid_bundle
+    ):
+        valid_bundle["diagnostic"].pop()  # a missing question is not a repeated option: the quiz must be regenerated
+        gateway.script("diagnostic.generate", self.rewrite(valid_bundle))
+        state = self.state(lesson_state, valid_bundle, attempts={"diagnostic": 2})
+
+        update = ValidateDiagnosticNode()(state, runtime)
+
+        assert update["error"].startswith("The diagnostic quiz still failed its checks after 2 attempts:")
+
+    def test_the_repaired_bundle_is_kept_when_the_optional_reviewer_then_runs(
+        self, lesson_state, runtime, gateway, valid_bundle, make_snapshot_for_nodes
+    ):
+        gateway.script("diagnostic.generate", self.rewrite(valid_bundle))
+        gateway.script("diagnostic.review", {"issues": []})
+        state = self.state(lesson_state, valid_bundle, snapshot=make_snapshot_for_nodes(disabled=()))
+
+        update = ValidateDiagnosticNode()(state, runtime)
+
+        assert update["feedback"] == {"diagnostic": []}
+        assert update["bundle"]["diagnostic"][3]["options"] == ["first", "second", "third", "fourth"]
+        assert len(gateway.called("diagnostic.review")) == 1
+
+    def test_a_good_bundle_costs_no_extra_call_and_returns_no_bundle(
+        self, lesson_state, runtime, gateway, valid_bundle
+    ):
+        update = ValidateDiagnosticNode()(lesson_state | {"bundle": valid_bundle}, runtime)
+
+        assert update == {"feedback": {"diagnostic": []}} and gateway.calls == []
 
 
 class TestPublish:

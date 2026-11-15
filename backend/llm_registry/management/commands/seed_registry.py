@@ -5,6 +5,7 @@ from django.core.exceptions import ValidationError
 from django.core.management import BaseCommand, CommandError
 
 from llm_registry.models import NodeModelBinding
+from llm_registry.prices import PriceBook
 from llm_registry.seed import SEED_PROFILES
 from llm_registry.serialization import RegistrySerializer
 
@@ -19,6 +20,12 @@ class Command(BaseCommand):
             default="default",
             help=f"Which defaults to load: {', '.join(SEED_PROFILES)}. 'cheap' uses only the cheapest models at low "
             "reasoning effort, to validate the flow without hitting rate or billing limits.",
+        )
+        parser.add_argument(
+            "--prices",
+            action="store_true",
+            help="Only fill in the price of every model that has none, from the price book (llm_registry/prices.py). "
+            "A price that is already set is never changed.",
         )
         parser.add_argument(
             "--force", action="store_true", help="Apply the defaults even if bindings already exist (overwrites them)."
@@ -41,7 +48,23 @@ class Command(BaseCommand):
         if not filled["bound"] and not filled["skipped"]:
             self.stdout.write("Registry already has bindings; leaving it alone (use --force to reset to defaults).")
 
-    def handle(self, *args, file=None, force=False, profile="default", **options):
+    def fill_prices(self) -> None:
+        report = PriceBook().fill_missing()
+        if report.filled:
+            self.stdout.write(self.style.SUCCESS("Priced " + ", ".join(report.filled) + " from the price book."))
+        if report.unpriced or report.unknown:
+            self.stdout.write(
+                self.style.WARNING(
+                    "No confirmed price for " + ", ".join(report.unpriced + report.unknown) + ": left empty, so its "
+                    "calls have no cost. Read the provider's pricing page and add it to llm_registry/prices.py."
+                )
+            )
+        if not (report.filled or report.unpriced or report.unknown):
+            self.stdout.write("Every model already has a price.")
+
+    def handle(self, *args, file=None, force=False, profile="default", prices=False, **options):
+        if prices:
+            return self.fill_prices()
         if file:
             data = json.loads(file.read_text())
         else:

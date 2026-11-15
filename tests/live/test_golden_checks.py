@@ -21,12 +21,16 @@ Use cases:
 - a retake's question that shares most of its words with an earlier one is reported, just under the product's own
   threshold too
 - the revision sheet's coverage is measured with the product's rule: more than a third of the concepts missing fails
+- the cost limit checks something: a call that worked on a model with no price has no cost, so the model is named as
+  unpriced (the budget would otherwise pass whatever was spent); failed calls, which carry no tokens, are not
+  counted, and the total is the sum of the costs
 """
 
 import pytest
 from live.golden import (
     GOLDEN_TOPICS,
     ConceptChecks,
+    CostChecks,
     DedupeChecks,
     GoldenTopic,
     LessonChecks,
@@ -309,3 +313,45 @@ class TestSheetCoverage:
 
         assert SheetChecks().problems(self.content, concepts[:3]) == []
         assert "misses 2 of 4 concepts: Gardening; Astronomy" in SheetChecks().problems(self.content, concepts)[0]
+
+
+class TestCostChecks:
+    ok = {"provider_key": "groq", "model_name": "gpt", "status": "ok", "cost": 0.01}
+
+    def test_a_call_that_worked_on_a_model_without_a_price_names_that_model(self):
+        calls = [self.ok, self.ok | {"provider_key": "gemini", "model_name": "flash", "cost": None}]
+
+        assert CostChecks().unpriced(calls) == ["gemini/flash"]
+
+    def test_each_unpriced_model_is_named_once_in_order(self):
+        unpriced = {"status": "ok", "cost": None}
+        calls = [
+            unpriced | {"provider_key": "gemini", "model_name": "b"},
+            unpriced | {"provider_key": "gemini", "model_name": "a"},
+            unpriced | {"provider_key": "gemini", "model_name": "b"},
+        ]
+
+        assert CostChecks().unpriced(calls) == ["gemini/a", "gemini/b"]
+
+    def test_failed_calls_have_no_tokens_and_no_cost_and_are_not_counted(self):
+        failed = {"provider_key": "gemini", "model_name": "flash", "status": "retryable_error", "cost": None}
+
+        assert CostChecks().unpriced([self.ok, failed]) == []
+
+    def test_the_total_is_the_sum_of_the_costs_and_ignores_calls_without_one(self):
+        calls = [self.ok, self.ok | {"cost": 0.25}, self.ok | {"cost": None}]
+
+        assert CostChecks().total(calls) == pytest.approx(0.26)
+
+    def test_a_lesson_over_the_limit_is_reported_and_one_under_it_is_not(self):
+        over = CostChecks().problems([self.ok | {"cost": 2.5}], limit=2.0)
+
+        assert over == ["the lesson cost $2.50, over the $2.00 limit"]
+        assert CostChecks().problems([self.ok], limit=2.0) == []
+
+    def test_an_unpriced_model_is_reported_even_when_the_total_is_under_the_limit(self):
+        calls = [self.ok, self.ok | {"provider_key": "gemini", "model_name": "flash", "cost": None}]
+
+        (problem,) = CostChecks().problems(calls, limit=2.0)
+
+        assert "no price" in problem and "gemini/flash" in problem

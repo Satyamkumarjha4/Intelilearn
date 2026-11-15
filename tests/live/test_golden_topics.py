@@ -8,14 +8,14 @@ and are never part of `make check`: run them by hand with `pytest -m live` and t
 Use cases:
 - each golden topic goes from the first question to a ready lesson with real models, the real sandbox and a real
   browser, and the lesson passes `LessonChecks` (pages, test, document, few degradations, a picture where wanted)
-- the whole flow stays within the cost budget and the number of model calls
+- the whole flow stays within the cost budget and the number of model calls; a model with no price in the registry
+  fails the check (its calls have no cost, so the budget would prove nothing)
 - a submitted test is graded: automatic marks at once, open-ended answers by a real model, a complete card with
   feedback for every question and a score within the marks available
 """
 
 import pytest
-from django.db.models import Sum
-from live.golden import GOLDEN_TOPICS, LessonChecks
+from live.golden import GOLDEN_TOPICS, CostChecks, LessonChecks
 
 from graph.grading import QuizGrader
 from lessons.attempts import AttemptService
@@ -48,7 +48,8 @@ def test_a_golden_topic_becomes_a_good_ready_lesson_within_budget(built_lesson, 
     assert LessonChecks().problems(lesson_data(lesson), golden) == []
     calls = ModelCall.objects.filter(lesson_id=lesson.id)
     assert calls.count() <= MAX_CALLS
-    assert float(calls.aggregate(total=Sum("cost"))["total"] or 0) <= max_cost
+    rows = list(calls.values("provider_key", "model_name", "status", "cost"))
+    assert CostChecks().problems(rows, max_cost) == []  # also fails when a model used has no price
     assert not GraphRun.objects.filter(lesson=lesson, status=GraphRun.Status.FAILED).exists()
 
 

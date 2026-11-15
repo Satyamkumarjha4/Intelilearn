@@ -146,6 +146,7 @@ class DiagnosticBundle(BaseModel):
 - Checks the counts, the 2-per-band distribution, that `concept`s are unique, that options are unique, that there are no "all/none of the above" options, and that no question's text contains another question's correct option.
 - Checks that each prerequisite question maps to exactly one prerequisite.
 - The optional `diagnostic.review` judge, if enabled, rates independence and band calibration. It flags, for example, a "hard" question that can be answered from the wording.
+- Before checking, a question whose options repeat (or say "all of the above") is rewritten on its own by one call to the `diagnostic.generate` node's models (`graph/option_repair.py`: one try per question, at most three questions, id, band and concept kept). When that cannot help, the quiz goes back as below.
 - Errors are sent back as `feedback` on the retry.
 
 ### Human in the loop: `publish_*` then `await_*`

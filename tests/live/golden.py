@@ -286,3 +286,31 @@ class SheetChecks:
         if len(missing) > len(concepts) // 3:
             return [f"the revision sheet misses {len(missing)} of {len(concepts)} concepts: {'; '.join(missing)}"]
         return []
+
+
+class CostChecks:
+    """What a lesson cost, from the model call log (rows of provider_key, model_name, status and cost).
+
+    A model with no price in the registry has no cost, so a limit on the total would pass whatever was spent. A call
+    that worked on such a model is therefore reported as a failure of its own: the limit checks nothing until every
+    model in the lesson's chains has a price."""
+
+    def unpriced(self, calls: list[dict]) -> list[str]:
+        return sorted(
+            {f"{c['provider_key']}/{c['model_name']}" for c in calls if c["status"] == "ok" and c["cost"] is None}
+        )
+
+    @staticmethod
+    def total(calls: list[dict]) -> float:
+        return float(sum(c["cost"] or 0 for c in calls))
+
+    def problems(self, calls: list[dict], limit: float) -> list[str]:
+        problems = []
+        if unpriced := self.unpriced(calls):
+            problems.append(
+                f"no price for {', '.join(unpriced)}, so the cost is understated and the limit proves nothing "
+                "(`manage.py seed_registry --prices`, or set it in the admin)"
+            )
+        if (total := self.total(calls)) > limit:
+            problems.append(f"the lesson cost ${total:.2f}, over the ${limit:.2f} limit")
+        return problems

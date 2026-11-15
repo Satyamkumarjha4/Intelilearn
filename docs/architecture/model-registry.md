@@ -56,7 +56,7 @@ Provider ──< LLMModel ──< NodeModelBinding >── NodeConfig ── Nod
 | context_window | int | |
 | max_output_tokens | int | |
 | rpm_limit | int, null | Per-model requests per minute, on top of the provider's |
-| input_cost_per_mtok / output_cost_per_mtok | decimal, null | Used to cost each `ModelCall` |
+| input_cost_per_mtok / output_cost_per_mtok | decimal, null | Used to cost each `ModelCall` (US dollars per million tokens; output includes thinking). Empty means no cost is recorded. The seed carries the prices in `llm_registry/prices.py` (`PriceBook`), each with the official page it was read from and the date; a model whose price no official page confirms has none |
 | is_enabled | bool | |
 | **Last test** | | Written by the console's test button (`POST /console/models/{id}/probe`), never read by routing |
 | last_probe_at / last_probe_ok | datetime, bool; null | When the model was last tested and whether every check passed |
@@ -271,6 +271,7 @@ raise AllModelsFailed(node_key, errors)
 - **LLMModel**: capability flags grouped in a fieldset. The **Test model** action runs a probe for each declared capability: a plain prompt, a small structured-output schema, a dummy tool call, a generated 16×16 PNG for vision, and a low-effort reasoning call. It reports pass or fail and latency per capability, so a wrongly ticked capability is caught before a lesson depends on it. A client that can't even be built, for example because of a missing key, is reported as a failed `setup` probe.
 - **NodeConfig**: shows the spec (read-only requirements), inline bindings ordered by priority, and each binding's **effective** parameters and reasoning setting. It warns when a required node has no enabled binding.
 - **ModelCall**: read-only list with filters. The changelist shows failure rate and fallback rate per node and model.
+- **Prices**: `manage.py seed_registry --prices` fills the price of every model that has none from the `PriceBook` (it never changes a price that is set, and lists the models it has no confirmed price for). Export writes prices as exact text; a file that wrote them as numbers still loads.
 - **Export / import**: exports the registry as JSON. `manage.py seed_registry --file registry.json` loads it.
 - **A release that adds a node**: `manage.py seed_registry` on an install that already has bindings leaves them alone except for **nodes that have no binding at all**: those are bound from the chosen profile, using only models the install already has (it creates no provider or model), in the profile's order. It says which nodes it bound and which it could not (none of the profile's models is on this install). `--force` still resets everything.
 - **`manage.py probe_models`** runs the same probes from the command line (`--model provider/name`, repeatable), plus, with `--node key`, one real call through that node's whole chain. It exits non-zero if anything fails.
