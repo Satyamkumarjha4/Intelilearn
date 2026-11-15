@@ -271,6 +271,14 @@ Sixth live run (2 November 2026, same keys, after decisions 1 and 3; 24 minutes,
 
 For a decision: the quick check still fails now and then even with three attempts, so a check that fails the same way each time could be given the same fix as the others (a repair step that rewrites only the flagged questions rather than the whole bundle); the `NaN` SVG coordinate could be caught by the sandbox's static check before the render; the plan's `quantitative` flag could be derived from the topic judge (`topic.traits`) instead of a second opinion from the planner.
 
+### Phase M: Model strategy ([the design](../to_be_developed/model-strategy.md), decisions in its section 5)
+
+- [x] **M1 Observe** (`phase-m/observe-clean`): `ModelPrice` rows with validity windows, sources and dates, seeded from the price book; `USD_INR_RATE` 90; `ModelCall` keeps cached and cache-write tokens and `cost_usd`; the recorder prices with the row of the day; the console shows price, next price, tier, status and warnings per model, and per step the first-layer pass rate, fall-through, thinking share and cost per call.
+- [x] **M2 Clean**: per-model strategy settings and per-layer settings (output cap, timeout, structured mode, fall-through events); `StrictSchema` and Groq strict JSON with nullable-required schema fields; the six adapter defects of the design's 3.5.D (table-driven tests); layers without a key skipped at resolve time; a 401/402 circuit breaker; retired model ids removed (`0009_retire_models`); a live test that prints one raw usage payload per provider.
+- [ ] **M3 Profiles**: `Demo`, `Economy` and `Quality` seed profiles replace `Cheap`, `Balanced` and `Quality` (Quality admin-only); golden runs per profile.
+- [ ] **M4 Mechanical steps**: `page.compile` from the template and direct media search (both behind settings), at most 2 interactives per page, escalate on retry (attempt k starts at layer k).
+- [ ] Add `OPENAI_API_KEY` (before launch); then the L4 layers become live.
+
 ### Phase 10: Credits and payments
 
 Credits for the work that costs model calls, earned by studying, bought through Stripe or Razorpay. The design is [the spec](../architecture/credits-system.md) and [the implementation plan](../archive/credits-implementation-plan.md) (phases 10.0 to 10.9, each shippable, each ending with `make check` and `make e2e` green). **Phase 10 is complete and switched on:** the credit gate and earning are the defaults, new accounts get 30 credits and existing ones were backfilled first. Sign-in methods (Google, Apple, Microsoft, email OTP) are Phase 11, a separate plan; **public launch is blocked on it** (see below).

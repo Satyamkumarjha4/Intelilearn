@@ -21,6 +21,7 @@ Legend for status columns: ✅ in code · ◐ partly (functions still to wrap in
   - [4.2 `core` and `config`](#42-core-and-config)
   - [4.3 `llm_registry`: registry and resolution](#43-llm_registry-registry-and-resolution)
   - [4.4 `llm_registry`: the gateway](#44-llm_registry-the-gateway)
+  - [4.4a `llm_registry`: prices, costing, strict schemas and the breaker](#44a-llm_registry-prices-costing-strict-schemas-and-the-breaker)
   - [4.5 `llm_registry`: probes](#45-llm_registry-probes)
   - [4.6 `lessons`: domain and services](#46-lessons-domain-and-services)
   - [4.7 `graph`: nodes, routers and builders](#47-graph-nodes-routers-and-builders)
@@ -681,6 +682,93 @@ sequenceDiagram
     end
     G-->>N: raise AllModelsFailed
 ```
+
+### 4.4a `llm_registry`: prices, costing, strict schemas and the breaker
+
+Milestones M1 and M2 of [the model strategy](../to_be_developed/model-strategy.md). Each class has one job, and a new variant is a new class in a registry, not a branch.
+
+```mermaid
+classDiagram
+    direction LR
+    class ModelPrice {
+        +model
+        +input_per_mtok
+        +output_per_mtok
+        +valid_from / valid_until
+        +source_url / checked_on
+    }
+    class PriceBook {
+        +ENTRIES
+        +fill() FillReport
+    }
+    class PriceLookup {
+        <<interface>>
+        +card(provider, model, day) RateCard
+    }
+    class PriceRows
+    class CallCosts {
+        +cost(model, usage, day) Decimal
+    }
+    class CallPricer {
+        +cost(card, usage) Decimal
+    }
+    class RateCard
+    class TokenUsage {
+        +from_metadata(usage_metadata)
+    }
+    class Rupees {
+        +of(dollars) Decimal
+    }
+    class ModelCallRecorder
+    class StrictSchemas {
+        +for_kind(kind) StrictSchema
+    }
+    class StrictSchema {
+        +problems(model) list
+        +prepare(model) dict
+    }
+    class SchemaRule {
+        <<interface>>
+        +check(name, schema, defs)
+        +fix(schema)
+    }
+    class NullableFields {
+        +NULL_MEANS
+    }
+    class ProviderBreaker {
+        +is_open(provider) bool
+        +record_failure(provider, exc)
+        +record_success(provider)
+    }
+    class ModelPrices {
+        +current(model)
+        +upcoming(model)
+        +warnings(model)
+    }
+    PriceBook ..> ModelPrice : seeds
+    PriceRows ..|> PriceLookup
+    PriceRows ..> ModelPrice : in_effect(day)
+    CallCosts o-- PriceLookup
+    CallCosts o-- CallPricer
+    CallPricer ..> RateCard
+    CallPricer ..> TokenUsage
+    ModelCallRecorder o-- CallCosts
+    StrictSchemas ..> StrictSchema
+    StrictSchema o-- SchemaRule
+    Gateway o-- ProviderBreaker
+    Gateway ..> StrictSchemas
+    ModelPrices ..> ModelPrice : console
+```
+
+| Pattern | Where | Notes |
+|---|---|---|
+| **Strategy** | `StrictSchemas.RULES` | One `SchemaRule` list per provider kind (Groq and OpenAI: `AllFieldsRequired`; Anthropic: `NoNumericConstraints`, `NoRecursion`). A kind with no entry asks for nothing |
+| **Strategy** | `ProviderProfile._off_kwargs`, `client_kwargs`, `supports_strict` | How "no reasoning" is asked for, what every client of the provider is built with, and whether it takes a strict flag are the profile's own; the table is in the model strategy 3.5.A and is tested table-driven |
+| **Ports** | `PriceLookup` | `CallCosts` depends on the small port, not on the database; tests inject a fake |
+| **Template** | `NullableFields` | A schema's optional fields are required and nullable on the wire; `NULL_MEANS` gives the value the graph always saw |
+| **Circuit breaker** | `ProviderBreaker` | Three 401 or 402 in a row skip the provider for five minutes; state lives in the Django cache so every worker shares it |
+
+The recorder asks `CallCosts` for the cost of each attempt (the `ModelPrice` row in force on the day, else the model's legacy price). `Gateway` asks `StrictSchemas` whether a layer's schema can be sent strictly (a schema with an optional field runs best effort instead of failing), uses a layer's own timeout, and skips a provider whose breaker is open. The resolver skips a layer whose provider has no key and refuses a binding that could pass the model's `max_request_tokens`.
 
 ### 4.5 `llm_registry`: probes
 
@@ -3482,6 +3570,8 @@ classDiagram
 |---|---|
 | A first-topic list, field family, routing rule or reason | A JSON edit in `onboarding/catalogue.json`, or a `RouteRule` / `ReasonRule` class in the router or the reason builder; see [onboarding.md](../reference/onboarding.md#extending). |
 | An LLM step | `NodeSpec` in `node_specs.py` → `Prompt` subclass → `LLMNode` subclass (+ `Validator` and `ValidateNode` if its output has rules) → register in the graph builder → `migrate` → bind models. Tests first for the validator and the node with `FakeGateway`. |
+| A price or a promo | A `ModelPrice` row (a new row, never an edit), with the provider's page and the day it was read; or an entry in `llm_registry/prices.py` (`PriceBook.ENTRIES`) so `seed_registry` creates it. |
+| A provider's strict-schema rule | A `SchemaRule` class, listed in `StrictSchemas.RULES` for the kind, with a case in `tests/llm_registry/test_strict_schema.py`. |
 | A provider kind | `ProviderProfile` subclass, registered in `ProviderProfiles`; a test that builds the real client offline (`tests/llm_registry/test_providers.py`). |
 | A media source | `MediaSource` implementation, a `FlowSettings.media_sources` value, tests with `httpx.MockTransport`. |
 | A health dependency | `HealthCheck` subclass, added to `HealthService`'s default list. |

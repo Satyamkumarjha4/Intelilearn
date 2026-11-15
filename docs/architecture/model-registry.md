@@ -56,13 +56,37 @@ Provider ──< LLMModel ──< NodeModelBinding >── NodeConfig ── Nod
 | context_window | int | |
 | max_output_tokens | int | |
 | rpm_limit | int, null | Per-model requests per minute, on top of the provider's |
-| input_cost_per_mtok / output_cost_per_mtok | decimal, null | Used to cost each `ModelCall` (US dollars per million tokens; output includes thinking). Empty means no cost is recorded. The seed carries the prices in `llm_registry/prices.py` (`PriceBook`), each with the official page it was read from and the date; a model whose price no official page confirms has none |
+| max_request_tokens | int, null | The most one request may use (its prompt plus the reply it may write). A binding whose node's typical prompt (`NodeSpec.typical_input_tokens`) plus its output cap could pass it is refused and skipped. The seed sets 6,000 on the Groq models (the 8K tokens-a-minute design rule). Empty: no limit |
+| input_cost_per_mtok / output_cost_per_mtok | decimal, null | **Legacy** price typed on the model (US dollars per million tokens). Used to cost a call only when the model has no `ModelPrice` row. Prefer `ModelPrice` |
 | is_enabled | bool | |
+| **Strategy** | | docs/to_be_developed/model-strategy.md |
+| tier | enum `T0`..`T4`, blank | tiny, cheap, mid, strong, premium (by price and class) |
+| status | enum `stable` \| `preview` \| `deprecated` | |
+| shutdown_on | date, null | The day the provider stops serving or reroutes it; the console warns 60 days ahead |
+| reasoning_levels | JSON list | The levels the model accepts, for example `["minimal", "low", "medium", "high"]`; an effort it does not accept is lowered to the nearest it does. Empty: low, medium, high |
+| reasoning_off | enum `unsupported` \| `minimal` \| `disabled` \| `none`, blank | How effort `none` is asked for: the lowest level (`unsupported`), a minimal level or a budget of 0, a disabled switch (Claude Haiku 5.5), or effort none (OpenAI Luna and Terra). Blank: nothing is sent and the provider's own default thinking applies |
+| strict_structured | bool | The provider can guarantee the schema (Groq gpt-oss) |
+| min_cache_tokens | int, null | The shortest prompt the provider caches |
 | **Last test** | | Written by the console's test button (`POST /console/models/{id}/probe`), never read by routing |
 | last_probe_at / last_probe_ok | datetime, bool; null | When the model was last tested and whether every check passed |
 | last_probe_latency_s / last_probe_error | float, null; text | Seconds the plain text call took; the first failure as `capability: detail` (redacted), empty if it worked |
 
 `unique_together = (provider, name)`
+
+### `ModelPrice` (a model's price for a window of dates)
+
+| Field | Type | Notes |
+|---|---|---|
+| model | FK LLMModel | |
+| input_per_mtok / output_per_mtok | decimal | US dollars per million tokens. Output is what thinking tokens are billed at too |
+| cached_input_per_mtok / cache_write_per_mtok | decimal, null | Cached input and cache writes; empty means the plain input price |
+| long_context_threshold, long_input_per_mtok, long_output_per_mtok, long_cached_input_per_mtok | int, decimals; null | A prompt over the threshold is billed at the long prices for the whole call. All of threshold, long input and long output, or none |
+| batch_discount | decimal | The share a batch call saves (0.5) |
+| valid_from / valid_until | date, null | The window (both ends inclusive; empty is open). Two windows of one model cannot overlap |
+| source_url / checked_on | url, date | The provider's own page and the day it was read |
+| note | text | |
+
+A change of price is a new row, so a `ModelCall` keeps the price it was billed at (the Gemini 3.6 and 3.8 Flash promo ends on 2026-12-31 and is two rows). `ModelPrice.objects.in_effect(provider, model, day)` finds the row of a day. `llm_registry/prices.py` (`PriceBook`) is the seed: `seed_registry` and `seed_registry --prices` create the rows for the models in the registry and never change a row that is already there for the same dates; a model the book has no entry for is listed, not guessed.
 
 ### `NodeConfig` (one row per node key; rows created by migration from `NODE_SPECS`)
 
@@ -87,16 +111,26 @@ Provider ──< LLMModel ──< NodeModelBinding >── NodeConfig ── Nod
 | reasoning_effort | enum, null | Overrides the node's setting for this model only. For example, use `high` on a small fallback model to compensate. |
 | max_retries | int | Transport retries on this model before falling back (default 2) |
 | is_enabled | bool | |
+| max_output_tokens | int, null | The most this layer may write, thinking included; sent as `max_tokens` and wins over the model's and the node's. Empty: the model's own |
+| timeout_s | int, null | Per call on this layer. Empty: the node's |
+| structured_mode | enum `strict` \| `best_effort` \| `off`, blank | Blank: strict where the model's `strict_structured` is set, else best effort. `off` asks for plain JSON mode |
+| fall_through_on | JSON list | Events after which the next layer is tried (`quota`, `rate_limit`, `server_error`, `bad_request`, `invalid_output`, `validation`). Stored and validated; today every failure falls through |
 
 `unique_together = (node, priority)`. Validation in `clean()`:
 
 - The model meets every capability in `NodeSpec.requires`.
 - `model.max_output_tokens ≥ spec.min_output_tokens` and `model.context_window ≥ spec.min_context`.
 - The merged parameters use only allow-listed keys for the provider kind.
+- When the model has a `max_request_tokens`, `NodeSpec.typical_input_tokens` plus the layer's output cap (its own, else `max_tokens`, else the model's full output) stays within it.
+- `fall_through_on` holds only known events.
+
+A layer whose provider has no API key is **skipped when the chain is resolved** (logged, and shown in the console as a problem), not tried and failed on every call.
 
 ### `ModelCall`
 
-`lesson_id`, `run_id` (plain UUIDs, so the registry doesn't depend on the lessons app), `node_key`, `provider_key`, `model_name`, `attempt`, `fallback_index`, `status` (`ok` \| `retryable_error` \| `fatal_error` \| `invalid_output`), `error`, `latency_ms` (includes any wait for a rate-limit window), `rate_limit_wait_ms` (the part of it spent waiting), `input_tokens`, `output_tokens`, `reasoning_tokens`, `tool_calls`, `cost`, `created_at`
+`lesson_id`, `run_id` (plain UUIDs, so the registry doesn't depend on the lessons app), `node_key`, `provider_key`, `model_name`, `attempt`, `fallback_index`, `status` (`ok` \| `retryable_error` \| `fatal_error` \| `invalid_output`), `error`, `latency_ms` (includes any wait for a rate-limit window), `rate_limit_wait_ms` (the part of it spent waiting), `input_tokens`, `output_tokens`, `reasoning_tokens`, `cached_input_tokens`, `cache_write_tokens`, `tool_calls`, `cost`, `cost_usd`, `created_at`
+
+`cost_usd` is the cost in US dollars of the attempt, priced with the `ModelPrice` row in force on the day (cached input and cache writes at their own prices; thinking is part of `output_tokens` and billed as output), else with the model's legacy price, else null. An attempt whose reply did not match the schema is billed (the tokens were spent); an error with no reply has no cost. `cost` is the same figure, kept for the readers that have not moved to `cost_usd`. `llm_registry/costing.py` holds the arithmetic (`TokenUsage`, `RateCard`, `CallPricer`, `CallCosts`) and `Rupees`, which turns dollars into rupees at the `USD_INR_RATE` setting (90).
 
 A row is one *attempt*. The console counts a row as `ok` (status ok on attempt 1), `retried` (status ok on attempt above 1) or `failed` (any other status), so the three add up to the calls made; a *fallback* is a row with `fallback_index` above 0 and a *retry attempt* one with `attempt` above 1, whatever came of them (`console/outcomes.py`). Indexed on `created_at`, `(model_name, created_at)` and `(node_key, created_at)`, for the usage page's filters.
 
@@ -286,20 +320,21 @@ This is a starting point for the free tiers of Gemini and Groq that you tune in 
 
 | Model | Provider | Notes | `rpm_limit` |
 |---|---|---|---|
-| gemini-3.5-flash | gemini | all capabilities, the main Gemini model | 10 |
+| gemini-3.6-flash | gemini | all capabilities, the main Gemini model (T2; its price doubles on 2027-01-01) | 10 |
+| gemini-4-hydrogen | gemini | the T2 model from 2027-01-01 (unbound until the Economy profile, milestone M3) | 10 |
 | gemini-3.5-flash-lite | gemini | cheaper, its own quota, the vision fallback | 15 |
 | openai/gpt-oss-120b | groq | reasoning (effort) and `json_schema` output | 30 |
 | openai/gpt-oss-20b | groq | the same, smaller and faster | 30 |
 
-There is no Gemini Pro model: it has no free quota. The Groq free tier allows about 8,000 tokens a minute per model, and a single request over that is rejected, so a Groq model only leads a node whose prompt and reply are small.
+There is no Gemini Pro model: it has no free quota. `gemini-3.5-flash`, `gemini-2.5-*` and `llama-3.3-70b-versatile` are retired (data migration `0009_retire_models` removes them from an existing registry, or switches one off and marks it deprecated when it is a node's only layer). Groq's rate-limit page prints 8,000 tokens a minute per gpt-oss model (its models page says 250K: unresolved), so the seed designs for the small figure: a Groq layer gets an `max_output_tokens` that keeps one request under 6,000 tokens with the node's typical prompt, the Groq models carry `max_request_tokens = 6000`, and `alignment.judge` (about 10K of input) has no Groq layer.
 
 | Node | Chain (priority order) |
 |---|---|
-| diagnostic.generate, test.grade | gpt-oss-120b, gemini-3.5-flash |
-| diagnostic.review, learner.assess, interactive.plan, media.search | gpt-oss-20b, gemini-3.5-flash |
+| diagnostic.generate, test.grade | gpt-oss-120b, gemini-3.6-flash |
+| diagnostic.review, learner.assess, interactive.plan, media.search | gpt-oss-20b, gemini-3.6-flash |
 | onboarding.suggest_topics, topic.traits | gpt-oss-20b, gemini-3.5-flash-lite (low effort, one attempt, `timeout_s` 4, `max_retries` 0 on both: the next model is the retry) |
-| lesson.plan | gemini-3.5-flash, gpt-oss-120b, gemini-3.5-flash-lite |
-| study.generate, page.generate, test.generate, interactive.generate, alignment.judge, page.compile, code.repair, runtime.repair, media.verify | gemini-3.5-flash, gemini-3.5-flash-lite |
+| lesson.plan | gemini-3.6-flash, gpt-oss-120b, gemini-3.5-flash-lite |
+| study.generate, page.generate, test.generate, interactive.generate, alignment.judge, page.compile, code.repair, runtime.repair, media.verify | gemini-3.6-flash, gemini-3.5-flash-lite |
 
 The seeded `rpm_limit` values are free-tier figures: raise or clear them on a paid plan.
 

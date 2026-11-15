@@ -528,8 +528,9 @@ The tables `checkpoints`, `checkpoint_blobs`, `checkpoint_writes` and `checkpoin
 | error | text, blank | The failure text. Credentials are scrubbed (`llm_registry/redaction.py`), but nothing else is, so it can carry the model's own output, for example a rejected quiz with its answer key |
 | latency_ms / rate_limit_wait_ms | int | Latency includes any wait for a rate-limit window |
 | input_tokens / output_tokens / reasoning_tokens | int, null | Null when the provider did not report them, and on failed calls |
+| cached_input_tokens / cache_write_tokens | int, null | Input tokens served from the provider's cache, and written to it |
 | tool_calls | smallint | |
-| cost | decimal, null | Null while the model has no price set (`input_cost_per_mtok`, `output_cost_per_mtok`), which makes the console show 0 spend |
+| cost / cost_usd | decimal, null | US dollars, priced with the `ModelPrice` row in force on the day of the call (else the model's legacy price). Null with no price at all, which makes the console show 0 spend. The two columns hold the same figure; `cost` is kept for readers that have not moved |
 | created_at | datetime, indexed | Also indexed with `model_name` and with `node_key` for the console's usage page |
 
 ## Level names and difficulties (migration 0006)
