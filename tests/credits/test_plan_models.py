@@ -10,10 +10,10 @@ add the
 tables, seed the plans without overwriting an edit, and come out cleanly.
 
 Use cases:
-- the seeded plans are the spec's: one-time credits 200 paise a credit; Weekly Pro 100 credits, 7 days, 9,800 paise,
+- the seeded plans are the spec's: one-time credits 200 paise a credit; Weekly Pro 100 credits, 7 days, 14,700 paise,
   up to 12
-  weeks; Monthly Pro 500 credits, 28 days, 39,800 paise; Pro Plus 750 credits, 28 days, 55,800 paise (the prices
-  doubled on 2026-11-15; `test_plan_price_change.py` covers that change)
+  weeks; Monthly Pro 500 credits, 28 days, 59,700 paise; Pro Plus 750 credits, 28 days, 83,700 paise (the prices
+  raised on 2026-11-15; `test_plan_price_change.py` covers that change)
 - a plan key is unique; the seed adds only plans that are missing and never overwrites an edit, and can be repeated
 - a purchase has a status, a source and a quantity of at least one; a period is unique within its purchase by position
 - the buckets of a purchase can be found by its id, and an index backs that
@@ -36,11 +36,11 @@ from credits.plans.seed import PlanSeed
 
 AT = datetime(2026, 11, 5, 12, 0, tzinfo=UTC)
 
-SPEC = {  # the current plans (prices doubled on 2026-11-15, migration 0009)
+SPEC = {  # the current plans (prices raised on 2026-11-15, migration 0009)
     "one_time": dict(credits=0, period_days=365, price_paise=200, max_quantity=1),
-    "weekly_pro": dict(credits=100, period_days=7, price_paise=9800, max_quantity=12),
-    "monthly_pro": dict(credits=500, period_days=28, price_paise=39800, max_quantity=1),
-    "pro_plus": dict(credits=750, period_days=28, price_paise=55800, max_quantity=1),
+    "weekly_pro": dict(credits=100, period_days=7, price_paise=14700, max_quantity=12),
+    "monthly_pro": dict(credits=500, period_days=28, price_paise=59700, max_quantity=1),
+    "pro_plus": dict(credits=750, period_days=28, price_paise=83700, max_quantity=1),
 }
 ORIGINAL = {  # what migration 0007 seeds: it is written out there and never changes
     "one_time": dict(credits=0, period_days=365, price_paise=100, max_quantity=1),

@@ -4,9 +4,9 @@ import type { PublicPricing } from "@/lib/landing/types";
 export function pricing(overrides: Partial<PublicPricing> = {}): PublicPricing {
   return {
     plans: [
-      { key: "weekly_pro", name: "Weekly Pro", credits: 100, period_days: 7, price_paise: 9800, max_quantity: 12, price_paise_per_credit: 98, about_lessons: 10 },
-      { key: "monthly_pro", name: "Monthly Pro", credits: 500, period_days: 28, price_paise: 39800, max_quantity: 1, price_paise_per_credit: 79.6, about_lessons: 50 },
-      { key: "pro_plus", name: "Pro Plus", credits: 750, period_days: 28, price_paise: 55800, max_quantity: 1, price_paise_per_credit: 74.4, about_lessons: 75 },
+      { key: "weekly_pro", name: "Weekly Pro", credits: 100, period_days: 7, price_paise: 14700, max_quantity: 12, price_paise_per_credit: 147, about_lessons: 10 },
+      { key: "monthly_pro", name: "Monthly Pro", credits: 500, period_days: 28, price_paise: 59700, max_quantity: 1, price_paise_per_credit: 119.4, about_lessons: 50 },
+      { key: "pro_plus", name: "Pro Plus", credits: 750, period_days: 28, price_paise: 83700, max_quantity: 1, price_paise_per_credit: 111.6, about_lessons: 75 },
     ],
     one_time: { price_paise_per_credit: 200, min_credits: 10, max_credits: 5000, valid_days: 365 },
     signup_credits: 30,

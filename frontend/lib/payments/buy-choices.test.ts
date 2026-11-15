@@ -19,8 +19,8 @@ import type { OneTimeRules, Plan } from "@/lib/credits/types";
 import { OneTimeChoices, PlanQuantity } from "./buy-choices";
 
 const rules: OneTimeRules = { min_credits: 10, max_credits: 5000, price_paise_per_credit: 200, valid_days: 365 };
-const weekly: Plan = { key: "weekly_pro", name: "Weekly Pro", kind: "recurring", credits: 100, period_days: 7, price_paise: 9800, max_quantity: 12 };
-const monthly: Plan = { ...weekly, key: "monthly_pro", name: "Monthly Pro", credits: 500, period_days: 28, price_paise: 39800, max_quantity: 1 };
+const weekly: Plan = { key: "weekly_pro", name: "Weekly Pro", kind: "recurring", credits: 100, period_days: 7, price_paise: 14700, max_quantity: 12 };
+const monthly: Plan = { ...weekly, key: "monthly_pro", name: "Monthly Pro", credits: 500, period_days: 28, price_paise: 59700, max_quantity: 1 };
 
 describe("the amount of one-time credits", () => {
   test("the chips are the presets the limits allow", () => {
@@ -60,8 +60,8 @@ describe("a plan's quantity", () => {
   });
 
   test("the total follows the weeks", () => {
-    expect(PlanQuantity.total(weekly, 3)).toEqual({ paise: 29400, credits: 300 });
-    expect(PlanQuantity.total(weekly, 50)).toEqual({ paise: 117600, credits: 1200 });
+    expect(PlanQuantity.total(weekly, 3)).toEqual({ paise: 44100, credits: 300 });
+    expect(PlanQuantity.total(weekly, 50)).toEqual({ paise: 176400, credits: 1200 });
   });
 
   test("the weeks read in words, and a plan bought whole says nothing", () => {

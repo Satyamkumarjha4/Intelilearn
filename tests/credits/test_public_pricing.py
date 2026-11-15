@@ -78,11 +78,11 @@ def test_the_plans_are_the_active_recurring_ones_with_their_terms(api_client):
 
     assert [p["key"] for p in body["plans"]] == ["weekly_pro", "monthly_pro", "pro_plus"]
     assert plan(body, "weekly_pro") == {
-        "key": "weekly_pro", "name": "Weekly Pro", "credits": 100, "period_days": 7, "price_paise": 9800,
-        "max_quantity": 12, "price_paise_per_credit": 98.0, "about_lessons": 10,
+        "key": "weekly_pro", "name": "Weekly Pro", "credits": 100, "period_days": 7, "price_paise": 14700,
+        "max_quantity": 12, "price_paise_per_credit": 147.0, "about_lessons": 10,
     }  # fmt: skip
-    assert plan(body, "monthly_pro")["price_paise_per_credit"] == 79.6
-    assert (plan(body, "pro_plus")["about_lessons"], plan(body, "pro_plus")["price_paise_per_credit"]) == (75, 74.4)
+    assert plan(body, "monthly_pro")["price_paise_per_credit"] == 119.4
+    assert (plan(body, "pro_plus")["about_lessons"], plan(body, "pro_plus")["price_paise_per_credit"]) == (75, 111.6)
 
 
 def test_about_lessons_is_credits_over_the_lesson_price_rounded_down(api_client):

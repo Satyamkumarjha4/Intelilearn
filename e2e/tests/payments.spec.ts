@@ -70,12 +70,12 @@ test("a plan by the week gives its first week at once and lines up the rest", as
   await page.goto("/buy");
   await page.getByRole("button", { name: "One week more" }).click();
   await expect(page.getByTestId("plan-weekly_pro-weeks")).toHaveText("2 weeks");
-  await expect(page.getByTestId("buy-weekly_pro")).toContainText("₹196");
+  await expect(page.getByTestId("buy-weekly_pro")).toContainText("₹294");
   await page.getByTestId("buy-weekly_pro").click();
   await page.waitForURL(/\/buy\/return\?order=/);
 
   const order = (await api.call("GET", `/payments/orders/${new URL(page.url()).searchParams.get("order")}`)).body;
-  expect(order).toMatchObject({ amount_paise: 19600, quantity: 2, credits: 200 });
+  expect(order).toMatchObject({ amount_paise: 29400, quantity: 2, credits: 200 });
   await new Provider(page).say("succeeded", order);
 
   await expect(page.getByTestId("return-headline")).toHaveText("Your credits are here", { timeout: 30_000 });

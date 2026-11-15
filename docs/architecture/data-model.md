@@ -427,7 +427,7 @@ Partial unique `(action, subject_id)` where `status = 'held'`: one live hold for
 | max_quantity | small int | The most that can be bought at once (Weekly Pro 12, the rest 1) |
 | active, sort | bool, small int | Switched off: not offered; purchases already made are unaffected |
 
-Seeded: one-time 200 paise a credit; Weekly Pro 100 credits, 7 days, 9,800; Monthly Pro 500, 28 days, 39,800; Pro Plus 750, 28 days, 55,800 (migration 0007 seeded 100 / 4,900 / 19,900 / 27,900; `0009_double_plan_prices` doubled them on 2026-11-15, only where a price still had the old figure).
+Seeded: one-time 200 paise a credit; Weekly Pro 100 credits, 7 days, 14,700; Monthly Pro 500, 28 days, 59,700; Pro Plus 750, 28 days, 83,700 (migration 0007 seeded 100 / 4,900 / 19,900 / 27,900; `0009_raise_plan_prices` raised them on 2026-11-15, only where a price was still the original).
 
 `PlanPurchase` (UUID; user and plan are `PROTECT`):
 

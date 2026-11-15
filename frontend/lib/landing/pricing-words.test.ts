@@ -33,7 +33,7 @@ const text = (lines: { bold?: string; text: string }[]) => lines.map((l) => `${l
 
 describe("words for numbers", () => {
   test("money, a price a credit, lessons, ranges and spans", () => {
-    expect(PricingWords.rupees(39800)).toBe("₹398");
+    expect(PricingWords.rupees(59700)).toBe("₹597");
     expect(PricingWords.perCredit(40)).toBe("₹0.40 a credit");
     expect(PricingWords.aboutLessons(1)).toBe("About 1 full lesson");
     expect(PricingWords.aboutLessons(10)).toBe("About 10 full lessons");
@@ -64,7 +64,7 @@ describe("the cards", () => {
   test("a plan shows its price, period, credits and lessons from the numbers it was given", () => {
     const monthly = card("monthly_pro");
 
-    expect([monthly.name, monthly.price, monthly.per]).toEqual(["Monthly Pro", "₹398", "/ 28 days"]);
+    expect([monthly.name, monthly.price, monthly.per]).toEqual(["Monthly Pro", "₹597", "/ 28 days"]);
     expect(text(monthly.lines).slice(0, 2)).toEqual(["500 credits for 28 days", "About 50 full lessons"]);
     expect(card("weekly_pro").per).toBe("/ week");
     expect(text(card("weekly_pro").lines).slice(0, 2)).toEqual(["100 credits a week", "About 10 full lessons a week"]);
@@ -101,14 +101,16 @@ describe("the cards", () => {
   test("a plan's third line is only a claim the numbers back", () => {
     expect(text(card("weekly_pro").lines)[2]).toBe("Buy several weeks; they arrive one at a time");
     expect(text(card("pro_plus").lines)[2]).toBe("The lowest price per credit");
-    expect(text(card("monthly_pro").lines)[2]).toBe("Less than half the price per credit of a top-up");
+    expect(text(card("monthly_pro").lines)[2]).toBe("Cheaper per credit than a top-up"); // 119.4 is not under half of 200
   });
 
-  test("with a dearer plan the claim softens, and with no saving there is no claim", () => {
-    const soft = pricing().plans.map((p) => (p.key === "monthly_pro" ? { ...p, price_paise_per_credit: 120 } : p));
+  test("with a much cheaper plan the claim is stronger, and with no saving there is no claim", () => {
+    const half = pricing().plans.map((p) =>
+      p.key === "monthly_pro" ? { ...p, price_paise_per_credit: 90 } : p.key === "pro_plus" ? { ...p, price_paise_per_credit: 80 } : p,
+    ); // Pro Plus stays the cheapest, so Monthly Pro is the one compared with a top-up
     const same = pricing().plans.map((p) => (p.key === "monthly_pro" ? { ...p, price_paise_per_credit: 200 } : p));
 
-    expect(text(card("monthly_pro", { plans: soft }).lines)[2]).toBe("Cheaper per credit than a top-up");
+    expect(text(card("monthly_pro", { plans: half }).lines)[2]).toBe("Less than half the price per credit of a top-up");
     expect(text(card("monthly_pro", { plans: same }).lines)[2]).toBeUndefined();
   });
 

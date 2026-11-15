@@ -140,7 +140,7 @@ class TestWeeklyProDrips:
         assert len(done.periods) == 3 and [p.position for p in made] == [1, 2, 3]
         assert [p.starts_at for p in made] == [clock.now() + n * 7 * DAY for n in range(3)]
         assert all(p.ends_at - p.starts_at == 7 * DAY and p.credits == 100 for p in made)
-        assert done.purchase.amount_paise == 3 * 9800 and done.purchase.credits == 0
+        assert done.purchase.amount_paise == 3 * 14700 and done.purchase.credits == 0
 
     def test_only_the_first_week_is_granted_and_never_300_at_once(self, buy, ledger, user):
         buy(user, "weekly_pro", quantity=3)
@@ -399,7 +399,7 @@ class TestAdministratorsPurchases:
         assert purchase.meta == {
             "reason": "Support: apology for the outage",
             "by": "staff@example.com",
-            "list_amount_paise": 39800,
+            "list_amount_paise": 59700,
         }
         fulfilment.fulfil(purchase)
         assert ledger.balance(user) == 500

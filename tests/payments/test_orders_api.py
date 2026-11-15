@@ -69,7 +69,12 @@ class TestTheGateways:
 
         assert signed_in_client.get(GATEWAYS).json() == {"gateways": [], "default": None}
 
-    def test_nothing_is_on_by_default(self, signed_in_client):
+    def test_nothing_is_on_by_default(self, signed_in_client, settings):
+        # What an environment with no payment variables gives (the defaults in config/settings.py), set here so that a
+        # developer's own `.env` (a demo one enables Razorpay) cannot change the answer; CI has no `.env` at all.
+        settings.PAYMENT_GATEWAYS_ENABLED = []
+        settings.PAYMENT_DEFAULT_GATEWAY = "stripe"
+
         assert signed_in_client.get(GATEWAYS).json() == {"gateways": [], "default": None}
 
 
@@ -93,7 +98,7 @@ class TestStartingAPayment:
     def test_a_plan_is_priced_by_its_weeks_and_says_its_credits(self, payments, signed_in_client):
         body = signed_in_client.post(ORDERS, {"plan": "weekly_pro", "quantity": 2}, format="json").json()
 
-        assert (body["amount_paise"], body["quantity"], body["credits"]) == (19600, 2, 200)
+        assert (body["amount_paise"], body["quantity"], body["credits"]) == (29400, 2, 200)
 
     def test_a_price_sent_by_the_client_is_not_read(self, payments, signed_in_client):
         body = make(signed_in_client, amount_paise=1, price=1, amount=1).json()
