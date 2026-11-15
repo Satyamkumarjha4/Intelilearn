@@ -99,7 +99,7 @@ fake-llm: ## Start the throwaway stack on a fake LLM (own database), with its re
 	@echo "waiting for the frontend..."; ok=; for i in $$(seq 1 60); do curl -sf -o /dev/null http://localhost:$(E2E_FRONTEND_PORT)/auth && ok=1 && break; sleep 3; done; \
 	  [ -n "$$ok" ] || { echo "the frontend does not answer 200 on /auth: its dev server is broken. Run make e2e-down, then make fake-llm again."; exit 1; }
 	$(E2E_COMPOSE) exec -T backend python manage.py seed_registry --file /tests/e2e/fake_registry.json
-	$(E2E_COMPOSE) exec -T -e STAFF_EMAIL=$(E2E_STAFF_EMAIL) -e STAFF_PASSWORD=$(E2E_STAFF_PASSWORD) backend python manage.py shell -c "import os; from accounts.models import User; u, _ = User.objects.get_or_create(email=os.environ['STAFF_EMAIL'], defaults={'name': 'Staff'}); u.is_staff = True; u.set_password(os.environ['STAFF_PASSWORD']); u.save()"
+	$(E2E_COMPOSE) exec -T -e STAFF_EMAIL=$(E2E_STAFF_EMAIL) -e STAFF_PASSWORD=$(E2E_STAFF_PASSWORD) backend python manage.py shell -c "import os; from django.utils import timezone; from accounts.models import User; u, _ = User.objects.get_or_create(email=os.environ['STAFF_EMAIL'], defaults={'name': 'Staff'}); u.is_staff = True; u.email_verified_at = u.email_verified_at or timezone.now(); u.email_verification_source = u.email_verification_source or 'operator'; u.set_password(os.environ['STAFF_PASSWORD']); u.save()"
 	@# This stack charges for real (docker-compose.e2e.yml), so a spec that builds several lessons for one learner would run out of the 30
 	@# signup credits. The daily credit is made large here: it is earned by the first study, so the signup grant (30) that the credits specs
 	@# read is untouched, and a learner is never short once they have studied. The dev defaults are not changed.
