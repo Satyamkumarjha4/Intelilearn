@@ -58,6 +58,11 @@ Start here. The docs are grouped by what you are trying to do. Status marks: ✅
 | [mockups/socra-admin-mockup.html](design/mockups/socra-admin-mockup.html) | The staff console mockup | ✅ |
 | [pending-screens.md](design/pending-screens.md) | Every screen phase 9 built without a mockup, grouped by flow, for a design session | ✅ |
 
+### to_be_developed/ (designs not built yet)
+| Doc | What it is | Status |
+|---|---|---|
+| [model-strategy.md](to_be_developed/model-strategy.md) | Provider and model catalogue (Gemini, Groq, OpenAI, Anthropic, with sources and dates), what each LLM node needs, a tier rule and 4-layer fallback chain per node, the cost per lesson against revenue for Demo, Economy and Quality, the adapter design, the test plan, and the decisions it needs. Research and design only; no code | ✅ |
+
 ### legal/
 | Doc | What it is | Status |
 |---|---|---|
