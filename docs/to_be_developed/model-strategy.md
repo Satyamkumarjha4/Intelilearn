@@ -1,6 +1,6 @@
 # Model strategy: research and design
 
-**Status:** design only, no code changed. Written 2026-11-15 on branch `docs/model-strategy`.
+**Status:** design; the owner's decisions are recorded in section 5 (2026-11-15). Written on branch `docs/model-strategy`; milestones M1 and M2 are built on `phase-m/observe-clean`.
 **Supersedes:** the "lean profile" proposal on `chore/model-costs` (not applied here). That branch's price book (`backend/llm_registry/prices.py`) is not reused: every price below was re-read from the providers' own pages today.
 **Scope:** Gemini, OpenAI, Anthropic and Groq text models; every LLM node in `llm_registry/node_specs.py`; a tier rule, a fallback chain, an optimisation list and a cost model per node; the adapter design; the test and rollout plan.
 
@@ -590,3 +590,43 @@ How the pages were read: through a fetch tool that returns the page text. On lon
 - **OpenAI:** free-tier RPM and TPM; limits for the cheap models by tier beyond Luna and Terra; payment methods and INR; whether reasoning models accept `temperature`.
 - **Anthropic:** the usage field for thinking tokens; whether the SDK sends API version 2026-10-21; Haiku 5.5's image input; the 512-token cache minimum (summary, "spot-check"); a free tier (none described).
 - **This document's own estimates:** token counts for nodes with no live rows (`diagnostic.review`, `prerequisites.plan`, `media.verify`, `runtime.repair`, `onboarding.suggest_topics`, quiz, retake, sheets); the per-layer failure rates; the call counts after the changes in 3.3; the 35% judge-input and 15% diagnostic-output trims; ₹90 per dollar.
+
+---
+
+## 5. Decisions (recorded 2026-11-15)
+
+The owner's answers to section 4.4, in the same numbering. These are binding for the milestones below; where a decision changes a figure in this document, the change is stated here and the earlier text is left as the record of the analysis.
+
+| # | Decision | Consequence |
+|---|---|---|
+| 1 | **Tripled prices confirmed** (₹147 / ₹597 / ₹837; per-credit ₹1.47 / ₹1.194 / ₹1.116; one-time ₹2). | The margin table at tripled prices (4.2) is the one that applies: Economy earns +₹6.32 (Groq-led) or +₹3.45 (Gemini only) per lesson at Pro Plus. |
+| 2 | **`USD_INR_RATE = 90.** | A single setting; every rupee figure here uses it. |
+| 3 | **Groq limits: design for the 8K tokens-a-minute case until the owner reports from the console.** No single request over about 6,000 tokens (input plus the layer's `max_output_tokens`); the chain falls through. | See 5.1. Until the console check, the **planning figure for Economy is the Gemini-led ₹5.67 a lesson**, not ₹2.80: at 8K a minute Groq can serve only the small nodes. |
+| 4 | **No OpenAI or Anthropic keys yet. OpenAI first, before launch.** | Layers marked `*` stay skipped at resolve time until the key exists (M2). The first key added is `OPENAI_API_KEY`. |
+| 5 | **Demo is for development and synthetic or consented data only, never real learners. Free credits use Economy.** | Demo is seeded but is not selectable for production traffic; the console labels it. |
+| 6 | **Quality is admin-only and never the default.** | A profile has a `selectable_by` rule; the learner-facing flow never resolves it. |
+| 7 | **Yes: remove the model from `page.compile` and `media.search`, both behind settings.** | Milestone M4 (not M1 or M2). The old path stays available behind the setting. |
+| 8 | **Yes: at most 2 interactives per page.** | `max_interactives_per_page` default 2. Milestone M4. |
+| 9 | **Yes: retire `gemini-3.5-flash`, `gemini-2.5-*` and `llama-3.3-70b-versatile`. Layer 2 is Gemini 3.1 Flash-Lite. T2 is Gemini 3.6 Flash until 2026-12-31 and Gemini 4 Hydrogen from 2027-01-01, chosen by price and date data, not by code.** | The seed lists both T2 models; a `ModelPrice` validity window and the model's `status` decide which one a chain uses on a given day. No date is hard-coded in a graph or adapter. |
+| 10 | **Yes: escalate on retry** (attempt k starts at layer k). | Milestone M4 (graph retry flow). |
+| 11 | **Yes: strict JSON on Groq, with the schema edits it needs** (every field required; optional fields become nullable and required). | Done in M2 with `StrictSchema`. |
+| 12 | **Yes: replace the `Cheap`, `Balanced` and `Quality` seed profiles with `Demo`, `Economy` and `Quality`; the `Default` seed is rewritten.** | Milestone M3 (profiles). M2 only removes retired ids from the existing seeds. |
+| 13 | **Add the data location and retention of Groq, Google and OpenAI to the launch checklist's Privacy item.** | Done in `docs/process/roadmap.md` (Launch checklist, Privacy). |
+| 14 | **Defer the retake-bank batch job.** | Not built. |
+| 15 | **Yes: fix the Anthropic and OpenAI adapter defects now.** | Done in M2 (3.5.D items 1 to 4, plus 5 and 6). |
+
+### 5.1 The 8K tokens-a-minute design rule (decision 3)
+
+Groq's rate-limit table says 8K tokens a minute for `gpt-oss-120b` and `gpt-oss-20b` `[QR]`; its models page says 250K `[QM]`. Until the owner has read the console, the design assumes the smaller figure:
+
+- **A Groq layer is allowed only when `typical input + max_output_tokens <= 6,000`.** Each `NodeSpec` carries `typical_input_tokens` (from the table in 2.2) and the seed test fails a Groq binding that breaks the rule.
+- **Eligibility by node** (typical input, the cap that fits): `topic.traits`, `onboarding.suggest_topics`, `prerequisites.plan`, `learner.assess`, `diagnostic.review`, `interactive.plan`, `media.search`, `code.repair`, `test.grade`: eligible. `lesson.plan` (cap 4,096), `study.generate` (4,096), `page.generate` (**cap 3,900**), `test.generate` (**4,200**), `interactive.generate` (**4,400**), `diagnostic.generate` (**4,400**, so a 15-question reply that runs long is cut off, fails validation and falls through): eligible with the lower cap. **`alignment.judge` is not eligible** (about 10K of input); it starts on Gemini. `media.verify` needs vision, so it is Gemini only.
+- **The per-minute budget is the second limit.** Three parallel page calls are about 12K tokens inside one minute, so at 8K a minute Groq serves one or two calls a minute per model and the rest of a lesson falls through to Gemini. The expected lesson cost is therefore close to the Gemini-led figure until the console says otherwise.
+- **Planning figure: Economy at ₹5.67 a lesson (tripled Pro Plus net ₹9.12, margin +₹3.45).** If the console shows 250K a minute, the caps in 3.2 apply again and the figure is ₹2.80.
+
+## 6. Changelog
+
+| Date | Change |
+|---|---|
+| 2026-11-15 | Document written: catalogue of Gemini, Groq, OpenAI and Anthropic with sources, node-by-node requirements, tier rules, chains, cost model, adapter design, test plan, decisions asked (section 4). |
+| 2026-11-15 | Decisions 1 to 15 recorded (section 5); the 8K tokens-a-minute rule added (5.1); milestones M1 (observe) and M2 (clean) assigned to `phase-m/observe-clean`, M3 (profiles), M4 (mechanical steps and escalation) later. |
