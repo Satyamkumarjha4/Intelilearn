@@ -1,23 +1,29 @@
 """Interactives: what each page gets (plan), the media agent's final answer, and generated widget code."""
 
 import re
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, Field
+
+from .nullable import NullableFields
 
 InteractiveKind = Literal["interactive_graph", "simulation", "css_animation", "svg_diagram", "code_playground",
                           "image", "gif"]  # fmt: skip
 MEDIA_KINDS = ("image", "gif")
 
 
-class InteractiveSpec(BaseModel):
+class InteractiveSpec(NullableFields):
     id: str = Field(description='Unique id, letters/digits/underscores, e.g. "bs_stepper".')
     page: Literal["introduction", "core", "advanced"]
     anchor_section: str = Field(description="The id of the section it belongs to (from the page).")
     kind: InteractiveKind
     purpose: str = Field(description="The concept it teaches and why it teaches it better than text.")
     description: str = Field(description="What the learner sees and can do, concretely.")
-    media_query: str = Field(default="", description="image/gif only: a short search query for the media library.")
+    media_query: str | None = Field(
+        description="image/gif only: a short search query for the media library, else empty."
+    )
+
+    NULL_MEANS: ClassVar = {"media_query": str}
 
 
 class InteractivePlan(BaseModel):
