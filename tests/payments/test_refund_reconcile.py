@@ -104,7 +104,7 @@ class TestAskingTheProvider:
         payments.send("refunded", order, amount=4000, event_id="refund:refund_1")
 
         order.refresh_from_db()
-        assert order.refunded_paise == 4000 and Ledger().balance(user) == 60
+        assert order.refunded_paise == 4000 and Ledger().balance(user) == 80  # a fifth of 20000 paise
 
     def test_a_failed_refund_is_marked_and_its_amount_is_free_to_ask_for_again(self, payments, answers, staff):
         order = paid(payments)

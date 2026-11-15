@@ -427,7 +427,7 @@ Partial unique `(action, subject_id)` where `status = 'held'`: one live hold for
 | max_quantity | small int | The most that can be bought at once (Weekly Pro 12, the rest 1) |
 | active, sort | bool, small int | Switched off: not offered; purchases already made are unaffected |
 
-Seeded: one-time 100 paise a credit; Weekly Pro 100 credits, 7 days, 4,900; Monthly Pro 500, 28 days, 19,900; Pro Plus 750, 28 days, 27,900.
+Seeded: one-time 200 paise a credit; Weekly Pro 100 credits, 7 days, 14,700; Monthly Pro 500, 28 days, 59,700; Pro Plus 750, 28 days, 83,700 (migration 0007 seeded 100 / 4,900 / 19,900 / 27,900; `0009_raise_plan_prices` raised them on 2026-11-15, only where a price was still the original).
 
 `PlanPurchase` (UUID; user and plan are `PROTECT`):
 
@@ -471,7 +471,7 @@ An edit never changes a row in place: `PriceCatalog.revise` adds a row and switc
 
 ### `CreditSettings` (singleton, edited in the admin and the console)
 
-Every amount and window of the credits rules (plan T18), with the spec's defaults: signup 30, daily 1, weekly streak bonus 10, monthly streak bonus 10, bonus credits valid 90 days, purchased 365, refund bucket 30, repair cost 1 within 48 hours and at most 1 per week and 3 per 28 days, the expiry-notice windows (2 / 7 / 7 / 30 for 3 days / 7), one-time purchases 10 to 5,000 credits at 100 paise a credit, at most 12 queued plan periods and 3 pending orders, and 30 minutes before an unclaimed hold is released. The ledger reads only the refund period and the orphan deadline today.
+Every amount and window of the credits rules (plan T18), with the spec's defaults: signup 30, daily 1, weekly streak bonus 10, monthly streak bonus 10, bonus credits valid 90 days, purchased 365, refund bucket 30, repair cost 1 within 48 hours and at most 1 per week and 3 per 28 days, the expiry-notice windows (2 / 7 / 7 / 30 for 3 days / 7), one-time purchases 10 to 5,000 credits at 200 paise a credit, at most 12 queued plan periods and 3 pending orders, and 30 minutes before an unclaimed hold is released. The ledger reads only the refund period and the orphan deadline today.
 
 ## `payments` (phases 10.6 to 10.9)
 

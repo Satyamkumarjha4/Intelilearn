@@ -17,10 +17,10 @@ import { describe, expect, test } from "bun:test";
 import { BuyState, PlanWords } from "./plan-words";
 import type { OneTimeRules, Plan, PlanPeriod, Plans } from "./types";
 
-const weekly: Plan = { key: "weekly_pro", name: "Weekly Pro", kind: "recurring", credits: 100, period_days: 7, price_paise: 4900, max_quantity: 12 };
-const monthly: Plan = { key: "monthly_pro", name: "Monthly Pro", kind: "recurring", credits: 500, period_days: 28, price_paise: 19900, max_quantity: 1 };
-const oneTime: Plan = { key: "one_time", name: "Credits", kind: "one_time", credits: 0, period_days: 365, price_paise: 100, max_quantity: 1 };
-const rules: OneTimeRules = { min_credits: 10, max_credits: 5000, price_paise_per_credit: 100, valid_days: 365 };
+const weekly: Plan = { key: "weekly_pro", name: "Weekly Pro", kind: "recurring", credits: 100, period_days: 7, price_paise: 14700, max_quantity: 12 };
+const monthly: Plan = { key: "monthly_pro", name: "Monthly Pro", kind: "recurring", credits: 500, period_days: 28, price_paise: 59700, max_quantity: 1 };
+const oneTime: Plan = { key: "one_time", name: "Credits", kind: "one_time", credits: 0, period_days: 365, price_paise: 200, max_quantity: 1 };
+const rules: OneTimeRules = { min_credits: 10, max_credits: 5000, price_paise_per_credit: 200, valid_days: 365 };
 
 describe("money", () => {
   test("paise become rupees, with paise only when there are some", () => {
@@ -33,9 +33,9 @@ describe("money", () => {
 
 describe("plans", () => {
   test("read as a price and what they give", () => {
-    expect(PlanWords.price(weekly)).toBe("₹49 a week");
-    expect(PlanWords.price(monthly)).toBe("₹199 for 28 days");
-    expect(PlanWords.price(oneTime)).toBe("₹1 a credit");
+    expect(PlanWords.price(weekly)).toBe("₹147 a week");
+    expect(PlanWords.price(monthly)).toBe("₹597 for 28 days");
+    expect(PlanWords.price(oneTime)).toBe("₹2 a credit");
     expect(PlanWords.gives(weekly)).toBe("100 credits every week");
     expect(PlanWords.gives(monthly)).toBe("500 credits every 28 days");
   });
@@ -62,7 +62,7 @@ describe("plans", () => {
 
 describe("the one-time amount", () => {
   test("a whole number within the limits gives credits and paise", () => {
-    expect(PlanWords.check("250", rules)).toEqual({ ok: true, credits: 250, paise: 25000 });
+    expect(PlanWords.check("250", rules)).toEqual({ ok: true, credits: 250, paise: 50000 });
     expect(PlanWords.check(" 10 ", rules)).toMatchObject({ ok: true, credits: 10 });
     expect(PlanWords.check("5000", rules)).toMatchObject({ ok: true });
   });

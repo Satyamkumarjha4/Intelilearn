@@ -53,7 +53,7 @@ HOOK = "/api/payments/webhooks/razorpay"
 KEY_ID, KEY_SECRET, SECRET = "rzp_test_" + "i" * 14, "s" * 24, "h" * 20  # not real keys
 RZP_ID, PAY_ID = "order_RB58MiP5SPFYyM", "pay_N8FUmetkCE2hZP"
 CREATED_ORDER = {
-    "id": RZP_ID, "entity": "order", "amount": 10000, "amount_paid": 0, "amount_due": 10000, "currency": "INR",
+    "id": RZP_ID, "entity": "order", "amount": 20000, "amount_paid": 0, "amount_due": 20000, "currency": "INR",
     "receipt": "r", "status": "created", "attempts": 0, "notes": {}, "created_at": 1756455561,
 }  # fmt: skip
 
@@ -89,7 +89,7 @@ def buy(client, credits=100, **extra):
 
 
 def rzp_order_paid(**fields) -> dict:
-    return rzp_order(**{"id": RZP_ID, "amount": 10000, "amount_paid": 10000, **fields})
+    return rzp_order(**{"id": RZP_ID, "amount": 20000, "amount_paid": 20000, **fields})
 
 
 def paid_event(event_id="evt_paid", **order_fields) -> tuple[dict, str]:
@@ -156,10 +156,10 @@ class TestBuying:
         body = response.json()
         assert body["checkout"]["kind"] == "client" and body["checkout"]["adapter"] == "razorpay"
         assert body["checkout"]["client"] | {"key": KEY_ID} == body["checkout"]["client"]
-        assert body["checkout"]["client"]["order_id"] == RZP_ID and body["checkout"]["client"]["amount"] == 10000
+        assert body["checkout"]["client"]["order_id"] == RZP_ID and body["checkout"]["client"]["amount"] == 20000
         assert KEY_SECRET not in response.content.decode() and SECRET not in response.content.decode()
         sent = json.loads(razorpay.sent.content)
-        assert sent["receipt"] == body["id"] and sent["notes"] == {"order_id": body["id"]} and sent["amount"] == 10000
+        assert sent["receipt"] == body["id"] and sent["notes"] == {"order_id": body["id"]} and sent["amount"] == 20000
         stored = PaymentOrder.objects.get(pk=body["id"])
         assert (stored.gateway, stored.status, stored.provider_ref) == ("razorpay", "pending", RZP_ID)
 
@@ -276,7 +276,7 @@ class TestTheSignedCallback:
         assert order.status == "fulfilled" and Ledger().balance(user) == 100
 
     def test_an_amount_that_is_not_the_orders_grants_nothing(self, order, user):
-        pay(paid_event("evt_short", amount_paid=100, amount_due=9900))
+        pay(paid_event("evt_short", amount_paid=100, amount_due=19900))
 
         order.refresh_from_db()
         assert order.status == "pending" and Ledger().balance(user) == 0
@@ -292,7 +292,7 @@ class TestTheSignedCallback:
 
 class TestAskingRazorpayInsteadOfWaiting:
     def test_a_paid_order_settles_with_no_webhook(self, order, razorpay, user):
-        paid_order = {**CREATED_ORDER, "status": "paid", "amount_paid": 10000, "amount_due": 0}
+        paid_order = {**CREATED_ORDER, "status": "paid", "amount_paid": 20000, "amount_due": 0}
         razorpay.answers = [
             (200, paid_order),
             (200, {"entity": "collection", "count": 1, "items": [rzp_payment(id=PAY_ID, order_id=RZP_ID)]}),
@@ -313,7 +313,7 @@ class TestAskingRazorpayInsteadOfWaiting:
 
     def test_the_callback_after_that_changes_nothing_more(self, order, razorpay, user):
         razorpay.answers = [
-            (200, {**CREATED_ORDER, "status": "paid", "amount_paid": 10000}),
+            (200, {**CREATED_ORDER, "status": "paid", "amount_paid": 20000}),
             (200, {"entity": "collection", "count": 1, "items": [rzp_payment(id=PAY_ID, order_id=RZP_ID)]}),
         ]
         OrderReconciler().refresh(order)
@@ -327,7 +327,7 @@ class TestRefundsAndDisputes:
     def test_the_admin_refunds_with_the_forms_token_once_and_the_credits_return_with_the_event(
         self, client, staff, paid, razorpay, user
     ):
-        razorpay.answers = [(200, {"id": "rfnd_1", "amount": 10000, "status": "processed", "payment_id": PAY_ID})]
+        razorpay.answers = [(200, {"id": "rfnd_1", "amount": 20000, "status": "processed", "payment_id": PAY_ID})]
         token = str(uuid.uuid4())
 
         ask_refund(client, paid, token)
@@ -335,7 +335,7 @@ class TestRefundsAndDisputes:
 
         assert len([r for r in razorpay.requests if r.url.path.endswith("/refund")]) == 1
         assert razorpay.sent.url.path == f"/v1/payments/{PAY_ID}/refund" and json.loads(razorpay.sent.content) == {
-            "amount": 10000
+            "amount": 20000
         }
         assert razorpay.sent.headers["x-refund-idempotency"] == f"refund-{token}-{paid.pk}"
         assert Ledger().balance(user) == 100  # not yet: Razorpay has not said so
@@ -344,7 +344,7 @@ class TestRefundsAndDisputes:
             (
                 envelope(
                     "refund.processed",
-                    refund=rzp_refund(id="rfnd_1", amount=10000, payment_id=PAY_ID),
+                    refund=rzp_refund(id="rfnd_1", amount=20000, payment_id=PAY_ID),
                     payment=rzp_payment(id=PAY_ID),
                 ),
                 "evt_r",
@@ -352,39 +352,39 @@ class TestRefundsAndDisputes:
         )
 
         paid.refresh_from_db()
-        assert Ledger().balance(user) == 0 and paid.refunded_paise == 10000 and paid.status == "fulfilled"
+        assert Ledger().balance(user) == 0 and paid.refunded_paise == 20000 and paid.status == "fulfilled"
 
     def test_the_same_refund_seen_as_created_and_processed_counts_once(self, paid, user):
         def body(kind):
-            refund = rzp_refund(id="rfnd_1", amount=4000, payment_id=PAY_ID)
+            refund = rzp_refund(id="rfnd_1", amount=8000, payment_id=PAY_ID)
             return envelope(kind, refund=refund, payment=rzp_payment(id=PAY_ID))
 
         pay((body("refund.created"), "evt_a"))
         pay((body("refund.processed"), "evt_b"))
 
         paid.refresh_from_db()
-        assert paid.refunded_paise == 4000 and Ledger().balance(user) == 60
+        assert paid.refunded_paise == 8000 and Ledger().balance(user) == 60
 
     def test_two_partial_refunds_add_up_to_the_whole(self, paid, user):
-        for number, amount in (("1", 4000), ("2", 6000)):
+        for number, amount in (("1", 8000), ("2", 12000)):
             refund = rzp_refund(id=f"rfnd_{number}", amount=amount, payment_id=PAY_ID)
             pay((envelope("refund.processed", refund=refund, payment=rzp_payment(id=PAY_ID)), f"evt_r{number}"))
 
         paid.refresh_from_db()
-        assert paid.refunded_paise == 10000 and Ledger().balance(user) == 0
+        assert paid.refunded_paise == 20000 and Ledger().balance(user) == 0
 
     def test_a_refund_still_pending_takes_nothing_until_it_is_processed(self, paid, user):
-        pending = rzp_refund(id="rfnd_1", amount=10000, payment_id=PAY_ID, status="pending")
+        pending = rzp_refund(id="rfnd_1", amount=20000, payment_id=PAY_ID, status="pending")
         pay((envelope("refund.created", refund=pending, payment=rzp_payment(id=PAY_ID)), "evt_a"))
         assert Ledger().balance(user) == 100
 
-        done = rzp_refund(id="rfnd_1", amount=10000, payment_id=PAY_ID)
+        done = rzp_refund(id="rfnd_1", amount=20000, payment_id=PAY_ID)
         pay((envelope("refund.processed", refund=done, payment=rzp_payment(id=PAY_ID)), "evt_b"))
 
         assert Ledger().balance(user) == 0
 
     def test_a_dispute_takes_the_credits_back_by_the_payment(self, paid, user):
-        dispute = {"id": "disp_1", "entity": "dispute", "payment_id": PAY_ID, "amount": 10000, "currency": "INR",
+        dispute = {"id": "disp_1", "entity": "dispute", "payment_id": PAY_ID, "amount": 20000, "currency": "INR",
                    "status": "open", "phase": "chargeback"}  # fmt: skip
 
         pay((envelope("payment.dispute.created", payment=rzp_payment(id=PAY_ID), dispute=dispute), "evt_d"))

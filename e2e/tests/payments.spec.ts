@@ -37,13 +37,13 @@ test("one-time credits arrive only after the provider's signed callback", async 
   await page.goto("/buy");
   await expect(page.getByText("How would you like to pay?")).toHaveCount(0); // one way to pay: nothing to choose
   await page.getByTestId("chip-200").click();
-  await expect(page.getByTestId("amount-help")).toHaveText("₹200 for 200 credits");
+  await expect(page.getByTestId("amount-help")).toHaveText("₹400 for 200 credits");
   await page.getByTestId("buy-one_time").click();
   await page.waitForURL(/\/buy\/return\?order=/);
 
   const orderId = new URL(page.url()).searchParams.get("order")!;
   const order = (await api.call("GET", `/payments/orders/${orderId}`)).body;
-  expect(order).toMatchObject({ status: "pending", amount_paise: 20000, credits: 200 });
+  expect(order).toMatchObject({ status: "pending", amount_paise: 40000, credits: 200 });
   await expect(page.getByTestId("return-headline")).toHaveText("Confirming your payment");
   expect(await balance(api)).toBe(30); // nothing yet: coming back from paying grants nothing
 
@@ -70,12 +70,12 @@ test("a plan by the week gives its first week at once and lines up the rest", as
   await page.goto("/buy");
   await page.getByRole("button", { name: "One week more" }).click();
   await expect(page.getByTestId("plan-weekly_pro-weeks")).toHaveText("2 weeks");
-  await expect(page.getByTestId("buy-weekly_pro")).toContainText("₹98");
+  await expect(page.getByTestId("buy-weekly_pro")).toContainText("₹294");
   await page.getByTestId("buy-weekly_pro").click();
   await page.waitForURL(/\/buy\/return\?order=/);
 
   const order = (await api.call("GET", `/payments/orders/${new URL(page.url()).searchParams.get("order")}`)).body;
-  expect(order).toMatchObject({ amount_paise: 9800, quantity: 2, credits: 200 });
+  expect(order).toMatchObject({ amount_paise: 29400, quantity: 2, credits: 200 });
   await new Provider(page).say("succeeded", order);
 
   await expect(page.getByTestId("return-headline")).toHaveText("Your credits are here", { timeout: 30_000 });

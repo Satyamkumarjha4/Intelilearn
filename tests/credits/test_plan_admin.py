@@ -152,7 +152,7 @@ class TestGiveAPlan:
             "admin", 0, "fulfilled", wallet.user_id
         )  # fmt: skip
         assert purchase.meta["reason"] == "Apology for the outage" and purchase.meta["by"] == "admin@example.com"
-        assert purchase.meta["list_amount_paise"] == 19900
+        assert purchase.meta["list_amount_paise"] == 59700
         assert Ledger().balance(wallet.user) == 1 + 500
         assert LedgerAudit().check_all().ok
 

@@ -20,7 +20,7 @@ export class PlanWords {
     return days === 7 ? "week" : days === 1 ? "day" : `${days} days`;
   }
 
-  /** "₹49 a week", "₹199 for 28 days", "₹1 a credit". */
+  /** "₹147 a week", "₹597 for 28 days", "₹2 a credit". */
   static price(plan: Plan): string {
     const money = PlanWords.rupees(plan.price_paise);
     if (plan.kind === "one_time") return `${money} a credit`;

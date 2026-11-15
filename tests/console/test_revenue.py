@@ -53,7 +53,7 @@ class TestTheFigures:
         body = staff_client.get(f"{URL}?range=7d").json()
 
         assert body["orders"] == 2
-        assert (body["paid"], body["refunded"], body["net"]) == ("350.00", "75.00", "275.00")
+        assert (body["paid"], body["refunded"], body["net"]) == ("700.00", "75.00", "625.00")  # 350 credits at ₹2
 
     def test_orders_and_refunds_outside_the_range_do_not_count(self, staff_client, payments, now):
         old = paid(payments, now, 100, ago=timedelta(days=20))
@@ -100,7 +100,7 @@ class TestBesideModelCost:
         body = staff_client.get(URL).json()
 
         assert body["model_cost_usd"] == "0.7500" and body["model_cost"] == "63.75"
-        assert body["usd_inr_rate"] == "85" and body["after_model_cost"] == "136.25"  # 200 - 63.75
+        assert body["usd_inr_rate"] == "85" and body["after_model_cost"] == "336.25"  # 400 (200 credits at ₹2) - 63.75
 
     def test_a_different_rate_changes_the_rupees_and_says_which_it_used(self, staff_client, now, make_call, settings):
         settings.USD_INR_RATE = Decimal("90.5")
@@ -119,12 +119,12 @@ class TestBesideModelCost:
         assert body["model_cost_usd"] == "2.0000"
 
     def test_the_money_is_exact_to_the_paisa(self, staff_client, payments, now):
-        order = paid(payments, now, 33)  # 3300 paise
+        order = paid(payments, now, 33)  # 6600 paise
         took_back(order, now, 1)
 
         body = staff_client.get(URL).json()
 
-        assert (body["paid"], body["refunded"], body["net"]) == ("33.00", "0.01", "32.99")
+        assert (body["paid"], body["refunded"], body["net"]) == ("66.00", "0.01", "65.99")
 
     def test_the_range_is_named_and_a_custom_one_works(self, staff_client, now):
         assert staff_client.get(f"{URL}?range=30d").json()["range"] == "30d"

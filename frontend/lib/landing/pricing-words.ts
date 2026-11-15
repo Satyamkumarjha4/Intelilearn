@@ -7,7 +7,7 @@ export type CardLine = { bold?: string; text: string };
 export type PlanCard = {
   key: string;
   name: string;
-  /** "₹199" */
+  /** "₹597" */
   price: string;
   /** "/ 28 days", or null for the free plan. */
   per: string | null;
