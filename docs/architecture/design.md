@@ -490,6 +490,18 @@ classDiagram
         +nodes
         +build() dict
     }
+    class PriceBook {
+        +ENTRIES tuple~ModelPrice~
+        +entry(provider, model) ModelPrice
+        +fill_missing() FillReport
+    }
+    class ModelPrice {
+        +input_per_mtok
+        +output_per_mtok
+        +source_url
+        +checked_on
+        +note
+    }
     class CheapRegistry
     class BalancedRegistry
     class QualityRegistry
@@ -512,6 +524,8 @@ classDiagram
     ProviderProfile <|-- OllamaProfile
     ProviderProfiles o-- ProviderProfile
     DefaultRegistry ..> RegistrySerializer : same JSON format
+    DefaultRegistry ..> PriceBook : seeds each model's price
+    PriceBook o-- ModelPrice
     DefaultRegistry <|-- CheapRegistry
     DefaultRegistry <|-- BalancedRegistry
     DefaultRegistry <|-- QualityRegistry

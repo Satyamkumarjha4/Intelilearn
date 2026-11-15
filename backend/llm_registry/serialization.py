@@ -4,7 +4,7 @@ so a tuned setup can be copied between machines."""
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import models, transaction
 
 from .models import LLMModel, NodeConfig, NodeModelBinding, Provider
 from .node_configs import NodeConfigSync
@@ -140,7 +140,10 @@ class RegistrySerializer:
     def _assign(instance, item: dict, fields: list[str]) -> None:
         for f in fields:
             if f in item:
-                setattr(instance, f, item[f])
+                value = item[f]
+                if isinstance(value, float) and isinstance(instance._meta.get_field(f), models.DecimalField):
+                    value = Decimal(str(value))  # a file from before prices were written as text
+                setattr(instance, f, value)
 
     @staticmethod
     def _save(instance):
@@ -150,4 +153,5 @@ class RegistrySerializer:
 
     @staticmethod
     def _plain(value):
-        return float(value) if isinstance(value, Decimal) else value
+        """A price is written as exact text: a number such as 0.075 cannot be stored back into a four-decimal field."""
+        return format(value.normalize(), "f") if isinstance(value, Decimal) else value
