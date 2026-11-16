@@ -3,6 +3,7 @@
 from collections import Counter
 from collections.abc import Callable, Iterable
 
+from ..normal import Normal
 from ..schemas.diagnostic import BANDS
 from .base import LatexChecker, LatexRules, TextRules
 
@@ -48,11 +49,11 @@ class DiagnosticValidator:
         """No question may give away another's answer."""
         problems = []
         for q in questions:
-            answer = norm(q["options"][q["correct_index"]])
+            answer = Normal.written(q["options"][q["correct_index"]])  # symbols kept: `low > high` is not "low high"
             if len(answer) < 6 or answer.replace(" ", "").isdigit():
                 continue  # short answers ("3", "O(n)") appear in text by coincidence
             for other in questions:
-                if other is not q and answer in norm(other["question"]):
+                if other is not q and answer in Normal.written(other["question"]):
                     problems.append(
                         f'Question {other["id"]} reveals the answer to {q["id"]} ("{answer}"); '
                         "questions must be independent."

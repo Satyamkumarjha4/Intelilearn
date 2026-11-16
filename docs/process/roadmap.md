@@ -275,9 +275,12 @@ For a decision: the quick check still fails now and then even with three attempt
 
 - [x] **M1 Observe** (`phase-m/observe-clean`): `ModelPrice` rows with validity windows, sources and dates, seeded from the price book; `USD_INR_RATE` 90; `ModelCall` keeps cached and cache-write tokens and `cost_usd`; the recorder prices with the row of the day; the console shows price, next price, tier, status and warnings per model, and per step the first-layer pass rate, fall-through, thinking share and cost per call.
 - [x] **M2 Clean**: per-model strategy settings and per-layer settings (output cap, timeout, structured mode, fall-through events); `StrictSchema` and Groq strict JSON with nullable-required schema fields; the six adapter defects of the design's 3.5.D (table-driven tests); layers without a key skipped at resolve time; a 401/402 circuit breaker; retired model ids removed (`0009_retire_models`); a live test that prints one raw usage payload per provider.
+- [x] **Quick check fix** (found by the first live run of M1/M2): the validator compared options with the function that compares names, which deletes every symbol, so `low > high` and `low == high` were "the same". On Binary search the Quick check failed in 3 of 5 live runs on this branch (the same failure, "5 of 6 tries", is in the phase 9 notes above, long before Phase M), and every option set it refused was four different answers. `Normal.written` and `Normal.option` keep the symbols (`graph/normal.py`); the option, independence and repeated-question checks use them; the table of real cases is in `tests/graph/test_normal.py`.
 - [ ] **M3 Profiles**: `Demo`, `Economy` and `Quality` seed profiles replace `Cheap`, `Balanced` and `Quality` (Quality admin-only); golden runs per profile.
 - [ ] **M4 Mechanical steps**: `page.compile` from the template and direct media search (both behind settings), at most 2 interactives per page, escalate on retry (attempt k starts at layer k).
 - [ ] Add `OPENAI_API_KEY` (before launch); then the L4 layers become live.
+- [ ] **M3 also**: staff add a new dated `ModelPrice` row in the console (never edit or delete an old one), audited with the actor and a reason; the 60-day warnings stay.
+- [ ] **Remove the legacy cost columns** (a separate change after the M phases): `ModelCall.cost` (a copy of `cost_usd`) and `LLMModel.input_cost_per_mtok` / `output_cost_per_mtok` (the fallback when a model has no `ModelPrice` row), with the readers that still use them (the console price editor and about 26 others).
 
 ### Phase 10: Credits and payments
 

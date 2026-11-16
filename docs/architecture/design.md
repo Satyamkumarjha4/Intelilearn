@@ -2723,8 +2723,12 @@ classDiagram
     ConceptIndex o-- ConceptEntry
     class Normal {
         +text(value)$
+        +written(value)$
+        +option(value)$
     }
     ConceptIndex ..> Normal
+    DiagnosticValidator ..> Normal
+    TextRules ..> Normal
     class QuestionConcepts {
         +allowed(data, cells)$
         +outline(plan)$
@@ -2762,7 +2766,7 @@ classDiagram
 
 - **One class places a concept (`ConceptIndex`, pure, `graph/concept_index.py`).** The plan says which page a concept belongs to (each outline concept is on exactly one page); the pages say where on it. `build` places a concept by a section tagged with it, else the section with the outline's heading, else the section that talks about it most; a concept nothing places is listed without a page. New lessons and old ones go through the same rules, so the backfill is the same code as the live path.
 - **`persist_lesson` writes the index** from the final pages (after any review fix), so the stored index never describes a page that was replaced.
-- **Concept-bounded questions.** `QuestionConcepts` answers "which concepts may this cell's question name?" for a lesson test, a retake and a quiz from lessons. It lives in `graph/questions/` and shares `Normal` (a one-method class in `graph/normal.py`, free of other imports) with the validators, which breaks the import cycle between the schemas, the validators and the question code.
+- **Concept-bounded questions.** `QuestionConcepts` answers "which concepts may this cell's question name?" for a lesson test, a retake and a quiz from lessons. It lives in `graph/questions/` and shares `Normal` (a small class in `graph/normal.py`, free of other imports) with the validators, which breaks the import cycle between the schemas, the validators and the question code. `Normal` has three comparisons because "the same" means three things: `text` for names (case, punctuation and spacing ignored), `written` for answers and question text (symbols kept: `low > high` is not `low == high`, `-1` is not `1`; case, spacing, `$` and backticks and the spelling of the minus sign ignored) and `option` for a question's options (`written` with spaces and a final full stop ignored). Options and independence are compared with the last two; comparing them with `text` made a Quick check on a code or maths topic fail as "options must all be different" when they were.
 - **Recommendations stay deterministic.** `QuizRecommendations` takes each lesson's share of the card through `ScoreCard.topics_to_revisit` (now public: the same ordering as the card's own), totals the marks lost per concept, and asks `ConceptLinks` for the page of each. `ConceptLinks.index_of` is the lazy fallback: a lesson with no stored index has one worked out from its plan and pages in memory (a read never writes); a deleted lesson (`QuickQuizSource.lesson_ref` kept the id) is named and marked deleted. A lesson test's result gets the same links through `TestSubmissionSerializer.revisit_links`.
 - **`ConceptIndexBackfill`** fills only empty indexes, writes only that column (not `updated_at`), and reports lessons indexed and skipped and concepts placed and not placed. `manage.py backfill_concept_index [--dry-run]`.
 - **Frontend** (`frontend/lib/`): `PageLinks` (the three page keys, the address of a page, the words of the link and button, the link for a topic of a lesson's own result) and `QuizResults` (one `StudyLink` per weak concept). The lesson page reads `page=` from the address and gives it to `LessonViewer`, which starts the book there; a new `page=` remounts it.
