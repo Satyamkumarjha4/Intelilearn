@@ -9,7 +9,8 @@ every option set it refused was a set of different answers). The comparison must
 
 Use cases:
 - names (`Normal.text`) still ignore case, punctuation and spacing
-- written text (`Normal.written`) keeps the symbols that carry meaning: operators, signs, brackets, digits
+- written text (`Normal.written`) keeps the symbols that carry meaning: operators, signs, brackets, digits, and a
+  superscript (`x²` is not `x2`)
 - written text ignores case, spacing, the dollar signs and backticks around maths and code, and the different dashes
   that stand for a minus sign
 - an option (`Normal.option`) also ignores every space and a full stop at the end
@@ -40,6 +41,7 @@ class TestWritten:
             ("x + y", "x - y"),
             ("n!", "n"),
             ("O(n)", "O(n^2)"),
+            ("x\u00b2", "x2"),  # a superscript two is a square, not a digit
         ],
     )
     def test_keeps_the_symbols_that_carry_meaning(self, left, right):

@@ -9,7 +9,6 @@ on a topic about code or maths the punctuation is the answer (`low > high` is no
 """
 
 import re
-import unicodedata
 
 
 class Normal:
@@ -28,7 +27,7 @@ class Normal:
     @classmethod
     def written(cls, value: str) -> str:
         """Text as written, symbols kept: case, spacing, the minus sign's spelling and maths/code markup ignored."""
-        plain = cls.MARKUP.sub("", cls.MINUS.sub("-", unicodedata.normalize("NFKC", value).lower()))
+        plain = cls.MARKUP.sub("", cls.MINUS.sub("-", value.lower()))
         return re.sub(r"\s+", " ", plain).strip()
 
     @classmethod
