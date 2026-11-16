@@ -314,3 +314,39 @@ class CostChecks:
         if (total := self.total(calls)) > limit:
             problems.append(f"the lesson cost ${total:.2f}, over the ${limit:.2f} limit")
         return problems
+
+
+class CostReport:
+    """What a live lesson cost and where, as text for the person who ran it: the total in dollars and rupees, and for
+    each step its attempts, how many fell back to another layer, its tokens (thinking and cached apart) and its cost.
+    Rows are the `ModelCall` fields `node_key`, `status`, `fallback_index`, `input_tokens`, `output_tokens`,
+    `reasoning_tokens`, `cached_input_tokens` and `cost_usd`."""
+
+    FIELDS = ("node_key", "status", "fallback_index", "input_tokens", "output_tokens", "reasoning_tokens",
+              "cached_input_tokens", "cost_usd")  # fmt: skip
+
+    def __init__(self, rate: float):
+        self.rate = rate
+
+    def text(self, calls: list[dict]) -> str:
+        steps: dict[str, dict] = {}
+        for call in calls:
+            blank = dict(calls=0, ok=0, fell=0, tin=0, tout=0, think=0, cached=0, usd=0.0)
+            step = steps.setdefault(call["node_key"], blank)
+            step["calls"] += 1
+            step["ok"] += call["status"] == "ok"
+            step["fell"] += call["fallback_index"] > 0
+            step["tin"] += call["input_tokens"] or 0
+            step["tout"] += call["output_tokens"] or 0
+            step["think"] += call["reasoning_tokens"] or 0
+            step["cached"] += call["cached_input_tokens"] or 0
+            step["usd"] += float(call["cost_usd"] or 0)
+        total = sum(step["usd"] for step in steps.values())
+        rupees = total * self.rate
+        lines = [f"COST total ${total:.4f} = Rs {rupees:.2f} over {len(calls)} calls (Rs {self.rate:g} a dollar)"]
+        for key, s in sorted(steps.items(), key=lambda item: -item[1]["usd"]):
+            lines.append(
+                f"COST   {key:<22} calls {s['calls']:>3} ok {s['ok']:>3} fell back {s['fell']:>3}  in {s['tin']:>6} "
+                f"out {s['tout']:>6} (thinking {s['think']:>5}) cached {s['cached']:>5}  ${s['usd']:.4f}"
+            )
+        return "\n".join(lines)
