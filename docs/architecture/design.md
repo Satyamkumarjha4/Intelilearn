@@ -740,6 +740,15 @@ classDiagram
         +record_failure(provider, exc)
         +record_success(provider)
     }
+    class RejectedOutputs {
+        +MAX_CHARS
+        +record(call_id, output, problems) bool
+        +forget_before(cutoff) int
+    }
+    class RejectionSink {
+        <<interface>>
+        +record(call_id, output, problems) bool
+    }
     class ModelPrices {
         +current(model)
         +upcoming(model)
@@ -758,6 +767,10 @@ classDiagram
     Gateway o-- ProviderBreaker
     Gateway ..> StrictSchemas
     ModelPrices ..> ModelPrice : console
+    RejectedOutputs ..|> RejectionSink
+    RejectedOutputs ..> ModelCall : writes the refused output
+    FlowContext o-- RejectionSink
+    AccountsPurge ..> RejectedOutputs : forget_before(cutoff)
 ```
 
 | Pattern | Where | Notes |
@@ -767,6 +780,8 @@ classDiagram
 | **Ports** | `PriceLookup` | `CallCosts` depends on the small port, not on the database; tests inject a fake |
 | **Template** | `NullableFields` | A schema's optional fields are required and nullable on the wire; `NULL_MEANS` gives the value the graph always saw |
 | **Circuit breaker** | `ProviderBreaker` | Three 401 or 402 in a row skip the provider for five minutes; state lives in the Django cache so every worker shares it |
+
+**Refused outputs.** `ModelCallRecorder.record` returns the id of the row it wrote and `GatewayResult` carries it as `call_id`. An `LLMNode` keeps it in the state (`last_calls[feedback_key]`), so the `ValidateNode` that checks the output later (a separate node, after a checkpoint) can hand the output and the validator's problems to `FlowContext.reject`, which asks the `RejectionSink` (`RejectedOutputs`) to store them on that `ModelCall`. The writers that validate their own output in the same call (`ContentWriter`, `SheetWriter`) use `FlowContext.reject_result`. It is staff-only evidence (the console's run detail), emptied by the daily purge after `REJECTED_OUTPUT_RETENTION_DAYS` and deleted with the lesson on erasure, and a failed write is logged, never raised.
 
 The recorder asks `CallCosts` for the cost of each attempt (the `ModelPrice` row in force on the day, else the model's legacy price). `Gateway` asks `StrictSchemas` whether a layer's schema can be sent strictly (a schema with an optional field runs best effort instead of failing), uses a layer's own timeout, and skips a provider whose breaker is open. The resolver skips a layer whose provider has no key and refuses a binding that could pass the model's `max_request_tokens`.
 
