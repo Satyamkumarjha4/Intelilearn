@@ -50,8 +50,8 @@ class DiagnosticValidator:
         problems = []
         for q in questions:
             answer = Normal.written(q["options"][q["correct_index"]])  # symbols kept: `low > high` is not "low high"
-            if len(answer) < 6 or answer.replace(" ", "").isdigit():
-                continue  # short answers ("3", "O(n)") appear in text by coincidence
+            if len(answer) < 6 or Normal.numeric(answer):
+                continue  # short answers ("O(n)") and values (3, 0.5, \frac{3}{4}) appear in text by coincidence
             for other in questions:
                 if other is not q and answer in Normal.written(other["question"]):
                     problems.append(

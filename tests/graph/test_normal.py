@@ -11,8 +11,11 @@ Use cases:
 - names (`Normal.text`) still ignore case, punctuation and spacing
 - written text (`Normal.written`) keeps the symbols that carry meaning: operators, signs, brackets, digits, and a
   superscript (`x²` is not `x2`)
-- written text ignores case, spacing, the dollar signs and backticks around maths and code, and the different dashes
-  that stand for a minus sign
+- written text ignores case, spacing, the dollar signs, `\\( … \\)` and `\\[ … \\]` and backticks around maths and
+  code, and the different dashes that stand for a minus sign
+- a value (`Normal.numeric`) is text made only of numbers and arithmetic symbols once the maths markup and LaTeX
+  commands are taken away: fractions, decimals, negatives, percentages, powers; a word, a variable or a comparison with
+  words is not
 - an option (`Normal.option`) also ignores every space and a full stop at the end
 - options that only a symbol separates are different: comparisons, signs, operators, formulas, a negative number from
   its positive (the real sets a model wrote, one table)
@@ -41,6 +44,7 @@ class TestWritten:
             ("x + y", "x - y"),
             ("n!", "n"),
             ("O(n)", "O(n^2)"),
+            (r"\frac{3}{4}", r"\frac{3}{8}"),
             ("x\u00b2", "x2"),  # a superscript two is a square, not a digit
         ],
     )
@@ -53,6 +57,8 @@ class TestWritten:
             ("Low > High", "low > high"),
             ("low   >  high", "low > high"),
             ("$low > high$", "low > high"),
+            (r"\(\frac{3}{4}\)", r"\frac{3}{4}"),
+            (r"\[x + 1\]", "x + 1"),
             ("`low > high`", "low > high"),
             ("−1", "-1"),  # the minus sign
             ("–1", "-1"),  # an en dash used as one
@@ -61,6 +67,32 @@ class TestWritten:
     )
     def test_ignores_what_a_person_ignores(self, left, right):
         assert Normal.written(left) == Normal.written(right)
+
+
+class TestNumeric:
+    @pytest.mark.parametrize(
+        "value",
+        [
+            r"\(\frac{3}{4}\)",  # real answers a model wrote for Fractions and decimals
+            r"\frac{3}{8}",
+            r"$\frac{5}{8}$",
+            r"\(\frac{1}{2} + \frac{1}{4}\)",
+            "0.3333",
+            "-12.5",
+            "50%",
+            "3/4",
+            "2^{10}",
+            "7",
+        ],
+    )
+    def test_a_value_is_made_only_of_numbers_and_symbols(self, value):
+        assert Normal.numeric(value) is True
+
+    @pytest.mark.parametrize(
+        "value", ["low > high", "Photosystem II", "x = 5", "O(log n)", r"\sqrt{x}", "about 3/4", "", " ", "$$"]
+    )
+    def test_a_word_a_variable_or_nothing_is_not_a_value(self, value):
+        assert Normal.numeric(value) is False
 
 
 class TestOption:

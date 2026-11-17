@@ -14,8 +14,12 @@ import re
 class Normal:
     #: the dashes a writer may use for a minus sign
     MINUS = re.compile(r"[\u2010\u2011\u2012\u2013\u2014\u2212]")  # hyphens, dashes and the minus sign
-    #: what only marks text up as maths or code
-    MARKUP = re.compile(r"[$`]")
+    #: what only marks text up as maths or code: $…$, \(…\), \[…\] and backticks
+    MARKUP = re.compile(r"[$`]|\\[()\[\]]")
+    #: a LaTeX command (`\frac`, `\times`), which is not a word of the answer
+    COMMAND = re.compile(r"\\[a-z]+")
+    #: what a value is made of: digits and arithmetic symbols
+    VALUE = re.compile(r"[\d\s.,%/+\-*=^(){}<>]+")
     #: what ends an option as a sentence, not as part of the answer (a final "!" or "?" may be: `n!`)
     SENTENCE_END = ".;,"
 
@@ -29,6 +33,13 @@ class Normal:
         """Text as written, symbols kept: case, spacing, the minus sign's spelling and maths/code markup ignored."""
         plain = cls.MARKUP.sub("", cls.MINUS.sub("-", value.lower()))
         return re.sub(r"\s+", " ", plain).strip()
+
+    @classmethod
+    def numeric(cls, value: str) -> bool:
+        """Is the text a value: numbers and arithmetic symbols only, once markup and LaTeX commands are taken away
+        (a fraction written in LaTeX, `0.5`, `-12`, `50%`, `2^{10}`)? A word or a variable makes it something else."""
+        core = cls.COMMAND.sub("", cls.written(value))
+        return bool(cls.VALUE.fullmatch(core)) and any(c.isdigit() for c in core)
 
     @classmethod
     def option(cls, value: str) -> str:
