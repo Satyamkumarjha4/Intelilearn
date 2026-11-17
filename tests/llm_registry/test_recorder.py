@@ -15,6 +15,7 @@ Use cases:
 - keeps how long the call waited for a rate-limit window (none by default)
 - keeps the quick quiz a call was for, next to the lesson (either may be absent), so a quiz's cost can be told
 - a failing write is logged, not raised
+- the call's id is returned, so what a validator refuses can be kept on it; a failed write returns none
 """
 
 import pytest
@@ -145,3 +146,24 @@ class TestCostWithPriceRows:
                status=ModelCall.Status.RETRYABLE_ERROR)  # fmt: skip
 
         assert ModelCall.objects.get().cost_usd is None
+
+
+def test_returns_the_id_of_the_row_it_wrote(resolved_model):
+    call_id = ModelCallRecorder().record(
+        node_key="learner.assess", lesson_id=None, run_id=None, model=resolved_model("m"), fallback_index=0,
+        attempt=1, status=ModelCall.Status.OK, latency_ms=12)  # fmt: skip
+
+    assert call_id == ModelCall.objects.get().id
+
+
+def test_returns_no_id_when_the_write_fails(resolved_model, monkeypatch):
+    def broken(**kwargs):
+        raise RuntimeError("database is down")
+
+    monkeypatch.setattr(ModelCall.objects, "create", broken)
+
+    call_id = ModelCallRecorder().record(
+        node_key="learner.assess", lesson_id=None, run_id=None, model=resolved_model("m"), fallback_index=0,
+        attempt=1, status=ModelCall.Status.OK, latency_ms=12)  # fmt: skip
+
+    assert call_id is None

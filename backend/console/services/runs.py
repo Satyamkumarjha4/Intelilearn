@@ -199,6 +199,8 @@ class RunDetail:
             "tool_calls": call.tool_calls,
             "cost": call.cost,
             "error": call.error,
+            "rejected_output": call.rejected_output,
+            "rejection": call.rejection,
         }
 
 

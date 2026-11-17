@@ -530,6 +530,7 @@ The tables `checkpoints`, `checkpoint_blobs`, `checkpoint_writes` and `checkpoin
 | input_tokens / output_tokens / reasoning_tokens | int, null | Null when the provider did not report them, and on failed calls |
 | cached_input_tokens / cache_write_tokens | int, null | Input tokens served from the provider's cache, and written to it |
 | tool_calls | smallint | |
+| rejected_output / rejection | text | What the model wrote when a validator then refused it (readable JSON, secrets masked, cut at 20,000 characters) and what the validator said, one problem a line; empty when the output was accepted. **Staff only** (the console's run detail). It can hold what a lesson was about, so the daily purge (`accounts.purge`) empties both after `REJECTED_OUTPUT_RETENTION_DAYS` (14), keeping the row (the usage log), and the row goes with its lesson or quiz when an account is erased. Kept by `RejectedOutputs` |
 | cost / cost_usd | decimal, null | US dollars, priced with the `ModelPrice` row in force on the day of the call (else the model's legacy price). Null with no price at all, which makes the console show 0 spend. The two columns hold the same figure; `cost` is kept for readers that have not moved |
 | created_at | datetime, indexed | Also indexed with `model_name` and with `node_key` for the console's usage page |
 

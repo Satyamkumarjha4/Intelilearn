@@ -339,6 +339,9 @@ PENDING_SIGNUP_HOURS = env.int("PENDING_SIGNUP_HOURS", default=24)  # how long a
 SIGNUP_TICKET_MINUTES = env.int("SIGNUP_TICKET_MINUTES", default=60 * 24)  # the `lc_signup` cookie: the row's life
 CODE_LOG_RETENTION_DAYS = env.int("CODE_LOG_RETENTION_DAYS", default=7)  # spent code rows (they hold an address)
 SIGNUP_RECORD_RETENTION_DAYS = env.int("SIGNUP_RECORD_RETENTION_DAYS", default=30)  # who signed up from where
+# What a model wrote when a validator refused it is kept on its `ModelCall` for staff this many days (it can hold what a
+# lesson was about), then the daily purge empties it.
+REJECTED_OUTPUT_RETENTION_DAYS = env.int("REJECTED_OUTPUT_RETENTION_DAYS", default=14)
 
 # --- Sign in with an identity provider (phase 11.3): `accounts.identity` ---
 # Which providers get a button and a working flow: a list of keys (`google`). Empty means email and password only.

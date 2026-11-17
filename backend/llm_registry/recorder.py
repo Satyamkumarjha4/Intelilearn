@@ -44,7 +44,8 @@ class ModelCallRecorder:
         rate_limit_wait_ms: int = 0,
         error: str = "",
         message=None,
-    ) -> None:
+    ) -> int | None:
+        """Write the row and return its id (None when the write failed), so a refused output can be kept on it."""
         usage = getattr(message, "usage_metadata", None) or {}
         input_tokens, output_tokens = usage.get("input_tokens"), usage.get("output_tokens")
         tokens = TokenUsage.from_metadata(usage)
@@ -52,7 +53,7 @@ class ModelCallRecorder:
             cost = self._costs.cost(model, tokens, self._today())
             if cost is not None:
                 cost = cost.quantize(ONE_MICRODOLLAR)  # the column keeps six decimals
-            ModelCall.objects.create(
+            row = ModelCall.objects.create(
                 node_key=node_key,
                 lesson_id=lesson_id,
                 run_id=run_id,
@@ -74,5 +75,7 @@ class ModelCallRecorder:
                 cost=cost,
                 cost_usd=cost,
             )
+            return row.id
         except Exception:  # logging must never break a generation run
             logger.exception("llm_registry: could not record model call")
+            return None

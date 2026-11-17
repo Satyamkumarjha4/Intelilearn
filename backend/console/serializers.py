@@ -312,6 +312,11 @@ class RunCallSerializer(serializers.Serializer):
     tool_calls = serializers.IntegerField()
     cost = MoneyField(allow_null=True)
     error = serializers.CharField(help_text="Already stripped of secrets.")
+    rejected_output = serializers.CharField(
+        help_text="What the model wrote when a validator then refused it (empty when it was not refused, and after "
+        "the retention). Staff only: it can hold what a lesson was about."
+    )
+    rejection = serializers.CharField(help_text="What the validator said was wrong, one problem a line.")
 
 
 class RunDetailSerializer(RunRowSerializer):

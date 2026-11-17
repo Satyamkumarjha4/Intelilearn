@@ -10,6 +10,8 @@ Use cases:
 - a strict layer whose schema cannot be sent strictly (an optional field) falls back to best effort instead of failing
 - a provider that does not take a strict flag is never sent one; best effort sends none; "off" asks for plain JSON mode
 - a layer's own timeout is used, else the node's
+- the result carries the id of the call that answered (the one a refusing validator keeps the output on), and that is
+  the answering layer's row, not an earlier failed one
 - three refusals (401) from a provider open the breaker: its layers are then skipped without a call, the next layer
   answers, and a later success on another provider is unaffected
 """
@@ -97,6 +99,21 @@ class TestStrictOutput:
 
         assert best.structured == (Answer, "json_schema", True) and best.structured_kwargs == {}
         assert off.structured == (Answer, "json_mode", True)
+
+
+class TestResultCall:
+    def test_the_result_names_the_call_that_answered(self, resolved_model, make_snapshot, FakeChat, reply):
+        first = resolved_model("a", max_retries=0)
+        second = resolved_model("b", max_retries=0)
+        snapshot = make_snapshot("learner.assess", "structured", [first, second])
+        chats = {"a": FakeChat(Unauthorized("no")), "b": FakeChat(reply())}
+        gateway = Gateway(lambda m, t: chats[m.model_name], sleep=lambda s: None, limiter=NoLimit())
+
+        result = gateway.invoke("learner.assess", [("human", "hi")], snapshot=snapshot, schema=Answer)
+
+        answered = ModelCall.objects.get(model_name="b", status=ModelCall.Status.OK)
+        assert result.call_id == answered.id
+        assert ModelCall.objects.count() == 2
 
 
 class TestTimeout:

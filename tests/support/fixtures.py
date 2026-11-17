@@ -15,7 +15,7 @@ import pytest
 
 from graph.context import FlowContext
 
-from .fakes import FakeGateway, FakeSandbox, ListEvents
+from .fakes import FakeGateway, FakeRejections, FakeSandbox, ListEvents
 from .quiz_data import DEFAULT_SETTINGS, make_prerequisites, make_questions
 
 
@@ -77,8 +77,13 @@ def sandbox():
 
 
 @pytest.fixture
-def ctx(gateway, sandbox, events):
-    return FlowContext(gateway=gateway, sandbox=sandbox, events=events, run_id="run-1")
+def rejections():
+    return FakeRejections()
+
+
+@pytest.fixture
+def ctx(gateway, sandbox, events, rejections):
+    return FlowContext(gateway=gateway, sandbox=sandbox, events=events, run_id="run-1", rejections=rejections)
 
 
 @pytest.fixture

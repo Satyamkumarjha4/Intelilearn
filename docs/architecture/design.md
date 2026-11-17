@@ -981,6 +981,8 @@ classDiagram
         +CodeSandbox sandbox
         +MediaProvider media
         +EventSink events
+        +RejectionSink rejections
+        +reject(call_id, output, problems)
     }
     class Node {
         <<abstract>>

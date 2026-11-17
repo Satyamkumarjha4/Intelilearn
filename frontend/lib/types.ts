@@ -717,6 +717,10 @@ export type RunModelCall = {
   tool_calls: number;
   cost: Money | null;
   error: string;
+  /** What the model wrote when a validator then refused it, as readable JSON. Staff only; empty once purged. */
+  rejected_output: string;
+  /** What the validator said was wrong, one problem a line. */
+  rejection: string;
 };
 export type RunDetail = RunRow & {
   error: string;

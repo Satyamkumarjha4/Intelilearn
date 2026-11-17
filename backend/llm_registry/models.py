@@ -424,6 +424,11 @@ class ModelCall(models.Model):
     # have not moved to `cost_usd` yet.
     cost = models.DecimalField(max_digits=12, decimal_places=6, null=True)
     cost_usd = models.DecimalField(max_digits=12, decimal_places=6, null=True)
+    # What the model wrote when a validator then refused it, and what the validator said: staff-only evidence of whether
+    # the model or the rule was wrong. It can hold what a lesson was about, so it is emptied after
+    # `REJECTED_OUTPUT_RETENTION_DAYS` by the daily purge and deleted with the lesson (see `RejectedOutputs`).
+    rejected_output = models.TextField(blank=True, default="")
+    rejection = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:

@@ -21,6 +21,19 @@ export function RunModelCalls({ calls }: { calls: RunModelCall[] }) {
             </span>
             <span className="font-mono text-muted-foreground">{RunText.duration(call.latency_s)}</span>
             <RunStatusPill {...result} />
+            {call.rejection && (
+              <details className="col-span-full text-[12.5px]">
+                <summary className="cursor-pointer rounded text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring">
+                  Refused by a check: {call.rejection.split("\n")[0]}
+                </summary>
+                <p className="mt-1.5 whitespace-pre-wrap font-medium">{call.rejection}</p>
+                {call.rejected_output && (
+                  <pre className="mt-1.5 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-card p-2 font-mono text-[12px]">
+                    {call.rejected_output}
+                  </pre>
+                )}
+              </details>
+            )}
           </li>
         );
       })}

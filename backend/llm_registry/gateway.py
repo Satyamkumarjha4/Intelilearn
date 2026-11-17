@@ -54,6 +54,7 @@ class GatewayResult:
     model: ResolvedModel
     fallback_index: int
     attempts: int
+    call_id: int | None = None  # the `ModelCall` row of the answering attempt
 
 
 @dataclass
@@ -132,10 +133,10 @@ class Gateway:
     def _try_model(self, call: _Call, model: ResolvedModel, index: int, messages: list) -> GatewayResult | None:
         waited_ms = 0  # of the attempt being made: how long it stood in line for a rate-limit window
 
-        def record(**fields):
-            self.recorder.record(node_key=call.node.node_key, lesson_id=call.lesson_id, run_id=call.run_id,
-                                 quiz_id=call.quiz_id, model=model, fallback_index=index,
-                                 rate_limit_wait_ms=waited_ms, **fields)  # fmt: skip
+        def record(**fields) -> int | None:
+            return self.recorder.record(node_key=call.node.node_key, lesson_id=call.lesson_id, run_id=call.run_id,
+                                        quiz_id=call.quiz_id, model=model, fallback_index=index,
+                                        rate_limit_wait_ms=waited_ms, **fields)  # fmt: skip
 
         if self.breaker.is_open(model.provider_key):
             call.errors.append(f"{model.label}: skipped: {model.provider_key} refused its key or balance just now")
@@ -200,8 +201,10 @@ class Gateway:
                 continue
 
             self.breaker.record_success(model.provider_key)
-            record(attempt=attempt, status=ModelCall.Status.OK, latency_ms=self._ms(started), message=outcome.message)
-            return GatewayResult(outcome.output, outcome.message, model, index, attempt)
+            call_id = record(
+                attempt=attempt, status=ModelCall.Status.OK, latency_ms=self._ms(started), message=outcome.message
+            )
+            return GatewayResult(outcome.output, outcome.message, model, index, attempt, call_id)
         return None
 
     def _strict(self, model: ResolvedModel, schema: type[BaseModel] | None) -> bool:
