@@ -89,7 +89,8 @@ class TestNumeric:
         assert Normal.numeric(value) is True
 
     @pytest.mark.parametrize(
-        "value", ["low > high", "Photosystem II", "x = 5", "O(log n)", r"\sqrt{x}", "about 3/4", "", " ", "$$"]
+        "value",
+        ["low > high", "Photosystem II", "x = 5", "O(log n)", r"\sqrt{x}", "about 3/4", "", " ", "$$", "==", "()", "-"],
     )
     def test_a_word_a_variable_or_nothing_is_not_a_value(self, value):
         assert Normal.numeric(value) is False
