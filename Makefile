@@ -136,6 +136,47 @@ e2e-razorpay:
 e2e-down: ## Stop the throwaway stack and delete its database
 	$(E2E_COMPOSE) down -v
 
+# --- The pre-launch audit stack (docs/process/testing.md, "The audit stack") -----------------------------------------------
+# Its own compose project (`socra-audit`), ports and database; the fake payment gateway, the outbox mailer and the
+# stand-in Google in both modes; production throttles and prices. MODE=mock: the scripted fake LLM, which can be told to
+# fail on cue. MODE=live: the real model keys in .env, on synthetic inputs, against LIVE_MAX_COST_USD.
+MODE ?= mock
+AUDIT_RUN ?= $(shell date +%F)
+AUDIT_PROFILE ?= default
+AUDIT_FRONTEND_PORT ?= 7200
+AUDIT_BACKEND_PORT ?= 7210
+AUDIT_FAKE_LLM_PORT ?= 7220
+AUDIT_PERSONAS := docs/audit/$(AUDIT_RUN)/personas.local
+AUDIT_FILES := -f docker-compose.yml -f docker-compose.audit.yml $(if $(filter mock,$(MODE)),-f docker-compose.audit-mock.yml --profile e2e)
+AUDIT_COMPOSE := FRONTEND_PORT=$(AUDIT_FRONTEND_PORT) BACKEND_PORT=$(AUDIT_BACKEND_PORT) AUDIT_FRONTEND_PORT=$(AUDIT_FRONTEND_PORT) AUDIT_BACKEND_PORT=$(AUDIT_BACKEND_PORT) AUDIT_FAKE_LLM_PORT=$(AUDIT_FAKE_LLM_PORT) docker compose -p socra-audit $(AUDIT_FILES)
+
+audit-up: ## Start the audit stack and seed its personas: make audit-up MODE=mock|live (AUDIT_RUN=YYYY-MM-DD, AUDIT_HISTORY=1 for live history)
+	@case "$(MODE)" in mock|live) ;; *) echo "MODE must be mock or live (got '$(MODE)')"; exit 1;; esac
+	@if [ "$(MODE)" = live ]; then \
+	  have=""; for name in GEMINI_API_KEY GROQ_API_KEY; do grep -q "^$$name=." .env 2>/dev/null && have="$$have $$name"; done; \
+	  [ -n "$$have" ] || { echo "MODE=live needs a model key in .env (GEMINI_API_KEY or GROQ_API_KEY)."; exit 1; }; \
+	  echo "live: model keys present in .env:$$have; budget LIVE_MAX_COST_USD=$${LIVE_MAX_COST_USD:-2.00} (check: make audit-spend)"; \
+	fi
+	@# One shared password for every persona, made once per run and kept out of git. It is never printed.
+	@mkdir -p docs/audit/$(AUDIT_RUN)
+	@test -f $(AUDIT_PERSONAS) || { umask 077; pw=$$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 24); { echo "# Synthetic audit personas (audit-<name>@example.test). One shared password. Git-ignored: never paste it anywhere."; echo "AUDIT_PERSONA_PASSWORD=$$pw"; } > $(AUDIT_PERSONAS); }
+	@export AUDIT_PERSONA_PASSWORD=$$(sed -n 's/^AUDIT_PERSONA_PASSWORD=//p' $(AUDIT_PERSONAS)); \
+	  $(AUDIT_COMPOSE) up -d --build && \
+	  echo "waiting for the API..." && ok=; for i in $$(seq 1 90); do curl -sf -o /dev/null http://localhost:$(AUDIT_BACKEND_PORT)/api/health && ok=1 && break; sleep 2; done; \
+	  [ -n "$$ok" ] || { echo "the API did not answer: make audit-down, then try again."; exit 1; }; \
+	  echo "waiting for the frontend..."; ok=; for i in $$(seq 1 60); do curl -sf -o /dev/null http://localhost:$(AUDIT_FRONTEND_PORT)/auth && ok=1 && break; sleep 3; done; \
+	  [ -n "$$ok" ] || { echo "the frontend does not answer 200 on /auth: make audit-down, then try again."; exit 1; }; \
+	  if [ "$(MODE)" = mock ]; then $(AUDIT_COMPOSE) exec -T backend python manage.py seed_registry --file /tests/e2e/fake_registry.json; \
+	  else $(AUDIT_COMPOSE) exec -T backend python manage.py seed_registry --profile $(AUDIT_PROFILE); fi && \
+	  $(AUDIT_COMPOSE) exec -T backend python manage.py audit_seed $(if $(filter live,$(MODE)),$(if $(AUDIT_HISTORY),,--skip-history)) && \
+	  echo "audit stack up (MODE=$(MODE)): http://localhost:$(AUDIT_FRONTEND_PORT)  API http://localhost:$(AUDIT_BACKEND_PORT)/api/docs  personas: $(AUDIT_PERSONAS)"
+
+audit-spend: ## What the live audit has spent on models, against LIVE_MAX_COST_USD (fails when over)
+	$(AUDIT_COMPOSE) exec -T backend python manage.py audit_spend
+
+audit-down: ## Stop the audit stack and delete its database (the personas file is kept)
+	docker compose -p socra-audit -f docker-compose.yml --profile e2e down -v --remove-orphans
+
 backend-log:
 	$(COMPOSE) logs -f backend
 
@@ -158,4 +199,4 @@ reload: #rebuilds backend and frontend
 	$(COMPOSE) build backend frontend
 	$(COMPOSE) restart backend frontend
 
-.PHONY: help env up down logs migrate makemigrations superuser shell sync-supabase db-test test test-full test-serial test-for lint check check-full e2e e2e-affected beat-log
+.PHONY: audit-up audit-down audit-spend help env up down logs migrate makemigrations superuser shell sync-supabase db-test test test-full test-serial test-for lint check check-full e2e e2e-affected beat-log

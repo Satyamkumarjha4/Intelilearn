@@ -35,3 +35,9 @@ docs/archive/ui-audit-screenshots/
 .vscode/
 .idea/
 .DS_Store
+
+# pre-launch audit (docs/audit/RUNBOOK.md): the shared persona password never goes to git, nor do traces and videos
+docs/audit/*/personas.local
+docs/audit/**/*.zip
+docs/audit/**/*.webm
+docs/audit/**/*.trace

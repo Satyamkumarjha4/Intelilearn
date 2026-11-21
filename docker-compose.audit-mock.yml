@@ -1,0 +1,26 @@
+# Added to docker-compose.audit.yml for `make audit-up MODE=mock` (with `--profile e2e`, which starts `fake-llm`).
+# The only model is the scripted fake in tests/e2e/fake_llm_server.py, which can be told to fail on cue:
+#   curl -X POST http://localhost:${AUDIT_FAKE_LLM_PORT}/_control/fail -d '{"mode":"rate_limit","schema":"CheatSheet","times":2}'
+# No provider key reaches the stack, whatever .env holds.
+x-audit-mock-env: &audit-mock-env
+  GEMINI_API_KEY: ""
+  GROQ_API_KEY: ""
+  OPENAI_API_KEY: ""
+  ANTHROPIC_API_KEY: ""
+  FAKE_LLM_API_KEY: fake
+  # The fake also answers the media search a lesson build makes, so nothing calls the internet.
+  WIKIMEDIA_API_URL: http://fake-llm.lan:9000/w/api.php
+  MEDIA_ALLOW_PRIVATE_HOSTS: "true"
+
+services:
+  backend:
+    environment: *audit-mock-env
+  worker:
+    environment: *audit-mock-env
+  beat:
+    environment: *audit-mock-env
+  fake-llm:
+    # The control endpoints are published on loopback so an auditor can script a failure from the host.
+    ports:
+      - "127.0.0.1:${AUDIT_FAKE_LLM_PORT:-7220}:9000"
+    mem_limit: 192m
