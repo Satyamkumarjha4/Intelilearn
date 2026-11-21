@@ -22,9 +22,12 @@ class ContentWriter:
         """→ (the page, the validator's problems with it). The page is returned even when it has problems."""
         plan_page = next(p for p in data["plan"]["pages"] if p["key"] == key)
         messages = WritePagePrompt().messages(data | {"page_plan": plan_page}, feedback)
-        output = self.ctx.invoke(data, "page.generate", messages, schema=PageContent).output
-        page = output.model_dump(mode="json") | {"key": key}
-        return page, PageValidator(self.ctx.sandbox).validate(page, plan_page=plan_page)
+        result = self.ctx.invoke(data, "page.generate", messages, schema=PageContent)
+        page = result.output.model_dump(mode="json") | {"key": key}
+        problems = PageValidator(self.ctx.sandbox).validate(page, plan_page=plan_page)
+        if problems:
+            self.ctx.reject_result(result, page, problems)
+        return page, problems
 
     def questions(self, data: dict, batch: Batch, feedback: list[str] | None) -> tuple[list[dict], list[str]]:
         """The questions for a batch's cells → (the questions in cell order, the problems with them). The marks, the
@@ -33,15 +36,18 @@ class ContentWriter:
         cells = batch.cells
         prompt = WriteQuizQuestionsPrompt() if data.get("quiz") else WriteQuestionsPrompt()
         messages = prompt.messages(data | {"batch": self.batch_json(batch)}, feedback)
-        output = self.ctx.invoke(data, "test.generate", messages, schema=QuestionBatch).output
-        written = [question.model_dump(mode="json") for question in output.questions]
+        result = self.ctx.invoke(data, "test.generate", messages, schema=QuestionBatch)
+        written = [question.model_dump(mode="json") for question in result.output.questions]
         for cell, question in zip(cells, written, strict=False):
             question["id"] = cell.question_id
         finished, finishing = QuestionFinisher().finish(written)
         allowed = QuestionConcepts.allowed(data, cells)
         QuestionConcepts.canonicalise(finished, allowed)
         problems = QuestionBatchValidator(self.ctx.sandbox).validate(finished, cells=cells, concepts=allowed)
-        return finished, list(dict.fromkeys(finishing + problems))
+        problems = list(dict.fromkeys(finishing + problems))
+        if problems:
+            self.ctx.reject_result(result, finished, problems)
+        return finished, problems
 
     def question(self, data: dict, question_id: str, feedback: list[str] | None) -> tuple[dict, list[str]]:
         """One question of the test written again (a fix after the review): the batch is its own cell, and the other
@@ -67,11 +73,11 @@ class ContentWriter:
         section = self.section(data, spec)
         subject = data | {"spec": spec, "component_name": name, "section": section}
         messages = GenerateInteractivePrompt().messages(subject, feedback)
-        output: InteractiveComponent = self.ctx.invoke(
-            data, "interactive.generate", messages, schema=InteractiveComponent
-        ).output
-        tsx = self.sanitizer.sanitize(output.tsx)
+        result = self.ctx.invoke(data, "interactive.generate", messages, schema=InteractiveComponent)
+        tsx = self.sanitizer.sanitize(result.output.tsx)
         check = self.ctx.sandbox.check_code(tsx, required=[name])
+        if check.errors:
+            self.ctx.reject_result(result, tsx, list(check.errors))
         component = {
             "spec_id": spec["id"], "component_name": name, "tsx": tsx, "page": spec["page"],
             "anchor": spec["anchor_section"], "kind": spec["kind"], "purpose": spec["purpose"],

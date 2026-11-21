@@ -217,6 +217,7 @@ class ValidateInteractivePlanNode(Node):
         problems = InteractivePlanValidator().validate(plan, pages=state["pages"], settings=state["settings"])
         if not problems:
             return {"feedback": {"interactive_plan": []}}
+        ctx.reject((state.get("last_calls") or {}).get("interactive_plan"), plan, problems)
         if self.attempts(state, "interactive_plan") < NodeBudget.of(state, "interactive.plan").max_attempts:
             ctx.events({"type": "attempt", "node": "plan_interactives", "reason": problems[0]})
             return {"feedback": {"interactive_plan": problems}}

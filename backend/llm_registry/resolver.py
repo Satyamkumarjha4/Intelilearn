@@ -37,6 +37,10 @@ class ResolvedModel:
     model_rpm: int | None = None
     input_cost_per_mtok: float | None = None
     output_cost_per_mtok: float | None = None
+    # Per-layer settings (a snapshot stored before they existed has none of them, hence the defaults).
+    timeout_s: int | None = None  # per call on this layer; None = the node's timeout
+    structured_mode: str = "best_effort"  # strict | best_effort | off
+    fall_through_on: list = field(default_factory=list)  # [] = every failure
 
     @property
     def label(self) -> str:
@@ -120,6 +124,10 @@ class RegistryResolver:
             for binding in sorted(node.bindings.all(), key=lambda b: b.priority):
                 if not (binding.is_enabled and binding.model.is_enabled and binding.model.provider.is_enabled):
                     continue
+                if not binding.model.provider.has_api_key:  # a layer that can only fail is not tried on every call
+                    env = binding.model.provider.api_key_env
+                    logger.warning("llm_registry: skipping %s: %s is not set", binding, env)
+                    continue
                 if issues := binding.problems():
                     logger.warning("llm_registry: skipping %s: %s", binding, "; ".join(issues))
                     continue
@@ -140,11 +148,18 @@ class RegistryResolver:
     def _resolve_binding(self, node, binding) -> ResolvedModel:
         model, provider = binding.model, binding.model.provider
         params = {**model.default_params, **node.params_override, **binding.params_override}
+        if binding.max_output_tokens:
+            params["max_tokens"] = binding.max_output_tokens
         effort = binding.reasoning_effort or node.reasoning_effort or node.spec.default_reasoning
         if not model.supports_reasoning:
             effort = Effort.NONE
         params, reasoning = self._profiles.for_kind(provider.kind).apply_reasoning(
-            model.reasoning_control, effort, params, disables_sampling=model.reasoning_disables_sampling
+            model.reasoning_control,
+            effort,
+            params,
+            disables_sampling=model.reasoning_disables_sampling,
+            levels=model.reasoning_levels,
+            off=model.reasoning_off,
         )
         return ResolvedModel(
             provider_key=provider.key,
@@ -161,6 +176,9 @@ class RegistryResolver:
             model_rpm=model.rpm_limit,
             input_cost_per_mtok=_float(model.input_cost_per_mtok),
             output_cost_per_mtok=_float(model.output_cost_per_mtok),
+            timeout_s=binding.timeout_s,
+            structured_mode=binding.structured_mode or ("strict" if model.strict_structured else "best_effort"),
+            fall_through_on=list(binding.fall_through_on),
         )
 
 

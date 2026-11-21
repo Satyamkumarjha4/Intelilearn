@@ -15,8 +15,9 @@ checked against the installed langchain-* packages (tests/llm_registry/test_prov
 A new provider kind is a new ProviderProfile subclass registered in ProviderProfiles, plus a ProviderKind value.
 """
 
+import re
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, ClassVar
 
 from django.conf import settings
@@ -40,6 +41,22 @@ class ProviderKind:
     ]
 
 
+class ReasoningOff:
+    """How a model is told to think as little as it can (effort "none")."""
+
+    UNSUPPORTED = "unsupported"  # it cannot be switched off: its lowest level
+    MINIMAL = "minimal"  # a minimal level (Gemini lite models), or a budget of 0
+    DISABLED = "disabled"  # a switch (Claude Haiku 5.5: thinking disabled)
+    NONE = "none"  # effort none (OpenAI Luna and Terra)
+
+    CHOICES = [
+        (UNSUPPORTED, "Cannot be turned off (use the lowest level)"),
+        (MINIMAL, "A minimal level"),
+        (DISABLED, "A disabled switch"),
+        (NONE, "Effort none"),
+    ]
+
+
 class ReasoningControl:
     EFFORT = "effort"
     BUDGET_TOKENS = "budget_tokens"
@@ -53,6 +70,8 @@ class ReasoningControl:
 
 
 SAMPLING_PARAMS = frozenset({"temperature", "top_p", "top_k"})
+#: reasoning levels, lowest first (a model lists the ones it accepts; an effort it does not accept is lowered)
+LEVEL_LADDER = ("minimal", "low", "medium", "high", "xhigh", "max")
 _NUMBER_PARAMS = frozenset({"temperature", "top_p", "presence_penalty", "frequency_penalty"})
 _COUNT_PARAMS = frozenset({"max_tokens", "top_k", "seed"})
 # Room left for the answer when a thinking budget counts against max_tokens.
@@ -74,6 +93,10 @@ class ProviderProfile(ABC):
 
     def __init__(self, budgets: Mapping[str, int] | None = None):
         self._budgets = budgets
+
+    def rejects_reasoning_control(self, model_name: str, control: str) -> str:
+        """Why this reasoning control cannot be used with this model id (empty when it can)."""
+        return ""
 
     @property
     def budgets(self) -> Mapping[str, int]:
@@ -100,25 +123,62 @@ class ProviderProfile(ABC):
     def to_integration_kwargs(self, params: dict) -> dict:
         return {self.renames.get(key, key): value for key, value in params.items()}
 
-    def reasoning_kwargs(self, control: str, effort: str) -> dict:
-        """Extra chat-model kwargs for this effort; {} when reasoning is off or not controllable."""
-        if effort == "none" or control == ReasoningControl.NONE:
+    #: extra options every client of this provider is built with
+    client_kwargs: ClassVar[Mapping[str, Any]] = {}
+    #: whether `with_structured_output(..., strict=True)` asks this provider to guarantee the schema
+    supports_strict: ClassVar[bool] = False
+
+    def reasoning_kwargs(self, control: str, effort: str, *, levels: Sequence[str] = (), off: str = "") -> dict:
+        """Extra chat-model kwargs for this effort; {} when reasoning is not controllable.
+
+        `levels` are the levels the model accepts (empty: low, medium, high); an effort it does not accept is lowered to
+        the nearest it does. Effort "none" is how the model is told to think as little as it can: `off` says how (see
+        `ReasoningOff`); with no `off` nothing is sent and the provider's own default thinking applies."""
+        if control == ReasoningControl.NONE:
             return {}
-        return self._reasoning_kwargs(control, effort)
+        if effort == "none":
+            return self._off_kwargs(control, off, self._ladder(levels))
+        return self._reasoning_kwargs(control, self._accepted(effort, self._ladder(levels)))
+
+    @staticmethod
+    def _ladder(levels: Sequence[str]) -> list[str]:
+        return [level for level in LEVEL_LADDER if level in levels]
+
+    @staticmethod
+    def _accepted(effort: str, ladder: list[str]) -> str:
+        """The level the model accepts that is nearest the one asked for, never above it unless every level is."""
+        if not ladder or effort in ladder:
+            return effort
+        rank = LEVEL_LADDER.index
+        below = [level for level in ladder if rank(level) <= rank(effort)]
+        return below[-1] if below else ladder[0]
+
+    def _off_kwargs(self, control: str, off: str, ladder: list[str]) -> dict:
+        """What "no reasoning" is for this provider: nothing unless the model says how it is asked for."""
+        return {}
 
     @abstractmethod
     def _reasoning_kwargs(self, control: str, effort: str) -> dict:
         """The integration's parameter for an active effort (low/medium/high) under this control."""
 
-    def apply_reasoning(self, control: str, effort: str, params: dict, *, disables_sampling: bool) -> tuple[dict, dict]:
+    def apply_reasoning(
+        self,
+        control: str,
+        effort: str,
+        params: dict,
+        *,
+        disables_sampling: bool,
+        levels: Sequence[str] = (),
+        off: str = "",
+    ) -> tuple[dict, dict]:
         """Return (params, reasoning_kwargs) with sampling params removed and max_tokens raised where needed."""
-        extra = self.reasoning_kwargs(control, effort)
-        active = bool(extra) and extra.get("reasoning", True) is not False
+        extra = self.reasoning_kwargs(control, effort, levels=levels, off=off)
+        active = effort != "none" and bool(extra) and extra.get("reasoning", True) is not False
         params = dict(params)
         if active and disables_sampling:
             for key in SAMPLING_PARAMS:
                 params.pop(key, None)
-        if "thinking" in extra:
+        if "thinking" in extra and "budget_tokens" in extra["thinking"]:
             budget = extra["thinking"]["budget_tokens"]
             params["max_tokens"] = max(params.get("max_tokens", 0), budget + _ANSWER_HEADROOM_TOKENS)
         return params, extra
@@ -131,30 +191,63 @@ class OpenAIProfile(ProviderProfile):
         {"temperature", "top_p", "max_tokens", "stop", "seed", "presence_penalty", "frequency_penalty"}
     )
 
+    #: the Responses API: structured output and tools need it (Chat Completions refuses function calling on the larger
+    #: GPT-6 models, and on Luna unless the effort is none)
+    client_kwargs = {"use_responses_api": True}
+    supports_strict = True
+
     def _reasoning_kwargs(self, control: str, effort: str) -> dict:
         return {"reasoning_effort": effort}
+
+    def _off_kwargs(self, control: str, off: str, ladder: list[str]) -> dict:
+        if off == ReasoningOff.NONE:
+            return {"reasoning_effort": "none"}
+        if off:  # cannot be turned off: as little as it can
+            return {"reasoning_effort": ladder[0] if ladder else "low"}
+        return {}
 
 
 class OpenAICompatibleProfile(OpenAIProfile):
     kind = ProviderKind.OPENAI_COMPATIBLE
     needs_base_url = True
+    client_kwargs = {}  # a vLLM or OpenRouter server speaks Chat Completions
+    supports_strict = False
 
 
 class GroqProfile(OpenAIProfile):
     kind = ProviderKind.GROQ
     langchain_provider = "groq"
     allowed_params = frozenset({"temperature", "max_tokens", "stop"})
+    client_kwargs = {}
 
 
 class AnthropicProfile(ProviderProfile):
     kind = ProviderKind.ANTHROPIC
     langchain_provider = "anthropic"
-    allowed_params = frozenset({"temperature", "top_p", "top_k", "max_tokens", "stop"})
+    #: from API version 2026-10-21 a request with temperature, top_p or top_k is a 400 on every model
+    allowed_params = frozenset({"max_tokens", "stop"})
+    #: Claude 5.x takes adaptive thinking steered by effort; a token budget is a 400
+    NO_BUDGET = re.compile(r"claude-(haiku|sonnet|opus|fable|mythos)-5")
+
+    def rejects_reasoning_control(self, model_name: str, control: str) -> str:
+        if control == ReasoningControl.BUDGET_TOKENS and self.NO_BUDGET.match(model_name):
+            return "Claude 5 models do not accept budget_tokens: control reasoning by effort."
+        return ""
+
+    def to_integration_kwargs(self, params: dict) -> dict:
+        return super().to_integration_kwargs({k: v for k, v in params.items() if k not in SAMPLING_PARAMS})
 
     def _reasoning_kwargs(self, control: str, effort: str) -> dict:
         if control == ReasoningControl.BUDGET_TOKENS:
             return {"thinking": {"type": "enabled", "budget_tokens": self.budgets[effort]}}
         return {"effort": effort}
+
+    def _off_kwargs(self, control: str, off: str, ladder: list[str]) -> dict:
+        if off == ReasoningOff.DISABLED:
+            return {"thinking": {"type": "disabled"}}
+        if off:  # Sonnet, Opus and Fable cannot disable thinking: the lowest effort
+            return {"effort": ladder[0] if ladder else "low"}
+        return {}
 
 
 class GoogleGenAIProfile(ProviderProfile):
@@ -168,6 +261,14 @@ class GoogleGenAIProfile(ProviderProfile):
         if control == ReasoningControl.BUDGET_TOKENS:
             return {"thinking_budget": self.budgets[effort]}
         return {"thinking_level": effort}
+
+    def _off_kwargs(self, control: str, off: str, ladder: list[str]) -> dict:
+        if not off:
+            return {}
+        if control == ReasoningControl.BUDGET_TOKENS:  # a 2.5 model: a budget of 0 where it can be switched off
+            return {"thinking_budget": 0 if off == ReasoningOff.MINIMAL else self.budgets["low"]}
+        # `minimal` where the model has it; Gemini 3.8 Flash and Gemini 4 return an error for it, so their lowest level
+        return {"thinking_level": ladder[0] if ladder else ("minimal" if off == ReasoningOff.MINIMAL else "low")}
 
 
 class OllamaProfile(ProviderProfile):

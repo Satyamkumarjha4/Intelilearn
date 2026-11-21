@@ -4,6 +4,8 @@ from typing import ClassVar, Literal
 
 from pydantic import BaseModel, Field
 
+from .nullable import NullableFields
+
 
 class AlignmentIssue(BaseModel):
     target: Literal["page", "final_test", "interactive", "media"]
@@ -13,15 +15,16 @@ class AlignmentIssue(BaseModel):
     fix_instruction: str = Field(description="A concrete instruction for whoever rewrites the item.")
 
 
-class AlignmentReport(BaseModel):
+class AlignmentReport(NullableFields):
     topic_relevance: int = Field(ge=1, le=5)
     level_fit: int = Field(ge=1, le=5, description="Right depth for this learner.")
     prerequisite_coverage: int = Field(ge=1, le=5)
     factual_accuracy: int = Field(ge=1, le=5)
     interactive_relevance: int = Field(ge=1, le=5)
-    issues: list[AlignmentIssue] = Field(default_factory=list)
+    issues: list[AlignmentIssue] | None = Field(description="Empty when there is nothing to fix.")
     passed: bool = Field(description="Your overall verdict (recomputed by the system).")
 
+    NULL_MEANS: ClassVar = {"issues": list}
     SCORE_FIELDS: ClassVar[tuple[str, ...]] = (
         "topic_relevance",
         "level_fit",

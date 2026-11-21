@@ -13,6 +13,8 @@ Use cases:
 - spent, dead and expired codes go after `CODE_LOG_RETENTION_DAYS`; recent ones and live ones stay
 - where-from records go after `SIGNUP_RECORD_RETENTION_DAYS`
 - failed checks and refusals (an address and a domain each) go after `AUTH_EVENT_RETENTION_DAYS`
+- the model output a validator refused (kept on its call for staff) is emptied after `REJECTED_OUTPUT_RETENTION_DAYS`
+  (14 by default); the call row stays, a recent one is untouched, and the report counts what was emptied
 - the Celery task runs the purge and reports the counts
 """
 
@@ -25,6 +27,8 @@ from support.clock import FakeClock
 from accounts.models import OutboundMail, PendingSignup, SignupRecord, VerificationCode
 from accounts.purge import AccountsPurge
 from accounts.tasks import purge
+from llm_registry.models import ModelCall
+from llm_registry.rejections import RejectedOutputs
 
 pytestmark = pytest.mark.django_db
 
@@ -145,4 +149,37 @@ def test_the_celery_task_runs_the_purge(settings):
     )
 
     assert purge.name == "accounts.purge"
-    assert purge.apply().get() == {"mail": 1, "pending": 0, "codes": 0, "signup_records": 0, "events": 0}
+    assert purge.apply().get() == {
+        "mail": 1, "pending": 0, "codes": 0, "signup_records": 0, "events": 0, "rejected_outputs": 0,
+    }  # fmt: skip
+
+
+def refused_call(days_old):
+    call = ModelCall.objects.create(node_key="diagnostic.generate", provider_key="groq", model_name="m", attempt=1,
+                                    fallback_index=0, status="ok", latency_ms=1)  # fmt: skip
+    RejectedOutputs().record(call.id, {"topic": "a learner's own words"}, ["options must all be different"])
+    ModelCall.objects.filter(pk=call.pk).update(created_at=NOW - timedelta(days=days_old))
+    return call
+
+
+def test_a_refused_output_is_emptied_after_14_days_and_the_call_stays():
+    old, recent = refused_call(15), refused_call(13)
+
+    report = AccountsPurge(clock=FakeClock(NOW)).run()
+
+    old.refresh_from_db(), recent.refresh_from_db()
+    assert report.rejected_outputs == 1
+    assert (old.rejected_output, old.rejection) == ("", "")
+    assert recent.rejected_output and recent.rejection
+    assert AccountsPurge(clock=FakeClock(NOW)).run().rejected_outputs == 0
+
+
+def test_the_retention_of_refused_outputs_is_a_setting(settings):
+    settings.REJECTED_OUTPUT_RETENTION_DAYS = 3
+    refused_call(4), refused_call(2)
+
+    assert AccountsPurge(clock=FakeClock(NOW)).run().rejected_outputs == 1
+
+
+def test_the_default_retention_of_refused_outputs_is_14_days(settings):
+    assert settings.REJECTED_OUTPUT_RETENTION_DAYS == 14

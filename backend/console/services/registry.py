@@ -83,7 +83,7 @@ class ModelService:
 
     @staticmethod
     def listing() -> QuerySet[LLMModel]:
-        return LLMModel.objects.select_related("provider").prefetch_related("bindings__node")
+        return LLMModel.objects.select_related("provider").prefetch_related("bindings__node", "prices")
 
     def create(self, fields: dict) -> LLMModel:
         model = LLMModel(**fields)
@@ -143,7 +143,8 @@ class ModelService:
         "name", "label", "default_params", "supports_structured_output", "structured_output_method",
         "supports_tool_calling", "supports_parallel_tool_calls", "supports_vision", "supports_reasoning",
         "reasoning_control", "reasoning_disables_sampling", "context_window", "max_output_tokens", "rpm_limit",
-        "input_cost_per_mtok", "output_cost_per_mtok",
+        "input_cost_per_mtok", "output_cost_per_mtok", "tier", "status", "shutdown_on", "reasoning_levels",
+        "reasoning_off", "strict_structured", "min_cache_tokens", "max_request_tokens",
     ]  # fmt: skip
 
     def snapshot(self, model: LLMModel) -> dict:
