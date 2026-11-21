@@ -72,15 +72,15 @@ function usage(patch: Partial<ConsoleUsage> = {}): ConsoleUsage {
   return {
     range: "7d",
     period: { start: "2026-03-09T00:00:00Z", end: "2026-03-15T12:00:00Z" },
-    kpis: { calls: 1476, tokens_in: 3_300_000, tokens_out: 800_000, spend: "3.840000", spend_inr: "345.60", median_latency_s: 3.9, p95_latency_s: 41 },
+    kpis: { calls: 1476, tokens_in: 3_300_000, tokens_out: 800_000, spend: "3.840000", median_latency_s: 3.9, p95_latency_s: 41 },
     by_model: [
-      { model: "openai/gpt-oss-120b", provider: "groq", median_s: 3.1, p95_s: 20, ok: 600, retried: 50, failed: 50, calls: 700, spend: "1.120000", thinking_k: 0, cached_k: 0 },
-      { model: "gemini-3.5-flash", provider: "gemini", median_s: 6, p95_s: 52.5, ok: 500, retried: 34, failed: 142, calls: 676, spend: "2.720000", thinking_k: 0, cached_k: 0 },
-      { model: "new-model", provider: "newco", median_s: null, p95_s: null, ok: 0, retried: 0, failed: 100, calls: 100, spend: "0.000000", thinking_k: 0, cached_k: 0 },
+      { model: "openai/gpt-oss-120b", provider: "groq", median_s: 3.1, p95_s: 20, ok: 600, retried: 50, failed: 50, calls: 700, spend: "1.120000" },
+      { model: "gemini-3.5-flash", provider: "gemini", median_s: 6, p95_s: 52.5, ok: 500, retried: 34, failed: 142, calls: 676, spend: "2.720000" },
+      { model: "new-model", provider: "newco", median_s: null, p95_s: null, ok: 0, retried: 0, failed: 100, calls: 100, spend: "0.000000" },
     ],
     by_node: [
-      { node: "page.generate", calls: 100, ok_pct: 90, retries: 5, fallbacks: 2, tokens_k: 900.5, spend: "2.000000", p95_s: 30, layer1_ok_pct: 100, fallback_pct: 0, thinking_k: 0, cached_k: 0, thinking_pct: 0, cost_per_call: "0.010000", cost_per_call_inr: "0.90" },
-      { node: "lesson.plan", calls: 50, ok_pct: 100, retries: 0, fallbacks: 0, tokens_k: 100, spend: "0.500000", p95_s: 12, layer1_ok_pct: 100, fallback_pct: 0, thinking_k: 0, cached_k: 0, thinking_pct: 0, cost_per_call: "0.010000", cost_per_call_inr: "0.90" },
+      { node: "page.generate", calls: 100, ok_pct: 90, retries: 5, fallbacks: 2, tokens_k: 900.5, spend: "2.000000", p95_s: 30 },
+      { node: "lesson.plan", calls: 50, ok_pct: 100, retries: 0, fallbacks: 0, tokens_k: 100, spend: "0.500000", p95_s: 12 },
     ],
     ...patch,
   };
@@ -380,7 +380,7 @@ describe("OutcomeChart", () => {
   });
 
   test("a model with no calls has no shares, not NaN", () => {
-    const [row] = OutcomeChart.rows([{ model: "m", provider: "p", median_s: null, p95_s: null, ok: 0, retried: 0, failed: 0, calls: 0, spend: "0", thinking_k: 0, cached_k: 0 }]);
+    const [row] = OutcomeChart.rows([{ model: "m", provider: "p", median_s: null, p95_s: null, ok: 0, retried: 0, failed: 0, calls: 0, spend: "0" }]);
 
     expect([row!.okShare, row!.retriedShare, row!.failedShare]).toEqual([0, 0, 0]);
   });
@@ -426,7 +426,7 @@ describe("UsageKpis", () => {
   });
 
   test("nothing matching the filters says so", () => {
-    const tiles = UsageKpis.of(usage({ kpis: { calls: 0, tokens_in: 0, tokens_out: 0, spend: "0.000000", spend_inr: "0.00", median_latency_s: null, p95_latency_s: null }, by_model: [] }));
+    const tiles = UsageKpis.of(usage({ kpis: { calls: 0, tokens_in: 0, tokens_out: 0, spend: "0.000000", median_latency_s: null, p95_latency_s: null }, by_model: [] }));
 
     expect(tiles[0]!.detail).toBe("No calls match these filters");
     expect(tiles[2]!.detail).toBe("No priced calls");

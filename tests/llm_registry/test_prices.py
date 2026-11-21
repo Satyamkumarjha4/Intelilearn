@@ -1,130 +1,144 @@
-"""Unit under test: `llm_registry.prices.PriceBook` (every model's price per million tokens, the page it was read from
-and the day, with the windows of dates a price applies to), the rows it seeds as `ModelPrice`, and
-`manage.py seed_registry --prices`.
+"""Unit under test: `llm_registry.prices.PriceBook` (each model's price per million tokens, with where it was read and
+when), the prices the default registry seeds, and `manage.py seed_registry --prices`.
 
-Why: with no price a call has no cost, the console's spend figures read $0 and the live suite's cost limit checks
-nothing. A price is money arithmetic that people will make pricing decisions on, so each one is kept with the official
-page it came from and the day it was read, a promo's end is a date (the Gemini 3.6 and 3.8 Flash price doubles on
-2027-01-01), and a price an admin has set is never overwritten.
+Why: `ModelCall.cost` is only filled when the model has a price, so with no prices the console's spend figures read $0,
+the monthly budget never fills and the live suite's cost limit checked nothing. A price is money arithmetic that people
+will make pricing decisions on, so each one is kept with the official page it came from and the day it was read, and a
+model whose price could not be confirmed on an official page is left empty (and listed) instead of guessed.
 
 Use cases:
-- every entry names the https page it was read from and the day, has an input and an output price, and has no
-  long-context price that is only half given
-- the windows of one model never overlap, and a promo's last day and the day after cost differently
-- `fill` creates a `ModelPrice` row for each entry whose model is in the registry, says which models the registry has
-  that the book does not price, and which entries have no model here
-- `fill` is safe to repeat and never changes or duplicates a row that is already there (an admin's figure wins)
-- the models of the default registry are all in the book
+- every entry names the https page it was read from and the date; a priced entry has both an input and an output price,
+  and an entry without a price says why
+- the default registry seeds each model with the book's prices, and no model without a confirmed price gets one
+- `fill_missing` sets the prices of models that have none, leaves a model that already has a price alone (an admin's
+  figure wins), and reports the models it filled, the ones the book has no price for, and the ones it does not know
 - `seed_registry --prices` does that to an existing registry and says what it did, without touching bindings or nodes
-- loading a profile with `seed_registry` also prices its models
+- a priced model's calls are costed (input and output tokens at their own prices) and an unpriced model's are not
 """
 
-from datetime import date
 from decimal import Decimal
 
 import pytest
 from django.core.management import call_command
 
-from llm_registry.models import LLMModel, ModelPrice, NodeModelBinding
-from llm_registry.prices import PriceBook
+from llm_registry.models import LLMModel, NodeModelBinding
+from llm_registry.prices import ModelPrice, PriceBook
+from llm_registry.recorder import ModelCallRecorder
 from llm_registry.seed import DefaultRegistry
 
 pytestmark = pytest.mark.django_db
 
 
 class TestTheBook:
-    def test_every_entry_says_where_and_when_it_was_read(self):
+    def test_every_entry_says_where_and_when_it_was_read_and_why_it_has_no_price(self):
         for entry in PriceBook.ENTRIES:
-            label = f"{entry.provider}/{entry.model}"
-            assert entry.source_url.startswith("https://"), label
-            assert date.fromisoformat(entry.checked_on), label
-            assert entry.input_per_mtok >= 0 and entry.output_per_mtok >= 0, label
-            long = [entry.long_context_threshold, entry.long_input_per_mtok, entry.long_output_per_mtok]
-            assert all(v is None for v in long) or all(v is not None for v in long), label
+            assert entry.source_url.startswith("https://"), entry.model
+            assert len(entry.checked_on) == 10 and entry.checked_on[4] == "-", entry.model  # 2026-11-15
+            if entry.input_per_mtok is None and entry.output_per_mtok is None:
+                assert len(entry.note) > 20, f"{entry.model} has no price and no reason"
+            else:
+                assert entry.input_per_mtok is not None and entry.output_per_mtok is not None, entry.model
 
-    def test_the_windows_of_one_model_do_not_overlap(self):
-        by_model: dict[tuple, list] = {}
-        for entry in PriceBook.ENTRIES:
-            by_model.setdefault((entry.provider, entry.model), []).append(entry)
-        for label, entries in by_model.items():
-            ordered = sorted(entries, key=lambda e: e.valid_from or date.min)
-            for earlier, later in zip(ordered, ordered[1:], strict=False):
-                assert earlier.valid_until is not None and earlier.valid_until < later.valid_from, label
+    def test_a_price_is_found_by_provider_and_model(self):
+        entry = PriceBook().entry("groq", "openai/gpt-oss-120b")
 
-    def test_the_flash_promo_ends_on_the_last_day_of_2026(self, gemini):
-        LLMModel.objects.create(provider=gemini, name="gemini-3.6-flash")
-        PriceBook().fill()
-
-        last_day = ModelPrice.objects.in_effect("gemini", "gemini-3.6-flash", date(2026, 12, 31))
-        new_year = ModelPrice.objects.in_effect("gemini", "gemini-3.6-flash", date(2027, 1, 1))
-
-        assert (last_day.input_per_mtok, last_day.output_per_mtok) == (Decimal("0.75"), Decimal("3.75"))
-        assert (new_year.input_per_mtok, new_year.output_per_mtok) == (Decimal("1.5"), Decimal("7.5"))
+        assert (entry.input_per_mtok, entry.output_per_mtok) == (Decimal("0.15"), Decimal("0.60"))
+        assert PriceBook().entry("groq", "no-such-model") is None
 
     def test_the_models_of_the_default_registry_are_all_in_the_book(self):
         in_book = {(e.provider, e.model) for e in PriceBook.ENTRIES}
 
-        seeded = {(m["provider"], m["name"]) for m in DefaultRegistry().build()["models"]}
-
-        assert seeded <= in_book, f"No price in the book for: {sorted(seeded - in_book)}"
+        assert {(m["provider"], m["name"]) for m in DefaultRegistry().build()["models"]} <= in_book
 
 
-class TestFill:
+class TestTheSeed:
+    def test_the_default_registry_carries_the_books_prices_and_no_invented_ones(self):
+        for model in DefaultRegistry().build()["models"]:
+            entry = PriceBook().entry(model["provider"], model["name"])
+            assert model["input_cost_per_mtok"] == (
+                None if entry.input_per_mtok is None else str(entry.input_per_mtok)
+            ), model["name"]
+            assert model["output_cost_per_mtok"] == (
+                None if entry.output_per_mtok is None else str(entry.output_per_mtok)
+            ), model["name"]
+
+    def test_loading_the_seed_stores_the_prices(self):
+        call_command("seed_registry")
+
+        priced = LLMModel.objects.get(provider__key="groq", name="openai/gpt-oss-20b")
+        assert (priced.input_cost_per_mtok, priced.output_cost_per_mtok) == (Decimal("0.0750"), Decimal("0.3000"))
+
+
+class TestFillMissing:
     @pytest.fixture
-    def registry(self, groq, gemini):
-        LLMModel.objects.create(provider=groq, name="openai/gpt-oss-120b")
-        LLMModel.objects.create(provider=gemini, name="gemini-3.1-flash-lite")
-        LLMModel.objects.create(provider=gemini, name="not-in-the-book")
+    def models(self, groq, gemini):
+        def make(provider, name, **prices):
+            return LLMModel.objects.create(provider=provider, name=name, **prices)
 
-    def test_it_creates_a_row_for_each_entry_whose_model_is_in_the_registry(self, registry):
-        report = PriceBook().fill()
+        return make
 
-        row = ModelPrice.objects.get(model__name="openai/gpt-oss-120b")
-        assert (row.input_per_mtok, row.output_per_mtok, row.cached_input_per_mtok) == (
-            Decimal("0.15"), Decimal("0.6"), Decimal("0.075"))  # fmt: skip
-        assert row.source_url.startswith("https://") and row.checked_on == date(2026, 11, 15)
-        assert sorted(report.filled) == ["gemini/gemini-3.1-flash-lite", "groq/openai/gpt-oss-120b"]
-        assert report.unpriced == ["gemini/not-in-the-book"]
+    def test_a_model_with_no_price_gets_the_books(self, models, groq):
+        model = models(groq, "openai/gpt-oss-120b")
 
-    def test_it_is_safe_to_repeat_and_never_changes_a_row_that_is_there(self, registry):
-        PriceBook().fill()
-        row = ModelPrice.objects.get(model__name="openai/gpt-oss-120b")
-        row.input_per_mtok = Decimal("9")
-        row.save()
+        report = PriceBook().fill_missing()
 
-        report = PriceBook().fill()
+        model.refresh_from_db()
+        assert (model.input_cost_per_mtok, model.output_cost_per_mtok) == (Decimal("0.1500"), Decimal("0.6000"))
+        assert report.filled == ["groq/openai/gpt-oss-120b"]
 
-        assert ModelPrice.objects.filter(model__name="openai/gpt-oss-120b").count() == 1
-        assert ModelPrice.objects.get(model__name="openai/gpt-oss-120b").input_per_mtok == Decimal("9")
+    def test_a_model_that_already_has_a_price_keeps_it(self, models, groq):
+        model = models(groq, "openai/gpt-oss-120b", input_cost_per_mtok=Decimal("9"), output_cost_per_mtok=None)
+
+        report = PriceBook().fill_missing()
+
+        model.refresh_from_db()
+        assert model.input_cost_per_mtok == Decimal("9.0000") and model.output_cost_per_mtok is None
         assert report.filled == []
 
-    def test_a_window_an_admin_already_covers_is_left_alone(self, registry):
-        model = LLMModel.objects.get(name="gemini-3.1-flash-lite")
-        ModelPrice.objects.create(model=model, input_per_mtok=1, output_per_mtok=2, source_url="https://x.test/p",
-                                  checked_on=date(2026, 11, 1))  # fmt: skip
+    def test_models_without_a_confirmed_price_and_unknown_models_are_reported_not_priced(
+        self, models, groq, monkeypatch
+    ):
+        listed_entry = ModelPrice(
+            "groq", "listed-without-price", None, None, "https://x.example", "2026-11-15", "No price is published."
+        )
+        monkeypatch.setattr(PriceBook, "ENTRIES", (listed_entry,))
+        listed, unknown = models(groq, "listed-without-price"), models(groq, "never-heard-of-it")
 
-        PriceBook().fill()
+        report = PriceBook().fill_missing()
 
-        assert ModelPrice.objects.filter(model=model).count() == 1
+        for model in (listed, unknown):
+            model.refresh_from_db()
+            assert model.input_cost_per_mtok is None and model.output_cost_per_mtok is None
+        assert report.unpriced == ["groq/listed-without-price"] and report.unknown == ["groq/never-heard-of-it"]
 
 
-class TestSeedRegistryPrices:
-    def test_prices_fills_an_existing_registry_without_touching_bindings(self, registry_in_place, capsys):
-        before = NodeModelBinding.objects.count()
+class TestTheCommand:
+    def test_it_prices_an_existing_registry_and_leaves_bindings_and_nodes_alone(self, capsys):
+        call_command("seed_registry")
+        LLMModel.objects.update(input_cost_per_mtok=None, output_cost_per_mtok=None)
+        bindings = list(NodeModelBinding.objects.values_list("pk", "priority"))
 
         call_command("seed_registry", "--prices")
 
-        assert ModelPrice.objects.exists()
-        assert NodeModelBinding.objects.count() == before
-        assert "Priced" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert LLMModel.objects.filter(input_cost_per_mtok__isnull=False).exists()
+        assert list(NodeModelBinding.objects.values_list("pk", "priority")) == bindings
+        assert "Priced" in out and "groq/openai/gpt-oss-120b" in out
 
-    def test_loading_a_profile_also_prices_its_models(self, db):
+    def test_it_lists_the_models_that_still_have_no_price(self, capsys):
         call_command("seed_registry")
+        LLMModel.objects.update(input_cost_per_mtok=None, output_cost_per_mtok=None)
 
-        assert ModelPrice.objects.filter(model__name="openai/gpt-oss-120b").exists()
-        assert not LLMModel.objects.filter(prices__isnull=True, provider__key="groq").exists()
+        call_command("seed_registry", "--prices")
 
-    @pytest.fixture
-    def registry_in_place(self, db):
-        call_command("seed_registry")
-        ModelPrice.objects.all().delete()
+        assert "No confirmed price" in capsys.readouterr().out
+
+
+class TestCostFollowsThePrice:
+    def test_input_and_output_tokens_are_costed_at_their_own_prices(self, resolved_model):
+        model = resolved_model("m", input_cost_per_mtok=0.15, output_cost_per_mtok=0.60)
+
+        assert ModelCallRecorder.cost(model, 1_000_000, 1_000_000) == pytest.approx(0.75)
+
+    def test_a_model_without_a_price_has_no_cost(self, resolved_model):
+        assert ModelCallRecorder.cost(resolved_model("m"), 1_000, 1_000) is None

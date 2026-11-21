@@ -31,7 +31,7 @@ class Chat:
             raise RuntimeError("401 invalid key gsk_abcdefghijklmnopqrstuvwxyz")
         return AIMessage(content="pong")
 
-    def with_structured_output(self, schema, method=None, include_raw=False, **kwargs):
+    def with_structured_output(self, schema, method=None, include_raw=False):
         fields = {"ok": True, "word": "pong"} if "ok" in schema.model_fields else {"word": "pong"}
 
         class Runnable:

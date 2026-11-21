@@ -66,7 +66,7 @@ def test_kpis_total_the_calls_and_time_only_the_ones_that_worked(data, now):
     kpis = report(now)["kpis"]
 
     # latencies of the four calls that worked: 1.0, 2.0, 3.0, 4.0 s (the 0.5 s failure is left out)
-    assert kpis == {"calls": 5, "tokens_in": 1600, "tokens_out": 800, "spend": "0.036000", "spend_inr": "3.24",
+    assert kpis == {"calls": 5, "tokens_in": 1600, "tokens_out": 800, "spend": "0.036000",
                     "median_latency_s": 2.5, "p95_latency_s": 3.85}  # fmt: skip
 
 
@@ -75,11 +75,11 @@ def test_by_model_gives_each_models_times_and_outcomes(data, now):
 
     assert rows[("gemini", "gemini-3.5-flash")] == {
         "model": "gemini-3.5-flash", "provider": "gemini", "median_s": 2.0, "p95_s": 2.9,
-        "ok": 2, "retried": 0, "failed": 1, "calls": 3, "spend": "0.030000", "thinking_k": 0.0, "cached_k": 0.0,
+        "ok": 2, "retried": 0, "failed": 1, "calls": 3, "spend": "0.030000",
     }  # fmt: skip
     assert rows[("groq", "openai/gpt-oss-120b")] == {
         "model": "openai/gpt-oss-120b", "provider": "groq", "median_s": 3.0, "p95_s": 3.9,
-        "ok": 1, "retried": 1, "failed": 0, "calls": 2, "spend": "0.006000", "thinking_k": 0.0, "cached_k": 0.0,
+        "ok": 1, "retried": 1, "failed": 0, "calls": 2, "spend": "0.006000",
     }  # fmt: skip
 
 
@@ -87,16 +87,10 @@ def test_by_step_gives_each_steps_reliability_tokens_and_cost(data, now):
     rows = {r["node"]: r for r in report(now)["by_node"]}
 
     assert rows["learner.assess"] == {"node": "learner.assess", "calls": 3, "ok_pct": 100.0, "retries": 0,
-                                      "fallbacks": 0, "tokens_k": 0.9, "spend": "0.031000", "p95_s": 3.9,
-                                      "layer1_ok_pct": 100.0, "fallback_pct": 0.0, "thinking_k": 0.0,
-                                      "cached_k": 0.0, "thinking_pct": 0.0, "cost_per_call": "0.010333",
-                                      "cost_per_call_inr": "0.93"}  # fmt: skip
+                                      "fallbacks": 0, "tokens_k": 0.9, "spend": "0.031000", "p95_s": 3.9}  # fmt: skip
     # one call failed, one worked on a retry attempt (on the fallback model): half worked, and it is 1.5k tokens
     assert rows["page.generate"] == {"node": "page.generate", "calls": 2, "ok_pct": 50.0, "retries": 1,
-                                     "fallbacks": 1, "tokens_k": 1.5, "spend": "0.005000", "p95_s": 2.0,
-                                     "layer1_ok_pct": 0.0, "fallback_pct": 50.0, "thinking_k": 0.0, "cached_k": 0.0,
-                                     "thinking_pct": 0.0, "cost_per_call": "0.002500",
-                                     "cost_per_call_inr": "0.23"}  # fmt: skip
+                                     "fallbacks": 1, "tokens_k": 1.5, "spend": "0.005000", "p95_s": 2.0}  # fmt: skip
 
 
 def test_the_busiest_models_and_steps_come_first(data, now):
@@ -140,7 +134,7 @@ def test_the_range_decides_which_calls_count(make_call, now):
 def test_nothing_matching_gives_zeros_and_no_times(data, now):
     result = report(now, provider="openai")
 
-    assert result["kpis"] == {"calls": 0, "tokens_in": 0, "tokens_out": 0, "spend": "0.000000", "spend_inr": "0.00",
+    assert result["kpis"] == {"calls": 0, "tokens_in": 0, "tokens_out": 0, "spend": "0.000000",
                               "median_latency_s": None, "p95_latency_s": None}  # fmt: skip
     assert result["by_model"] == [] and result["by_node"] == []
 
@@ -158,7 +152,7 @@ def test_the_usage_endpoint_applies_the_filters(staff_client, data):
     body = staff_client.get("/api/console/usage?range=30d&provider=groq&outcome=retried").json()
 
     assert body["kpis"]["calls"] == 1 and body["by_model"][0]["provider"] == "groq"
-    assert set(body) == {"range", "period", "usd_inr_rate", "kpis", "by_model", "by_node"}
+    assert set(body) == {"range", "period", "kpis", "by_model", "by_node"}
     assert body["period"]["start"] == "2026-02-14T00:00:00Z" and body["period"]["end"] == "2026-03-15T12:00:00Z"
 
 

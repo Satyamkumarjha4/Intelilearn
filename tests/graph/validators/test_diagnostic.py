@@ -10,11 +10,8 @@ Use cases:
 - the number of questions and the questions per band must match the settings
 - question ids must be unique, across both quizzes
 - every question must probe a different concept (compared ignoring case and punctuation)
-- options must differ, and "all/none of the above" is refused; options that only a symbol separates (`low > high`,
-  `low == high`) are different (the full table of real cases is in `tests/graph/test_normal.py`)
-- one question must not reveal another's answer (short and numeric answers are exempt: a number, a decimal, a
-  fraction written in LaTeX, a percentage); an answer made of symbols is found only where those symbols are written,
-  not where its words appear without them
+- options must differ, and "all/none of the above" is refused
+- one question must not reveal another's answer (short and numeric answers are exempt)
 - there must be the configured number of prerequisites, each with exactly one question that uses its exact name
 - a pool for the calibration quiz (no prerequisite half) is held to every rule about the diagnostic questions and to
   none about prerequisites
@@ -136,33 +133,6 @@ class TestIndependence:
         problems = problems_for(bundle, flow_settings)
 
         assert any("Question q6 reveals the answer to q1" in p for p in problems)
-
-    def test_finds_an_answer_made_of_symbols_where_it_is_written(self, valid_bundle, flow_settings):
-        def change(b):
-            b["diagnostic"][0]["options"] = ["low > high", "low == high", "mid == target", "high - low == 1"]
-            b["diagnostic"][0]["correct_index"] = 0
-            b["diagnostic"][5]["question"] = "A search stops once low > high. Which of these then holds?"
-
-        problems = problems_for(mutated(valid_bundle, change), flow_settings)
-
-        assert any("Question q6 reveals the answer to q1" in p for p in problems)
-
-    def test_an_answer_of_symbols_is_not_found_in_text_that_only_shares_its_words(self, valid_bundle, flow_settings):
-        def change(b):
-            b["diagnostic"][0]["options"] = ["low > high", "low == high", "mid == target", "high - low == 1"]
-            b["diagnostic"][0]["correct_index"] = 0
-            b["diagnostic"][5]["question"] = "A search keeps two pointers, low, high, and moves them. What ends it?"
-
-        assert problems_for(mutated(valid_bundle, change), flow_settings) == []
-
-    @pytest.mark.parametrize("answer", [r"\(\frac{3}{4}\)", r"$\frac{3}{8}$", "0.333333", r"\(2^{10}\)"])
-    def test_a_value_that_another_question_uses_is_not_a_reveal(self, valid_bundle, flow_settings, answer):
-        def change(b):
-            b["diagnostic"][0]["options"] = [answer, "other one", "another one", "a fourth"]
-            b["diagnostic"][0]["correct_index"] = 0
-            b["diagnostic"][5]["question"] = f"Work out {answer} plus one half. What do you get?"
-
-        assert problems_for(mutated(valid_bundle, change), flow_settings) == []
 
     def test_ignores_short_and_numeric_answers_that_appear_by_coincidence(self, valid_bundle, flow_settings):
         def change(b):

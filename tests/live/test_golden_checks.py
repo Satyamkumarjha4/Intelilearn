@@ -31,7 +31,6 @@ from live.golden import (
     GOLDEN_TOPICS,
     ConceptChecks,
     CostChecks,
-    CostReport,
     DedupeChecks,
     GoldenTopic,
     LessonChecks,
@@ -356,25 +355,3 @@ class TestCostChecks:
         (problem,) = CostChecks().problems(calls, limit=2.0)
 
         assert "no price" in problem and "gemini/flash" in problem
-
-
-class TestCostReport:
-    CALLS = [
-        dict(node_key="page.generate", status="ok", fallback_index=0, input_tokens=2000, output_tokens=1900,
-             reasoning_tokens=100, cached_input_tokens=0, cost_usd="0.002000"),
-        dict(node_key="page.generate", status="invalid_output", fallback_index=1, input_tokens=2000, output_tokens=500,
-             reasoning_tokens=None, cached_input_tokens=1000, cost_usd="0.001000"),
-        dict(node_key="lesson.plan", status="retryable_error", fallback_index=0, input_tokens=None, output_tokens=None,
-             reasoning_tokens=None, cached_input_tokens=None, cost_usd=None),
-    ]  # fmt: skip
-
-    def test_it_totals_the_lesson_in_dollars_and_rupees_and_lists_the_costliest_step_first(self):
-        lines = CostReport(rate=90).text(self.CALLS).splitlines()
-
-        assert lines[0] == "COST total $0.0030 = Rs 0.27 over 3 calls (Rs 90 a dollar)"
-        assert lines[1].split()[1] == "page.generate" and lines[2].split()[1] == "lesson.plan"
-
-    def test_a_step_shows_its_attempts_fall_backs_thinking_and_cached_tokens(self):
-        step = CostReport(rate=90).text(self.CALLS).splitlines()[1]
-
-        assert "calls   2 ok   1 fell back   1" in step and "(thinking   100)" in step and "cached  1000" in step

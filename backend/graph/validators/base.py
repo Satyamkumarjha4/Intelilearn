@@ -52,7 +52,7 @@ class TextRules:
     @classmethod
     def option_problems(cls, label: str, options: list[str]) -> list[str]:
         problems = []
-        if len({Normal.option(o) for o in options}) != len(options):  # symbols count: `<` is not `==`
+        if len({cls.norm(o) for o in options}) != len(options):
             problems.append(f"{label}: options must all be different.")
         if any(cls.CATCH_ALL.search(o) for o in options):
             problems.append(f'{label}: don\'t use "all/none of the above" style options.')

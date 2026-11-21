@@ -44,11 +44,9 @@ class SheetWriter:
         concepts = data.get("concepts") or []
         subject = data | {"kind": kind, "concepts": concepts}  # `grounding` rides along in `data` when there is one
         messages = StudyMaterialPrompt().messages(subject, feedback)
-        result = self.ctx.invoke(data, "study.generate", messages, schema=MATERIAL_SCHEMAS[kind])
-        material = result.output.model_dump(mode="json")
+        output = self.ctx.invoke(data, "study.generate", messages, schema=MATERIAL_SCHEMAS[kind]).output
+        material = output.model_dump(mode="json")
         if kind == "practice_sheet":
             material["questions"], _ = QuestionFinisher().finish(material["questions"])
         problems = StudyMaterialValidator(self.ctx.sandbox).validate(material, kind=kind, concepts=concepts)
-        if problems:
-            self.ctx.reject_result(result, material, problems)
         return material, problems

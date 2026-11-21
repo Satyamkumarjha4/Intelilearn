@@ -1,13 +1,11 @@
-"""The daily housekeeping of the sign-in tables and of the model outputs a validator refused (`accounts.purge` on
-beat): personal data is kept only as long as it is needed (plan T13)."""
+"""The daily housekeeping of the sign-in tables (`accounts.purge` on beat): personal data is kept only as long as
+it is needed (plan T13)."""
 
 from dataclasses import asdict, dataclass
 from datetime import timedelta
 
 from django.conf import settings
 from django.db.models import Q
-
-from llm_registry.rejections import RejectedOutputs
 
 from .clock import Clock, SystemClock
 from .models import AuthEvent, OutboundMail, PendingSignup, SignupRecord, VerificationCode
@@ -20,16 +18,14 @@ class PurgeReport:
     codes: int = 0  # spent, dead or expired codes
     signup_records: int = 0  # where-from records of accounts
     events: int = 0  # failed checks, refused throwaway addresses and failed challenges (an address and a domain each)
-    rejected_outputs: int = 0  # refused model outputs emptied (the model call rows stay: they are the usage log)
 
     def as_dict(self) -> dict:
         return asdict(self)
 
 
 class AccountsPurge:
-    def __init__(self, clock: Clock | None = None, rejections: RejectedOutputs | None = None):
+    def __init__(self, clock: Clock | None = None):
         self.clock = clock or SystemClock()
-        self.rejections = rejections or RejectedOutputs()
 
     def run(self) -> PurgeReport:
         now = self.clock.now()
@@ -48,9 +44,6 @@ class AccountsPurge:
             signup_records=self._delete(old_records),
             events=self._delete(
                 AuthEvent.objects.filter(created_at__lt=now - timedelta(days=settings.AUTH_EVENT_RETENTION_DAYS))
-            ),
-            rejected_outputs=self.rejections.forget_before(
-                now - timedelta(days=settings.REJECTED_OUTPUT_RETENTION_DAYS)
             ),
         )
 

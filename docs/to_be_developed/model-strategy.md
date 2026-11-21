@@ -629,5 +629,4 @@ Groq's rate-limit table says 8K tokens a minute for `gpt-oss-120b` and `gpt-oss-
 | Date | Change |
 |---|---|
 | 2026-11-15 | Document written: catalogue of Gemini, Groq, OpenAI and Anthropic with sources, node-by-node requirements, tier rules, chains, cost model, adapter design, test plan, decisions asked (section 4). |
-| 2026-11-16 | M1 and M2 built on `phase-m/observe-clean`: price rows, costing, per-layer settings, strict schemas, adapter fixes, key skipping, circuit breaker, retired ids, console columns, live usage test. Details in `docs/architecture/model-registry.md` and `docs/process/roadmap.md` (Phase M). |
 | 2026-11-15 | Decisions 1 to 15 recorded (section 5); the 8K tokens-a-minute rule added (5.1); milestones M1 (observe) and M2 (clean) assigned to `phase-m/observe-clean`, M3 (profiles), M4 (mechanical steps and escalation) later. |

@@ -27,7 +27,7 @@ class LangChainChatModelFactory:
 
     def __call__(self, model: ResolvedModel, timeout_s: int) -> BaseChatModel:
         profile = self._profiles.for_kind(model.provider_kind)
-        kwargs = {**profile.client_kwargs, **profile.to_integration_kwargs(model.params), **model.reasoning}
+        kwargs = {**profile.to_integration_kwargs(model.params), **model.reasoning}
 
         if model.api_key_env:
             environ = self._environ if self._environ is not None else os.environ

@@ -2,7 +2,6 @@
 
 import ast
 
-from ..normal import Normal
 from ..questions import QuestionTypes
 from .base import TextRules
 
@@ -13,7 +12,7 @@ class QuestionRules:
         problems = []
         if dupes := TextRules.duplicates(q["id"] for q in questions):
             problems.append(f"Question ids must be unique (repeated: {', '.join(dupes)}).")
-        if dupes := TextRules.duplicates(Normal.written(q["question"]) for q in questions):
+        if dupes := TextRules.duplicates(TextRules.norm(q["question"]) for q in questions):
             problems.append(f"Questions must not repeat ({len(dupes)} repeated).")
         for q in questions:
             problems += QuestionTypes.of(q).problems(q, f"{label} {q['id']}")

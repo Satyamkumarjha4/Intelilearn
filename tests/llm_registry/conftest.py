@@ -102,12 +102,10 @@ class FakeChat:
         self.calls: list[list] = []
         self.configs: list[dict | None] = []  # the RunnableConfig of each invoke (None when none was passed)
         self.structured = None
-        self.structured_kwargs: dict = {}  # anything else asked for, e.g. strict=True
         self.tools = None
 
-    def with_structured_output(self, schema, method=None, include_raw=False, **kwargs):
+    def with_structured_output(self, schema, method=None, include_raw=False):
         self.structured = (schema, method, include_raw)
-        self.structured_kwargs = kwargs
         return self
 
     def bind_tools(self, tools):

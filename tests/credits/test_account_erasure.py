@@ -16,8 +16,6 @@ Use cases:
 - the sign-in records of the account (codes, the pending sign-up, the where-from record, the email lock, linked sign-in
   providers) are deleted and other people's stay
 - the learner's lessons and quizzes are gone, with their checkpoints and model calls; other learners' are not
-- a model output a validator refused, kept on a model call, is deleted with the call, so nothing a lesson was about
-  outlives the lesson
 - streak days and the cached streak are gone
 - open holds are released first, then the balance is forfeited in one row equal to what was left; the ledger still
   equals the
@@ -50,7 +48,6 @@ from lessons.erasure import LessonErasure
 from lessons.models import Lesson
 from lessons.services import LessonService
 from llm_registry.models import ModelCall
-from llm_registry.rejections import RejectedOutputs
 from quizzes.erasure import QuizErasure
 from quizzes.models import QuickQuiz
 from quizzes.services import QuickQuizService
@@ -99,11 +96,10 @@ def lived(user, make_lesson, make_quiz, give, ledger, clock):
     lessons = [make_lesson(topic="Binary search"), make_lesson(topic="Graphs")]
     quiz = make_quiz()
     for lesson in lessons:
-        call = ModelCall.objects.create(
+        ModelCall.objects.create(
             lesson_id=lesson.id, node_key="n", provider_key="p", model_name="m", attempt=1, fallback_index=0,
             status="ok", latency_ms=1,
         )  # fmt: skip
-        RejectedOutputs().record(call.id, {"topic": lesson.topic, "notes": "a learner's own words"}, ["refused"])
     SignupGrant(ledger=ledger).on_account_ready(user)
     give(user, 12, days=60)
     ledger.place_hold(user, 5, "lesson.create", "h1", subject_kind="lesson", subject_id=lessons[0].id)
@@ -208,7 +204,6 @@ class TestWhatIsErased:
 
         assert not Lesson.objects.filter(owner=user).exists() and not QuickQuiz.objects.filter(owner=user).exists()
         assert not ModelCall.objects.filter(lesson_id__in=[lesson.id for lesson in lessons]).exists()
-        assert not ModelCall.objects.exclude(rejected_output="").exists()
         assert {str(lesson.id) for lesson in lessons} <= set(threads.deleted) and str(quiz.id) in threads.deleted
         assert Lesson.objects.filter(pk=theirs.pk).exists() and str(theirs.id) not in threads.deleted
 

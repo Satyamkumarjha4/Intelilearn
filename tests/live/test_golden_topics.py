@@ -15,7 +15,7 @@ Use cases:
 """
 
 import pytest
-from live.golden import GOLDEN_TOPICS, CostChecks, CostReport, LessonChecks
+from live.golden import GOLDEN_TOPICS, CostChecks, LessonChecks
 
 from graph.grading import QuizGrader
 from lessons.attempts import AttemptService
@@ -41,7 +41,7 @@ def lesson_data(lesson: Lesson) -> dict:
 
 
 @pytest.mark.parametrize("golden", GOLDEN_TOPICS, ids=lambda g: g.topic)
-def test_a_golden_topic_becomes_a_good_ready_lesson_within_budget(built_lesson, golden, max_cost, capsys, settings):
+def test_a_golden_topic_becomes_a_good_ready_lesson_within_budget(built_lesson, golden, max_cost):
     lesson = built_lesson(golden.topic)
 
     assert lesson.stage == Stage.READY, f"{lesson.stage}: {lesson.error}"
@@ -49,8 +49,6 @@ def test_a_golden_topic_becomes_a_good_ready_lesson_within_budget(built_lesson, 
     calls = ModelCall.objects.filter(lesson_id=lesson.id)
     assert calls.count() <= MAX_CALLS
     rows = list(calls.values("provider_key", "model_name", "status", "cost"))
-    with capsys.disabled():  # the measured cost, step by step, priced with the rows of the day
-        print("\n" + CostReport(float(settings.USD_INR_RATE)).text(list(calls.values(*CostReport.FIELDS))))
     assert CostChecks().problems(rows, max_cost) == []  # also fails when a model used has no price
     assert not GraphRun.objects.filter(lesson=lesson, status=GraphRun.Status.FAILED).exists()
 

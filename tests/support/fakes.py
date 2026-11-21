@@ -25,28 +25,11 @@ class GatewayCall:
     quiz_id: Any = None
 
 
-class FakeRejections:
-    """Stands for `RejectedOutputs`: remembers what a validator refused, as (call id, output, problems)."""
-
-    def __init__(self):
-        self.rejected: list[tuple] = []
-
-    def record(self, call_id, output, problems) -> bool:
-        self.rejected.append((call_id, output, list(problems)))
-        return True
-
-
 class FakeGateway:
     def __init__(self, scripts: dict[str, list] | None = None):
         self.scripts = {key: list(items) for key, items in (scripts or {}).items()}
         self.responders: dict[str, Any] = {}
         self.calls: list[GatewayCall] = []
-        #: give each call an id, as the real gateway does (off by default: a node then adds nothing to the state)
-        self.numbered = False
-
-    def numbering(self) -> "FakeGateway":
-        self.numbered = True
-        return self
 
     def respond(self, node_key: str, responder) -> "FakeGateway":
         """Answer every call to `node_key` with `responder(messages)` (for nodes that run in parallel, where the order
@@ -77,8 +60,7 @@ class FakeGateway:
             item = item(messages)
         if isinstance(item, dict) and schema is not None:
             item = schema.model_validate(item)
-        call_id = len(self.calls) if self.numbered else None  # the nth call is the nth `ModelCall` row
-        return SimpleNamespace(output=item, message=None, model=None, fallback_index=0, attempts=1, call_id=call_id)
+        return SimpleNamespace(output=item, message=None, model=None, fallback_index=0, attempts=1)
 
 
 @dataclass

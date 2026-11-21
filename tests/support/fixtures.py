@@ -15,7 +15,7 @@ import pytest
 
 from graph.context import FlowContext
 
-from .fakes import FakeGateway, FakeRejections, FakeSandbox, ListEvents
+from .fakes import FakeGateway, FakeSandbox, ListEvents
 from .quiz_data import DEFAULT_SETTINGS, make_prerequisites, make_questions
 
 
@@ -77,13 +77,8 @@ def sandbox():
 
 
 @pytest.fixture
-def rejections():
-    return FakeRejections()
-
-
-@pytest.fixture
-def ctx(gateway, sandbox, events, rejections):
-    return FlowContext(gateway=gateway, sandbox=sandbox, events=events, run_id="run-1", rejections=rejections)
+def ctx(gateway, sandbox, events):
+    return FlowContext(gateway=gateway, sandbox=sandbox, events=events, run_id="run-1")
 
 
 @pytest.fixture
@@ -132,9 +127,7 @@ def bound_registry(db):
     from llm_registry.node_configs import NodeConfigSync
 
     NodeConfigSync().ensure()
-    # No key variable: a layer whose provider's key is not set is skipped when the chain is resolved, and these tests
-    # run with no keys.
-    provider = Provider.objects.create(key="fake", kind="openai", api_key_env="")
+    provider = Provider.objects.create(key="fake", kind="openai", api_key_env="OPENAI_API_KEY")
     model = LLMModel.objects.create(
         provider=provider,
         name="fake-model",

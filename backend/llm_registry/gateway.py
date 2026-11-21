@@ -18,17 +18,14 @@ from typing import Any
 from langchain_core.messages import AIMessage, BaseMessage
 from pydantic import BaseModel
 
-from .breaker import ProviderBreaker
 from .models import ModelCall
 from .outputs import OUTPUT_ADAPTERS, OutputAdapter, OutputAdapters
-from .profiles import PROVIDER_PROFILES, ProviderProfiles
 from .providers import CHAT_MODEL_FACTORY, ChatModelFactory
 from .ratelimit import CacheWindowRateLimiter, RateLimiter
 from .recorder import ModelCallRecorder
 from .redaction import REDACTOR
 from .resolver import RegistrySnapshot, ResolvedModel, ResolvedNode
 from .retry import ExponentialBackoffPolicy, RetryPolicy
-from .strict_schema import StrictSchemas
 from .tracing import CallbackProvider, TracingProviders
 
 EventSink = Callable[[dict], None]
@@ -54,7 +51,6 @@ class GatewayResult:
     model: ResolvedModel
     fallback_index: int
     attempts: int
-    call_id: int | None = None  # the `ModelCall` row of the answering attempt
 
 
 @dataclass
@@ -87,8 +83,6 @@ class Gateway:
         recorder: ModelCallRecorder | None = None,
         adapters: OutputAdapters = OUTPUT_ADAPTERS,
         tracing: CallbackProvider | None = None,
-        breaker: ProviderBreaker | None = None,
-        profiles: ProviderProfiles = PROVIDER_PROFILES,
     ):
         self.chat_factory = chat_factory if chat_factory is not None else CHAT_MODEL_FACTORY
         self.sleep = sleep
@@ -97,8 +91,6 @@ class Gateway:
         self.recorder = recorder if recorder is not None else ModelCallRecorder()
         self.adapters = adapters
         self.tracing = tracing if tracing is not None else TracingProviders.from_settings()
-        self.breaker = breaker if breaker is not None else ProviderBreaker()
-        self.profiles = profiles
 
     def invoke(
         self,
@@ -133,23 +125,15 @@ class Gateway:
     def _try_model(self, call: _Call, model: ResolvedModel, index: int, messages: list) -> GatewayResult | None:
         waited_ms = 0  # of the attempt being made: how long it stood in line for a rate-limit window
 
-        def record(**fields) -> int | None:
-            return self.recorder.record(node_key=call.node.node_key, lesson_id=call.lesson_id, run_id=call.run_id,
-                                        quiz_id=call.quiz_id, model=model, fallback_index=index,
-                                        rate_limit_wait_ms=waited_ms, **fields)  # fmt: skip
+        def record(**fields):
+            self.recorder.record(node_key=call.node.node_key, lesson_id=call.lesson_id, run_id=call.run_id,
+                                 quiz_id=call.quiz_id, model=model, fallback_index=index,
+                                 rate_limit_wait_ms=waited_ms, **fields)  # fmt: skip
 
-        if self.breaker.is_open(model.provider_key):
-            call.errors.append(f"{model.label}: skipped: {model.provider_key} refused its key or balance just now")
-            return None
         try:
-            chat = self.chat_factory(model, model.timeout_s or call.node.timeout_s)
-            method = "json_mode" if model.structured_mode == "off" else model.structured_output_method
+            chat = self.chat_factory(model, call.node.timeout_s)
             runnable = call.adapter.bind(
-                chat,
-                structured_output_method=method,
-                schema=call.schema,
-                tools=call.tools,
-                strict=self._strict(model, call.schema),
+                chat, structured_output_method=model.structured_output_method, schema=call.schema, tools=call.tools
             )
         except Exception as exc:  # e.g. missing API key or unknown provider package
             call.errors.append(f"{model.label}: {exc}")
@@ -175,7 +159,6 @@ class Gateway:
                 )
                 reply = runnable.invoke(messages, config=trace) if trace else runnable.invoke(messages)
             except Exception as exc:
-                self.breaker.record_failure(model.provider_key, exc)
                 retryable = self.retry_policy.is_retryable(exc)
                 status = ModelCall.Status.RETRYABLE_ERROR if retryable else ModelCall.Status.FATAL_ERROR
                 record(attempt=attempt, status=status, error=repr(exc), latency_ms=self._ms(started))
@@ -200,21 +183,9 @@ class Gateway:
                 messages = retry_messages
                 continue
 
-            self.breaker.record_success(model.provider_key)
-            call_id = record(
-                attempt=attempt, status=ModelCall.Status.OK, latency_ms=self._ms(started), message=outcome.message
-            )
-            return GatewayResult(outcome.output, outcome.message, model, index, attempt, call_id)
+            record(attempt=attempt, status=ModelCall.Status.OK, latency_ms=self._ms(started), message=outcome.message)
+            return GatewayResult(outcome.output, outcome.message, model, index, attempt)
         return None
-
-    def _strict(self, model: ResolvedModel, schema: type[BaseModel] | None) -> bool:
-        """Strict output only where the provider takes the flag and the schema can be sent strictly: a schema with an
-        optional field would be refused, so that layer runs best effort instead of failing."""
-        if model.structured_mode != "strict" or schema is None:
-            return False
-        if not self.profiles.for_kind(model.provider_kind).supports_strict:
-            return False
-        return not StrictSchemas.for_kind(model.provider_kind).problems(schema)
 
     @staticmethod
     def _ms(started: float) -> int:

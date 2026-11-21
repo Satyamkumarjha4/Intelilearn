@@ -10,11 +10,10 @@ from rest_framework import serializers
 from console.models import AuditEntry
 from console.outcomes import CallOutcomes
 from console.periods import Periods
-from console.services.prices import ModelPrices
 from console.services.registry import ModelService
 from console.services.runs import TimelinePhase
 from lessons.models import FlowSettings, GraphRun
-from llm_registry.models import EFFORT_CHOICES, FallThrough, LLMModel, ModelCall, Provider, StructuredMode
+from llm_registry.models import EFFORT_CHOICES, LLMModel, ModelCall, Provider
 from llm_registry.node_specs import Stage
 
 MONEY = {"max_digits": 16, "decimal_places": 6}
@@ -178,7 +177,6 @@ class UsageKpisSerializer(serializers.Serializer):
     tokens_in = serializers.IntegerField()
     tokens_out = serializers.IntegerField()
     spend = MoneyField()
-    spend_inr = serializers.DecimalField(max_digits=14, decimal_places=2, help_text="Spend in rupees (USD_INR_RATE).")
     median_latency_s = serializers.FloatField(allow_null=True, help_text="Of the calls that worked; null if none did.")
     p95_latency_s = serializers.FloatField(allow_null=True)
 
@@ -193,8 +191,6 @@ class UsageByModelSerializer(serializers.Serializer):
     failed = serializers.IntegerField()
     calls = serializers.IntegerField(help_text="ok + retried + failed.")
     spend = MoneyField()
-    thinking_k = serializers.FloatField(help_text="Thousands of thinking tokens (they are billed as output).")
-    cached_k = serializers.FloatField(help_text="Thousands of input tokens served from the cache.")
 
 
 class UsageByNodeSerializer(serializers.Serializer):
@@ -206,21 +202,11 @@ class UsageByNodeSerializer(serializers.Serializer):
     tokens_k = serializers.FloatField(help_text="Thousands of tokens, in and out.")
     spend = MoneyField()
     p95_s = serializers.FloatField(allow_null=True)
-    layer1_ok_pct = serializers.FloatField(
-        allow_null=True, help_text="Share of attempts on the first layer that worked, 0 to 100; null with none."
-    )
-    fallback_pct = serializers.FloatField(help_text="Share of attempts made on a fallback layer, 0 to 100.")
-    thinking_k = serializers.FloatField(help_text="Thousands of thinking tokens.")
-    cached_k = serializers.FloatField(help_text="Thousands of input tokens served from the cache.")
-    thinking_pct = serializers.FloatField(allow_null=True, help_text="Thinking tokens as a share of output tokens.")
-    cost_per_call = MoneyField(help_text="Spend over calls, in US dollars.")
-    cost_per_call_inr = serializers.DecimalField(max_digits=12, decimal_places=2, help_text="The same in rupees.")
 
 
 class UsageSerializer(serializers.Serializer):
     range = serializers.ChoiceField(choices=[*Periods().keys(), "custom"])
     period = PeriodSerializer()
-    usd_inr_rate = serializers.DecimalField(max_digits=8, decimal_places=2, help_text="Rupees to a dollar.")
     kpis = UsageKpisSerializer()
     by_model = UsageByModelSerializer(many=True, help_text="Busiest first.")
     by_node = UsageByNodeSerializer(many=True, help_text="Busiest first.")
@@ -312,11 +298,6 @@ class RunCallSerializer(serializers.Serializer):
     tool_calls = serializers.IntegerField()
     cost = MoneyField(allow_null=True)
     error = serializers.CharField(help_text="Already stripped of secrets.")
-    rejected_output = serializers.CharField(
-        help_text="What the model wrote when a validator then refused it (empty when it was not refused, and after "
-        "the retention). Staff only: it can hold what a lesson was about."
-    )
-    rejection = serializers.CharField(help_text="What the validator said was wrong, one problem a line.")
 
 
 class RunDetailSerializer(RunRowSerializer):
@@ -395,41 +376,12 @@ class LastProbeSerializer(serializers.Serializer):
     error = serializers.CharField(allow_blank=True, help_text="Empty when it worked.")
 
 
-class ModelPriceSerializer(serializers.Serializer):
-    input = serializers.CharField(help_text="US dollars per million tokens.")
-    output = serializers.CharField(help_text="Thinking tokens are billed at it.")
-    cached_input = serializers.CharField(allow_null=True)
-    legacy = serializers.BooleanField(help_text="True: typed on the model itself, with no source page or date.")
-    checked_on = serializers.CharField(allow_null=True, help_text="The day the provider's page was read.")
-    source_url = serializers.CharField(allow_blank=True)
-    valid_until = serializers.CharField(allow_null=True)
-
-
-# `from` is a Python keyword, so the class is built with the key as it appears in the JSON.
-NextPriceSerializer = type(
-    "NextPriceSerializer",
-    (serializers.Serializer,),
-    {
-        "from": serializers.CharField(help_text="The first day the next price applies."),
-        "input": serializers.CharField(),
-        "output": serializers.CharField(),
-    },
-)
-
-
 class ModelSerializer(serializers.ModelSerializer):
     provider = serializers.SlugRelatedField(slug_field="key", queryset=Provider.objects.all())
     enabled = serializers.BooleanField(source="is_enabled", required=False)
     api_key_set = serializers.BooleanField(source="provider.has_api_key", read_only=True)
     bound_nodes = serializers.SerializerMethodField(help_text="The steps (node keys) that use the model.")
     last_probe = serializers.SerializerMethodField()
-    price = serializers.SerializerMethodField(
-        help_text="What applies today: the `ModelPrice` row in force, else the price typed on the model (`legacy`)."
-    )
-    next_price = serializers.SerializerMethodField(help_text="The next row: what the price becomes, and from when.")
-    warnings = serializers.SerializerMethodField(
-        help_text="What to look at: no price, a price or a shutdown within 60 days, a deprecated model."
-    )
 
     class Meta:
         model = LLMModel
@@ -439,8 +391,6 @@ class ModelSerializer(serializers.ModelSerializer):
             "supports_parallel_tool_calls", "supports_vision", "supports_reasoning", "reasoning_control",
             "reasoning_disables_sampling", "context_window", "max_output_tokens", "rpm_limit",
             "input_cost_per_mtok", "output_cost_per_mtok", "bound_nodes", "last_probe",
-            "tier", "status", "shutdown_on", "reasoning_levels", "reasoning_off", "strict_structured",
-            "min_cache_tokens", "max_request_tokens", "price", "next_price", "warnings",
         ]  # fmt: skip
         read_only_fields = ["id"]
         validators = []  # the model's own full_clean() checks uniqueness, with the admin's message
@@ -458,18 +408,6 @@ class ModelSerializer(serializers.ModelSerializer):
     @extend_schema_field(LastProbeSerializer(allow_null=True))
     def get_last_probe(self, model):
         return ModelService.last_probe(model)
-
-    @extend_schema_field(ModelPriceSerializer(allow_null=True))
-    def get_price(self, model):
-        return ModelPrices().current(model)
-
-    @extend_schema_field(NextPriceSerializer(allow_null=True))
-    def get_next_price(self, model):
-        return ModelPrices().upcoming(model)
-
-    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
-    def get_warnings(self, model) -> list[str]:
-        return ModelPrices().warnings(model)
 
 
 class ModelCreateSerializer(RejectUnknownFields, ModelSerializer):
@@ -518,20 +456,6 @@ class BindingInputSerializer(serializers.Serializer):
         min_value=0, max_value=10, default=2, help_text="Retries on this model before the next."
     )
     overrides = BindingOverridesSerializer(default=dict)
-    max_output_tokens = serializers.IntegerField(
-        min_value=1, allow_null=True, default=None, help_text="The most this layer may write, thinking included."
-    )
-    timeout_s = serializers.IntegerField(
-        min_value=1, max_value=600, allow_null=True, default=None, help_text="Per call on this layer."
-    )
-    structured_mode = serializers.ChoiceField(
-        choices=StructuredMode.choices, allow_blank=True, default="", help_text="Blank: strict where the model can."
-    )
-    fall_through_on = serializers.ListField(
-        child=serializers.ChoiceField(choices=FallThrough.choices),
-        default=list,
-        help_text="Events after which the next layer is tried. Empty: every failure.",
-    )
 
 
 class BindingSerializer(serializers.Serializer):
@@ -542,11 +466,6 @@ class BindingSerializer(serializers.Serializer):
     enabled = serializers.BooleanField()
     max_retries = serializers.IntegerField()
     overrides = BindingOverridesSerializer()
-    max_output_tokens = serializers.IntegerField(allow_null=True)
-    timeout_s = serializers.IntegerField(allow_null=True)
-    structured_mode = serializers.CharField(allow_blank=True)
-    fall_through_on = serializers.ListField(child=serializers.CharField())
-    price = ModelPriceSerializer(allow_null=True, help_text="What the model costs today; null with no price.")
     problems = serializers.ListField(
         child=serializers.CharField(), help_text="Why this model cannot serve this step; empty if it can."
     )

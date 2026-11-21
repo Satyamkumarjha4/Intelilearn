@@ -84,39 +84,6 @@ export class ModelCatalog {
     return amount.toFixed(places);
   }
 
-  /** Dollars per million input tokens: the row in force, else the legacy price typed on the model. */
-  static priceIn(model: Pick<ConsoleModel, "price" | "input_cost_per_mtok">): string {
-    return ModelCatalog.price(model.price ? model.price.input : model.input_cost_per_mtok);
-  }
-
-  static priceOut(model: Pick<ConsoleModel, "price" | "output_cost_per_mtok">): string {
-    return ModelCatalog.price(model.price ? model.price.output : model.output_cost_per_mtok);
-  }
-
-  /** What the price becomes and from when ("$1.50 / $7.50 from 2027-01-01"), or null when no change is set. */
-  static nextPrice(model: Pick<ConsoleModel, "next_price">): string | null {
-    const next = model.next_price;
-    if (!next) return null;
-    return `$${ModelCatalog.price(next.input)} / $${ModelCatalog.price(next.output)} from ${next.from}`;
-  }
-
-  /** Where the price came from: the page and the day it was read, or "typed on the model" for the legacy one. */
-  static priceSource(model: Pick<ConsoleModel, "price">): string | null {
-    const price = model.price;
-    if (!price) return null;
-    if (price.legacy) return "typed on the model, no source page";
-    return `read on ${price.checked_on} from ${price.source_url}`;
-  }
-
-  /** The tier, then the status unless it is stable. */
-  static marks(model: Pick<ConsoleModel, "tier" | "status">): string[] {
-    return [model.tier, model.status === "stable" ? "" : model.status].filter((mark) => mark !== "");
-  }
-
-  static warnings(model: Pick<ConsoleModel, "warnings">): string[] {
-    return model.warnings;
-  }
-
   static limit(rpm: number | null): string {
     return rpm ? `${rpm}/min` : "–";
   }

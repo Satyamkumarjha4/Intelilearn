@@ -24,11 +24,6 @@ import type { NodeRouting, ProfilePreview, RoutingBinding } from "./types";
 const binding = (model: number | null, label: string): RoutingBinding => ({
   model,
   model_label: label,
-  max_output_tokens: null,
-  timeout_s: null,
-  structured_mode: "",
-  fall_through_on: [],
-  price: null,
   enabled: true,
   max_retries: 2,
   overrides: { params: {}, reasoning_effort: "" },

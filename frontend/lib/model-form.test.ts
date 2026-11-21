@@ -48,17 +48,6 @@ const model: ConsoleModel = {
   output_cost_per_mtok: "0.6000",
   bound_nodes: [],
   last_probe: null,
-  tier: "",
-  status: "stable",
-  shutdown_on: null,
-  reasoning_levels: [],
-  reasoning_off: "",
-  strict_structured: false,
-  min_cache_tokens: null,
-  max_request_tokens: null,
-  price: null,
-  next_price: null,
-  warnings: [],
 };
 
 describe("ModelForm values", () => {

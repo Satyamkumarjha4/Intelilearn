@@ -80,13 +80,7 @@ class LLMNode(Node):
         self.before(state)
         messages = self.prompt.messages(self.subject(state), self.feedback_for(state))
         result = ctx.invoke(state, self.node_key, messages, schema=self.schema_of(state))
-        return self.to_state(result.output, state, ctx) | self.call_of(result)
-
-    def call_of(self, result: Any) -> dict:
-        """The id of the call that wrote the output, kept in the state so the node that validates it can attach the
-        output to that call if it refuses it."""
-        call_id = getattr(result, "call_id", None)
-        return {"last_calls": {self.feedback_key: call_id}} if self.feedback_key and call_id is not None else {}
+        return self.to_state(result.output, state, ctx)
 
     def feedback_for(self, state: dict) -> list[str] | None:
         """What the validator said about the previous attempt (from the state under `feedback_key`)."""
@@ -134,15 +128,10 @@ class ValidateNode(Node):
     def label_of(self, state: dict) -> str:
         return self.label
 
-    def call_id(self, state: dict) -> int | None:
-        """The model call whose output this node checks (None for a run that began before the ids were kept)."""
-        return (state.get("last_calls") or {}).get(self.feedback_key)
-
     def outcome(self, state: dict, problems: list[str], ctx: FlowContext) -> dict:
         update: dict = {"feedback": {self.feedback_key: problems}}
         if not problems:
             return update
-        ctx.reject(self.call_id(state), self.subject(state), problems)
         attempts = self.attempts(state, self.feedback_key)
         if attempts >= NodeBudget.of(state, self.node_key).max_attempts:
             summary = "; ".join(problems[:4]) + (" …" if len(problems) > 4 else "")

@@ -82,20 +82,10 @@ export function ModelsTable({ models, testing, now, onTest, onEdit }: Props) {
                   {model.enabled ? "" : " · switched off"}
                   {model.enabled && !model.api_key_set ? " · unavailable" : ""}
                 </span>
-                {ModelCatalog.marks(model).length ? (
-                  <span className="mt-1 flex flex-wrap gap-1">
-                    {ModelCatalog.marks(model).map((mark) => <Chip key={mark}>{mark}</Chip>)}
-                  </span>
-                ) : null}
-                {ModelCatalog.warnings(model).length ? (
-                  <ul aria-label={`Warnings for ${name}`} className="mt-1 space-y-0.5 text-xs font-bold text-marigold-text">
-                    {ModelCatalog.warnings(model).map((warning) => <li key={warning}>{warning}</li>)}
-                  </ul>
-                ) : null}
                 <span className="mt-1 flex flex-wrap gap-1 md:hidden">
                   {ModelCatalog.capabilities(model).map((cap) => <Chip key={cap}>{cap}</Chip>)}
                   <span className="font-mono text-xs text-muted-foreground">
-                    {ModelCatalog.context(model.context_window)} · {ModelCatalog.priceIn(model)} / {ModelCatalog.priceOut(model)}
+                    {ModelCatalog.context(model.context_window)} · {ModelCatalog.price(model.input_cost_per_mtok)} / {ModelCatalog.price(model.output_cost_per_mtok)}
                   </span>
                 </span>
               </td>
@@ -105,13 +95,8 @@ export function ModelsTable({ models, testing, now, onTest, onEdit }: Props) {
                 </span>
               </td>
               <td className={cn("px-3 py-2.5 text-right font-mono text-[12.5px]", WIDE)}>{ModelCatalog.context(model.context_window)}</td>
-              <td className={cn("px-3 py-2.5 text-right font-mono text-[12.5px]", WIDE)} title={ModelCatalog.priceSource(model) ?? "No price"}>
-                {ModelCatalog.priceIn(model)}
-              </td>
-              <td className={cn("px-3 py-2.5 text-right font-mono text-[12.5px]", WIDE)} title={ModelCatalog.nextPrice(model) ?? undefined}>
-                {ModelCatalog.priceOut(model)}
-                {ModelCatalog.nextPrice(model) ? <span className="block text-[11px] font-semibold text-muted-foreground">then {ModelCatalog.nextPrice(model)}</span> : null}
-              </td>
+              <td className={cn("px-3 py-2.5 text-right font-mono text-[12.5px]", WIDE)}>{ModelCatalog.price(model.input_cost_per_mtok)}</td>
+              <td className={cn("px-3 py-2.5 text-right font-mono text-[12.5px]", WIDE)}>{ModelCatalog.price(model.output_cost_per_mtok)}</td>
               <td className={cn("px-3 py-2.5 text-right font-mono text-[12.5px] whitespace-nowrap", WIDE)}>{ModelCatalog.limit(model.rpm_limit)}</td>
               <td className="max-w-56 px-3 py-2.5">
                 <TestResult test={test} testing={isTesting} />

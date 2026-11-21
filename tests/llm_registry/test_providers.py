@@ -13,8 +13,6 @@ Use cases:
 - Groq
 - Ollama (no timeout or retries arguments; max_tokens sent as num_predict)
 - a missing API key is a clear error naming the variable
-- an OpenAI client uses the Responses API, an OpenAI-compatible one does not
-- an Anthropic client is never given sampling parameters
 """
 
 import pytest
@@ -120,22 +118,3 @@ def test_missing_key_is_a_clear_error(resolved_model, monkeypatch):
     monkeypatch.delenv("TEST_LLM_KEY")
     with pytest.raises(MissingAPIKey, match="TEST_LLM_KEY"):
         factory(resolved_model(provider_kind="openai", api_key_env="TEST_LLM_KEY"), 45)
-
-
-def test_an_openai_client_uses_the_responses_api_and_a_compatible_server_does_not(resolved_model):
-    openai = factory(resolved_model(provider_kind="openai", model_name="gpt-6-luna", api_key_env="TEST_LLM_KEY"), 30)
-    compatible = factory(
-        resolved_model(provider_kind="openai_compatible", model_name="x", api_key_env="TEST_LLM_KEY",
-                       base_url="http://localhost:8000/v1"), 30)  # fmt: skip
-
-    assert openai.use_responses_api is True
-    assert not compatible.use_responses_api
-
-
-def test_an_anthropic_client_is_never_given_sampling_parameters(resolved_model):
-    model = resolved_model(provider_kind="anthropic", model_name="claude-haiku-5-5", api_key_env="TEST_LLM_KEY",
-                           params={"temperature": 0.3, "max_tokens": 500})  # fmt: skip
-
-    client = factory(model, 30)
-
-    assert client.temperature is None and client.max_tokens == 500

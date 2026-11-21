@@ -28,7 +28,7 @@ from llm_registry.serialization import RegistrySerializer
 
 pytestmark = pytest.mark.django_db
 
-FLASH, LITE = "gemini-3.6-flash", "gemini-3.5-flash-lite"
+FLASH, LITE = "gemini-3.5-flash", "gemini-3.5-flash-lite"
 HEAVY = ("study.generate", "page.generate", "test.generate", "interactive.generate", "page.compile", "code.repair",
          "runtime.repair")  # fmt: skip
 ONBOARDING = "onboarding.suggest_topics"

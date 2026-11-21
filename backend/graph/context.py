@@ -36,11 +36,6 @@ class LLMGateway(Protocol):
         """→ an object with `.output` (the parsed schema, a message or text)."""
 
 
-class RejectionSink(Protocol):
-    def record(self, call_id: int | None, output: Any, problems: Sequence[str]) -> bool:
-        """Keep `output`, which a validator refused with `problems`, on the model call that wrote it."""
-
-
 class CodeSandbox(Protocol):
     def check_code(
         self, code: str, *, required: list[str] = (), components: list[str] = (), asset_ids: list[str] = ()
@@ -87,15 +82,10 @@ class FlowContext:
     media: Any = None  # graph.media.MediaLibrary
     events: EventSink | None = None
     run_id: str | None = None
-    rejections: RejectionSink | None = None  # where a refused output is kept for staff (`RejectedOutputs`)
 
     def __post_init__(self):
         if self.events is None:
             self.events = StreamEventSink()
-        if self.rejections is None:
-            from llm_registry.rejections import RejectedOutputs
-
-            self.rejections = RejectedOutputs()
 
     def invoke(self, state: dict, node_key: str, messages, *, schema=None, tools=None):
         """Call the node's model chain from the lesson's registry snapshot, forwarding retry/fallback events."""
@@ -110,15 +100,6 @@ class FlowContext:
             quiz_id=state.get("quiz_id"),
             on_event=self.events,
         )
-
-    def reject(self, call_id: int | None, output: Any, problems: Sequence[str]) -> None:
-        """A validator refused `output`, which the call `call_id` wrote: keep both for staff. No call id, no record."""
-        if call_id is not None:
-            self.rejections.record(call_id, output, problems)
-
-    def reject_result(self, result: Any, output: Any, problems: Sequence[str]) -> None:
-        """`reject` for the call that gave `result` (a gateway result; a fake without a call id keeps nothing)."""
-        self.reject(getattr(result, "call_id", None), output, problems)
 
     def warn(self, message: str) -> list[str]:
         """Tell the learner about a degraded result; returns the list to add to the state's `warnings`."""

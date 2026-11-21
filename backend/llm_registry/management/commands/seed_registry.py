@@ -24,8 +24,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--prices",
             action="store_true",
-            help="Only add the price rows the price book (llm_registry/prices.py) has for the models in the registry. "
-            "A price that is already set for the same dates is never changed.",
+            help="Only fill in the price of every model that has none, from the price book (llm_registry/prices.py). "
+            "A price that is already set is never changed.",
         )
         parser.add_argument(
             "--force", action="store_true", help="Apply the defaults even if bindings already exist (overwrites them)."
@@ -49,18 +49,18 @@ class Command(BaseCommand):
             self.stdout.write("Registry already has bindings; leaving it alone (use --force to reset to defaults).")
 
     def fill_prices(self) -> None:
-        report = PriceBook().fill()
+        report = PriceBook().fill_missing()
         if report.filled:
             self.stdout.write(self.style.SUCCESS("Priced " + ", ".join(report.filled) + " from the price book."))
-        if report.unpriced:
+        if report.unpriced or report.unknown:
             self.stdout.write(
                 self.style.WARNING(
-                    "No confirmed price for " + ", ".join(report.unpriced) + ": its calls have no cost. Read the "
-                    "provider's pricing page and add it to llm_registry/prices.py."
+                    "No confirmed price for " + ", ".join(report.unpriced + report.unknown) + ": left empty, so its "
+                    "calls have no cost. Read the provider's pricing page and add it to llm_registry/prices.py."
                 )
             )
-        if not (report.filled or report.unpriced):
-            self.stdout.write("Every model already has its prices.")
+        if not (report.filled or report.unpriced or report.unknown):
+            self.stdout.write("Every model already has a price.")
 
     def handle(self, *args, file=None, force=False, profile="default", prices=False, **options):
         if prices:
@@ -81,4 +81,3 @@ class Command(BaseCommand):
             raise CommandError("; ".join(exc.messages)) from exc
         summary = ", ".join(f"{n} {name}" for name, n in counts.items())
         self.stdout.write(self.style.SUCCESS(f"Registry loaded: {summary}"))
-        self.fill_prices()

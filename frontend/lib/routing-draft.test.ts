@@ -7,8 +7,7 @@
  * reorder that drops or duplicates a model sends lessons to the wrong one.
  *
  * Use cases:
- * - turns a step into the body of `PUT /console/nodes/{key}` (chain order kept, derived fields left out, each layer's own
- *   output cap, timeout, structured mode and fall-through events carried so a save never wipes them)
+ * - turns a step into the body of `PUT /console/nodes/{key}` (chain order kept, derived fields left out)
  * - finds the steps that differ from what was saved: an identical copy is clean, derived `problems` do not count,
  *   and a reorder, a removal, an effort change or a switch counts
  * - reorders the chain by dragging (index to index), moves a model up, removes one but never the last, adds one
@@ -19,7 +18,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { RoutingDraft } from "./routing-draft";
-import type { BindingLayer, ConsoleModel, ConsoleRouting, NodeRouting, RoutingBinding } from "./types";
+import type { ConsoleModel, ConsoleRouting, NodeRouting, RoutingBinding } from "./types";
 
 const binding = (model: number, label = `groq/m${model}`, extra: Partial<RoutingBinding> = {}): RoutingBinding => ({
   model,
@@ -27,11 +26,6 @@ const binding = (model: number, label = `groq/m${model}`, extra: Partial<Routing
   enabled: true,
   max_retries: 2,
   overrides: { params: {}, reasoning_effort: "" },
-  max_output_tokens: null,
-  timeout_s: null,
-  structured_mode: "",
-  fall_through_on: [],
-  price: null,
   problems: [],
   ...extra,
 });
@@ -58,8 +52,6 @@ const node = (key: string, ids: number[], extra: Partial<NodeRouting> = {}): Nod
 const model = (id: number, extra: Partial<ConsoleModel> = {}): ConsoleModel =>
   ({ id, provider: "groq", name: `m${id}`, enabled: true, api_key_set: true, ...extra }) as ConsoleModel;
 
-const LAYER_DEFAULTS: BindingLayer = { max_output_tokens: null, timeout_s: null, structured_mode: "", fall_through_on: [] };
-
 describe("input", () => {
   test("is the PUT body, with the chain in priority order and no derived fields", () => {
     const body = RoutingDraft.input(node("lesson.plan", [3, 1], { max_tool_steps: 4, params_override: { top_p: 0.5 } }));
@@ -72,28 +64,10 @@ describe("input", () => {
       timeout_s: 120,
       params_override: { top_p: 0.5 },
       bindings: [
-        { model: 3, enabled: true, max_retries: 2, overrides: { params: {}, reasoning_effort: "" }, ...LAYER_DEFAULTS },
-        { model: 1, enabled: true, max_retries: 2, overrides: { params: {}, reasoning_effort: "" }, ...LAYER_DEFAULTS },
+        { model: 3, enabled: true, max_retries: 2, overrides: { params: {}, reasoning_effort: "" } },
+        { model: 1, enabled: true, max_retries: 2, overrides: { params: {}, reasoning_effort: "" } },
       ],
     });
-  });
-
-  test("carries each layer's output cap, timeout, structured mode and fall-through events, so a save never wipes them", () => {
-    const step = node("lesson.plan", [3]);
-    const layer: BindingLayer = { max_output_tokens: 4400, timeout_s: 45, structured_mode: "strict", fall_through_on: ["quota"] };
-
-    const body = RoutingDraft.input({ ...step, bindings: [{ ...step.bindings[0], ...layer }] });
-
-    expect(body.bindings[0]).toMatchObject(layer);
-  });
-
-  test("leaves the derived price out", () => {
-    const step = node("lesson.plan", [3]);
-    const price = { input: "0.15", output: "0.60", cached_input: null, legacy: false, checked_on: "2026-11-15", source_url: "https://x.test", valid_until: null };
-
-    const body = RoutingDraft.input({ ...step, bindings: [{ ...step.bindings[0], price }] });
-
-    expect("price" in body.bindings[0]).toBe(false);
   });
 });
 
@@ -172,7 +146,6 @@ describe("editing the chain", () => {
 
     expect(ids(added)).toEqual([1, 2, 3, 7]);
     expect(added.bindings[3]).toMatchObject({ model: 7, model_label: "google/big", enabled: true, max_retries: 2, problems: [] });
-    expect(added.bindings[3]).toMatchObject({ max_output_tokens: null, timeout_s: null, structured_mode: "", fall_through_on: [], price: null });
   });
 
   test("editing never changes the original", () => {

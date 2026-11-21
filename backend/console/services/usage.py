@@ -16,7 +16,6 @@ from django.db.models import Count, Q, QuerySet, Sum
 
 from console.outcomes import CallOutcomes, PercentileCont
 from console.periods import Period
-from llm_registry.costing import Rupees
 from llm_registry.models import ModelCall
 
 from .overview import money
@@ -50,7 +49,6 @@ class UsageReport:
         return {
             "range": filters.period.key,
             "period": {"start": filters.period.start, "end": filters.period.end},
-            "usd_inr_rate": str(Rupees().of(Decimal(1))),
             "kpis": self._kpis(calls),
             "by_model": self._by_model(calls),
             "by_node": self._by_node(calls),
@@ -70,7 +68,6 @@ class UsageReport:
             "tokens_in": totals["tokens_in"] or 0,
             "tokens_out": totals["tokens_out"] or 0,
             "spend": str(money(totals["spend"])),
-            "spend_inr": str(Rupees().of(money(totals["spend"]))),
             "median_latency_s": self._seconds(totals["median"]),
             "p95_latency_s": self._seconds(totals["p95"]),
         }
@@ -81,8 +78,6 @@ class UsageReport:
             .annotate(
                 n=Count("id"),
                 spend=Sum("cost"),
-                thinking=Sum("reasoning_tokens"),
-                cached=Sum("cached_input_tokens"),
                 median=self._percentile(0.5),
                 p95=self._percentile(0.95),
                 **CallOutcomes.counts(),
@@ -100,8 +95,6 @@ class UsageReport:
                 "failed": row["failed"],
                 "calls": row["n"],
                 "spend": str(money(row["spend"])),
-                "thinking_k": self._thousands(row["thinking"]),
-                "cached_k": self._thousands(row["cached"]),
             }
             for row in rows
         ]
@@ -114,10 +107,6 @@ class UsageReport:
                 tokens_in=Sum("input_tokens"),
                 tokens_out=Sum("output_tokens"),
                 spend=Sum("cost"),
-                thinking=Sum("reasoning_tokens"),
-                cached=Sum("cached_input_tokens"),
-                layer1=Count("id", filter=Q(fallback_index=0)),
-                layer1_ok=Count("id", filter=Q(fallback_index=0, status=ModelCall.Status.OK)),
                 p95=self._percentile(0.95),
                 **CallOutcomes.counts(),
             )
@@ -133,22 +122,9 @@ class UsageReport:
                 "tokens_k": round(((row["tokens_in"] or 0) + (row["tokens_out"] or 0)) / 1000, 1),
                 "spend": str(money(row["spend"])),
                 "p95_s": self._seconds(row["p95"]),
-                "layer1_ok_pct": round(100 * row["layer1_ok"] / row["layer1"], 1) if row["layer1"] else None,
-                "fallback_pct": round(100 * row["fallbacks"] / row["n"], 1),
-                "thinking_k": self._thousands(row["thinking"]),
-                "cached_k": self._thousands(row["cached"]),
-                "thinking_pct": (
-                    round(100 * (row["thinking"] or 0) / row["tokens_out"], 1) if row["tokens_out"] else None
-                ),
-                "cost_per_call": str(money(Decimal(row["spend"] or 0) / row["n"])),
-                "cost_per_call_inr": str(Rupees().of(Decimal(row["spend"] or 0) / row["n"])),
             }
             for row in rows
         ]
-
-    @staticmethod
-    def _thousands(tokens: int | None) -> float:
-        return round((tokens or 0) / 1000, 2)
 
     def _percentile(self, fraction: float) -> PercentileCont:
         return PercentileCont("latency_ms", fraction, filter=self.WORKED)

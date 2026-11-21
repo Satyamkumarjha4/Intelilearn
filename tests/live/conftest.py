@@ -13,8 +13,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _need_keys(request):
     """Live tests only: every other test in this folder (the offline checks) runs as usual."""
-    needs_gemini = request.node.fspath.basename != "test_usage_payloads.py"  # that one skips per provider key
-    if needs_gemini and request.node.get_closest_marker("live") and not os.environ.get("GEMINI_API_KEY"):
+    if request.node.get_closest_marker("live") and not os.environ.get("GEMINI_API_KEY"):
         pytest.skip("GEMINI_API_KEY is not set: the default registry's models need it (see docs/process/testing.md)")
 
 
@@ -22,12 +21,10 @@ def _need_keys(request):
 def real_registry(db):
     """The default registry (Gemini, with Groq Llama as fallback) loaded into the test database."""
     from lessons.checkpoints import CheckpointerFactory
-    from llm_registry.prices import PriceBook
     from llm_registry.seed import DefaultRegistry
     from llm_registry.serialization import RegistrySerializer
 
     RegistrySerializer().load(DefaultRegistry().build())
-    PriceBook().fill()  # the prices the cost check reads
     CheckpointerFactory().setup()  # the checkpoint tables are not Django models, so the test database lacks them
 
 

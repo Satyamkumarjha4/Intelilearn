@@ -21,7 +21,6 @@ Legend for status columns: ✅ in code · ◐ partly (functions still to wrap in
   - [4.2 `core` and `config`](#42-core-and-config)
   - [4.3 `llm_registry`: registry and resolution](#43-llm_registry-registry-and-resolution)
   - [4.4 `llm_registry`: the gateway](#44-llm_registry-the-gateway)
-  - [4.4a `llm_registry`: prices, costing, strict schemas and the breaker](#44a-llm_registry-prices-costing-strict-schemas-and-the-breaker)
   - [4.5 `llm_registry`: probes](#45-llm_registry-probes)
   - [4.6 `lessons`: domain and services](#46-lessons-domain-and-services)
   - [4.7 `graph`: nodes, routers and builders](#47-graph-nodes-routers-and-builders)
@@ -683,108 +682,6 @@ sequenceDiagram
     G-->>N: raise AllModelsFailed
 ```
 
-### 4.4a `llm_registry`: prices, costing, strict schemas and the breaker
-
-Milestones M1 and M2 of [the model strategy](../to_be_developed/model-strategy.md). Each class has one job, and a new variant is a new class in a registry, not a branch.
-
-```mermaid
-classDiagram
-    direction LR
-    class ModelPrice {
-        +model
-        +input_per_mtok
-        +output_per_mtok
-        +valid_from / valid_until
-        +source_url / checked_on
-    }
-    class PriceBook {
-        +ENTRIES
-        +fill() FillReport
-    }
-    class PriceLookup {
-        <<interface>>
-        +card(provider, model, day) RateCard
-    }
-    class PriceRows
-    class CallCosts {
-        +cost(model, usage, day) Decimal
-    }
-    class CallPricer {
-        +cost(card, usage) Decimal
-    }
-    class RateCard
-    class TokenUsage {
-        +from_metadata(usage_metadata)
-    }
-    class Rupees {
-        +of(dollars) Decimal
-    }
-    class ModelCallRecorder
-    class StrictSchemas {
-        +for_kind(kind) StrictSchema
-    }
-    class StrictSchema {
-        +problems(model) list
-        +prepare(model) dict
-    }
-    class SchemaRule {
-        <<interface>>
-        +check(name, schema, defs)
-        +fix(schema)
-    }
-    class NullableFields {
-        +NULL_MEANS
-    }
-    class ProviderBreaker {
-        +is_open(provider) bool
-        +record_failure(provider, exc)
-        +record_success(provider)
-    }
-    class RejectedOutputs {
-        +MAX_CHARS
-        +record(call_id, output, problems) bool
-        +forget_before(cutoff) int
-    }
-    class RejectionSink {
-        <<interface>>
-        +record(call_id, output, problems) bool
-    }
-    class ModelPrices {
-        +current(model)
-        +upcoming(model)
-        +warnings(model)
-    }
-    PriceBook ..> ModelPrice : seeds
-    PriceRows ..|> PriceLookup
-    PriceRows ..> ModelPrice : in_effect(day)
-    CallCosts o-- PriceLookup
-    CallCosts o-- CallPricer
-    CallPricer ..> RateCard
-    CallPricer ..> TokenUsage
-    ModelCallRecorder o-- CallCosts
-    StrictSchemas ..> StrictSchema
-    StrictSchema o-- SchemaRule
-    Gateway o-- ProviderBreaker
-    Gateway ..> StrictSchemas
-    ModelPrices ..> ModelPrice : console
-    RejectedOutputs ..|> RejectionSink
-    RejectedOutputs ..> ModelCall : writes the refused output
-    FlowContext o-- RejectionSink
-    AccountsPurge ..> RejectedOutputs : forget_before(cutoff)
-```
-
-| Pattern | Where | Notes |
-|---|---|---|
-| **Strategy** | `StrictSchemas.RULES` | One `SchemaRule` list per provider kind (Groq and OpenAI: `AllFieldsRequired`; Anthropic: `NoNumericConstraints`, `NoRecursion`). A kind with no entry asks for nothing |
-| **Strategy** | `ProviderProfile._off_kwargs`, `client_kwargs`, `supports_strict` | How "no reasoning" is asked for, what every client of the provider is built with, and whether it takes a strict flag are the profile's own; the table is in the model strategy 3.5.A and is tested table-driven |
-| **Ports** | `PriceLookup` | `CallCosts` depends on the small port, not on the database; tests inject a fake |
-| **Template** | `NullableFields` | A schema's optional fields are required and nullable on the wire; `NULL_MEANS` gives the value the graph always saw |
-| **Circuit breaker** | `ProviderBreaker` | Three 401 or 402 in a row skip the provider for five minutes; state lives in the Django cache so every worker shares it |
-
-**Refused outputs.** `ModelCallRecorder.record` returns the id of the row it wrote and `GatewayResult` carries it as `call_id`. An `LLMNode` keeps it in the state (`last_calls[feedback_key]`), so the `ValidateNode` that checks the output later (a separate node, after a checkpoint) can hand the output and the validator's problems to `FlowContext.reject`, which asks the `RejectionSink` (`RejectedOutputs`) to store them on that `ModelCall`. The writers that validate their own output in the same call (`ContentWriter`, `SheetWriter`) use `FlowContext.reject_result`. It is staff-only evidence (the console's run detail), emptied by the daily purge after `REJECTED_OUTPUT_RETENTION_DAYS` and deleted with the lesson on erasure, and a failed write is logged, never raised.
-
-The recorder asks `CallCosts` for the cost of each attempt (the `ModelPrice` row in force on the day, else the model's legacy price). `Gateway` asks `StrictSchemas` whether a layer's schema can be sent strictly (a schema with an optional field runs best effort instead of failing), uses a layer's own timeout, and skips a provider whose breaker is open. The resolver skips a layer whose provider has no key and refuses a binding that could pass the model's `max_request_tokens`.
-
 ### 4.5 `llm_registry`: probes
 
 ```mermaid
@@ -996,8 +893,6 @@ classDiagram
         +CodeSandbox sandbox
         +MediaProvider media
         +EventSink events
-        +RejectionSink rejections
-        +reject(call_id, output, problems)
     }
     class Node {
         <<abstract>>
@@ -2740,12 +2635,8 @@ classDiagram
     ConceptIndex o-- ConceptEntry
     class Normal {
         +text(value)$
-        +written(value)$
-        +option(value)$
     }
     ConceptIndex ..> Normal
-    DiagnosticValidator ..> Normal
-    TextRules ..> Normal
     class QuestionConcepts {
         +allowed(data, cells)$
         +outline(plan)$
@@ -2783,7 +2674,7 @@ classDiagram
 
 - **One class places a concept (`ConceptIndex`, pure, `graph/concept_index.py`).** The plan says which page a concept belongs to (each outline concept is on exactly one page); the pages say where on it. `build` places a concept by a section tagged with it, else the section with the outline's heading, else the section that talks about it most; a concept nothing places is listed without a page. New lessons and old ones go through the same rules, so the backfill is the same code as the live path.
 - **`persist_lesson` writes the index** from the final pages (after any review fix), so the stored index never describes a page that was replaced.
-- **Concept-bounded questions.** `QuestionConcepts` answers "which concepts may this cell's question name?" for a lesson test, a retake and a quiz from lessons. It lives in `graph/questions/` and shares `Normal` (a small class in `graph/normal.py`, free of other imports) with the validators, which breaks the import cycle between the schemas, the validators and the question code. `Normal` has three comparisons because "the same" means three things: `text` for names (case, punctuation and spacing ignored), `written` for answers and question text (symbols kept: `low > high` is not `low == high`, `-1` is not `1`; case, spacing, `$` and backticks and the spelling of the minus sign ignored) and `option` for a question's options (`written` with spaces and a final full stop ignored); `numeric` says whether text is only a value (a number, a decimal, a fraction in LaTeX), which the independence check does not treat as a reveal when another question uses the same value. Options and independence are compared with the last two; comparing them with `text` made a Quick check on a code or maths topic fail as "options must all be different" when they were.
+- **Concept-bounded questions.** `QuestionConcepts` answers "which concepts may this cell's question name?" for a lesson test, a retake and a quiz from lessons. It lives in `graph/questions/` and shares `Normal` (a one-method class in `graph/normal.py`, free of other imports) with the validators, which breaks the import cycle between the schemas, the validators and the question code.
 - **Recommendations stay deterministic.** `QuizRecommendations` takes each lesson's share of the card through `ScoreCard.topics_to_revisit` (now public: the same ordering as the card's own), totals the marks lost per concept, and asks `ConceptLinks` for the page of each. `ConceptLinks.index_of` is the lazy fallback: a lesson with no stored index has one worked out from its plan and pages in memory (a read never writes); a deleted lesson (`QuickQuizSource.lesson_ref` kept the id) is named and marked deleted. A lesson test's result gets the same links through `TestSubmissionSerializer.revisit_links`.
 - **`ConceptIndexBackfill`** fills only empty indexes, writes only that column (not `updated_at`), and reports lessons indexed and skipped and concepts placed and not placed. `manage.py backfill_concept_index [--dry-run]`.
 - **Frontend** (`frontend/lib/`): `PageLinks` (the three page keys, the address of a page, the words of the link and button, the link for a topic of a lesson's own result) and `QuizResults` (one `StudyLink` per weak concept). The lesson page reads `page=` from the address and gives it to `LessonViewer`, which starts the book there; a new `page=` remounts it.
@@ -3591,8 +3482,6 @@ classDiagram
 |---|---|
 | A first-topic list, field family, routing rule or reason | A JSON edit in `onboarding/catalogue.json`, or a `RouteRule` / `ReasonRule` class in the router or the reason builder; see [onboarding.md](../reference/onboarding.md#extending). |
 | An LLM step | `NodeSpec` in `node_specs.py` → `Prompt` subclass → `LLMNode` subclass (+ `Validator` and `ValidateNode` if its output has rules) → register in the graph builder → `migrate` → bind models. Tests first for the validator and the node with `FakeGateway`. |
-| A price or a promo | A `ModelPrice` row (a new row, never an edit), with the provider's page and the day it was read; or an entry in `llm_registry/prices.py` (`PriceBook.ENTRIES`) so `seed_registry` creates it. |
-| A provider's strict-schema rule | A `SchemaRule` class, listed in `StrictSchemas.RULES` for the kind, with a case in `tests/llm_registry/test_strict_schema.py`. |
 | A provider kind | `ProviderProfile` subclass, registered in `ProviderProfiles`; a test that builds the real client offline (`tests/llm_registry/test_providers.py`). |
 | A media source | `MediaSource` implementation, a `FlowSettings.media_sources` value, tests with `httpx.MockTransport`. |
 | A health dependency | `HealthCheck` subclass, added to `HealthService`'s default list. |

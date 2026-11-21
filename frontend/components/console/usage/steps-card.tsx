@@ -27,22 +27,6 @@ const COLUMNS: Column<StepRow>[] = [
     ),
   },
   { key: "p95", header: "p95", numeric: true, sortValue: (row) => row.p95_s, cell: (row) => ConsoleFormat.duration(row.p95_s) },
-  {
-    key: "layer1",
-    header: "First model worked",
-    numeric: true,
-    sortValue: (row) => row.layer1_ok_pct,
-    cell: (row) => (row.layer1_ok_pct === null ? "–" : ConsoleFormat.percent(row.layer1_ok_pct)),
-  },
-  { key: "fell", header: "Fell through", numeric: true, sortValue: (row) => row.fallback_pct, cell: (row) => ConsoleFormat.percent(row.fallback_pct) },
-  {
-    key: "thinking",
-    header: "Thinking",
-    numeric: true,
-    sortValue: (row) => row.thinking_pct,
-    cell: (row) => (row.thinking_pct === null ? "–" : ConsoleFormat.percent(row.thinking_pct)),
-  },
-  { key: "percall", header: "Per call", numeric: true, sortValue: (row) => Number(row.cost_per_call_inr), cell: (row) => `₹${row.cost_per_call_inr}` },
 ];
 
 /** Calls, success, retries, tokens and spend for each lesson step; the spend column carries a bar against the costliest step. */
