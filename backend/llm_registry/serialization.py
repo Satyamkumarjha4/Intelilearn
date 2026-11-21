@@ -1,6 +1,7 @@
 """Export / import the registry as JSON, keyed by names (provider key, model name, node key) rather than ids,
 so a tuned setup can be copied between machines."""
 
+from datetime import date
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -18,10 +19,14 @@ class RegistrySerializer:
         "label", "default_params", "supports_structured_output", "structured_output_method", "supports_tool_calling",
         "supports_parallel_tool_calls", "supports_vision", "supports_reasoning", "reasoning_control",
         "reasoning_disables_sampling", "context_window", "max_output_tokens", "rpm_limit", "input_cost_per_mtok",
-        "output_cost_per_mtok", "is_enabled",
+        "output_cost_per_mtok", "is_enabled", "max_request_tokens", "tier", "status", "shutdown_on", "reasoning_levels",
+        "reasoning_off", "strict_structured", "min_cache_tokens",
     ]  # fmt: skip
     NODE_FIELDS = ["is_enabled", "reasoning_effort", "params_override", "max_attempts", "max_tool_steps", "timeout_s"]
-    BINDING_FIELDS = ["priority", "params_override", "reasoning_effort", "max_retries", "is_enabled"]
+    BINDING_FIELDS = [
+        "priority", "params_override", "reasoning_effort", "max_retries", "is_enabled", "max_output_tokens",
+        "timeout_s", "structured_mode", "fall_through_on",
+    ]  # fmt: skip
 
     def export(self) -> dict:
         return {
@@ -154,4 +159,6 @@ class RegistrySerializer:
     @staticmethod
     def _plain(value):
         """A price is written as exact text: a number such as 0.075 cannot be stored back into a four-decimal field."""
+        if isinstance(value, date):
+            return value.isoformat()
         return format(value.normalize(), "f") if isinstance(value, Decimal) else value

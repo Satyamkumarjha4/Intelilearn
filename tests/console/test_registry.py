@@ -162,6 +162,11 @@ def test_a_model_lists_its_capabilities_limits_prices_steps_and_last_test(staff_
         "reasoning_control": "none", "reasoning_disables_sampling": False, "context_window": 1_000_000,
         "max_output_tokens": 65_536, "rpm_limit": 10, "input_cost_per_mtok": "0.3000",
         "output_cost_per_mtok": "2.5000", "bound_nodes": ["lesson.plan", "page.generate"], "last_probe": None,
+        "tier": "", "status": "stable", "shutdown_on": None, "reasoning_levels": [], "reasoning_off": "",
+        "strict_structured": False, "min_cache_tokens": None, "max_request_tokens": None,
+        "price": {"input": "0.3000", "output": "2.5000", "cached_input": None, "legacy": True, "checked_on": None,
+                  "source_url": "", "valid_until": None},
+        "next_price": None, "warnings": [],
     }  # fmt: skip
     assert {"next", "previous", "results"} <= set(body)
 

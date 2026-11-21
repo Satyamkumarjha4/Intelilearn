@@ -24,6 +24,7 @@ Use cases:
 """
 
 import json
+from decimal import Decimal
 
 import pytest
 from django.core.exceptions import ValidationError
@@ -45,9 +46,9 @@ def test_default_seed_is_valid_and_covers_every_required_node():
         if node.is_enabled:
             assert resolved[node.node_key].chain, f"{node.node_key} has no usable model"
     for key, chain in {
-        "diagnostic.review": ["openai/gpt-oss-20b", "gemini-3.5-flash"],
-        "media.verify": ["gemini-3.5-flash", "gemini-3.5-flash-lite"],
-        "lesson.plan": ["gemini-3.5-flash", "openai/gpt-oss-120b", "gemini-3.5-flash-lite"],
+        "diagnostic.review": ["openai/gpt-oss-20b", "gemini-3.6-flash"],
+        "media.verify": ["gemini-3.6-flash", "gemini-3.5-flash-lite"],
+        "lesson.plan": ["gemini-3.6-flash", "openai/gpt-oss-120b", "gemini-3.5-flash-lite"],
     }.items():
         assert NodeConfig.objects.get(node_key=key).is_enabled
         assert [m.model_name for m in resolved[key].chain] == chain
@@ -114,14 +115,17 @@ def test_export_then_import_round_trips():
     assert json.loads(json.dumps(RegistrySerializer().export())) == exported
 
 
-def test_prices_are_exported_as_exact_text():
+def test_prices_typed_on_a_model_are_exported_as_exact_text():
     RegistrySerializer().load(DefaultRegistry().build())
+    LLMModel.objects.filter(name="openai/gpt-oss-20b").update(
+        input_cost_per_mtok=Decimal("0.075"), output_cost_per_mtok=Decimal("0.3")
+    )
 
     models = {m["name"]: m for m in RegistrySerializer().export()["models"]}
 
     assert models["openai/gpt-oss-20b"]["input_cost_per_mtok"] == "0.075"
-    assert models["openai/gpt-oss-120b"]["output_cost_per_mtok"] == "0.6"
-    assert models["gemini-3.5-flash"]["input_cost_per_mtok"] is None
+    assert models["openai/gpt-oss-20b"]["output_cost_per_mtok"] == "0.3"
+    assert models["gemini-3.6-flash"]["input_cost_per_mtok"] is None  # the seed's prices are ModelPrice rows
 
 
 def test_a_file_that_wrote_prices_as_numbers_still_loads():
@@ -175,7 +179,7 @@ class TestUnboundNodes:
 
         bound = list(NodeModelBinding.objects.filter(node__node_key="prerequisites.plan").order_by("priority"))
         assert [(b.model.provider.key, b.model.name) for b in bound] == [
-            ("groq", "openai/gpt-oss-20b"), ("gemini", "gemini-3.5-flash")
+            ("groq", "openai/gpt-oss-20b"), ("gemini", "gemini-3.6-flash")
         ]  # fmt: skip
         after = {
             (b.node.node_key, b.priority) for b in NodeModelBinding.objects.exclude(node__node_key="prerequisites.plan")
@@ -198,7 +202,7 @@ class TestUnboundNodes:
     def test_only_models_the_install_has_are_used(self):
         call_command("seed_registry")
         self.unbind("prerequisites.plan")
-        LLMModel.objects.filter(name="gemini-3.5-flash").exclude(
+        LLMModel.objects.filter(name="gemini-3.6-flash").exclude(
             pk__in=NodeModelBinding.objects.values("model")
         ).delete()
         NodeModelBinding.objects.filter(model__name="openai/gpt-oss-20b").delete()
@@ -209,13 +213,13 @@ class TestUnboundNodes:
         names = list(
             NodeModelBinding.objects.filter(node__node_key="prerequisites.plan").values_list("model__name", flat=True)
         )
-        assert names == ["gemini-3.5-flash"]
+        assert names == ["gemini-3.6-flash"]
 
     def test_a_node_the_install_has_no_model_for_is_reported_not_guessed(self, capsys):
         call_command("seed_registry")
         self.unbind("prerequisites.plan")
-        NodeModelBinding.objects.filter(model__name__in=["openai/gpt-oss-20b", "gemini-3.5-flash"]).delete()
-        LLMModel.objects.filter(name__in=["openai/gpt-oss-20b", "gemini-3.5-flash"]).delete()
+        NodeModelBinding.objects.filter(model__name__in=["openai/gpt-oss-20b", "gemini-3.6-flash"]).delete()
+        LLMModel.objects.filter(name__in=["openai/gpt-oss-20b", "gemini-3.6-flash"]).delete()
         capsys.readouterr()
 
         call_command("seed_registry")
@@ -261,3 +265,23 @@ def test_seed_command_loads_the_cheap_profile():
 def test_seed_command_refuses_an_unknown_profile():
     with pytest.raises(CommandError, match="profile"):
         call_command("seed_registry", profile="lavish")
+
+
+def test_the_strategy_settings_of_models_and_bindings_round_trip_as_plain_json():
+    from datetime import date
+
+    RegistrySerializer().load(DefaultRegistry().build())
+    LLMModel.objects.filter(name="gemini-3.6-flash").update(shutdown_on=date(2027, 6, 1), tier="T2")
+    exported = json.loads(json.dumps(RegistrySerializer().export()))  # a date must survive JSON
+
+    models = {m["name"]: m for m in exported["models"]}
+    oss = next(n for n in exported["nodes"] if n["node_key"] == "learner.assess")["bindings"][0]
+    assert models["gemini-3.6-flash"]["shutdown_on"] == "2027-06-01"
+    assert models["openai/gpt-oss-120b"]["strict_structured"] is True
+    assert models["openai/gpt-oss-120b"]["max_request_tokens"] == 6000
+    assert models["gemini-3.5-flash-lite"]["reasoning_levels"] == ["minimal", "low", "medium", "high"]
+    assert models["gemini-3.5-flash-lite"]["reasoning_off"] == "minimal"
+    assert oss["max_output_tokens"] == 4400 and oss["fall_through_on"] == []
+
+    RegistrySerializer().load(exported)
+    assert LLMModel.objects.get(name="gemini-3.6-flash").shutdown_on == date(2027, 6, 1)

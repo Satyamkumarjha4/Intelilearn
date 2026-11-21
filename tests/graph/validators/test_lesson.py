@@ -21,6 +21,7 @@ Use cases:
   and msq options sane; short and long criteria add up to the marks; a numerical expression computes and its answer was
   stored; LaTeX is checked
 - question batch: when the cells belong to a lesson, each question must name one of the concepts allowed for its cell
+- question batch: two questions that differ only by a symbol (`3 + 4` and `3 - 4`) are not a repeat
 - interactive plan: unique valid ids, anchors that exist, a media_query for images and GIFs, a purpose that names the
   concept, at least one per page and no more than the maximum
 """
@@ -273,6 +274,15 @@ class TestQuestionBatch:
         assert any(
             "answer was not computed" in p for p in self.problems(mutated(make_blueprint_test()["questions"], change))
         )
+
+    def test_questions_that_differ_only_by_a_symbol_are_not_a_repeat(self):
+        def change(questions):
+            questions[0]["question"] = "What is $3 + 4$?"
+            questions[1]["question"] = "What is $3 - 4$?"
+
+        found = self.problems(mutated(make_blueprint_test()["questions"], change))
+
+        assert not any("Questions must not repeat" in p for p in found)
 
     def test_questions_must_not_repeat_and_ids_must_be_unique(self):
         def change(questions):

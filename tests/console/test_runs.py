@@ -23,8 +23,11 @@ Use cases:
 - Retry is the learner's retry: a failed lesson gets a new run, as staff; other lessons, other graphs and busy lessons
   are 409s; Cancel stops an active run and fails the lesson so it can be retried, once
 - both write an audit entry; neither is open to a learner
+- a model call whose output a validator refused carries that output and what the validator said, for staff only; a call
+  with none carries empty text, and a learner cannot read either
 """
 
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -33,6 +36,7 @@ from console.models import AuditEntry
 from console.services.runs import NodePhases, RunTimeline
 from lessons.models import GraphRun, Lesson
 from lessons.stages import Stage
+from llm_registry.rejections import RejectedOutputs
 
 pytestmark = pytest.mark.django_db
 
@@ -210,8 +214,34 @@ def test_a_model_call_row_says_which_attempt_on_which_model_and_what_came_of_it(
     assert {k: v for k, v in call.items() if k not in ("id", "created_at")} == {
         "node": "page.generate", "provider": "groq", "model": "openai/gpt-oss-120b", "attempt": 2,
         "fallback_index": 1, "status": "invalid_output", "outcome": "failed", "latency_s": 1.5, "tokens_in": 10,
-        "tokens_out": 5, "tool_calls": 2, "cost": "0.001000", "error": "bad json",
+        "tokens_out": 5, "tool_calls": 2, "cost": "0.001000", "error": "bad json", "rejected_output": "",
+        "rejection": "",
     }  # fmt: skip
+
+
+def test_a_call_whose_output_a_validator_refused_shows_it_with_the_reason(staff_client, make_run, make_call):
+    run = make_run(started_at=START)
+    refused = make_call(run_id=run.id, node_key="diagnostic.generate", ago=timedelta(minutes=1))
+    make_call(run_id=run.id, node_key="diagnostic.review", ago=timedelta(minutes=2))
+    RejectedOutputs().record(refused.id, {"diagnostic": [{"id": "q1", "options": ["a", "a"]}]},
+                             ["Question q1: options must all be different."])  # fmt: skip
+
+    calls = {c["node"]: c for c in staff_client.get(f"/api/console/runs/{run.id}").json()["model_calls"]}
+
+    assert json.loads(calls["diagnostic.generate"]["rejected_output"]) == {
+        "diagnostic": [{"id": "q1", "options": ["a", "a"]}]
+    }
+    assert calls["diagnostic.generate"]["rejection"] == "Question q1: options must all be different."
+    assert (calls["diagnostic.review"]["rejected_output"], calls["diagnostic.review"]["rejection"]) == ("", "")
+
+
+def test_a_learner_cannot_read_a_refused_output(learner_client, staff_client, make_run, make_call):
+    run = make_run(started_at=START)
+    refused = make_call(run_id=run.id)
+    RejectedOutputs().record(refused.id, "what the learner asked about", ["refused"])
+
+    assert learner_client.get(f"/api/console/runs/{run.id}").status_code == 404
+    assert "what the learner asked about" in staff_client.get(f"/api/console/runs/{run.id}").text
 
 
 def test_the_run_says_what_staff_can_do_with_it(staff_client, make_run, make_lesson):
