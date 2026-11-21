@@ -44,6 +44,7 @@ Legend for status columns: ✅ in code · ◐ partly (functions still to wrap in
   - [4.24 `graph`, `lessons` and `quizzes`: concept tags and page links (Phase 9.7)](#424-graph-lessons-and-quizzes-concept-tags-and-page-links-phase-97)
   - [4.25 `lessons` and `graph`: retiring the legacy test, choice and call (Phase 9.8)](#425-lessons-and-graph-retiring-the-legacy-test-choice-and-call-phase-98)
   - [4.26 `credits`: ledger, gate, earning and plans (Phases 10.1 to 10.4)](#426-credits-ledger-gate-earning-and-plans-phases-101-to-104)
+  - [4.27 Audit tooling: failing on cue, the safety check and the personas (pre-launch audit)](#427-audit-tooling-failing-on-cue-the-safety-check-and-the-personas-pre-launch-audit)
 - [5. How to extend](#5-how-to-extend)
 - [Refactor backlog](#refactor-backlog)
 
@@ -3584,6 +3585,114 @@ classDiagram
 - **The hourly job (T14).** `HourlyTick` runs the plan-period sweep (10.4), `ExpiryService`, `HoldReconciler` and `LedgerAudit`, each harmless to repeat; a part that raises is reported and the others still run, and a break in the ledger is logged as an error. The Celery task `credits.tick` is thin (it builds a `HourlyTick` and calls `run`), and `CELERY_BEAT_SCHEDULE` runs it every 3600 seconds in the single `beat` service.
 - **Closing an account (P5).** The ledger is append-only and the user is a protected key, so a closed account cannot be deleted; `AccountErasure` **anonymises it in place**. Open reserves are released first, then the learner's lessons and quizzes are erased through the existing services (which also erase checkpoints and model calls), and then, together: one `forfeit` ledger row writes off the balance (`Ledger.forfeit`, so the ledger still equals the buckets), streak days and the cached streak are deleted, the profile is emptied, and the user row gets a scrubbed email (`deleted-<id>@erased.invalid`) and name, an unusable password, `is_active` false, no staff powers and `deleted_at`. Ledger rows are never edited. An attempt that stops half way is finished by the next, because the anonymising comes last; an erased account is reported as such. `manage.py erase_account IDENTIFIER [--dry-run]`. A staff member's console audit entries keep their email by design (the trail's purpose is to say who it was).
 - **Every trace, not only the lessons (`AccountTraces`, `UserDataMap`; added after phase 10.9).** Closing an account also removes what a person leaves without making a lesson: every refresh token with its blacklist row (`token_blacklist.OutstandingToken`), the Django admin sessions of the account (read by `_auth_user_id`, as a session has no relation to the user), the admin's own log rows **about** the account and its wallet (they quote the name and email; rows where the account was the actor stay), and the free text (`reason`, `email`, `name`) in change-log entries about the learner, whose actions and amounts stay. `UserDataMap` lists every table that points at a user and what becomes of it (erased, scrubbed, kept without identity, links cleared), plus the places with no relation (sessions, admin log, change log, model calls, checkpoints, caches); a test reads the models, so a relation that is not listed, or a listed one that no longer exists, fails it. The report counts each trace, a dry run counts them without changing anything, and an optional `trail` writes one `learner.erase` entry in the same transaction as the anonymising.
+
+### 4.27 Audit tooling: failing on cue, the safety check and the personas (pre-launch audit)
+
+The pre-launch audit ([RUNBOOK](../audit/RUNBOOK.md), stack in [testing.md 6.1c](../process/testing.md)) needs three things the app did not have: a model that fails on request, a guarantee that it never runs in production, and learners to walk the app with. None is product behaviour; each is a few classes with one job.
+
+```mermaid
+classDiagram
+    direction LR
+    class FailurePlan {
+        +add(mode, schema, times, delay_s) FailureRule
+        +take(schema) FailureRule
+        +reset()
+        +snapshot() dict
+    }
+    class FailureRule {
+        <<frozen>>
+        +mode
+        +schema
+        +times
+        +delay_s
+    }
+    class FailureMode {
+        <<abstract>>
+        +respond(FailureContext) Reply
+    }
+    class FailureModes {
+        +__getitem__(name) FailureMode
+    }
+    FailurePlan o-- FailureRule
+    FailurePlan --> FailureModes
+    FailureModes o-- FailureMode
+    FailureMode <|-- InvalidJson
+    FailureMode <|-- RejectedOutput
+    FailureMode <|-- Timeout
+    FailureMode <|-- RateLimited
+    FailureMode <|-- Unauthorized
+
+    class FakeLLMSafety {
+        +errors() Error[]
+        +registry_points_at_the_fake() Error[]
+        +the_fake_key_is_set() Error[]
+    }
+
+    class PersonaStep {
+        <<abstract>>
+        +label
+        +done(user, world) bool
+        +run(user, world)
+        +apply(user, world) bool
+    }
+    PersonaStep <|-- LeaveCredits
+    PersonaStep <|-- TopUpTo
+    PersonaStep <|-- HoldPlan
+    PersonaStep <|-- HaveStreak
+    PersonaStep <|-- HaveHistory
+    class Persona {
+        <<frozen>>
+        +slug / name / language
+        +sign_in / onboarded / staff
+        +email
+    }
+    Persona o-- PersonaStep
+    class AuditPersonas {
+        +all() Persona[]
+    }
+    AuditPersonas ..> Persona
+    class AccountKind {
+        <<abstract>>
+        +create(persona, password) User
+        +ensure(persona, password) User, bool
+    }
+    AccountKind <|-- PasswordAccounts
+    AccountKind <|-- GoogleAccounts
+    class PersonaAccounts
+    PersonaAccounts o-- AccountKind
+    class AuditSeeder {
+        +seed(only, skip, progress) SeedReport
+    }
+    class SeedGuard {
+        +password() str
+    }
+    class SeedWorld
+    class PlanPurchaser {
+        <<protocol>>
+        +buy(user, plan_key, quantity)
+    }
+    class HistoryBuilder {
+        <<protocol>>
+        +build(user)
+    }
+    AuditSeeder --> PersonaAccounts
+    AuditSeeder --> SeedGuard
+    AuditSeeder --> AuditPersonas
+    AuditSeeder --> SeedWorld
+    SeedWorld o-- PlanPurchaser
+    SeedWorld o-- HistoryBuilder
+    PlanPurchaser <|.. ApiPlanPurchaser
+    HistoryBuilder <|.. ApiLearnerHistory
+    class AuditSpend {
+        +from_environment() AuditSpend
+        +report() SpendReport
+    }
+```
+
+- **`FailurePlan` and the modes** (`tests/e2e/fake_failures.py`; Strategy, one class per failure, registered in `FAILURES`; a new failure is a new class). The fake server asks the plan on every call, so a rule fires for a schema (or `*`) a set number of times, or until reset (`times` -1). `RejectedOutput` answers with a payload that fits the schema and that the real validators refuse (`Canned.rejected_<Schema>`; today `DiagnosticBundle`); a schema with no such variant is a 400 that says so, never a silent success. The plan is thread-safe: the server answers each request on its own thread.
+- **`FakeLLMSafety`** (`llm_registry/checks.py`; `llm_registry.E001`, `E002`). Refuses to start when `DJANGO_DEBUG` is off and an enabled provider is the fake (its key variable or its address), or `FAKE_LLM_API_KEY` holds anything. The same idea as `PaymentSafety`; it names the setting, never a value.
+- **Personas** (`core/audit/`). A `Persona` is data plus an ordered tuple of `PersonaStep`s (Template Method: `apply` runs `run` only when `done` is false, so seeding twice changes nothing). `AccountKind` (Strategy) makes the account through `AccountActivation`, the class the real sign-up uses. `SeedWorld` carries the collaborators the steps need, with `PlanPurchaser` and `HistoryBuilder` as ports: production wiring (`DefaultSeedWorld`) is `ApiPlanPurchaser` (the order endpoint paid by the fake gateway's signed callback) and `ApiLearnerHistory` (the lesson endpoints, waiting for the worker), both signed in as the persona in this process; tests hand in fakes. `SeedGuard` refuses outside `DJANGO_DEBUG`, with Supabase, or without a password of 12 characters or more. `AuditSpend` sums `ModelCall.cost_usd` against `LIVE_MAX_COST_USD` and counts unpriced calls apart.
+- A new persona is a row in `AuditPersonas.all()`; a new thing a persona can have is a new `PersonaStep`; neither touches `AuditSeeder`.
 
 ## 5. How to extend
 
