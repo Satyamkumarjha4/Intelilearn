@@ -6,6 +6,9 @@
 - `resolved_model(name, **overrides)` and `make_snapshot(node_key, output, chain)`: build gateway inputs without the
   database.
 - `FakeChat(*script)`: a scripted stand-in for a LangChain chat model; each invoke returns (or raises) the next item.
+- `_provider_keys_are_set` (autouse): GEMINI_API_KEY and GROQ_API_KEY hold a dummy value, because the resolver leaves
+  out a layer whose provider has no key. Without it a test passes on a machine whose shell has the keys and fails in
+  CI, which has none (27 tests did, on the first CI run after Phase M). A test about a missing key deletes it itself.
 
 Test modules can't import from a conftest (importlib import mode), so the helpers are served as fixtures.
 """
@@ -17,6 +20,13 @@ import pytest
 from llm_registry.models import LLMModel, NodeConfig, NodeModelBinding, Provider
 from llm_registry.node_configs import NodeConfigSync
 from llm_registry.resolver import ResolvedModel, ResolvedNode
+
+
+@pytest.fixture(autouse=True)
+def _provider_keys_are_set(monkeypatch):
+    # Never read the developer's real keys either: the value only has to exist.
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
 
 
 @pytest.fixture
