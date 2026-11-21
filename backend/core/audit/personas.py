@@ -13,6 +13,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from .errors import SeedFailed
+
 
 class PlanPurchaser(Protocol):
     def buy(self, user, plan_key: str, quantity: int = 1) -> None:
@@ -150,16 +152,36 @@ class HaveStreak(PersonaStep):
 
 @dataclass(frozen=True)
 class HaveHistory(PersonaStep):
+    """A whole history: a lesson, two test attempts (the second is the retest) and a quick quiz. One that was started
+    and not finished (a worker that was not running) is not done, and is not added to: it stops the seed with what to
+    do, so the persona never holds two half histories."""
+
+    ATTEMPTS = 2
+
     @property
     def label(self) -> str:
         return "lesson, test attempts, retest, study sheet and quick quiz"
 
-    def done(self, user, world):
+    def started(self, user) -> bool:
         from lessons.models import Lesson
 
         return Lesson.objects.filter(owner=user).exists()
 
+    def done(self, user, world):
+        from lessons.models import TestSubmission
+        from quizzes.models import QuickQuiz
+
+        return (
+            TestSubmission.objects.filter(lesson__owner=user).count() >= self.ATTEMPTS
+            and QuickQuiz.objects.filter(owner=user).exists()
+        )
+
     def run(self, user, world):
+        if self.started(user):
+            raise SeedFailed(
+                f"{user.email} has a history that was started and not finished. Run `make audit-down`, then "
+                "`make audit-up` again (the worker must be running while it is built)."
+            )
         world.history.build(user)
 
 

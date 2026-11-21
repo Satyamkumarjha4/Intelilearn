@@ -9,14 +9,16 @@ right things in the right order, waits for the worker, and fails with a message 
 Use cases:
 - Calls turns an unexpected status into SeedFailed that names the call and the status
 - ApiPlanPurchaser buys a plan: the order is paid, the purchase is fulfilled and the credits arrive
-- ApiLearnerHistory asks for the lesson, waits until it is ready, takes two test attempts (the second is the retest),
-  asks for the cheat sheet and waits for it, asks for a quick quiz from the lesson and waits until it is ready
+- ApiLearnerHistory asks for the lesson, waits until it is ready, takes two test attempts (the second is the retest,
+  whose questions the worker writes, so it waits until the attempt can be answered), asks for the cheat sheet and
+  waits for it, asks for a quick quiz from the lesson and waits until it is ready
 - a build that is not ready in time fails, naming what it waited for and asking whether the worker is running
 """
 
 import pytest
 
-from core.audit.api import ApiLearnerHistory, ApiPlanPurchaser, Calls, SeedFailed
+from core.audit.api import ApiLearnerHistory, ApiPlanPurchaser, Calls
+from core.audit.errors import SeedFailed
 from credits.ledger import Ledger
 from credits.models import PlanPurchase
 from credits.plans.seed import PlanSeed
@@ -62,9 +64,10 @@ class TestPlanPurchaser:
 class Script:
     """A scripted `Calls`: each GET of a lesson or quiz answers from a queue, and every call is remembered."""
 
-    def __init__(self, lesson_states, quiz_states):
+    def __init__(self, lesson_states, quiz_states, attempt_states=()):
         self.log = []
         self.lessons, self.quizzes = list(lesson_states), list(quiz_states)
+        self.attempts = list(attempt_states) or [{"status": "in_progress"}]
 
     def __call__(self, user):
         return self
@@ -77,6 +80,8 @@ class Script:
             return {"attempt_id": f"A{sum(1 for m, p in self.log if p.endswith('/test/attempts'))}"}
         if method == "post" and path == "/api/quick-quizzes":
             return {"quiz_id": "Q1"}
+        if method == "get" and "/test/attempts/" in path:
+            return self.attempts.pop(0) if len(self.attempts) > 1 else self.attempts[0]
         if method == "get" and path == "/api/lessons/L1":
             return self.lessons.pop(0) if len(self.lessons) > 1 else self.lessons[0]
         if method == "get" and path == "/api/quick-quizzes/Q1":
@@ -90,7 +95,11 @@ BUILDING = {"stage": "building", "active_run_id": "R1", "materials": []}
 
 class TestHistory:
     def test_it_asks_for_each_thing_in_order_and_waits_for_the_worker(self, user):
-        script = Script([BUILDING, READY], [{"stage": "building"}, {"stage": "ready"}])
+        script = Script(
+            [BUILDING, READY],
+            [{"stage": "building"}, {"stage": "ready"}],
+            [{"status": "generating"}, {"status": "generating"}, {"status": "in_progress"}],
+        )
         history = ApiLearnerHistory(sleep=lambda s: None, calls=script)
 
         history.build(user)
@@ -106,6 +115,12 @@ class TestHistory:
             "/api/quick-quizzes",
         ]
         assert ("get", "/api/quick-quizzes/Q1") in script.log
+        # the retest is not answered until its questions are written: a submit comes after a read that said so
+        reads = [
+            i for i, (m, p) in enumerate(script.log) if m == "get" and p.startswith("/api/lessons/L1/test/attempts/")
+        ]
+        submits = [i for i, (m, p) in enumerate(script.log) if m == "post" and p.endswith("/submit")]
+        assert reads[0] < submits[0] and reads[-1] < submits[-1]
 
     def test_a_build_that_is_not_ready_in_time_says_what_it_waited_for(self, user):
         ticks = iter(range(0, 10_000, 100))

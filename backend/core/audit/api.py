@@ -15,9 +15,7 @@ from rest_framework.test import APIClient
 
 from payments.fake import FakeGateway
 
-
-class SeedFailed(Exception):
-    """A step did not work; the message says which call and what came back (never a secret)."""
+from .errors import SeedFailed
 
 
 class Calls:
@@ -90,9 +88,9 @@ class ApiLearnerHistory:
             "lesson_id"
         ]
         self._until(lambda: calls.call("get", f"/api/lessons/{lesson_id}"), self._ready, f"lesson {lesson_id}")
-        for _ in range(2):  # the first attempt, then the retest
-            attempt = calls.call("post", f"/api/lessons/{lesson_id}/test/attempts")
-            calls.call("post", f"/api/lessons/{lesson_id}/test/attempts/{attempt['attempt_id']}/submit", {})
+        for number in (1, 2):  # the first attempt, then the retest
+            attempt_id = self._open_attempt(calls, lesson_id, number)
+            calls.call("post", f"/api/lessons/{lesson_id}/test/attempts/{attempt_id}/submit", {})
         calls.call("post", f"/api/lessons/{lesson_id}/materials", {"kinds": ["cheat_sheet"]})
         self._until(
             lambda: calls.call("get", f"/api/lessons/{lesson_id}"),
@@ -114,6 +112,16 @@ class ApiLearnerHistory:
             lambda quiz: quiz.get("stage") == "ready",
             f"quick quiz {quiz_id}",
         )
+
+    def _open_attempt(self, calls, lesson_id: str, number: int) -> str:
+        """Starts an attempt and waits until it can be answered: a retake's questions are written by the worker."""
+        attempt_id = calls.call("post", f"/api/lessons/{lesson_id}/test/attempts")["attempt_id"]
+        self._until(
+            lambda: calls.call("get", f"/api/lessons/{lesson_id}/test/attempts/{attempt_id}"),
+            lambda attempt: attempt.get("status") == "in_progress",
+            f"attempt {number} of lesson {lesson_id}",
+        )
+        return attempt_id
 
     @staticmethod
     def _ready(lesson: dict) -> bool:

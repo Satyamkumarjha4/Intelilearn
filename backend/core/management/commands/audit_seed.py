@@ -6,7 +6,7 @@ persona names and addresses, never a password (the audit keeps those in a git-ig
 
 from django.core.management.base import BaseCommand, CommandError
 
-from core.audit.api import SeedFailed
+from core.audit.errors import SeedFailed
 from core.audit.seeder import AuditSeeder, SeedRefused
 from core.audit.world import DefaultSeedWorld
 

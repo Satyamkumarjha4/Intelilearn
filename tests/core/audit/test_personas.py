@@ -12,7 +12,8 @@ Use cases:
 - TopUpTo raises a balance to a floor and leaves a bigger one alone
 - HoldPlan buys the plan through the purchaser unless the learner already has it
 - HaveStreak puts a run of days ending the day before yesterday, so yesterday's miss is repairable, and does it once
-- HaveHistory builds a history unless the learner already has a lesson
+- HaveHistory builds a history for a learner who has none, leaves a whole one (a lesson, two attempts, a quiz) alone,
+  and stops with what to do when one was started and not finished, instead of adding a second
 - a step applied twice does its work once, and says whether it did anything
 """
 
@@ -22,6 +23,7 @@ import pytest
 from django.utils import timezone
 
 from accounts.emailrules.canonical import EmailCanonicalizer
+from core.audit.errors import SeedFailed
 from core.audit.personas import (
     AuditPersonas,
     HaveHistory,
@@ -38,6 +40,7 @@ from credits.earning.zone import LearnerZone
 from credits.ledger import Ledger
 from credits.models import Plan, PlanPurchase
 from credits.plans.seed import PlanSeed
+from lessons.models import TestSubmission
 
 pytestmark = pytest.mark.django_db
 
@@ -165,11 +168,26 @@ class TestStreak:
 
 
 class TestHistory:
-    def test_it_builds_a_history_unless_the_learner_has_a_lesson(self, user, world, recorder, make_lesson):
+    def test_it_builds_a_history_for_a_learner_who_has_none(self, user, world, recorder):
         assert HaveHistory().apply(user, world) is True
+
         assert recorder.built == [user.pk]
 
-        make_lesson()
+    def test_a_whole_history_two_attempts_and_a_quiz_is_done(self, user, world, recorder, make_lesson, make_quiz):
+        lesson = make_lesson()
+        for number in (1, 2):
+            TestSubmission.objects.create(lesson=lesson, attempt_no=number, status="graded", questions=[], answers={})
+        make_quiz()
 
         assert HaveHistory().apply(user, world) is False
-        assert recorder.built == [user.pk]
+        assert recorder.built == []
+
+    def test_a_history_that_was_started_and_not_finished_stops_the_seed_with_what_to_do(
+        self, user, world, recorder, make_lesson
+    ):
+        make_lesson()
+
+        with pytest.raises(SeedFailed, match="make audit-down"):
+            HaveHistory().apply(user, world)
+
+        assert recorder.built == []

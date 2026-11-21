@@ -24,7 +24,7 @@ from credits.earning.zone import LearnerZone
 from credits.ledger import Ledger
 from credits.models import Plan, PlanPurchase
 from credits.plans.seed import PlanSeed
-from lessons.models import Lesson
+from lessons.models import Lesson, TestSubmission
 
 pytestmark = pytest.mark.django_db
 
@@ -32,10 +32,11 @@ PASSWORD = "audit-test-password-1"
 
 
 class Shop:
-    """The two slow steps, made quick: a plan is a purchase row, a history is one lesson."""
+    """The two slow steps, made quick: a plan is a purchase row, a history is a lesson, two attempts and a quiz."""
 
-    def __init__(self):
+    def __init__(self, make_quiz):
         self.bought, self.built = [], []
+        self.make_quiz = make_quiz
 
     def buy(self, user, plan_key, quantity=1):
         from django.utils import timezone
@@ -47,13 +48,16 @@ class Shop:
         self.bought.append(plan_key)
 
     def build(self, user):
-        Lesson.objects.create(owner=user, topic="Binary search")
+        lesson = Lesson.objects.create(owner=user, topic="Binary search")
+        for number in (1, 2):
+            TestSubmission.objects.create(lesson=lesson, attempt_no=number, status="graded", questions=[], answers={})
+        self.make_quiz(owner=user)
         self.built.append(user.pk)
 
 
 @pytest.fixture
-def shop():
-    return Shop()
+def shop(make_quiz):
+    return Shop(make_quiz)
 
 
 @pytest.fixture
