@@ -1,7 +1,7 @@
 """`manage.py check` warnings for registry problems that would only surface mid-lesson otherwise.
 Grouped into one warning per kind of problem, since they usually share a cause (e.g. one missing key)."""
 
-from django.core.checks import Info, Tags, Warning, register
+from django.core.checks import Error, Info, Tags, Warning, register
 from django.db import DatabaseError
 
 
@@ -76,6 +76,75 @@ class RegistryHealth:
 @register(Tags.database)
 def registry_check(app_configs=None, **kwargs):
     return RegistryHealth().warnings()
+
+
+class FakeLLMSafety:
+    """The start-up refusals that keep the scripted fake LLM (tests/e2e/fake_llm_server.py) off a production host.
+
+    It answers every node with canned output and can be told to fail on cue; behind a real site it would hand every
+    learner the same lesson. It exists only on the throwaway stacks, which run with DEBUG on (as the fake payment
+    gateway does, `payments.E004`). Messages name settings and providers, never a value.
+    """
+
+    KEY_ENV = "FAKE_LLM_API_KEY"
+    FAKE_HOSTS = frozenset({"fake-llm.lan"})  # the name the throwaway stacks give the fake server
+
+    def __init__(self, providers=None):
+        self._providers = providers if providers is not None else self._enabled_providers
+
+    def errors(self) -> list[Error]:
+        from django.conf import settings
+
+        if settings.DEBUG:
+            return []
+        return [*self.registry_points_at_the_fake(), *self.the_fake_key_is_set()]
+
+    def registry_points_at_the_fake(self) -> list[Error]:
+        try:
+            fakes = [p.key for p in self._providers() if self._is_fake(p)]
+        except DatabaseError:
+            return []  # not migrated yet: nothing is bound
+        if not fakes:
+            return []
+        return [
+            Error(
+                f"The registry has an enabled provider that is the fake LLM: {', '.join(sorted(fakes))}.",
+                hint="The fake LLM exists only on the throwaway test stacks, which run with DJANGO_DEBUG=true. "
+                "Switch the provider off or remove it, and bind real models.",
+                id="llm_registry.E001",
+            )
+        ]
+
+    def the_fake_key_is_set(self) -> list[Error]:
+        import os
+
+        if not os.environ.get(self.KEY_ENV):
+            return []
+        return [
+            Error(
+                f"{self.KEY_ENV} is set while DJANGO_DEBUG is false.",
+                hint=f"Remove {self.KEY_ENV} from this environment: it only means something on the test stacks.",
+                id="llm_registry.E002",
+            )
+        ]
+
+    @staticmethod
+    def _enabled_providers():
+        from .models import Provider
+
+        return list(Provider.objects.filter(is_enabled=True))
+
+    @classmethod
+    def _is_fake(cls, provider) -> bool:
+        from urllib.parse import urlparse
+
+        host = urlparse(provider.base_url or "").hostname or ""
+        return provider.api_key_env == cls.KEY_ENV or host in cls.FAKE_HOSTS
+
+
+@register(Tags.database)
+def fake_llm_is_not_in_production(app_configs=None, **kwargs):
+    return FakeLLMSafety().errors()
 
 
 class TracingHealth:
