@@ -86,6 +86,10 @@ class NodeDetailView(ConsoleView):
                 enabled=b["enabled"],
                 params=b["overrides"].get("params", {}),
                 reasoning_effort=b["overrides"].get("reasoning_effort", ""),
+                max_output_tokens=b["max_output_tokens"],
+                timeout_s=b["timeout_s"],
+                structured_mode=b["structured_mode"],
+                fall_through_on=b["fall_through_on"],
             )
             for b in data["bindings"]
         )

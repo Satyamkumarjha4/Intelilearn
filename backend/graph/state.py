@@ -120,6 +120,7 @@ class FlowState(TypedDict, total=False):
     attempt_id: str  # the retake being prepared (question_bank graph)
     attempts: Annotated[dict[str, int], Reducers.merge_counts]
     feedback: Annotated[dict[str, list[str]], Reducers.merge_dicts]
+    last_calls: Annotated[dict[str, int], Reducers.merge_dicts]  # feedback key → the `ModelCall` that wrote its output
     warnings: Annotated[list[str], operator.add]
     failed_node: str | None  # where await_retry resumes
     retry_keys: list[str]  # attempt counters reset on retry

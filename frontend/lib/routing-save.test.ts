@@ -34,7 +34,7 @@ const node = (key: string): NodeRouting => ({
   max_tool_steps: null,
   timeout_s: 60,
   params_override: {},
-  bindings: [{ model: 1, model_label: "groq/a", enabled: true, max_retries: 2, overrides: { params: {}, reasoning_effort: "" }, problems: [] }],
+  bindings: [{ model: 1, model_label: "groq/a", enabled: true, max_retries: 2, overrides: { params: {}, reasoning_effort: "" }, max_output_tokens: null, timeout_s: null, structured_mode: "", fall_through_on: [], price: null, problems: [] }],
 });
 
 function fake(refuse: Record<string, unknown> = {}) {

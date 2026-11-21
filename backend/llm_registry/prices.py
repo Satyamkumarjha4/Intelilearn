@@ -1,97 +1,151 @@
-"""What each model costs per million tokens (US dollars), where the figure was read and when.
+"""What each model costs per million tokens (US dollars), the page it was read from, the day it was read, and the dates
+it applies to.
 
-`ModelCall.cost` is `input_tokens × input price + output_tokens × output price`, and only exists when the model has a
-price. A price here was read from the provider's own pricing page; a model whose price could not be confirmed on an
-official page has none (an entry with `None` prices and a note saying why) and is listed by
-`manage.py seed_registry --prices` instead of being guessed. To confirm one: read the page, put the figures and the
-date here, then run `seed_registry --prices` (it fills models that have no price and never overwrites one that has).
+The book is the seed of the `ModelPrice` table: `PriceBook().fill()` creates a row for every entry whose model is in
+the registry and never changes a row that is already there (an admin's figure wins). Every figure was read from the
+provider's own pricing page, on the day written beside it; a price that has an end date (a promo) is two entries, the
+promo and what follows it, so the cost of a call is the price of the day it was made. Output includes thinking tokens:
+every provider bills them as output.
 
-Output tokens include the model's thinking tokens (both providers bill them as output).
+A model with no entry is listed by `fill` and has no cost until someone reads its page and adds it here. Never guess.
 """
 
 from dataclasses import dataclass, field
+from datetime import date
 from decimal import Decimal
 from typing import ClassVar
 
-GEMINI_PRICING = "https://ai.google.dev/gemini-api/docs/pricing"
+GEMINI_PRICING = "https://aistudio.google.com/docs/pricing"
 GROQ_MODELS = "https://console.groq.com/docs/models"
-
-_GEMINI_UNCONFIRMED = (
-    "Not confirmed: that page now redirects to aistudio.google.com/docs/pricing, which could not be read when this "
-    "was checked, so no figure is used. Read the page and fill it in."
-)
+OPENAI_PRICING = "https://developers.openai.com/api/docs/pricing"
+ANTHROPIC_PRICING = "https://platform.claude.com/docs/en/about-claude/pricing"
+READ_ON = "2026-11-15"
+PROMO_END, AFTER_PROMO = date(2026, 12, 31), date(2027, 1, 1)
 
 
 @dataclass(frozen=True)
-class ModelPrice:
+class PriceEntry:
     provider: str
     model: str
-    input_per_mtok: Decimal | None
-    output_per_mtok: Decimal | None
+    input_per_mtok: Decimal
+    output_per_mtok: Decimal
     source_url: str
     checked_on: str  # the day the page was read, ISO
+    cached_input_per_mtok: Decimal | None = None
+    cache_write_per_mtok: Decimal | None = None
+    long_context_threshold: int | None = None
+    long_input_per_mtok: Decimal | None = None
+    long_output_per_mtok: Decimal | None = None
+    long_cached_input_per_mtok: Decimal | None = None
+    valid_from: date | None = None
+    valid_until: date | None = None
     note: str = ""
 
-    @classmethod
-    def priced(cls, provider: str, model: str, source: str, day: str, price_in: str, price_out: str) -> "ModelPrice":
-        return cls(provider, model, Decimal(price_in), Decimal(price_out), source, day)
+    @property
+    def label(self) -> str:
+        return f"{self.provider}/{self.model}"
 
 
-@dataclass(frozen=True)
+def entry(
+    provider: str,
+    model: str,
+    source: str,
+    price_in: str,
+    price_out: str,
+    cached: str | None = None,
+    *,
+    write: str | None = None,
+    long: tuple[int, str, str, str | None] | None = None,
+    **window,
+) -> PriceEntry:
+    """One priced model, prices written as text so no float ever touches them. `long` is the long-context set: the
+    threshold in tokens, then input, output and cached input; `window` is `valid_from` and `valid_until`."""
+    dec = lambda v: None if v is None else Decimal(v)  # noqa: E731
+    threshold, long_in, long_out, long_cached = long or (None, None, None, None)
+    return PriceEntry(
+        provider, model, Decimal(price_in), Decimal(price_out), source, READ_ON, dec(cached), dec(write),
+        threshold, dec(long_in), dec(long_out), dec(long_cached), **window,
+    )  # fmt: skip
+
+
+def flash(model: str) -> tuple[PriceEntry, PriceEntry]:
+    """Gemini 3.6 and 3.8 Flash: a promo price to the end of 2026, double from 2027-01-01."""
+    promo = entry("gemini", model, GEMINI_PRICING, "0.75", "3.75", "0.075", valid_until=PROMO_END,
+                  note="Promotional price, shown with its end date on the pricing page.")  # fmt: skip
+    after = entry("gemini", model, GEMINI_PRICING, "1.50", "7.50", "0.15", valid_from=AFTER_PROMO)
+    return promo, after
+
+
+@dataclass
 class FillReport:
-    filled: list[str] = field(default_factory=list)  # priced now
-    unpriced: list[str] = field(default_factory=list)  # in the book, but without a confirmed price
-    unknown: list[str] = field(default_factory=list)  # not in the book at all
+    filled: list[str] = field(default_factory=list)  # a row was created
+    unchanged: list[str] = field(default_factory=list)  # the model already has a price for those dates
+    unpriced: list[str] = field(default_factory=list)  # a model in the registry that the book has no entry for
 
 
 class PriceBook:
-    ENTRIES: ClassVar[tuple[ModelPrice, ...]] = (
-        # Groq: the model table on its models page, "PRICE PER 1M TOKENS" (printed with "$"), on-demand, 2026-11-15.
-        ModelPrice.priced("groq", "openai/gpt-oss-120b", GROQ_MODELS, "2026-11-15", "0.15", "0.60"),
-        ModelPrice.priced("groq", "openai/gpt-oss-20b", GROQ_MODELS, "2026-11-15", "0.075", "0.30"),
-        ModelPrice(
-            "groq",
-            "llama-3.3-70b-versatile",
-            None,
-            None,
-            GROQ_MODELS,
-            "2026-11-15",
-            "The page prints ContactSales for both prices (an enterprise model): no on-demand price is published.",
-        ),
-        *(
-            ModelPrice("gemini", name, None, None, GEMINI_PRICING, "2026-11-15", _GEMINI_UNCONFIRMED)
-            for name in (
-                "gemini-3.5-flash",
-                "gemini-3.5-flash-lite",
-                "gemini-3.1-flash-lite",
-                "gemini-2.5-flash",
-                "gemini-2.5-flash-lite",
-                "gemini-2.5-pro",
-            )
-        ),
+    ENTRIES: ClassVar[tuple[PriceEntry, ...]] = (
+        # Groq: "PRICE PER 1M TOKENS" on the models page; cached input is "50% off" the prompt-caching page.
+        entry("groq", "openai/gpt-oss-120b", GROQ_MODELS, "0.15", "0.60", "0.075"),
+        entry("groq", "openai/gpt-oss-20b", GROQ_MODELS, "0.075", "0.30", "0.0375"),
+        # Gemini: the Standard tab of the pricing page, paid tier; output includes thinking tokens.
+        entry("gemini", "gemini-3.1-flash-lite", GEMINI_PRICING, "0.25", "1.50", "0.025"),
+        entry("gemini", "gemini-3.5-flash-lite", GEMINI_PRICING, "0.30", "2.50", "0.03"),
+        *flash("gemini-3.6-flash"),
+        *flash("gemini-3.8-flash"),
+        entry("gemini", "gemini-4-hydrogen", GEMINI_PRICING, "1.50", "7.50", "0.075"),
+        # OpenAI: short context is up to 272K input tokens, long context above.
+        entry("openai", "gpt-6-luna", OPENAI_PRICING, "0.10", "0.50", "0.01", long=(272_000, "0.20", "0.75", "0.02")),
+        entry(
+            "openai", "gpt-6.1-terra", OPENAI_PRICING, "1.00", "5.00", "0.05", long=(272_000, "2.00", "7.50", "0.10")
+        ),  # fmt: skip
+        # Anthropic: Haiku 5.5 is cheaper up to a 100K-token prompt; the 5-minute cache write is 1.25 times the input.
+        entry(
+            "anthropic",
+            "claude-haiku-5-5",
+            ANTHROPIC_PRICING,
+            "0.10",
+            "0.50",
+            "0.01",
+            write="0.125",
+            long=(100_000, "0.50", "2.50", "0.05"),
+        ),  # fmt: skip
+        entry("anthropic", "claude-sonnet-5-5", ANTHROPIC_PRICING, "2.00", "10.00", "0.10", write="2.50"),
     )
 
-    def entry(self, provider: str, model: str) -> ModelPrice | None:
-        return next((e for e in self.ENTRIES if (e.provider, e.model) == (provider, model)), None)
+    def entries_of(self, provider: str, model: str) -> list[PriceEntry]:
+        return [e for e in self.ENTRIES if (e.provider, e.model) == (provider, model)]
 
-    def fill_missing(self) -> FillReport:
-        """Price the models that have no price at all. A model with any price already set (an admin's figure) is left
-        alone."""
-        from .models import LLMModel
+    def fill(self) -> FillReport:
+        """A `ModelPrice` row for every entry whose model is in the registry. A row an admin has set for the same dates
+        is left alone, and a model the book has no entry for is reported, not guessed."""
+        from django.core.exceptions import ValidationError
 
-        filled, unpriced, unknown = [], [], []
-        rows = LLMModel.objects.select_related("provider").filter(
-            input_cost_per_mtok__isnull=True, output_cost_per_mtok__isnull=True
-        )
-        for row in rows.order_by("provider__key", "name"):
-            label = f"{row.provider.key}/{row.name}"
-            entry = self.entry(row.provider.key, row.name)
-            if entry is None:
-                unknown.append(label)
-            elif entry.input_per_mtok is None or entry.output_per_mtok is None:
-                unpriced.append(label)
-            else:
-                row.input_cost_per_mtok, row.output_cost_per_mtok = entry.input_per_mtok, entry.output_per_mtok
-                row.save(update_fields=["input_cost_per_mtok", "output_cost_per_mtok"])
-                filled.append(label)
-        return FillReport(filled, unpriced, unknown)
+        from .models import LLMModel, ModelPrice
+
+        report = FillReport()
+        for model in LLMModel.objects.select_related("provider").order_by("provider__key", "name"):
+            label = f"{model.provider.key}/{model.name}"
+            entries = self.entries_of(model.provider.key, model.name)
+            if not entries:
+                report.unpriced.append(label)
+                continue
+            created = False
+            for e in entries:
+                row = ModelPrice(
+                    model=model, input_per_mtok=e.input_per_mtok, output_per_mtok=e.output_per_mtok,
+                    cached_input_per_mtok=e.cached_input_per_mtok, cache_write_per_mtok=e.cache_write_per_mtok,
+                    long_context_threshold=e.long_context_threshold, long_input_per_mtok=e.long_input_per_mtok,
+                    long_output_per_mtok=e.long_output_per_mtok,
+                    long_cached_input_per_mtok=e.long_cached_input_per_mtok, valid_from=e.valid_from,
+                    valid_until=e.valid_until, source_url=e.source_url, checked_on=date.fromisoformat(e.checked_on),
+                    note=e.note,
+                )  # fmt: skip
+                try:
+                    row.full_clean()
+                except ValidationError:  # the model already has a price for those dates
+                    continue
+                row.save()
+                created = True
+            (report.filled if created else report.unchanged).append(label)
+        return report

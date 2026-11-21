@@ -8,9 +8,11 @@ them on a paid plan. Loaded by `manage.py seed_registry`.
 """
 
 from .node_specs import NODE_SPECS, Effort
-from .prices import PriceBook
 from .serialization import RegistrySerializer
 
+# The Gemini models share these; each model below adds its tier, reasoning levels and how "no reasoning" is asked for
+# (docs/to_be_developed/model-strategy.md, read from Google's pages on 2026-11-15). The rpm limits are the free-tier
+# figures the first seed used: Google's pages do not print them (unverified), so raise or clear them on a paid plan.
 _GEMINI = {
     "supports_structured_output": True,
     "structured_output_method": "json_schema",
@@ -21,32 +23,46 @@ _GEMINI = {
     "reasoning_control": "effort",  # Gemini 3 takes thinking_level; the 2.5 budget is the older control
     "context_window": 1_048_576,
     "max_output_tokens": 65_536,
+    "status": "stable",
 }
+_LEVELS_FROM_MINIMAL = ["minimal", "low", "medium", "high"]  # the Flash-Lite models and 3.6 Flash
+_LEVELS_FROM_LOW = ["low", "medium", "high"]  # 3.8 Flash: "minimal" returns an error
 
-# Groq's free tier allows about 8,000 tokens a minute per model, so a single request (prompt plus reply) has to fit
-# in that: Groq models only lead the nodes whose prompt and reply are small.
+# Groq's rate-limit table prints 8K tokens a minute per gpt-oss model (its models page says 250K: unresolved), so the
+# design assumes the small figure: one request, prompt plus reply, stays under 6,000 tokens, and a Groq layer is given
+# the output cap that fits (`GROQ_REQUEST_TOKENS`). Groq answers the nodes whose prompt and reply are small; the rest
+# fall through to Gemini.
+GROQ_REQUEST_TOKENS = 6_000
 _GROQ = {
-    "supports_structured_output": True, "structured_output_method": "json_schema",
+    "supports_structured_output": True, "structured_output_method": "json_schema", "strict_structured": True,
     "supports_tool_calling": True, "supports_parallel_tool_calls": True, "supports_vision": False,
-    "supports_reasoning": True, "reasoning_control": "effort",
-    "context_window": 131_072, "max_output_tokens": 65_536, "rpm_limit": 30,
+    "supports_reasoning": True, "reasoning_control": "effort", "reasoning_levels": _LEVELS_FROM_LOW,
+    "reasoning_off": "unsupported",  # gpt-oss reasoning cannot be turned off
+    "context_window": 131_072, "max_output_tokens": 65_536, "rpm_limit": 30, "status": "stable",
+    "max_request_tokens": GROQ_REQUEST_TOKENS,
 }  # fmt: skip
 
 _MODELS = [
-    {"provider": "gemini", "name": "gemini-3.5-flash", "label": "Gemini 3.5 Flash", **_GEMINI, "rpm_limit": 10,
+    {"provider": "gemini", "name": "gemini-3.6-flash", "label": "Gemini 3.6 Flash", **_GEMINI, "rpm_limit": 10,
+     "tier": "T2", "reasoning_levels": _LEVELS_FROM_MINIMAL, "reasoning_off": "minimal", "min_cache_tokens": 4096,
      "default_params": {"temperature": 0.5}},
+    {"provider": "gemini", "name": "gemini-4-hydrogen", "label": "Gemini 4 Hydrogen", **_GEMINI, "rpm_limit": 10,
+     "tier": "T2", "reasoning_levels": [*_LEVELS_FROM_LOW, "xhigh"], "reasoning_off": "unsupported",
+     "min_cache_tokens": 4096, "default_params": {"temperature": 0.5}},
     {"provider": "gemini", "name": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash-Lite", **_GEMINI,
-     "rpm_limit": 15, "default_params": {"temperature": 0.4}},
-    {"provider": "gemini", "name": "gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash-Lite", **_GEMINI,
-     "rpm_limit": 15, "default_params": {"temperature": 0.4}},
-    {"provider": "groq", "name": "openai/gpt-oss-120b", "label": "GPT-OSS 120B (Groq)", **_GROQ,
+     "rpm_limit": 15, "tier": "T1", "reasoning_levels": _LEVELS_FROM_MINIMAL, "reasoning_off": "minimal",
      "default_params": {"temperature": 0.4}},
-    {"provider": "groq", "name": "openai/gpt-oss-20b", "label": "GPT-OSS 20B (Groq)", **_GROQ,
+    {"provider": "gemini", "name": "gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash-Lite", **_GEMINI,
+     "rpm_limit": 15, "tier": "T1", "reasoning_levels": _LEVELS_FROM_MINIMAL, "reasoning_off": "minimal",
+     "default_params": {"temperature": 0.4}},
+    {"provider": "groq", "name": "openai/gpt-oss-120b", "label": "GPT-OSS 120B (Groq)", **_GROQ, "tier": "T1",
+     "default_params": {"temperature": 0.4}},
+    {"provider": "groq", "name": "openai/gpt-oss-20b", "label": "GPT-OSS 20B (Groq)", **_GROQ, "tier": "T0",
      "default_params": {"temperature": 0.4}},
 ]  # fmt: skip
 
 FLASH, LITE, LITE_31, GPT_OSS, GPT_OSS_SMALL = (
-    ("gemini", "gemini-3.5-flash"),
+    ("gemini", "gemini-3.6-flash"),
     ("gemini", "gemini-3.5-flash-lite"),
     ("gemini", "gemini-3.1-flash-lite"),
     ("groq", "openai/gpt-oss-120b"),
@@ -127,18 +143,8 @@ class DefaultRegistry:
                 },
                 {"key": "groq", "kind": "groq", "api_key_env": "GROQ_API_KEY", "base_url": "", "is_enabled": True},
             ],
-            "models": [self._priced(model) for model in _MODELS],
+            "models": _MODELS,
             "nodes": [self._node(key, chain, settings) for key, (chain, settings) in self.nodes.items()],
-        }
-
-    @staticmethod
-    def _priced(model: dict) -> dict:
-        """The model with the price the price book has for it (none when no official page confirmed one)."""
-        entry = PriceBook().entry(model["provider"], model["name"])
-        price_in, price_out = (entry.input_per_mtok, entry.output_per_mtok) if entry else (None, None)
-        return model | {
-            "input_cost_per_mtok": None if price_in is None else str(price_in),
-            "output_cost_per_mtok": None if price_out is None else str(price_out),
         }
 
     @staticmethod
@@ -150,8 +156,21 @@ class DefaultRegistry:
         return {
             "node_key": key,
             **settings,
-            "bindings": [{"provider": p, "model": m, "priority": i, **retries} for i, (p, m) in enumerate(chain)],
+            "bindings": [
+                {"provider": p, "model": m, "priority": i, **retries, **DefaultRegistry._request_cap(key, p)}
+                for i, (p, m) in enumerate(chain)
+            ],
         }
+
+    @staticmethod
+    def _request_cap(node_key: str, provider: str) -> dict:
+        """A Groq layer may write only what keeps one request under `GROQ_REQUEST_TOKENS` with the node's typical
+        prompt. A node whose prompt alone is too big for that is not given a Groq layer (the model's own
+        `max_request_tokens` then makes the registry skip the binding)."""
+        if provider != "groq":
+            return {}
+        room = GROQ_REQUEST_TOKENS - NODE_SPECS[node_key].typical_input_tokens
+        return {"max_output_tokens": max(512, room // 100 * 100)}
 
 
 # A node that the default leads with Groq keeps gpt-oss-20b first (small replies fit its token cap); every other node

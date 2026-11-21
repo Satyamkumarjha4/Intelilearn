@@ -5,11 +5,12 @@ Flat models only: a question is one model with a `type` field and optional per-t
 model_validator, not a union. Several providers handle unions poorly in structured-output mode.
 """
 
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
 from ..questions import QuestionTypes
+from .nullable import NullableFields, none
 
 PageKey = Literal["introduction", "core", "advanced"]
 PAGE_KEYS: tuple[str, ...] = ("introduction", "core", "advanced")
@@ -69,20 +70,22 @@ class Callout(BaseModel):
     text: str
 
 
-class Section(BaseModel):
+class Section(NullableFields):
     id: str = Field(description='Stable id such as "s1"; unique within the page.')
     heading: str
     body: str = Field(description="The main explanation, in Markdown. LaTeX between $…$ or $$…$$.")
-    concepts: list[str] = Field(
-        default_factory=list,
+    concepts: list[str] | None = Field(
         description="The outline concepts of this page that the section teaches, copied exactly from the plan. "
         "Normally one. It lets the app send a learner who is weak on a concept to this section.",
     )
-    key_points: list[str] = Field(default_factory=list)
-    worked_examples: list[WorkedExample] = Field(default_factory=list)
-    formulas: list[Formula] = Field(default_factory=list)
-    code_snippets: list[CodeSnippet] = Field(default_factory=list)
-    callouts: list[Callout] = Field(default_factory=list)
+    key_points: list[str] | None = Field(description="Key points, or an empty list.")
+    worked_examples: list[WorkedExample] | None = Field(description="Worked examples, or an empty list.")
+    formulas: list[Formula] | None = Field(description="Formulas, or an empty list.")
+    code_snippets: list[CodeSnippet] | None = Field(description="Code snippets, or an empty list.")
+    callouts: list[Callout] | None = Field(description="Callouts, or an empty list.")
+
+    NULL_MEANS: ClassVar = {name: list for name in ("concepts", "key_points", "worked_examples", "formulas",
+                                                     "code_snippets", "callouts")}  # fmt: skip
 
 
 class PageContent(BaseModel):
@@ -97,7 +100,7 @@ class Criterion(BaseModel):
     marks: int = Field(ge=1, description="Whole marks this thing is worth.")
 
 
-class TestQuestion(BaseModel):
+class TestQuestion(NullableFields):
     """What a model writes for one question. Marks are not here: `MarksPolicy` sets them in code, and the right answer
     of a numerical question is computed from `answer_expr` (`QuestionFinisher`)."""
 
@@ -107,33 +110,36 @@ class TestQuestion(BaseModel):
     difficulty: Difficulty
     question: str = Field(description="Markdown; LaTeX between $…$ allowed.")
     # mcq and msq
-    options: list[str] | None = Field(default=None, description="mcq: exactly 4 options. msq: 4 to 6 options.")
-    correct_index: int | None = Field(default=None, description="mcq only: index of the correct option.")
+    options: list[str] | None = Field(description="mcq: exactly 4 options. msq: 4 to 6 options.")
+    correct_index: int | None = Field(description="mcq only: index of the correct option.")
     correct_indices: list[int] | None = Field(
-        default=None, description="msq only: the indices of the correct options (at least 2, all different)."
+        description="msq only: the indices of the correct options (at least 2, all different)."
     )
     # numerical
     answer_expr: str | None = Field(
-        default=None,
         description="numerical only: the answer as a maths expression, for example sqrt(3)/2*10. Use + - * / **, "
         "parentheses, pi, e, and sqrt sin cos tan asin acos atan log (base 10) ln exp abs. Trigonometry is in radians.",
     )
-    tolerance: float | None = Field(default=None, description="numerical only: accepted absolute error.")
+    tolerance: float | None = Field(description="numerical only: accepted absolute error.")
     decimal_precision: int | None = Field(
-        default=None, description="numerical only, 0 to 6: decimals of the answer (0 means a whole number)."
+        description="numerical only, 0 to 6: decimals of the answer (0 means a whole number)."
     )
-    unit: str | None = Field(default=None, description="numerical only, may be empty.")
+    unit: str | None = Field(description="numerical only, may be empty.")
     # short_answer / long_answer
-    model_answer: str | None = Field(default=None, description="short_answer and long_answer.")
+    model_answer: str | None = Field(description="short_answer and long_answer.")
     criteria: list[Criterion] | None = Field(
-        default=None,
         description="short_answer and long_answer: what a good answer does, each worth whole marks that add up to the "
         "question's marks.",
     )
 
     # short_answer / long_answer about code (a programming topic): the language, and optionally code to start from
-    language: str | None = Field(default=None, description='short/long answer that asks for code only: e.g. "python".')
-    starter_code: str | None = Field(default=None, description="short/long answer that asks for code only, optional.")
+    language: str | None = Field(description='short/long answer that asks for code only: e.g. "python".')
+    starter_code: str | None = Field(description="short/long answer that asks for code only, optional.")
+
+    NULL_MEANS: ClassVar = {name: none for name in (
+        "options", "correct_index", "correct_indices", "answer_expr", "tolerance", "decimal_precision", "unit",
+        "model_answer", "criteria", "language", "starter_code",
+    )}  # fmt: skip
 
     @model_validator(mode="after")
     def _fields_for_type(self):
