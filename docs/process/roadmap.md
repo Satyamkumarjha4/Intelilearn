@@ -284,6 +284,12 @@ For a decision: the quick check still fails now and then even with three attempt
 - [ ] **M3 also**: staff add a new dated `ModelPrice` row in the console (never edit or delete an old one), audited with the actor and a reason; the 60-day warnings stay.
 - [ ] **Remove the legacy cost columns** (a separate change after the M phases): `ModelCall.cost` (a copy of `cost_usd`) and `LLMModel.input_cost_per_mtok` / `output_cost_per_mtok` (the fallback when a model has no `ModelPrice` row), with the readers that still use them (the console price editor and about 26 others).
 
+### Pre-launch audit (2026-11-21; [runbook](../audit/RUNBOOK.md), the run's files are in `docs/audit/2026-11-21/`)
+
+- [x] **Branches** consolidated (only `phase-m/observe-clean` was unmerged). GitHub Actions was locked by a billing issue, so PR 1 was merged on a local equivalent of the CI jobs; when Actions resumed, the first runs found 27 `llm_registry` tests that passed only where the shell held the provider keys (the resolver leaves out a layer whose provider has no key), the `on-failure` job reverted the merge, and PR 3 put Phase M back with the tests setting their own keys. `main` is green on GitHub.
+- [x] **Audit prep** (`audit/prep`): the fake LLM fails on cue (`tests/e2e/fake_failures.py`) and answers `media.verify` and `onboarding.suggest_topics`, with a test that fails for a node it cannot answer; `llm_registry.E001` / `E002` refuse the fake in production; `manage.py audit_seed` (ten synthetic personas), `audit_spend`; `make audit-up MODE=mock|live`, `audit-spend`, `audit-down`. Design 4.27, testing 6.1c.
+- [ ] The audit stages and the fix plan (`docs/audit/2026-11-21/FIX-PLAN.md`).
+
 ### Phase 10: Credits and payments
 
 Credits for the work that costs model calls, earned by studying, bought through Stripe or Razorpay. The design is [the spec](../architecture/credits-system.md) and [the implementation plan](../archive/credits-implementation-plan.md) (phases 10.0 to 10.9, each shippable, each ending with `make check` and `make e2e` green). **Phase 10 is complete and switched on:** the credit gate and earning are the defaults, new accounts get 30 credits and existing ones were backfilled first. Sign-in methods (Google, Apple, Microsoft, email OTP) are Phase 11, a separate plan; **public launch is blocked on it** (see below).

@@ -6,6 +6,9 @@ the real LangChain client and the real graph run end to end. It also records not
 
     PYTHONPATH=/app:/tests python /tests/e2e/fake_llm_server.py      (port from FAKE_LLM_PORT, default 9000)
 
+It can also be told to fail (`/_control/...`, tests/e2e/fake_failures.py): a reply that is not JSON, one the validators
+refuse, a timeout, a 429, a 401. That is how the audit exercises the fallback and refund paths.
+
 Used by `tests/e2e/test_fake_llm_gateway.py` and by the `fake-llm` compose service (`make fake-llm`) for walking the app
 in a browser. Add a builder here whenever a phase adds an LLM output schema.
 """
@@ -21,8 +24,10 @@ from support.quiz_data import make_prerequisites, make_questions
 
 try:
     from .canned_lesson import LessonCanned, canned_question
+    from .fake_failures import FAILURES, FailureContext, FailurePlan, UnknownFailure
 except ImportError:  # run as a script (python /tests/e2e/fake_llm_server.py)
     from canned_lesson import LessonCanned, canned_question
+    from fake_failures import FAILURES, FailureContext, FailurePlan, UnknownFailure
 from graph.schemas.diagnostic import BANDS
 
 
@@ -105,6 +110,44 @@ class Canned(LessonCanned):
             "programming": any(word in topic for word in ("python", "code", "program", "javascript")),
         }
 
+    def build_MediaVerdict(self) -> dict:
+        return {
+            "approved": True,
+            "reason": "The picture shows the process the spec asks for, clearly.",
+            "alt_text": f"A labelled diagram that helps explain {self.topic}.",
+            "caption": f"An illustration for {self.topic}.",
+        }
+
+    def build_TopicSuggestions(self) -> dict:
+        """A translation request lists the topics to translate (JSON data): the same ones come back in the same order.
+        A suggestion request describes the learner: six topics, named for the field of study when there is one."""
+        listed = re.search(r"Topics to translate \(JSON data\):\n(\[.*\])", self.text, re.S)
+        if listed:
+            return {
+                "topics": [
+                    {
+                        "title": t["title"],
+                        "title_en": t["title_en"],
+                        "subject": t["subject"],
+                        "reason": t["reason"],
+                    }
+                    for t in json.loads(listed.group(1))
+                ]
+            }
+        field = re.search(r'"field_of_study": "([^"]+)"', self.text)
+        area = field.group(1) if field else "Science"
+        return {
+            "topics": [
+                {
+                    "title": f"{area}: first idea {number}",
+                    "title_en": f"{area}: first idea {number}",
+                    "subject": area,
+                    "reason": "A good place to start.",
+                }
+                for number in range(1, 7)
+            ]
+        }
+
     # --- Mastery path ---
 
     def _concept_text(self, number: int) -> str:
@@ -163,6 +206,30 @@ class Canned(LessonCanned):
         ]
         return {"title": f"{self.topic}: practice", "instructions": "Answer, then check.", "questions": questions}
 
+    # --- Replies that fit the schema and that the real validators refuse (the `rejected` failure mode) ---
+
+    def rejected(self, schema: str) -> dict:
+        try:
+            return getattr(self, f"rejected_{schema}")()
+        except AttributeError:
+            raise KeyError(schema) from None
+
+    def rejected_DiagnosticBundle(self) -> dict:
+        """The first question offers the same option twice: valid JSON, refused by `TextRules.option_problems`."""
+        bundle = self.build_DiagnosticBundle()
+        first = bundle["diagnostic"][0]
+        right = first["correct_index"]
+        first["options"][(right + 1) % len(first["options"])] = first["options"][right]
+        return bundle
+
+
+class FakeHTTPServer(ThreadingHTTPServer):
+    """The HTTP server, carrying the failure plan its handlers consult."""
+
+    def __init__(self, address, handler, failures: FailurePlan):
+        super().__init__(address, handler)
+        self.failures = failures
+
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -174,6 +241,8 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path == "/health":
             return self._send(200, {"status": "ok"})
+        if path == "/_control/plan":
+            return self._send(200, self.server.failures.snapshot())
         if path.endswith("api.php"):
             return self._send(200, self._wikimedia())
         if path.startswith("/media/"):
@@ -220,12 +289,17 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_POST(self):
-        request = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+        raw = self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}"
+        if self.path.startswith("/_control/"):
+            return self._control(raw)
+        request = json.loads(raw)
         if not self.path.endswith("/chat/completions"):
             return self._send(404, {"error": {"message": f"unknown path {self.path}"}})
+        schema = self._schema_name(request)
+        if self._fails(request, schema or ("agent" if self._is_agent_request(request) else "text")):
+            return
         if self._is_agent_request(request):
             return self._complete(request, self._agent_reply(request))
-        schema = self._schema_name(request)
         if schema is None and not request.get("tools"):
             return self._complete_text(request)
         try:
@@ -250,6 +324,41 @@ class Handler(BaseHTTPRequestHandler):
                          "finish_reason": "tool_calls" if request.get("tools") else "stop"}],
             "usage": {"prompt_tokens": 100, "completion_tokens": len(text) // 4, "total_tokens": 100 + len(text) // 4},
         })  # fmt: skip
+
+    def _control(self, raw: bytes) -> None:
+        """Rules for failing on cue (tests/e2e/fake_failures.py): add one, read the plan, forget them all."""
+        plan: FailurePlan = self.server.failures
+        action = self.path.removeprefix("/_control/")
+        try:
+            body = json.loads(raw)
+            if action == "fail":
+                plan.add(
+                    body.get("mode", ""),
+                    schema=body.get("schema", "*"),
+                    times=body.get("times", 1),
+                    delay_s=body.get("delay_s", 0),
+                )
+            elif action == "reset":
+                plan.reset()
+            else:
+                return self._send(404, {"error": {"message": f"unknown control path {self.path}"}})
+        except (UnknownFailure, json.JSONDecodeError, AttributeError) as problem:
+            # a rule refused, bad JSON, or a body that is not an object (`.get` on a list)
+            return self._send(400, {"error": {"message": str(problem)}})
+        self._send(200, plan.snapshot())
+
+    def _fails(self, request: dict, schema: str) -> bool:
+        """Answer with the failure the plan holds for this call, if any. True when the call is over."""
+        rule = self.server.failures.take(schema)
+        if rule is None:
+            return False
+        context = FailureContext(request, schema, Canned(request), rule)
+        reply = FAILURES[rule.mode].respond(context)
+        if reply is None:  # the caller was left waiting; it has gone by now
+            self.close_connection = True
+        else:
+            self._send(reply.status, reply.body, reply.headers)
+        return True
 
     @staticmethod
     def _schema_name(request: dict) -> str | None:
@@ -310,11 +419,13 @@ class Handler(BaseHTTPRequestHandler):
             "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
         })  # fmt: skip
 
-    def _send(self, status: int, body: dict) -> None:
+    def _send(self, status: int, body: dict, headers: dict[str, str] | None = None) -> None:
         data = json.dumps(body).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(data)))
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(data)
 
@@ -323,7 +434,8 @@ class FakeLLMServer:
     """The server in a background thread, for tests (port 0 picks a free one)."""
 
     def __init__(self, port: int = 0):
-        self.httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+        self.failures = FailurePlan()
+        self.httpd = FakeHTTPServer(("127.0.0.1", port), Handler, self.failures)
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
 
     @property
@@ -342,4 +454,4 @@ class FakeLLMServer:
 if __name__ == "__main__":
     port = int(os.environ.get("FAKE_LLM_PORT", "9000"))
     print(f"fake LLM listening on :{port}", flush=True)
-    ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()  # noqa: S104 (a dev-only container)
+    FakeHTTPServer(("0.0.0.0", port), Handler, FailurePlan()).serve_forever()  # noqa: S104 (a dev-only container)

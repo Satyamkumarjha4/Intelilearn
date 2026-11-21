@@ -267,9 +267,11 @@
         "frontend/eslint.config.mjs",
         "frontend/.gitignore",
         ".github/**",
-        ".gitignore"
+        ".gitignore",
+        "docker-compose.audit.yml",
+        "docker-compose.audit-mock.yml"
       ],
-      "why": "icons, lint and repository plumbing: nothing a browser flow reads"
+      "why": "icons, lint and repository plumbing, and the compose files of the audit stack (a different project: the browser-test stack never reads them): nothing a browser flow reads"
     }
   ]
 }
